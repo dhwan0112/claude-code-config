@@ -4,6 +4,7 @@ description: Generic worker for simple, well-scoped tasks. Role, scope, done-cri
 model: haiku
 effort: high
 tools: Read, Write, Edit, Glob, Grep, Bash
+disallowedTools: advisor
 skills:
   - verify
   - lammpkeeper

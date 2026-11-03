@@ -4,6 +4,7 @@ description: Generic read-only worker for search, analysis and review. Cannot ed
 model: sonnet
 effort: low
 tools: Read, Grep, Glob
+disallowedTools: advisor
 skills:
   - lammpkeeper
 omitClaudeMd: true

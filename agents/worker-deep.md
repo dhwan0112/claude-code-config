@@ -4,6 +4,7 @@ description: Generic worker for hard implementation or analysis tasks. Role and 
 model: sonnet
 effort: medium
 tools: Read, Write, Edit, Glob, Grep, Bash
+disallowedTools: advisor
 skills:
   - tdd
   - verify
