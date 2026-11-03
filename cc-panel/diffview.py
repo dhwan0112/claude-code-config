@@ -2,7 +2,8 @@
 """ccx right-bottom pane: side-by-side diff with delta. Standard library only (plus the delta binary).
 
 Views (key m or Tab cycles):
-  edit  last edit only: snapshot taken by the PreToolUse hook vs the file now (default)
+  edit  last edit only: snapshot taken by the PreToolUse hook vs the snapshot with that tool call applied
+        (default; falls back to the file now, marked "(current file)")
   head  last edited file vs git HEAD
   tree  whole working tree vs HEAD, untracked files included (shows Bash-made changes too)
 Keys: m/Tab view · j/k line · Space/b page · g/G top/bottom · r refresh
@@ -64,7 +65,13 @@ def rel(path, top):
 
 
 def diff_edit(last):
-    """Return (unified_diff_text, note)."""
+    """Return (unified_diff_text, note).
+
+    Compares the snapshot taken just before the edit with <key>.after (the snapshot with this tool call
+    applied, written by apply_edit.py), so later changes to the file do not show up. Without .after
+    (old tabs, NotebookEdit, old_string not found, over 2 MB) it compares with the current file and
+    says so with "(current file)".
+    """
     meta = os.path.join(SNAP, f"{last['key']}.meta")
     try:
         with open(meta, encoding="utf-8") as f:
@@ -73,13 +80,18 @@ def diff_edit(last):
         return "", "no snapshot for this edit (kept: last 20)"
     path = last["path"]
     name = rel(path, git_top(path))
+    after = os.path.join(SNAP, f"{last['key']}.after")
+    if os.path.isfile(after):
+        target, notes = after, []
+    else:
+        target, notes = path, ["(current file)"]
     if status == "copied":
         _, out = run(["diff", "-u", "--label", f"a/{name}", "--label", f"b/{name}",
-                      os.path.join(SNAP, f"{last['key']}.snap"), path])
-        return out, ""
+                      os.path.join(SNAP, f"{last['key']}.snap"), target])
+        return out, " · ".join(notes)
     if status == "new":
-        _, out = run(["diff", "-u", "--label", "/dev/null", "--label", f"b/{name}", "/dev/null", path])
-        return out, "new file"
+        _, out = run(["diff", "-u", "--label", "/dev/null", "--label", f"b/{name}", "/dev/null", target])
+        return out, " · ".join(["new file"] + notes)
     if status == "toolarge":
         return "", "file over 2 MB: no snapshot"
     return "", "snapshot failed"

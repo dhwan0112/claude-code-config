@@ -4,11 +4,15 @@
 #   sidebar (default): left top claude · left bottom diff (CCX_DIFF, default 40%) · right full-height panel
 #                      (CCX_SIDEBAR, default 30%, at least 36 columns)
 #   split:             left claude · right top panel (14 rows) · right bottom diff
-# Usage: ccx [claude arguments...]
+# Usage: ccx [--safe] [claude arguments...]
+#   New tabs start in bypass permission mode (permissions.defaultMode in ccx's --settings). ccx --safe or
+#   CCX_SAFE=1 leaves it out, so the user's global defaultMode applies. A --permission-mode or
+#   --dangerously-skip-permissions flag given to ccx goes to claude unchanged and wins (no bypass default added).
+#   ccx's --settings also adds "ask" rules for destructive git/gh commands (see ccx_settings.py).
 #   Run outside tmux: creates or attaches to session "cc" and adds a new tab (window).
 #   Run inside the cc server (or C-a c): adds a tab and switches to it.
 #   Run inside another tmux server: adds the tab and prints the attach command.
-# Env: CCX_NO_ATTACH=1 (do not attach), CCX_SELECT=1 (select the new tab), CCX_SIZE=WxH (size of a new
+# Env: CCX_SAFE=1 (same as --safe), CCX_NO_ATTACH=1 (do not attach), CCX_SELECT=1 (select the new tab), CCX_SIZE=WxH (size of a new
 #      detached server), CCX_SOCKET=name (tmux -L socket, default cc), CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF
 set -euo pipefail
 
@@ -42,13 +46,22 @@ id="$(date +%Y%m%d%H%M%S)-$$-$RANDOM"
 # Separate the user's --settings (merged into ours; Claude Code honors only the last --settings flag)
 user_settings=""
 args=()
+safe=0
+case "${CCX_SAFE:-}" in ""|0) ;; *) safe=1 ;; esac
+userperm=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --) args+=("$@"); break ;;
+    --safe) safe=1; shift ;;
     --settings) [ $# -ge 2 ] || { echo "ccx: --settings needs a value" >&2; exit 2; }; user_settings=$2; shift 2 ;;
     --settings=*) user_settings=${1#--settings=}; shift ;;
+    --permission-mode|--permission-mode=*|--dangerously-skip-permissions) userperm=1; args+=("$1"); shift ;;
     *) args+=("$1"); shift ;;
   esac
 done
+if [ "$userperm" = 1 ]; then perm=user; mode_arg=""
+elif [ "$safe" = 1 ]; then perm=safe; mode_arg=""
+else perm=bypass; mode_arg=bypass; fi
 
 mkdir -p "$D"
 # Prune cache files of tabs that are no longer open. A tab is open if any tmux server of this user
@@ -67,9 +80,10 @@ for f in "$D"/* "$D"/.[!.]*; do
   [ -n "$(find "$f" -maxdepth 0 -mmin -10 2>/dev/null)" ] && continue
   rm -rf -- "$f"
 done
-python3 "$P/ccx_settings.py" "$user_settings" > "$D/$id.settings.json"
+python3 "$P/ccx_settings.py" "$user_settings" $mode_arg > "$D/$id.settings.json"
 
-envs=(-e "CC_PANEL_ID=$id" -e "CC_PANEL_DIR=$dir")
+# CCX_TAB_RENAME=1: statusline-tee.sh renames this tab after the session name (tabs opened before it lack it)
+envs=(-e "CC_PANEL_ID=$id" -e "CC_PANEL_DIR=$dir" -e "CCX_TAB_RENAME=1")
 
 if tm has-session -t "=cc" 2>/dev/null; then
   win=$(tm new-window -d -P -F '#{window_id}' -t "=cc:" -n "$name" -c "$dir" "${envs[@]}" -- "$P/left.sh" "${args[@]}")
@@ -85,6 +99,9 @@ fi
 gone() { echo "ccx: the Claude Code pane closed right away (claude exited); nothing to open" >&2; exit 0; }
 tm set-option -w -t "$win" @ccx_id "$id" 2>/dev/null || gone
 tm set-option -w -t "$win" @ccx_layout "$layout" 2>/dev/null || true
+tm set-option -w -t "$win" @ccx_perm "$perm" 2>/dev/null || true
+tm set-option -w -t "$win" @ccx_name0 "$name" 2>/dev/null || true
+tm set-option -w -t "$win" automatic-rename off 2>/dev/null || true
 left=$(tm display-message -p -t "$win" '#{pane_id}' 2>/dev/null) || gone
 read -r ww wh < <(tm display-message -p -t "$win" '#{window_width} #{window_height}')
 
@@ -107,7 +124,7 @@ case "${TMUX:-}" in */"$SOCK",*) in_cc_server=1 ;; esac
 
 if [ -n "${CCX_NO_ATTACH:-}" ]; then
   [ -n "${CCX_SELECT:-}" ] && tm select-window -t "$win"
-  echo "ccx: opened tab $name ($win, layout $layout), id $id"
+  echo "ccx: opened tab $name ($win, layout $layout, permissions $perm), id $id"
 elif [ "$in_cc_server" = 1 ]; then
   tm select-window -t "$win"
 elif [ -n "${TMUX:-}" ]; then

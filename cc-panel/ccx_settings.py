@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Build the --settings JSON for a ccx session and merge in the user's own --settings value.
 
-Usage: ccx_settings.py [USER_SETTINGS]   (USER_SETTINGS is a JSON string or a file path)
+Usage: ccx_settings.py [USER_SETTINGS] [bypass]
+  USER_SETTINGS is a JSON string or a file path ("" for none).
+  "bypass" adds permissions.defaultMode=bypassPermissions (ccx's default; ccx --safe or CCX_SAFE=1 leaves
+  it out, so the user's global defaultMode applies). A --permission-mode or --dangerously-skip-permissions
+  flag on the claude command line still wins over any defaultMode.
 Claude Code applies only the last --settings flag it gets, so ccx passes exactly one.
 Merge rules: the user's keys override ccx's, except
   - "hooks": both sets are kept (ccx's hooks first, then the user's, per event);
+  - "permissions": list keys (ask, allow, deny, ...) are concatenated, other keys (defaultMode, ...) the user's win;
   - "statusLine": ccx's is kept because the panel reads its data; a warning goes to stderr.
+Permission rules from ~/.claude/settings.json still apply: list keys merge across settings scopes.
 """
 import json
 import os
@@ -14,8 +20,31 @@ import sys
 P = os.path.expanduser("~/.claude/cc-panel")
 
 
-def hook(arg, matcher=None, background=False):
-    h = {"type": "command", "command": f'"{P}/hook.sh" {arg}', "timeout": 5}
+# ccx-only "ask" rules: destructive git/gh commands still ask in bypass mode (ask rules apply in every mode).
+# Each git rule also has a "git * <sub>" form for global options before the subcommand
+# (git -C dir, git -c k=v, git --git-dir=..., git --no-pager). "*" matches any text, spaces included.
+GIT_ASK = [
+    "reset *--hard*",
+    "clean *-*f*",                                 # -f, -fd, -xdf, --force, ...
+    "checkout *.", "checkout *./", "checkout *:/",  # checkout [-- | <tree> --] . / ./ / :/
+    "checkout -f*", "checkout * -f*", "checkout *--force*",
+    "restore *.", "restore *./", "restore *:/",
+    "branch *-D*", "branch *-d*-f*", "branch *-f*-d*", "branch *-df*", "branch *-fd*",  # also --delete --force
+]
+ASK = (
+    [f"Bash(git {r})" for r in GIT_ASK]
+    + [f"Bash(git * {r})" for r in GIT_ASK]
+    + [
+        "Bash(git * push*)",  # the global rules miss "git -C . push" with no arguments and "git -c k=v push"
+        "Bash(gh repo delete *)", "Bash(gh * repo delete*)",
+        "Bash(gh release delete *)", "Bash(gh * release delete*)",
+        "Bash(gh api *DELETE*)", "Bash(gh api *delete*)",  # gh api -X DELETE repos/OWNER/REPO, ...
+    ]
+)
+
+
+def hook(arg, matcher=None, background=False, script="hook.sh"):
+    h = {"type": "command", "command": f'"{P}/{script}" {arg}'.rstrip(), "timeout": 5}
     if background:
         h["async"] = True  # does not hold up the tool; the diff pane polls every second anyway
     entry = {"hooks": [h]}
@@ -24,15 +53,20 @@ def hook(arg, matcher=None, background=False):
     return [entry]
 
 
-def base():
+def base(bypass=False):
     edit = "^(Write|Edit|NotebookEdit)$"
+    perms = {"ask": list(ASK)}
+    if bypass:
+        perms["defaultMode"] = "bypassPermissions"
     return {
         "tui": "default",
         "autoCompactWindow": 180000,  # compact at about 180k tokens in ccx sessions only; a user --settings value wins
         "statusLine": {"type": "command", "command": f'"{P}/statusline-tee.sh"', "refreshInterval": 3},
+        "permissions": perms,
         "hooks": {
             "PreToolUse": hook("pre", edit),
-            "PostToolUse": hook("post", edit, background=True),
+            # post.sh rebuilds the file as this edit left it (.after), then runs "hook.sh post"
+            "PostToolUse": hook("", edit, background=True, script="post.sh"),
             "SubagentStart": hook("substart"),
             "SubagentStop": hook("substop"),
         },
@@ -61,6 +95,14 @@ def merge(ours, user):
                 hooks.setdefault(event, [])
                 hooks[event] = hooks[event] + list(entries)
             out["hooks"] = hooks
+        elif k == "permissions" and isinstance(v, dict):
+            perms = dict(ours.get("permissions", {}))
+            for pk, pv in v.items():
+                if isinstance(pv, list) and isinstance(perms.get(pk), list):
+                    perms[pk] = perms[pk] + [x for x in pv if x not in perms[pk]]
+                else:
+                    perms[pk] = pv
+            out["permissions"] = perms
         elif k == "statusLine":
             print("ccx: ignoring statusLine from --settings (the panel needs its own)", file=sys.stderr)
         else:
@@ -71,10 +113,11 @@ def merge(ours, user):
 def main():
     try:
         user = load_user(sys.argv[1] if len(sys.argv) > 1 else "")
+        bypass = len(sys.argv) > 2 and sys.argv[2] == "bypass"
     except (OSError, ValueError) as e:
         print(f"ccx: cannot read --settings value: {e}", file=sys.stderr)
         return 2
-    json.dump(merge(base(), user), sys.stdout, ensure_ascii=False)
+    json.dump(merge(base(bypass), user), sys.stdout, ensure_ascii=False)
     return 0
 
 

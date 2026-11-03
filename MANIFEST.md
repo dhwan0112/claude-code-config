@@ -1,6 +1,6 @@
 # Claude Code worker baseline
 
-- Date: 2026-11-03 19:56 +08
+- Date: 2026-11-03 20:40 +08
 - Source host: Pauli
 - Claude Code version on source host: 2.1.317
 - Minimum Claude Code version: 2.1.271 (`omitClaudeMd` in subagent frontmatter)
@@ -45,17 +45,20 @@ Two lines: model · effort | directory | git branch (worktree), then a context b
 
 ## ccx workspace (copy `cc-panel/` to ~/.claude/cc-panel/, `bin/ccx` to ~/.local/bin/ccx)
 
-Claude Code in a separate tmux server (`tmux -L cc`), tabs on top. Default layout `sidebar`: left top Claude Code (classic renderer), left bottom diff (delta; side by side from 110 columns, top/bottom below), right full-height context/token panel (30%, at least 36 columns). `CCX_LAYOUT=split` keeps the earlier layout. Pane size: `C-a` + arrow keys (repeatable); pane focus: `C-a h/j/k/l`. Hooks, status line and `autoCompactWindow: 180000` are passed with `--settings` by ccx only; `~/.claude/settings.json` is not changed. A user `--settings` value overrides `autoCompactWindow` for that tab. See `cc-panel/README.md` for use.
+Claude Code in a separate tmux server (`tmux -L cc`), tabs on top. Default layout `sidebar`: left top Claude Code (classic renderer), left bottom diff (delta; side by side from 110 columns, top/bottom below), right full-height context/token panel (30%, at least 36 columns). `CCX_LAYOUT=split` keeps the earlier layout. Pane size: `C-a` + arrow keys (repeatable); pane focus: `C-a h/j/k/l`. Hooks, status line and `autoCompactWindow: 180000` are passed with `--settings` by ccx only; `~/.claude/settings.json` is not changed. A user `--settings` value overrides `autoCompactWindow` for that tab. New tabs start in bypass permission mode (`permissions.defaultMode` in ccx's `--settings`) with extra ccx-only ask rules for destructive git/gh commands (`git reset --hard`, `git clean -f`, whole-tree `git checkout`/`git restore`, `git branch -D`, `gh repo delete`, `gh release delete`); `ccx --safe` or `CCX_SAFE=1` leaves bypass out. New tab shortcuts: `C-a c`, `C-a C` (asks for a folder), `C-a S` (safe), and the `+` / `safe` buttons on the top bar. Tab names follow the session name. The default diff view shows only the last edit (`apply_edit.py` rebuilds the result from the snapshot). See `cc-panel/README.md` for use.
 
-- 1f573202eb3982f8201344ec209953dd  cc-panel/README.md
-- d5504b38469956bc675d87759ebaa31e  cc-panel/ccx_settings.py
-- 594107ff7fe9f45f93eb03bfdb27c0fa  cc-panel/diffview.py
+- a2dc0b45dac2d3c43994c83fb34f8a42  cc-panel/apply_edit.py
+- f661bc7b9b87a903642dca8b619c6497  cc-panel/ccx_settings.py
+- 8afb00b24cbd2a052e4ddd553f518951  cc-panel/diffview.py
 - 1aa4114e7feb738bc819d5167dc85e37  cc-panel/hook.sh
 - 06d46eb1d96bd603569d42cfc68aaf1d  cc-panel/left.sh
+- e6045f9cb9a17a2b4204bbf76d0c42ad  cc-panel/newtab.sh
 - 5e233cb700798a792fd2e6b860db3eb4  cc-panel/panel.py
-- 89e17eddbd32134371bb4921d20ce03a  cc-panel/statusline-tee.sh
-- df63f106205cfac3bbbb5e8f948b6317  cc-panel/tmux.conf
-- 6efe9a0ebf1b73946f4262c4f250b17a  bin/ccx
+- 560967310d44b5c9bc5aee760d497186  cc-panel/post.sh
+- 56a916f371af23dc56e22919e97d6825  cc-panel/README.md
+- dadfe4ba69cb3192472a3ed74cc804f7  cc-panel/statusline-tee.sh
+- b18f04d33ae194061ee0961b846367f0  cc-panel/tmux.conf
+- 9e7e10abea0d4ce90195213aa89c9cd1  bin/ccx
 
 Requires `delta` 0.20.1 in `~/.local/bin` (not in this folder): download `delta-0.20.1-x86_64-unknown-linux-musl.tar.gz` from the dandavison/delta GitHub release and check sha256 69dcb4043f55c29118f408c6efd30115e0a4e0a6709253343b8c8fa814ab4a31 (GitHub asset digest; the project publishes no separate checksum file). Also `tmux` 3.2+, `jq`, `python3`.
 
@@ -80,4 +83,5 @@ Requires `delta` 0.20.1 in `~/.local/bin` (not in this folder): download `delta-
 - Auto-compaction default for 1M models is about 967K tokens. User settings are not changed; ccx sessions use `autoCompactWindow: 180000` through `--settings`. Other ways to lower it: `autoCompactWindow` in settings or `CLAUDE_CODE_AUTO_COMPACT_WINDOW`.
 - Interpreter paths are machine-specific. Write them in each computer's local, uncommitted rules file (`<repo>/.claude/rules/delegation.md`, excluded through `.git/info/exclude`), not in the agents, skills or committed repository files. On pauli: lammpkeeper uses `~/miniconda3/envs/mlff/bin/python`.
 - ccx: Claude Code applies only the last `--settings` flag, so ccx merges a user `--settings` value into its own (user keys win except `hooks`, which are combined, and `statusLine`, which ccx keeps). Closing a tab removes its cache files; if a tab ends without that step (server killed, `C-a &`), ccx removes the files of tabs not open on any of the user's tmux servers at its next start (files changed in the last 10 minutes are kept).
+- ccx bypass default: no warning dialog on this machine because `~/.claude/settings.json` has `skipDangerousModePermissionPrompt: true`. On a machine without that key, expect Claude Code's bypass warning dialog when a ccx tab starts.
 - ccx PostToolUse hook runs async, so its records can arrive out of order. It replaces `<id>.last` only when the edit is newer (edit time = when the synchronous PreToolUse hook ran), under `flock`. Unit test 2026-11-03: 100 rounds of near-simultaneous main and worker edits, newest kept every time.
