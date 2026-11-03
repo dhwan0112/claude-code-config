@@ -4,7 +4,7 @@
 Reads ~/.cache/cc-panel/$CC_PANEL_ID.json (status line input, written by statusline-tee.sh) and
 $CC_PANEL_ID.orch (orchestration records, written by hook.sh) once a second, and redraws in place
 with cursor movement. On a pane size change it clears the screen first, so no stale lines remain.
-When the pane is too short, the lowest-priority rows are folded first (cache, lines, cost/updated,
+When the pane is too short, the lowest-priority rows are folded first (key help, cache, lines, cost/updated,
 limits); session, model, context and the orchestration section stay.
 """
 import json
@@ -29,7 +29,14 @@ YELLOW = "\033[33m"
 RED = "\033[31m"
 
 # Row priorities: 0 is never folded, higher numbers fold first
-P_MAIN, P_LIMITS, P_COST, P_LINES, P_CACHE = 0, 1, 2, 3, 4
+P_MAIN, P_LIMITS, P_COST, P_LINES, P_CACHE, P_KEYS = 0, 1, 2, 3, 4, 5
+# Key help shown at the bottom of the panel (folded first when the pane is short); the tab bar stays free for tabs
+KEYS = (  # (key, description, short description for narrow panes)
+    ("C-a c", "new tab", "new tab"), ("C-a C", "new tab in a folder…", "tab (dir)"), ("C-a S", "new tab (safe)", "safe tab"),
+    ("C-a n/p", "next/previous tab", "next/prev"), ("C-a z", "zoom pane", "zoom"), ("C-a d", "fold/unfold diff pane", "fold diff"),
+    ("C-a w", "save pane sizes", "save size"), ("C-a ←↑↓→", "resize panes", "resize"), ("C-a hjkl", "move between panes", "focus"),
+    ("C-a D", "detach", "detach"), ("C-a C-a", "send C-a", "send C-a"),
+)
 MAX_DONE = 6  # done workers shown
 DESC_LEN = 40  # at most this many columns of the task description for a running worker (less in narrow panes)
 
@@ -251,7 +258,7 @@ def rows(data, mtime, entries, width, compact, now):
     if data is None:
         out.append(("status", "대기 중 (첫 응답 후 표시)", DIM, P_MAIN))
         out += orch_rows(entries, width, compact, now)
-        return out
+        return out + key_rows(width, compact)
     name = data.get("session_name") or (data.get("session_id") or "-")[:8]
     out.append(("session", name, BOLD, P_MAIN))
     model = get(data, "model", "display_name") or get(data, "model", "id") or "-"
@@ -323,7 +330,19 @@ def rows(data, mtime, entries, width, compact, now):
     out.append(("lines", f"+{la if la is not None else '-'} -{lr if lr is not None else '-'}", "", P_LINES))
     age = int(now - mtime) if mtime else None
     out.append(("updated", f"{age}s ago" if age is not None else "-", DIM, P_COST))
-    return out
+    return out + key_rows(width, compact)
+
+
+def key_rows(width, compact):
+    """Key help: a blank row, then one row per key (label "keys" on the first). One row each, never wrapped: the
+    description is the long form when it fits the row, else the short form (cut to the room left when even that is long)."""
+    kw = max(width_of(k) for k, _, _ in KEYS)
+    room = max(0, width - (7 if compact else 9) - 2 - kw - 2)  # value width of to_lines minus the key column
+    rows = [("", "", "", P_KEYS)]
+    for i, (k, what, short) in enumerate(KEYS):
+        d = what if width_of(what) <= room else (cut(short, room) if room >= 4 else "")
+        rows.append(("keys" if i == 0 else "", f"{k}{' ' * (kw - width_of(k))}  {d}".rstrip(), DIM, P_KEYS))
+    return rows
 
 
 def wrap(text, width):
@@ -377,7 +396,7 @@ def fit(rowlist, width, height, compact):
     """Fold rows until they fit: lowest priority first, then the oldest done workers."""
     rowlist = list(rowlist)
     lines = to_lines(rowlist, width, compact)
-    prio = P_CACHE
+    prio = P_KEYS
     while len(lines) > height and prio > P_MAIN:
         rowlist = [r for r in rowlist if r[3] != prio]
         prio -= 1
