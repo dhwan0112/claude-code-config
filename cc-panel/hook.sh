@@ -45,8 +45,22 @@ case "$ev" in
     ;;
   post)
     [ -n "$path" ] || exit 0
-    tmp="$D/.$id.last.$$"
-    printf '%s\t%s\t%s\t%s\n' "$path" "$EPOCHREALTIME" "$key" "$agent" > "$tmp" && mv -f -- "$tmp" "$D/$id.last"
+    # Edit time = when the synchronous PreToolUse hook ran for this tool call (just before the edit).
+    # PostToolUse runs async, so posts can arrive out of order; keep only the newest edit.
+    ts=""
+    [ -n "$key" ] && IFS=$'\t' read -r _ _ _ ts < "$D/$id/snap/$key.meta" 2>/dev/null
+    [[ "$ts" =~ ^[0-9]+\.[0-9]{6}$ ]] || ts=$EPOCHREALTIME
+    last="$D/$id.last"
+    (
+      flock -w 2 9 || exit 0
+      old=""
+      [ -f "$last" ] && IFS=$'\t' read -r _ old _ < "$last"
+      if [[ "$old" =~ ^[0-9]+\.[0-9]{6}$ ]] && [ "${ts/./}" -le "${old/./}" ]; then
+        exit 0
+      fi
+      tmp="$D/.$id.last.$$"
+      printf '%s\t%s\t%s\t%s\n' "$path" "$ts" "$key" "$agent" > "$tmp" && mv -f -- "$tmp" "$last"
+    ) 9>"$last.lock"
     ;;
   substart|substop)
     [ -n "$aid" ] || exit 0

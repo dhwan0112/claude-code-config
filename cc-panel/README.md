@@ -15,10 +15,10 @@ ccx passes its hooks and status line to Claude Code with `--settings`, so only c
 | File | Role |
 |---|---|
 | `~/.local/bin/ccx` | Starts or reuses session `cc` on the `-L cc` server, adds a tab, splits it into three panes, gives each pane `CC_PANEL_ID` |
-| `ccx_settings.py` | Builds the `--settings` JSON (classic renderer, status line, hooks) and merges a user `--settings` value |
+| `ccx_settings.py` | Builds the `--settings` JSON (classic renderer, `autoCompactWindow` 180000, status line, hooks) and merges a user `--settings` value |
 | `left.sh` | Left pane: runs `claude`, then removes this tab's cache files and closes the tab |
 | `statusline-tee.sh` | Status line: saves the input JSON to `~/.cache/cc-panel/$CC_PANEL_ID.json` (atomic), then runs `~/.claude/statusline.sh` |
-| `hook.sh` | `pre`: snapshot before Write/Edit/NotebookEdit (skip over 2 MB, keep 20). `post`: record the last edited file and who edited it. `substart`/`substop`: running subagents. Never prints, always exits 0 |
+| `hook.sh` | `pre`: snapshot before Write/Edit/NotebookEdit (skip over 2 MB, keep 20). `post` (async): record the last edited file and who edited it, only if this edit is newer than the recorded one (edit time = when its `pre` hook ran; compare-and-replace under `flock`). `substart`/`substop`: running subagents. Never prints, always exits 0 |
 | `panel.py` | Right-top pane renderer (standard library only) |
 | `diffview.py` | Right-bottom pane renderer (standard library + `delta`) |
 | `tmux.conf` | Config for the `-L cc` server only |
@@ -32,6 +32,7 @@ Runtime data: `~/.cache/cc-panel/` (`<id>.json`, `<id>.last`, `<id>.agents`, `<i
 - Prefix is `C-a`; press `C-a C-a` to send a literal `C-a` to the program.
 - `C-a c` new tab (Claude Code in the current pane's directory) · `C-a n` / `C-a p` / `C-a <number>` switch tabs · `C-a z` zoom the current pane · mouse drag on borders resizes panes.
 - Diff pane (click it or `C-a` arrow keys to focus): `m` or `Tab` cycles views: last edit (default; snapshot before the edit vs now) → vs HEAD → whole working tree (includes changes made by Bash) · `j`/`k` line · `Space`/`b` page · `g`/`G` top/bottom · `r` refresh.
+- Auto-compaction: ccx sessions compact at about 180k tokens (`autoCompactWindow: 180000` in ccx's `--settings`; `/autocompact` in a ccx tab shows "180k tokens (from settings)"). Pass `--settings '{"autoCompactWindow": 300000}'` to use another value; other sessions are not affected.
 - `--settings` given to ccx is merged, not replaced: Claude Code applies only the last `--settings` flag, so ccx passes one merged value. Your keys win, except `hooks` (both sets run) and `statusLine` (ccx keeps its own and prints a warning).
 
 ## Requirements

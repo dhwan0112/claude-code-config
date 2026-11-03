@@ -28,6 +28,7 @@ def base():
     edit = "^(Write|Edit|NotebookEdit)$"
     return {
         "tui": "default",
+        "autoCompactWindow": 180000,  # compact at about 180k tokens in ccx sessions only; a user --settings value wins
         "statusLine": {"type": "command", "command": f'"{P}/statusline-tee.sh"', "refreshInterval": 3},
         "hooks": {
             "PreToolUse": hook("pre", edit),
