@@ -2,6 +2,8 @@
 
 - Date: 2026-11-03 20:40 +08
 - Source host: Pauli
+- Updated: 2026-11-03 23:45 +08 on kramers (advisor env hand edit, templates/delegation.md); files from Pauli unchanged
+- Updated: 2026-11-03 23:44 +08 on pauli (merged onto kramers' MANIFEST: `cc-panel/README.md` development note on merging before upload; the advisor env hand edit is now applied on pauli too)
 - Claude Code version on source host: 2.1.317
 - Minimum Claude Code version: 2.1.271 (`omitClaudeMd` in subagent frontmatter)
 - Mirrors the OpenCode baseline in ~/Dropbox/opencode-config/current (orchestrator + generic workers).
@@ -55,7 +57,7 @@ Claude Code in a separate tmux server (`tmux -L cc`), tabs on top. Default layou
 - e6045f9cb9a17a2b4204bbf76d0c42ad  cc-panel/newtab.sh
 - 5e233cb700798a792fd2e6b860db3eb4  cc-panel/panel.py
 - 560967310d44b5c9bc5aee760d497186  cc-panel/post.sh
-- 56a916f371af23dc56e22919e97d6825  cc-panel/README.md
+- 428522b457652a44c18eccf2be8e806f  cc-panel/README.md
 - dadfe4ba69cb3192472a3ed74cc804f7  cc-panel/statusline-tee.sh
 - b18f04d33ae194061ee0961b846367f0  cc-panel/tmux.conf
 - 9e7e10abea0d4ce90195213aa89c9cd1  bin/ccx
@@ -66,20 +68,27 @@ Requires `delta` 0.20.1 in `~/.local/bin` (not in this folder): download `delta-
 
 - `~/.claude/settings.json`: add to `permissions.ask`: `Bash(git push *)`, `Bash(git -C * push *)`, `Bash(gh pr merge *)`. Keep the other keys.
 - `~/.claude/settings.json`: add `"statusLine": {"type": "command", "command": "~/.claude/statusline.sh"}`.
-- Delegation rules for the main session: `<lammpkeeper repo>/.claude/rules/delegation.md` (the "Delegation to workers" section of the OpenCode AGENTS.md, adapted: Explore, SendMessage agent ID, no background wording). Add that path to the repo's `.git/info/exclude`. Do not create a CLAUDE.md there: it stops Claude Code from loading the repo's AGENTS.md.
+- `~/.claude/settings.json`: add `"env": {"CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "1"}`. This is the only switch that removes the `advisor` tool from worker requests on 2.1.317 (`disallowedTools: advisor` in the agent files does not); it also turns the advisor off for the main session. Verified on kramers 2026-11-03 (see Notes).
+- Delegation rules for the main session: copy `templates/delegation.md` (see below) to `<lammpkeeper repo>/.claude/rules/delegation.md` and replace the interpreter placeholder in its last line with the Python that imports numpy and lammpkeeper on that machine (the "Delegation to workers" section of the OpenCode AGENTS.md, adapted: Explore, SendMessage agent ID, no background wording). Add that path to the repo's `.git/info/exclude`. Do not create a CLAUDE.md there: it stops Claude Code from loading the repo's AGENTS.md.
+
+## Templates (copy by hand, then edit)
+
+- 4526714442287a734d094f012a40f28a  templates/delegation.md
+
+Pauli's `.claude/rules/delegation.md` with the interpreter in the last line replaced by a placeholder. On pauli the line names `~/miniconda3/envs/mlff/bin/python`; on kramers `/usr/bin/python3`.
 
 ## Apply on another computer
 
 1. Check `claude --version` (2.1.271 or later).
 2. Back up `~/.claude/agents` and `~/.claude/skills` if they exist. Leave `~/.claude/skills/synced/` alone (claude.ai account skills).
 3. Copy `agents/`, `skills/`, `statusline.sh` and `cc-panel/` from this folder into `~/.claude/`, and `bin/ccx` into `~/.local/bin/`. Copy, do not symlink. Make the scripts executable.
-4. Apply the two hand edits above.
+4. Apply the three `settings.json` hand edits above, and copy `templates/delegation.md` into the lammpkeeper repository as described there (edit the interpreter line, add it to `.git/info/exclude`).
 5. Compare md5 of the agent files with the values above.
 
 ## Notes
 
 - Claude Code applies changes to `~/.claude/settings.json` (documented) and `~/.claude/skills` (observed on 2.1.317) to running sessions without a restart. Check for running `claude` processes before you change them.
-- Advisor: with `advisorModel` set in user settings, subagents inherit the `advisor` tool (Opus). The agents set `disallowedTools: advisor`, but on 2.1.317 the tool was still attached to worker-fast and worker-deep requests (observed 2026-11-03). The only documented switch is `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`, which also turns the advisor off for the main session. Workers that have `Bash` did not get `Glob`/`Grep`.
+- Advisor: with `advisorModel` set in user settings, subagents inherit the `advisor` tool (Opus). The agents set `disallowedTools: advisor`, but on 2.1.317 the tool was still attached to worker-fast and worker-deep requests (observed 2026-11-03). The only documented switch is `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`, which also turns the advisor off for the main session. Verified on kramers 2026-11-03: with `"env": {"CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "1"}` in `~/.claude/settings.json` (and the variable absent from the shell), worker-readonly requests carried Glob/Grep/Read and worker-fast requests Bash/Edit/Read/Write, with no `advisor` tool. It is now one of the hand edits above. Workers that have `Bash` did not get `Glob`/`Grep`.
 - Auto-compaction default for 1M models is about 967K tokens. User settings are not changed; ccx sessions use `autoCompactWindow: 180000` through `--settings`. Other ways to lower it: `autoCompactWindow` in settings or `CLAUDE_CODE_AUTO_COMPACT_WINDOW`.
 - Interpreter paths are machine-specific. Write them in each computer's local, uncommitted rules file (`<repo>/.claude/rules/delegation.md`, excluded through `.git/info/exclude`), not in the agents, skills or committed repository files. On pauli: lammpkeeper uses `~/miniconda3/envs/mlff/bin/python`.
 - ccx: Claude Code applies only the last `--settings` flag, so ccx merges a user `--settings` value into its own (user keys win except `hooks`, which are combined, and `statusLine`, which ccx keeps). Closing a tab removes its cache files; if a tab ends without that step (server killed, `C-a &`), ccx removes the files of tabs not open on any of the user's tmux servers at its next start (files changed in the last 10 minutes are kept).
