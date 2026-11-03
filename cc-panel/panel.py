@@ -71,8 +71,8 @@ def level_color(pct):
     return RED if pct >= 80 else YELLOW if pct >= 50 else GREEN
 
 
-def rows(data, mtime, agents, width):
-    """Return a list of (label, value, color) rows."""
+def rows(data, mtime, agents, width, compact=False):
+    """Return a list of (label, value, color) rows. compact=True shortens values for narrow panes."""
     if data is None:
         return [("status", "대기 중 (첫 응답 후 표시)", DIM), ("workers", fmt_workers(agents), "")]
     out = []
@@ -94,7 +94,7 @@ def rows(data, mtime, agents, width):
         out.append(("context", "-", ""))
     else:
         p = int(pct)
-        barw = max(5, min(20, width - 34))
+        barw = max(5, min(12, width - 26)) if compact else max(5, min(20, width - 34))
         fill = round(p * barw / 100)
         bar = "█" * fill + "░" * (barw - fill)
         out.append(("context", (bar, f" {p}% {human(used)}/{human(size)}"), level_color(p)))
@@ -109,7 +109,7 @@ def rows(data, mtime, agents, width):
         limits.append((label, int(lp), when))
     if limits:
         for label, lp, when in limits:
-            out.append((label, f"{lp}% · resets {when}", level_color(lp)))
+            out.append((label, f"{lp}% · {when}" if compact else f"{lp}% · resets {when}", level_color(lp)))
     else:
         out.append(("7d", "-", DIM))
 
@@ -117,17 +117,20 @@ def rows(data, mtime, agents, width):
     if cost is None:
         out.append(("cost", "-", ""))
     elif data.get("rate_limits"):
-        out.append(("cost", f"~${cost:.2f} (API 환산 추정, 구독)", DIM))
+        out.append(("cost", f"~${cost:.2f} API est." if compact else f"~${cost:.2f} (API 환산 추정, 구독)", DIM))
     else:
-        out.append(("cost", f"${cost:.2f} (추정)", ""))
+        out.append(("cost", f"${cost:.2f} est." if compact else f"${cost:.2f} (추정)", ""))
 
     pc = data.get("prompt_cache") or {}
     if pc:
         state = "warm" if pc.get("warm") else "cold"
         hit = pc.get("hit_ratio")
         hit_s = f"{hit * 100:.0f}%" if isinstance(hit, (int, float)) else "-"
-        out.append(("cache", f"{state} · ttl {pc.get('ttl', '-')} · hit {hit_s} · miss {pc.get('misses', '-')}",
-                    GREEN if pc.get("warm") else YELLOW))
+        if compact:
+            value = f"{state} {pc.get('ttl', '-')} hit {hit_s} m{pc.get('misses', '-')}"
+        else:
+            value = f"{state} · ttl {pc.get('ttl', '-')} · hit {hit_s} · miss {pc.get('misses', '-')}"
+        out.append(("cache", value, GREEN if pc.get("warm") else YELLOW))
     else:
         out.append(("cache", "-", ""))
 
@@ -160,13 +163,21 @@ def wrap(text, width):
     return chunks
 
 
+# Narrower than this, the panel uses short labels and values
+COMPACT_BELOW = 56
+SHORT = {"session": "sess", "context": "ctx", "updated": "upd"}
+
+
 def render(width, height):
     data, mtime = load_json()
     agents = load_agents()
-    lab_w = 9
+    compact = width < COMPACT_BELOW
+    lab_w = 7 if compact else 9
     val_w = max(10, width - lab_w - 2)
     lines = []
-    for label, value, color in rows(data, mtime, agents, width):
+    for label, value, color in rows(data, mtime, agents, width, compact):
+        if compact:
+            label = SHORT.get(label, label)
         if isinstance(value, tuple):  # context bar: colored bar + plain text
             bar, rest = value
             text = bar + rest

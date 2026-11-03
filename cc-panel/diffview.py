@@ -24,6 +24,8 @@ LAST = os.path.join(D, f"{ID}.last")
 SNAP = os.path.join(D, ID, "snap")
 DELTA = shutil.which("delta") or os.path.expanduser("~/.local/bin/delta")
 MODES = ["edit", "head", "tree"]
+# Below this pane width the diff is drawn top/bottom (unified) instead of side by side
+SBS_MIN = int(os.environ.get("CCX_SBS_MIN", "110") or 110)
 LABEL = {"edit": "last edit", "head": "vs HEAD", "tree": "working tree"}
 
 R = "\033[0m"
@@ -128,11 +130,12 @@ def counts(udiff):
     return a, r
 
 
-def delta(udiff, width, files=False):
+def delta(udiff, width, files=False, side=True):
     if not udiff.strip():
         return []
     style = ["--file-style=bold yellow", "--file-decoration-style=yellow ul"] if files else ["--file-style=omit"]
-    rc, out = run([DELTA, "--side-by-side", "--line-numbers", "--dark", "--true-color=always",
+    layout = ["--side-by-side"] if side else []
+    rc, out = run([DELTA, *layout, "--line-numbers", "--dark", "--true-color=always",
                    "--paging=never", f"--width={width}", "--hunk-header-style=omit", *style],
                   inp=udiff)
     if rc != 0 or not out:
@@ -173,8 +176,10 @@ class View:
         a, r = counts(udiff)
         by = "" if mode == "tree" else f" · by {who}"
         tail = f" · {note}" if note else ""
-        self.header = f"[{LABEL[mode]}] {target} · +{a} -{r}{by}{tail}"
-        body = delta(udiff, width, files=(mode == "tree"))
+        side = width >= SBS_MIN
+        narrow = "" if side else f" · top/bottom (pane < {SBS_MIN} cols)"
+        self.header = f"[{LABEL[mode]}] {target} · +{a} -{r}{by}{narrow}{tail}"
+        body = delta(udiff, width, files=(mode == "tree"), side=side)
         if not body:
             body = [f"{DIM}(no changes){R}" if not note else f"{DIM}{note}{R}"]
         self.lines = body

@@ -1,17 +1,33 @@
 #!/usr/bin/env bash
 # ccx: open Claude Code in a tmux workspace on a separate tmux server (tmux -L cc).
-#   left: claude (classic renderer)   right top: context/token panel   right bottom: side-by-side diff
+# Layouts (CCX_LAYOUT):
+#   sidebar (default): left top claude · left bottom diff (CCX_DIFF, default 40%) · right full-height panel
+#                      (CCX_SIDEBAR, default 30%, at least 36 columns)
+#   split:             left claude · right top panel (14 rows) · right bottom diff
 # Usage: ccx [claude arguments...]
 #   Run outside tmux: creates or attaches to session "cc" and adds a new tab (window).
 #   Run inside the cc server (or C-a c): adds a tab and switches to it.
 #   Run inside another tmux server: adds the tab and prints the attach command.
-# Env: CCX_NO_ATTACH=1 (do not attach), CCX_SELECT=1 (select the new tab), CCX_SIZE=WxH (size of a new detached server)
+# Env: CCX_NO_ATTACH=1 (do not attach), CCX_SELECT=1 (select the new tab), CCX_SIZE=WxH (size of a new
+#      detached server), CCX_SOCKET=name (tmux -L socket, default cc), CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF
 set -euo pipefail
 
 P="$HOME/.claude/cc-panel"
 D="$HOME/.cache/cc-panel"
-SOCK=cc
+SOCK=${CCX_SOCKET:-cc}
+[[ "$SOCK" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "ccx: bad CCX_SOCKET" >&2; exit 2; }
 tm() { tmux -L "$SOCK" -f "$P/tmux.conf" "$@"; }
+
+layout=${CCX_LAYOUT:-sidebar}
+case "$layout" in sidebar|split) ;; *) echo "ccx: CCX_LAYOUT must be sidebar or split" >&2; exit 2 ;; esac
+
+# "30%" -> percent of total, "40" -> absolute cells
+cells() {
+  local spec=$1 total=$2
+  if [[ "$spec" =~ ^([0-9]+)%$ ]]; then echo $(( total * BASH_REMATCH[1] / 100 ))
+  elif [[ "$spec" =~ ^[0-9]+$ ]]; then echo "$spec"
+  else echo "ccx: bad size '$spec' (use N or N%)" >&2; exit 2; fi
+}
 
 dir=$PWD
 if top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null); then
@@ -35,9 +51,14 @@ while [ $# -gt 0 ]; do
 done
 
 mkdir -p "$D"
-# Prune cache files of tabs that are no longer open on the cc server (tagged with @ccx_id).
+# Prune cache files of tabs that are no longer open. A tab is open if any tmux server of this user
+# (any socket, so test servers and the cc server see each other) has a window tagged with its @ccx_id.
 # Files touched in the last 10 minutes are kept, so two quick launches cannot prune each other.
-live=$(tm list-windows -a -F '#{@ccx_id}' 2>/dev/null || true)
+live=""
+for s in "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)"/*; do
+  [ -S "$s" ] || continue
+  live+=$(tmux -S "$s" list-windows -a -F '#{@ccx_id}' 2>/dev/null || true)$'\n'
+done
 for f in "$D"/* "$D"/.[!.]*; do
   [ -e "$f" ] || continue
   b=$(basename "$f"); b=${b#.}; fid=${b%%.*}
@@ -63,10 +84,22 @@ fi
 
 gone() { echo "ccx: the Claude Code pane closed right away (claude exited); nothing to open" >&2; exit 0; }
 tm set-option -w -t "$win" @ccx_id "$id" 2>/dev/null || gone
+tm set-option -w -t "$win" @ccx_layout "$layout" 2>/dev/null || true
 left=$(tm display-message -p -t "$win" '#{pane_id}' 2>/dev/null) || gone
-right=$(tm split-window -d -h -l 50% -t "$left" -c "$dir" "${envs[@]}" -P -F '#{pane_id}' -- python3 "$P/panel.py" 2>/dev/null) || gone
-tm split-window -d -v -t "$right" -c "$dir" "${envs[@]}" -- python3 "$P/diffview.py" >/dev/null 2>&1 || gone
-tm resize-pane -t "$right" -y 14 2>/dev/null || true
+read -r ww wh < <(tm display-message -p -t "$win" '#{window_width} #{window_height}')
+
+if [ "$layout" = sidebar ]; then
+  side=$(cells "${CCX_SIDEBAR:-30%}" "$ww"); (( side < 36 )) && side=36
+  (( side > ww - 40 )) && side=$(( ww - 40 > 20 ? ww - 40 : 20 ))
+  diffh=$(cells "${CCX_DIFF:-40%}" "$wh"); (( diffh < 5 )) && diffh=5
+  (( diffh > wh - 8 )) && diffh=$(( wh - 8 > 3 ? wh - 8 : 3 ))
+  tm split-window -d -h -f -l "$side" -t "$left" -c "$dir" "${envs[@]}" -- python3 "$P/panel.py" >/dev/null 2>&1 || gone
+  tm split-window -d -v -l "$diffh" -t "$left" -c "$dir" "${envs[@]}" -- python3 "$P/diffview.py" >/dev/null 2>&1 || gone
+else
+  right=$(tm split-window -d -h -l 50% -t "$left" -c "$dir" "${envs[@]}" -P -F '#{pane_id}' -- python3 "$P/panel.py" 2>/dev/null) || gone
+  tm split-window -d -v -t "$right" -c "$dir" "${envs[@]}" -- python3 "$P/diffview.py" >/dev/null 2>&1 || gone
+  tm resize-pane -t "$right" -y 14 2>/dev/null || true
+fi
 tm select-pane -t "$left" 2>/dev/null || true
 
 in_cc_server=0
@@ -74,7 +107,7 @@ case "${TMUX:-}" in */"$SOCK",*) in_cc_server=1 ;; esac
 
 if [ -n "${CCX_NO_ATTACH:-}" ]; then
   [ -n "${CCX_SELECT:-}" ] && tm select-window -t "$win"
-  echo "ccx: opened tab $name ($win), id $id"
+  echo "ccx: opened tab $name ($win, layout $layout), id $id"
 elif [ "$in_cc_server" = 1 ]; then
   tm select-window -t "$win"
 elif [ -n "${TMUX:-}" ]; then

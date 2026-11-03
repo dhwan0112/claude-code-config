@@ -1,6 +1,6 @@
 # Claude Code worker baseline
 
-- Date: 2026-11-03 19:46 +08
+- Date: 2026-11-03 19:56 +08
 - Source host: Pauli
 - Claude Code version on source host: 2.1.317
 - Minimum Claude Code version: 2.1.271 (`omitClaudeMd` in subagent frontmatter)
@@ -45,17 +45,17 @@ Two lines: model · effort | directory | git branch (worktree), then a context b
 
 ## ccx workspace (copy `cc-panel/` to ~/.claude/cc-panel/, `bin/ccx` to ~/.local/bin/ccx)
 
-Claude Code in a separate tmux server (`tmux -L cc`): left Claude Code (classic renderer), right top context/token panel, right bottom side-by-side diff (delta), tabs on top. Hooks, status line and `autoCompactWindow: 180000` are passed with `--settings` by ccx only; `~/.claude/settings.json` is not changed. A user `--settings` value overrides `autoCompactWindow` for that tab. See `cc-panel/README.md` for use.
+Claude Code in a separate tmux server (`tmux -L cc`), tabs on top. Default layout `sidebar`: left top Claude Code (classic renderer), left bottom diff (delta; side by side from 110 columns, top/bottom below), right full-height context/token panel (30%, at least 36 columns). `CCX_LAYOUT=split` keeps the earlier layout. Pane size: `C-a` + arrow keys (repeatable); pane focus: `C-a h/j/k/l`. Hooks, status line and `autoCompactWindow: 180000` are passed with `--settings` by ccx only; `~/.claude/settings.json` is not changed. A user `--settings` value overrides `autoCompactWindow` for that tab. See `cc-panel/README.md` for use.
 
-- 79e759b350224b671d2d93990be8a2a0  cc-panel/README.md
+- 1f573202eb3982f8201344ec209953dd  cc-panel/README.md
 - d5504b38469956bc675d87759ebaa31e  cc-panel/ccx_settings.py
-- ba2345381d234fadd57ef09f6855d07b  cc-panel/diffview.py
+- 594107ff7fe9f45f93eb03bfdb27c0fa  cc-panel/diffview.py
 - 1aa4114e7feb738bc819d5167dc85e37  cc-panel/hook.sh
 - 06d46eb1d96bd603569d42cfc68aaf1d  cc-panel/left.sh
-- a784c9e8c22fc3ebe879dc467a68fcda  cc-panel/panel.py
+- 5e233cb700798a792fd2e6b860db3eb4  cc-panel/panel.py
 - 89e17eddbd32134371bb4921d20ce03a  cc-panel/statusline-tee.sh
-- 6b27b903d759d2f666822fc7cddc2444  cc-panel/tmux.conf
-- d0641961e9dbf6eed0acaa31dae463bd  bin/ccx
+- df63f106205cfac3bbbb5e8f948b6317  cc-panel/tmux.conf
+- 6efe9a0ebf1b73946f4262c4f250b17a  bin/ccx
 
 Requires `delta` 0.20.1 in `~/.local/bin` (not in this folder): download `delta-0.20.1-x86_64-unknown-linux-musl.tar.gz` from the dandavison/delta GitHub release and check sha256 69dcb4043f55c29118f408c6efd30115e0a4e0a6709253343b8c8fa814ab4a31 (GitHub asset digest; the project publishes no separate checksum file). Also `tmux` 3.2+, `jq`, `python3`.
 
@@ -79,5 +79,5 @@ Requires `delta` 0.20.1 in `~/.local/bin` (not in this folder): download `delta-
 - Advisor: with `advisorModel` set in user settings, subagents inherit the `advisor` tool (Opus). The agents set `disallowedTools: advisor`, but on 2.1.317 the tool was still attached to worker-fast and worker-deep requests (observed 2026-11-03). The only documented switch is `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`, which also turns the advisor off for the main session. Workers that have `Bash` did not get `Glob`/`Grep`.
 - Auto-compaction default for 1M models is about 967K tokens. User settings are not changed; ccx sessions use `autoCompactWindow: 180000` through `--settings`. Other ways to lower it: `autoCompactWindow` in settings or `CLAUDE_CODE_AUTO_COMPACT_WINDOW`.
 - Interpreter paths are machine-specific. Write them in each computer's local, uncommitted rules file (`<repo>/.claude/rules/delegation.md`, excluded through `.git/info/exclude`), not in the agents, skills or committed repository files. On pauli: lammpkeeper uses `~/miniconda3/envs/mlff/bin/python`.
-- ccx: Claude Code applies only the last `--settings` flag, so ccx merges a user `--settings` value into its own (user keys win except `hooks`, which are combined, and `statusLine`, which ccx keeps). Closing a tab removes its cache files; if the whole `cc` server is killed, ccx removes the files of tabs that are no longer open at its next start.
+- ccx: Claude Code applies only the last `--settings` flag, so ccx merges a user `--settings` value into its own (user keys win except `hooks`, which are combined, and `statusLine`, which ccx keeps). Closing a tab removes its cache files; if a tab ends without that step (server killed, `C-a &`), ccx removes the files of tabs not open on any of the user's tmux servers at its next start (files changed in the last 10 minutes are kept).
 - ccx PostToolUse hook runs async, so its records can arrive out of order. It replaces `<id>.last` only when the edit is newer (edit time = when the synchronous PreToolUse hook ran), under `flock`. Unit test 2026-11-03: 100 rounds of near-simultaneous main and worker edits, newest kept every time.
