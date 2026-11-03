@@ -17,7 +17,7 @@ import json
 import os
 import sys
 
-P = os.path.expanduser("~/.claude/cc-panel")
+P = os.environ.get("CCX_HOME") or os.path.expanduser("~/.claude/cc-panel")
 
 
 # ccx-only "ask" rules: destructive git/gh commands still ask in bypass mode (ask rules apply in every mode).
@@ -61,12 +61,14 @@ def base(bypass=False):
     return {
         "tui": "default",
         "autoCompactWindow": 180000,  # compact at about 180k tokens in ccx sessions only; a user --settings value wins
+        # statusline-tee.sh prints nothing (the status panel shows the data); it saves the JSON and renames the tab
         "statusLine": {"type": "command", "command": f'"{P}/statusline-tee.sh"', "refreshInterval": 3},
         "permissions": perms,
         "hooks": {
-            "PreToolUse": hook("pre", edit),
+            # Agent tool calls and subagent start/stop feed the orchestration section of the status panel
+            "PreToolUse": hook("pre", edit) + hook("agentpre", "^Agent$"),
             # post.sh rebuilds the file as this edit left it (.after), then runs "hook.sh post"
-            "PostToolUse": hook("", edit, background=True, script="post.sh"),
+            "PostToolUse": hook("", edit, background=True, script="post.sh") + hook("agentpost", "^Agent$", background=True),
             "SubagentStart": hook("substart"),
             "SubagentStop": hook("substop"),
         },

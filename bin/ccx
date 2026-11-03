@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ccx: open Claude Code in a tmux workspace on a separate tmux server (tmux -L cc).
 # Layouts (CCX_LAYOUT):
-#   sidebar (default): left top claude · left bottom diff (CCX_DIFF, default 40%) · right full-height panel
-#                      (CCX_SIDEBAR, default 30%, at least 36 columns)
-#   split:             left claude · right top panel (14 rows) · right bottom diff
+#   sidebar (default): left top claude · left bottom diff (CCX_DIFF, default 22%, at least 6 rows) · right
+#                      full-height status panel (CCX_SIDEBAR, default 22%, at least 36 columns)
+#   split:             left claude · right top status panel (14 rows) · right bottom diff
 # Usage: ccx [--safe] [claude arguments...]
 #   New tabs start in bypass permission mode (permissions.defaultMode in ccx's --settings). ccx --safe or
 #   CCX_SAFE=1 leaves it out, so the user's global defaultMode applies. A --permission-mode or
@@ -11,26 +11,43 @@
 #   ccx's --settings also adds "ask" rules for destructive git/gh commands (see ccx_settings.py).
 #   Run outside tmux: creates or attaches to session "cc" and adds a new tab (window).
 #   Run inside the cc server (or C-a c): adds a tab and switches to it.
-#   Run inside another tmux server: adds the tab and prints the attach command.
+#   Run inside another tmux server: adds the tab, renames that outer window to "ccx · <active tab>" (that
+#   window only; automatic-rename off for it) and prints the attach command.
 # Env: CCX_SAFE=1 (same as --safe), CCX_NO_ATTACH=1 (do not attach), CCX_SELECT=1 (select the new tab), CCX_SIZE=WxH (size of a new
-#      detached server), CCX_SOCKET=name (tmux -L socket, default cc), CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF
+#      detached server), CCX_SOCKET=name (tmux -L socket, default cc), CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF,
+#      CCX_HOME (folder with the cc-panel scripts, default ~/.claude/cc-panel; for testing a copy).
+# Defaults file: ~/.config/cc-panel/config ($XDG_CONFIG_HOME/cc-panel/config), lines KEY=value for
+#      CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF. Environment variables win. C-a w writes it (savesize.sh).
 set -euo pipefail
 
-P="$HOME/.claude/cc-panel"
+P=${CCX_HOME:-$HOME/.claude/cc-panel}
 D="$HOME/.cache/cc-panel"
 SOCK=${CCX_SOCKET:-cc}
 [[ "$SOCK" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "ccx: bad CCX_SOCKET" >&2; exit 2; }
+[ -d "$P" ] || { echo "ccx: no such folder: $P (CCX_HOME)" >&2; exit 2; }
 tm() { tmux -L "$SOCK" -f "$P/tmux.conf" "$@"; }
+
+# Defaults file: only the three keys, values letters/digits/./% only, no shell evaluation. Env wins.
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/cc-panel/config"
+if [ -f "$cfg" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%%#*}; line=${line//[[:space:]]/}
+    [[ "$line" =~ ^(CCX_LAYOUT|CCX_SIDEBAR|CCX_DIFF)=([A-Za-z0-9.%]+)$ ]] || continue
+    k=${BASH_REMATCH[1]}
+    [ -n "${!k:-}" ] || printf -v "$k" '%s' "${BASH_REMATCH[2]}"
+  done < "$cfg"
+fi
 
 layout=${CCX_LAYOUT:-sidebar}
 case "$layout" in sidebar|split) ;; *) echo "ccx: CCX_LAYOUT must be sidebar or split" >&2; exit 2 ;; esac
 
-# "30%" -> percent of total, "40" -> absolute cells
+# "30%" or "22.5%" -> percent of total (rounded), "40" -> absolute cells
 cells() {
   local spec=$1 total=$2
-  if [[ "$spec" =~ ^([0-9]+)%$ ]]; then echo $(( total * BASH_REMATCH[1] / 100 ))
+  if [[ "$spec" =~ ^([0-9]+)(\.([0-9]))?%$ ]]; then
+    echo $(( (total * (BASH_REMATCH[1] * 10 + ${BASH_REMATCH[3]:-0}) + 500) / 1000 ))
   elif [[ "$spec" =~ ^[0-9]+$ ]]; then echo "$spec"
-  else echo "ccx: bad size '$spec' (use N or N%)" >&2; exit 2; fi
+  else echo "ccx: bad size '$spec' (use N, N% or N.N%)" >&2; exit 2; fi
 }
 
 dir=$PWD
@@ -80,10 +97,10 @@ for f in "$D"/* "$D"/.[!.]*; do
   [ -n "$(find "$f" -maxdepth 0 -mmin -10 2>/dev/null)" ] && continue
   rm -rf -- "$f"
 done
-python3 "$P/ccx_settings.py" "$user_settings" $mode_arg > "$D/$id.settings.json"
+CCX_HOME=$P python3 "$P/ccx_settings.py" "$user_settings" $mode_arg > "$D/$id.settings.json"
 
 # CCX_TAB_RENAME=1: statusline-tee.sh renames this tab after the session name (tabs opened before it lack it)
-envs=(-e "CC_PANEL_ID=$id" -e "CC_PANEL_DIR=$dir" -e "CCX_TAB_RENAME=1")
+envs=(-e "CC_PANEL_ID=$id" -e "CC_PANEL_DIR=$dir" -e "CCX_TAB_RENAME=1" -e "CCX_HOME=$P")
 
 if tm has-session -t "=cc" 2>/dev/null; then
   win=$(tm new-window -d -P -F '#{window_id}' -t "=cc:" -n "$name" -c "$dir" "${envs[@]}" -- "$P/left.sh" "${args[@]}")
@@ -95,6 +112,10 @@ else
   fi
   win=$(tm new-session -d -P -F '#{window_id}' -s cc -n "$name" -c "$dir" -x "${size%x*}" -y "${size#*x}" "${envs[@]}" -- "$P/left.sh" "${args[@]}")
 fi
+# Where tmux.conf bindings find the scripts and this launcher (server options, so a test copy works too)
+self=$(readlink -f -- "$0" 2>/dev/null || echo "$0")
+tm set-option -s @ccx_home "$P" 2>/dev/null || true
+tm set-option -s @ccx_bin "$self" 2>/dev/null || true
 
 gone() { echo "ccx: the Claude Code pane closed right away (claude exited); nothing to open" >&2; exit 0; }
 tm set-option -w -t "$win" @ccx_id "$id" 2>/dev/null || gone
@@ -103,32 +124,52 @@ tm set-option -w -t "$win" @ccx_perm "$perm" 2>/dev/null || true
 tm set-option -w -t "$win" @ccx_name0 "$name" 2>/dev/null || true
 tm set-option -w -t "$win" automatic-rename off 2>/dev/null || true
 left=$(tm display-message -p -t "$win" '#{pane_id}' 2>/dev/null) || gone
+tm set-option -p -t "$left" @ccx_role claude 2>/dev/null || true
 read -r ww wh < <(tm display-message -p -t "$win" '#{window_width} #{window_height}')
 
+# Pane roles (@ccx_role: claude, panel, diff) let savesize.sh (C-a w) and togglediff.sh (C-a d) find the panes.
 if [ "$layout" = sidebar ]; then
-  side=$(cells "${CCX_SIDEBAR:-30%}" "$ww"); (( side < 36 )) && side=36
+  side=$(cells "${CCX_SIDEBAR:-22%}" "$ww"); (( side < 36 )) && side=36
   (( side > ww - 40 )) && side=$(( ww - 40 > 20 ? ww - 40 : 20 ))
-  diffh=$(cells "${CCX_DIFF:-40%}" "$wh"); (( diffh < 5 )) && diffh=5
+  diffh=$(cells "${CCX_DIFF:-22%}" "$wh"); (( diffh < 6 )) && diffh=6
   (( diffh > wh - 8 )) && diffh=$(( wh - 8 > 3 ? wh - 8 : 3 ))
-  tm split-window -d -h -f -l "$side" -t "$left" -c "$dir" "${envs[@]}" -- python3 "$P/panel.py" >/dev/null 2>&1 || gone
-  tm split-window -d -v -l "$diffh" -t "$left" -c "$dir" "${envs[@]}" -- python3 "$P/diffview.py" >/dev/null 2>&1 || gone
+  panel=$(tm split-window -d -h -f -l "$side" -t "$left" -c "$dir" "${envs[@]}" -P -F '#{pane_id}' -- python3 "$P/panel.py" 2>/dev/null) || gone
+  diffp=$(tm split-window -d -v -l "$diffh" -t "$left" -c "$dir" "${envs[@]}" -P -F '#{pane_id}' -- python3 "$P/diffview.py" 2>/dev/null) || gone
 else
-  right=$(tm split-window -d -h -l 50% -t "$left" -c "$dir" "${envs[@]}" -P -F '#{pane_id}' -- python3 "$P/panel.py" 2>/dev/null) || gone
-  tm split-window -d -v -t "$right" -c "$dir" "${envs[@]}" -- python3 "$P/diffview.py" >/dev/null 2>&1 || gone
-  tm resize-pane -t "$right" -y 14 2>/dev/null || true
+  panel=$(tm split-window -d -h -l 50% -t "$left" -c "$dir" "${envs[@]}" -P -F '#{pane_id}' -- python3 "$P/panel.py" 2>/dev/null) || gone
+  diffp=$(tm split-window -d -v -t "$panel" -c "$dir" "${envs[@]}" -P -F '#{pane_id}' -- python3 "$P/diffview.py" 2>/dev/null) || gone
+  tm resize-pane -t "$panel" -y 14 2>/dev/null || true
 fi
+tm set-option -p -t "$panel" @ccx_role panel 2>/dev/null || true
+tm set-option -p -t "$diffp" @ccx_role diff 2>/dev/null || true
 tm select-pane -t "$left" 2>/dev/null || true
 
 in_cc_server=0
 case "${TMUX:-}" in */"$SOCK",*) in_cc_server=1 ;; esac
 
+# Nested in another tmux server: rename the outer window (the one this shell runs in) to "ccx", turn
+# automatic-rename off for that window only, and let the cc server keep it at "ccx · <active tab>"
+# (outer-title.sh, run by hooks in tmux.conf; the target is kept in the server option @ccx_outer).
+if [ "$in_cc_server" = 0 ] && [ -n "${TMUX:-}" ] && [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]]; then
+  osock=${TMUX%%,*}
+  # Not when the outer server is itself a ccx server (@ccx_home set): its tabs keep their own names.
+  if [ -S "$osock" ] && [ -z "$(tmux -S "$osock" show-options -sqv @ccx_home 2>/dev/null)" ] \
+     && owin=$(tmux -S "$osock" display-message -p -t "$TMUX_PANE" '#{window_id}' 2>/dev/null); then
+    tmux -S "$osock" set-option -w -t "$owin" automatic-rename off 2>/dev/null || true
+    tmux -S "$osock" rename-window -t "$owin" -- ccx 2>/dev/null || true
+    tm set-option -s @ccx_outer "$osock"$'\t'"$owin" 2>/dev/null || true
+  fi
+fi
+
 if [ -n "${CCX_NO_ATTACH:-}" ]; then
   [ -n "${CCX_SELECT:-}" ] && tm select-window -t "$win"
+  "$P/outer-title.sh" "$SOCK" 2>/dev/null || true
   echo "ccx: opened tab $name ($win, layout $layout, permissions $perm), id $id"
 elif [ "$in_cc_server" = 1 ]; then
   tm select-window -t "$win"
 elif [ -n "${TMUX:-}" ]; then
   tm select-window -t "$win"
+  "$P/outer-title.sh" "$SOCK" 2>/dev/null || true
   echo "ccx: opened tab $name. You are inside another tmux server; attach with:"
   echo "  TMUX= tmux -L $SOCK attach -t cc"
 else

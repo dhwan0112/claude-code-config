@@ -5,13 +5,17 @@
 Layout `sidebar` (default):
 
 - left top: Claude Code with the classic renderer (no built-in diff panel)
-- left bottom: diff (delta), height `CCX_DIFF` (default `40%`)
-- right, full height: context and token panel, width `CCX_SIDEBAR` (default `30%`, at least 36 columns)
+- left bottom: diff pane (delta), height `CCX_DIFF` (default `22%`, at least 6 rows)
+- right, full height: **status panel** (session, context, orchestration, limits, cost), width `CCX_SIDEBAR` (default `22%`, at least 36 columns)
 
-Layout `split` (`CCX_LAYOUT=split ccx`): left Claude Code · right top panel (14 rows) · right bottom diff.
+Layout `split` (`CCX_LAYOUT=split ccx`): left Claude Code · right top status panel (14 rows) · right bottom diff pane.
 
-`CCX_SIDEBAR` and `CCX_DIFF` take a percentage (`35%`) or a cell count (`50`). The layout applies to tabs opened after the change; open tabs keep theirs.
-The top bar shows the tabs.
+`CCX_SIDEBAR` and `CCX_DIFF` take a percentage (`35%`, `19.5%`) or a cell count (`50`). Defaults can also come from `~/.config/cc-panel/config`
+(lines `CCX_LAYOUT=`, `CCX_SIDEBAR=`, `CCX_DIFF=`; `#` comments; environment variables win). `C-a w` writes the current tab's status panel width and
+diff height to that file. The layout applies to tabs opened after the change; open tabs keep theirs. `C-a d` collapses the diff pane of the current
+tab to 6 rows and expands it again (to its previous height).
+The top bar shows the tabs. Claude Code draws no status line of its own in ccx tabs (the status panel shows that data); the terminal title and,
+when ccx runs inside another tmux, that outer window are named `ccx · <active tab>`.
 
 New tabs start in **bypass permissions** mode (see Permissions below). Nothing here changes `~/.claude/settings.json`, `~/.claude/statusline.sh` or `~/.tmux.conf`.
 ccx passes its hooks and status line to Claude Code with `--settings`, so only ccx sessions run them.
@@ -20,28 +24,31 @@ ccx passes its hooks and status line to Claude Code with `--settings`, so only c
 
 | File | Role |
 |---|---|
-| `~/.local/bin/ccx` | Starts or reuses session `cc` on the `-L cc` server (`CCX_SOCKET` to use another socket), adds a tab, splits it into three panes in the chosen layout, gives each pane `CC_PANEL_ID` |
+| `~/.local/bin/ccx` | Starts or reuses session `cc` on the `-L cc` server (`CCX_SOCKET` to use another socket), adds a tab, splits it into three panes in the chosen layout (pane option `@ccx_role`: `claude`, `panel`, `diff`), gives each pane `CC_PANEL_ID`. Reads defaults from `~/.config/cc-panel/config`. Scripts live in `CCX_HOME` (default `~/.claude/cc-panel`; the server options `@ccx_home` and `@ccx_bin` tell `tmux.conf` where). Nested in another tmux: renames that outer window to `ccx`, turns `automatic-rename` off for that window only, and records it in `@ccx_outer` |
 | `ccx_settings.py` | Builds the `--settings` JSON (classic renderer, `autoCompactWindow` 180000, status line, hooks, ccx `ask` rules, `defaultMode: bypassPermissions` unless safe) and merges a user `--settings` value |
 | `newtab.sh` | Opens a ccx tab on a given tmux socket and folder; used by `C-a C`, `C-a S` and the `+` / `safe` buttons. `--once` drops repeated clicks (lock plus 1.5 s cooldown) |
 | `left.sh` | Left pane: runs `claude`, then removes this tab's cache files and closes the tab |
-| `statusline-tee.sh` | Status line: saves the input JSON to `~/.cache/cc-panel/$CC_PANEL_ID.json` (atomic), renames the tab after the session name when it changed (tabs started with `CCX_TAB_RENAME=1`), then runs `~/.claude/statusline.sh` |
-| `hook.sh` | `pre`: snapshot before Write/Edit/NotebookEdit (skip over 2 MB, keep 20). `post` (async): record the last edited file and who edited it, only if this edit is newer than the recorded one (edit time = when its `pre` hook ran; compare-and-replace under `flock`). `substart`/`substop`: running subagents. Never prints, always exits 0 |
+| `statusline-tee.sh` | Status line command of ccx sessions: saves the input JSON to `~/.cache/cc-panel/$CC_PANEL_ID.json` (atomic), renames the tab after the session name when it changed (tabs started with `CCX_TAB_RENAME=1`), and prints nothing, so Claude Code shows no status line in ccx tabs (empty output = no status line, verified with 2.1.317). Without `CC_PANEL_ID` it runs `~/.claude/statusline.sh` unchanged |
+| `hook.sh` | `pre`: snapshot before Write/Edit/NotebookEdit (skip over 2 MB, keep 20). `post` (async): record the last edited file and who edited it, only if this edit is newer than the recorded one (edit time = when its `pre` hook ran; compare-and-replace under `flock`). `agentpre`/`agentpost` (PreToolUse/PostToolUse of the Agent tool) and `substart`/`substop` (SubagentStart/SubagentStop): orchestration records in `<id>.orch` (type, description, start/end, `STATUS: verified|blocked|needs_review` line of the worker's report, else `-`). Never prints, always exits 0 |
 | `post.sh` | Async PostToolUse hook: runs `apply_edit.py`, then `hook.sh post` |
 | `apply_edit.py` | Writes `<snap>/<tool_use_id>.after`: the pre-edit snapshot with this tool call applied (Edit: old→new, every occurrence with `replace_all`; Write: the content). Skipped when `old_string` is not in the snapshot, for NotebookEdit, non-UTF-8 files and results over 2 MB. Pruned with its snapshot (last 20) |
-| `panel.py` | Panel renderer (standard library only). Below 56 columns it switches to short labels and values, for example `7d 16% · 11-05 01:00` |
-| `diffview.py` | Diff renderer (standard library + `delta`). Side by side when the pane is at least 110 columns wide (`CCX_SBS_MIN`), otherwise top/bottom with a note in the header; it switches back when the pane gets wider (resize or `C-a z`) |
-| `tmux.conf` | Config for the `-L cc` server only |
+| `panel.py` | Status panel renderer (standard library only). Sections: `sess`, `model`, `ctx`, `workers` (orchestration: summary, running `●` lines with elapsed time and the first 40 characters of the description, last 6 finished `✓ verified` / `✗ blocked` / `? needs_review` / `- no STATUS`; in interactive sessions the Agent tool returns at once (`async_launched`) and the worker stays `●` until its SubagentStop, whose last message carries the STATUS; stop records of Claude Code's internal agents, which have no `agent_type`, are not shown; below 44 columns the duration is left out; a running worker takes one row (its description is cut to the room left) and other values wrap at spaces), `limits` (every window under `rate_limits` in the status line JSON as `name · used% · reset time`; `5h` and `7d all` always listed, `-` when absent), `cost`, `cache`, `lines`, `upd`. When the pane is short, `cache`, `lines`, `cost` and `limits` fold first, then old finished workers; the orchestration lines stay. Below 56 columns it switches to short labels |
+| `diffview.py` | Diff pane renderer (standard library + `delta`). Side by side when the pane is at least 110 columns wide (`CCX_SBS_MIN`), otherwise top/bottom with a note in the header; it switches back when the pane gets wider (resize or `C-a z`). The header is cut by display width (wide characters count 2) and the screen is cleared and recomputed at once when the pane size changes |
+| `savesize.sh` | `C-a w`: writes the current tab's status panel width and diff height (percent, one decimal) as `CCX_SIDEBAR` / `CCX_DIFF` to `~/.config/cc-panel/config`, keeping other lines |
+| `togglediff.sh` | `C-a d`: collapses the diff pane to 6 rows or expands it to the height saved in the window option `@ccx_diffh` (else 22 % of the window, at least 12 rows) |
+| `outer-title.sh` | Keeps the outer tmux window (recorded in `@ccx_outer`) named `ccx · <active tab>`; run by tmux hooks (window changed/renamed/closed) and by ccx |
+| `tmux.conf` | Config for the `-L cc` server only (prefix `C-a`, `set-titles` `ccx · <tab>`, bindings, hooks) |
 
-Runtime data: `~/.cache/cc-panel/` (`<id>.json`, `<id>.last`, `<id>.agents`, `<id>.tabname`, `<id>/snap/` with `.snap`/`.meta`/`.after`, `<id>.settings.json`).
+Runtime data: `~/.cache/cc-panel/` (`<id>.json`, `<id>.last`, `<id>.orch`, `<id>.tabname`, `<id>/snap/` with `.snap`/`.meta`/`.after`, `<id>.settings.json`). `<id>.orch` lives as long as the tab (it survives `/clear`, `-c` and session changes in that tab) and is removed with the tab.
 
 ## Use
 
 - Start: `ccx` (extra arguments go to `claude`, for example `ccx --model sonnet`, `ccx -c`).
-- Inside another tmux server, ccx adds the tab and prints `TMUX= tmux -L cc attach -t cc`.
+- Inside another tmux server, ccx adds the tab, renames the outer window it runs in to `ccx · <active tab>` (that window only; the outer server's config is not touched; not when the outer server is itself a ccx server) and prints `TMUX= tmux -L cc attach -t cc`. The `cc` server also sets the terminal title to `ccx · <active tab>`.
 - Prefix is `C-a`; press `C-a C-a` to send a literal `C-a` to the program.
 - New tab: `C-a c` (current pane's directory) · `C-a C` (asks for a folder; default is the current pane's, `~` works; a missing folder only shows a message) · `C-a S` (current directory, `--safe`) · click `+` on the top bar (same as `C-a c`) or `safe` next to it (same as `C-a S`). Repeated clicks within 1.5 s open one tab.
 - Tab names start as `repo:branch` (or the folder name) and then follow the session name (`/rename`, or the title Claude Code gives the session), up to 20 characters, with `#`, `;`, quotes, backslash, `$`, backtick, braces and control characters removed. An empty session name puts the first name back.
-- `C-a n` / `C-a p` / `C-a <number>` switch tabs · `C-a z` zoom the current pane.
+- `C-a n` / `C-a p` / `C-a <number>` switch tabs · `C-a z` zoom the current pane · `C-a d` collapse/expand the diff pane · `C-a w` save the current status panel width and diff height as defaults · `C-a D` detach.
 - Pane size: `C-a` then arrow keys (press the arrow again within 600 ms to repeat, no prefix needed), or drag borders with the mouse.
 - Pane focus: `C-a h`/`j`/`k`/`l`, `C-a o`, or click. (Arrow keys resize instead of moving focus; `C-a l` no longer jumps to the last window.)
 - Diff pane (focus it first): `m` or `Tab` cycles views: last edit (default; snapshot before the edit vs that snapshot with the edit applied, so later changes to the file do not show; marked `(current file)` when it falls back to the file as it is now) → vs HEAD → whole working tree (includes changes made by Bash) · `j`/`k` line · `Space`/`b` page · `g`/`G` top/bottom · `r` refresh.
@@ -78,5 +85,6 @@ Runtime data: `~/.cache/cc-panel/` (`<id>.json`, `<id>.last`, `<id>.agents`, `<i
 
 ## Development notes
 
-- Test in `~/.cache/ccx-testdir` only, with a separate socket (`CCX_SOCKET=ccxt`, `tmux -L ccxt ...`), and kill that server afterwards. The folder is trusted once in `~/.claude.json`; a new folder for every test adds a trust entry each time. Empty the folder after a test but keep it.
+- Test in `~/.cache/ccx-testdir` only, with a separate socket (`CCX_SOCKET=ccxt`, `tmux -L ccxt ...`), and kill that server afterwards. A staged copy runs with `CCX_HOME=<copy>/cc-panel <copy>/bin/ccx` (hooks, status line, scripts and bindings then all come from the copy). Run test launches with `TMUX=` unset (or from outside tmux): inside a ccx tab, the nested branch would otherwise rename that live tab. The folder is trusted once in `~/.claude.json`; a new folder for every test adds a trust entry each time. Empty the folder after a test but keep it.
 - Do not reload the `cc` server or edit `hook.sh` / `left.sh` / `statusline-tee.sh` in place while tabs run: write a new file and `mv` it over the old one.
+- Publishing to the baseline (`~/Dropbox/claude-code-config/current`): other computers edit it too. First read the current `MANIFEST.md` there and compare `current/` with your last snapshot in `history/`. Start your staging copy from `current/` and merge your changes into it (MANIFEST text, md5 lines, files such as `templates/`). Then upload it. Never upload a stale staging copy over `current/`.

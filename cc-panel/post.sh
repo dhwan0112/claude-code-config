@@ -7,7 +7,7 @@
 exec >/dev/null 2>&1
 [ -n "${CC_PANEL_ID:-}" ] || exit 0
 input=$(cat) || exit 0
-P="$HOME/.claude/cc-panel"
+P=${CCX_HOME:-$HOME/.claude/cc-panel}
 python3 "$P/apply_edit.py" <<<"$input"
 "$P/hook.sh" post <<<"$input"
 exit 0

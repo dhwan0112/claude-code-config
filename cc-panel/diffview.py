@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""ccx right-bottom pane: side-by-side diff with delta. Standard library only (plus the delta binary).
+"""ccx diff pane (left bottom in the sidebar layout): side-by-side diff with delta. Standard library only
+(plus the delta binary).
 
 Views (key m or Tab cycles):
   edit  last edit only: snapshot taken by the PreToolUse hook vs the snapshot with that tool call applied
@@ -7,6 +8,9 @@ Views (key m or Tab cycles):
   head  last edited file vs git HEAD
   tree  whole working tree vs HEAD, untracked files included (shows Bash-made changes too)
 Keys: m/Tab view · j/k line · Space/b page · g/G top/bottom · r refresh
+Redraw: the frame is rewritten only when it changes. On a pane size change the screen is cleared first and
+the diff is recomputed for the new width right away, so lines of the old width never stay on screen
+(they wrapped and left the header drawn several times).
 """
 import os
 import select
@@ -17,6 +21,7 @@ import sys
 import termios
 import time
 import tty
+import unicodedata
 
 ID = os.environ.get("CC_PANEL_ID", "")
 START_DIR = os.environ.get("CC_PANEL_DIR", os.getcwd())
@@ -32,6 +37,24 @@ LABEL = {"edit": "last edit", "head": "vs HEAD", "tree": "working tree"}
 R = "\033[0m"
 INV = "\033[7m"
 DIM = "\033[2m"
+
+
+def width_of(s):
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+
+
+def cut_left(s, w):
+    """Keep the right end of s within display width w, with a leading …"""
+    if w <= 1:
+        return ""
+    out, used = "", 0
+    for c in reversed(s):
+        cw = 2 if unicodedata.east_asian_width(c) in "WF" else 1
+        if used + cw > w - 1:
+            break
+        out = c + out
+        used += cw
+    return "…" + out
 
 
 def run(cmd, cwd=None, inp=None):
@@ -200,12 +223,12 @@ class View:
         hint = " m:view j/k space/b"
         head = self.header
         room = width - len(hint)
-        if len(head) > room:
-            head = "…" + head[-(room - 1):] if room > 1 else ""
-        top = INV + head.ljust(room) + hint + R
+        if width_of(head) > room:
+            head = cut_left(head, room)
+        top = INV + head + " " * max(0, room - width_of(head)) + hint + R
         h = max(1, height - 1)
         self.scroll = max(0, min(self.scroll, max(0, len(self.lines) - h)))
-        body = self.lines[self.scroll:self.scroll + h]
+        body = self.lines[self.scroll:self.scroll + h] if height > 1 else []  # 1 row: header only
         frame = "\033[H" + top + "\033[K"
         for ln in body:
             frame += "\r\n" + ln + R + "\033[K"
@@ -258,10 +281,18 @@ def main():
     signal.signal(signal.SIGHUP, bye)
     v = View()
     next_check = 0.0
+    last_size = None
     try:
         while True:
             size = shutil.get_terminal_size((100, 40))
             now = time.time()
+            if size != last_size:
+                # resized (window size, C-a z, arrows): wipe the reflowed old lines and recompute now
+                sys.stdout.write("\033[2J\033[H")
+                sys.stdout.flush()
+                v.frame = None
+                next_check = 0.0
+                last_size = size
             if now >= next_check:
                 v.compute(size.columns)
                 next_check = now + 1.0

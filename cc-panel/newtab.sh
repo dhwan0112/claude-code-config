@@ -32,6 +32,7 @@ if [ "$once" = 1 ]; then
   echo "$now" > "$lock.t"
 fi
 cd "$dir" || { msg "ccx: cannot enter $dir"; exit 0; }
-CCX_SAFE= CCX_SOCKET=$sock CCX_NO_ATTACH=1 CCX_SELECT=1 "$HOME/.local/bin/ccx" "${safe[@]}" >/dev/null 2>&1 \
+ccx=$(tmux -L "$sock" show-options -sv @ccx_bin 2>/dev/null); [ -x "$ccx" ] || ccx="$HOME/.local/bin/ccx"
+CCX_SAFE= CCX_SOCKET=$sock CCX_NO_ATTACH=1 CCX_SELECT=1 "$ccx" "${safe[@]}" >/dev/null 2>&1 \
   || msg "ccx: could not open a tab in $dir"
 exit 0
