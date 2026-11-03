@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# ccx: open Claude Code in a tmux workspace on a separate tmux server (tmux -L cc).
+#   left: claude (classic renderer)   right top: context/token panel   right bottom: side-by-side diff
+# Usage: ccx [claude arguments...]
+#   Run outside tmux: creates or attaches to session "cc" and adds a new tab (window).
+#   Run inside the cc server (or C-a c): adds a tab and switches to it.
+#   Run inside another tmux server: adds the tab and prints the attach command.
+# Env: CCX_NO_ATTACH=1 (do not attach), CCX_SELECT=1 (select the new tab), CCX_SIZE=WxH (size of a new detached server)
+set -euo pipefail
+
+P="$HOME/.claude/cc-panel"
+D="$HOME/.cache/cc-panel"
+SOCK=cc
+tm() { tmux -L "$SOCK" -f "$P/tmux.conf" "$@"; }
+
+dir=$PWD
+if top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null); then
+  br=$(git -C "$dir" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$dir" rev-parse --short HEAD 2>/dev/null || echo "-")
+  name="$(basename "$top"):$br"
+else
+  name=$(basename "$dir")
+fi
+
+id="$(date +%Y%m%d%H%M%S)-$$-$RANDOM"
+
+# Separate the user's --settings (merged into ours; Claude Code honors only the last --settings flag)
+user_settings=""
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --settings) [ $# -ge 2 ] || { echo "ccx: --settings needs a value" >&2; exit 2; }; user_settings=$2; shift 2 ;;
+    --settings=*) user_settings=${1#--settings=}; shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+
+mkdir -p "$D"
+# Prune cache files of tabs that are no longer open on the cc server (tagged with @ccx_id).
+# Files touched in the last 10 minutes are kept, so two quick launches cannot prune each other.
+live=$(tm list-windows -a -F '#{@ccx_id}' 2>/dev/null || true)
+for f in "$D"/* "$D"/.[!.]*; do
+  [ -e "$f" ] || continue
+  b=$(basename "$f"); b=${b#.}; fid=${b%%.*}
+  [[ "$fid" =~ ^[0-9]{14}-[0-9]+-[0-9]+$ ]] || continue
+  grep -qxF -- "$fid" <<<"$live" && continue
+  [ -n "$(find "$f" -maxdepth 0 -mmin -10 2>/dev/null)" ] && continue
+  rm -rf -- "$f"
+done
+python3 "$P/ccx_settings.py" "$user_settings" > "$D/$id.settings.json"
+
+envs=(-e "CC_PANEL_ID=$id" -e "CC_PANEL_DIR=$dir")
+
+if tm has-session -t "=cc" 2>/dev/null; then
+  win=$(tm new-window -d -P -F '#{window_id}' -t "=cc:" -n "$name" -c "$dir" "${envs[@]}" -- "$P/left.sh" "${args[@]}")
+else
+  if [ -z "${CCX_NO_ATTACH:-}" ] && [ -z "${TMUX:-}" ] && [ -t 1 ]; then
+    size="$(tput cols)x$(tput lines)"
+  else
+    size=${CCX_SIZE:-240x60}
+  fi
+  win=$(tm new-session -d -P -F '#{window_id}' -s cc -n "$name" -c "$dir" -x "${size%x*}" -y "${size#*x}" "${envs[@]}" -- "$P/left.sh" "${args[@]}")
+fi
+
+gone() { echo "ccx: the Claude Code pane closed right away (claude exited); nothing to open" >&2; exit 0; }
+tm set-option -w -t "$win" @ccx_id "$id" 2>/dev/null || gone
+left=$(tm display-message -p -t "$win" '#{pane_id}' 2>/dev/null) || gone
+right=$(tm split-window -d -h -l 50% -t "$left" -c "$dir" "${envs[@]}" -P -F '#{pane_id}' -- python3 "$P/panel.py" 2>/dev/null) || gone
+tm split-window -d -v -t "$right" -c "$dir" "${envs[@]}" -- python3 "$P/diffview.py" >/dev/null 2>&1 || gone
+tm resize-pane -t "$right" -y 14 2>/dev/null || true
+tm select-pane -t "$left" 2>/dev/null || true
+
+in_cc_server=0
+case "${TMUX:-}" in */"$SOCK",*) in_cc_server=1 ;; esac
+
+if [ -n "${CCX_NO_ATTACH:-}" ]; then
+  [ -n "${CCX_SELECT:-}" ] && tm select-window -t "$win"
+  echo "ccx: opened tab $name ($win), id $id"
+elif [ "$in_cc_server" = 1 ]; then
+  tm select-window -t "$win"
+elif [ -n "${TMUX:-}" ]; then
+  tm select-window -t "$win"
+  echo "ccx: opened tab $name. You are inside another tmux server; attach with:"
+  echo "  TMUX= tmux -L $SOCK attach -t cc"
+else
+  tm select-window -t "$win"
+  exec tmux -L "$SOCK" -f "$P/tmux.conf" attach-session -t "=cc"
+fi
