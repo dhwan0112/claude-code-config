@@ -3,7 +3,6 @@
 - Date: 2026-11-03 20:40 +08
 - Source host: Pauli
 - Updated: 2026-11-03 23:45 +08 on kramers (advisor env hand edit, templates/delegation.md); files from Pauli unchanged
-- Updated: 2026-11-03 23:44 +08 on pauli (merged onto kramers' MANIFEST: `cc-panel/README.md` development note on merging before upload; the advisor env hand edit is now applied on pauli too)
 - Claude Code version on source host: 2.1.317
 - Minimum Claude Code version: 2.1.271 (`omitClaudeMd` in subagent frontmatter)
 - Mirrors the OpenCode baseline in ~/Dropbox/opencode-config/current (orchestrator + generic workers).
@@ -57,7 +56,7 @@ Claude Code in a separate tmux server (`tmux -L cc`), tabs on top. Default layou
 - e6045f9cb9a17a2b4204bbf76d0c42ad  cc-panel/newtab.sh
 - 5e233cb700798a792fd2e6b860db3eb4  cc-panel/panel.py
 - 560967310d44b5c9bc5aee760d497186  cc-panel/post.sh
-- 428522b457652a44c18eccf2be8e806f  cc-panel/README.md
+- 56a916f371af23dc56e22919e97d6825  cc-panel/README.md
 - dadfe4ba69cb3192472a3ed74cc804f7  cc-panel/statusline-tee.sh
 - b18f04d33ae194061ee0961b846367f0  cc-panel/tmux.conf
 - 9e7e10abea0d4ce90195213aa89c9cd1  bin/ccx

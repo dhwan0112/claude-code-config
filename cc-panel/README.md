@@ -80,4 +80,3 @@ Runtime data: `~/.cache/cc-panel/` (`<id>.json`, `<id>.last`, `<id>.agents`, `<i
 
 - Test in `~/.cache/ccx-testdir` only, with a separate socket (`CCX_SOCKET=ccxt`, `tmux -L ccxt ...`), and kill that server afterwards. The folder is trusted once in `~/.claude.json`; a new folder for every test adds a trust entry each time. Empty the folder after a test but keep it.
 - Do not reload the `cc` server or edit `hook.sh` / `left.sh` / `statusline-tee.sh` in place while tabs run: write a new file and `mv` it over the old one.
-- Publishing to the baseline (`~/Dropbox/claude-code-config/current`): other computers edit it too. First read the current `MANIFEST.md` there and compare `current/` with your last snapshot in `history/`. Start your staging copy from `current/` and merge your changes into it (MANIFEST text, md5 lines, files such as `templates/`). Then upload it. Never upload a stale staging copy over `current/`.
