@@ -66,11 +66,17 @@ def base(bypass=False):
         "permissions": perms,
         "hooks": {
             # Agent tool calls and subagent start/stop feed the orchestration section of the status panel
-            "PreToolUse": hook("pre", edit) + hook("agentpre", "^Agent$"),
+            "PreToolUse": hook("pre", edit) + hook("agentpre", "^Agent$") + hook("attn clear", background=True),
             # post.sh rebuilds the file as this edit left it (.after), then runs "hook.sh post"
             "PostToolUse": hook("", edit, background=True, script="post.sh") + hook("agentpost", "^Agent$", background=True),
             "SubagentStart": hook("substart"),
             "SubagentStop": hook("substop"),
+            # Tab attention (hook.sh attn): a turn that ended or an idle prompt marks the tab until it is looked at; a permission
+            # prompt or a question marks it "ask" until the user answers (next tool call) or sends a prompt
+            "Stop": hook("attn wait", background=True),
+            "Notification": hook("attn ask", "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input", background=True)
+                + hook("attn wait", "idle_prompt", background=True),
+            "UserPromptSubmit": hook("attn clear", background=True),
         },
     }
 

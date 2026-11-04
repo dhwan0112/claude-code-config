@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# cc-panel hook. Usage: hook.sh pre|post|substart|substop|agentpre|agentpost  (hook JSON on stdin)
+# cc-panel hook. Usage: hook.sh pre|post|substart|substop|agentpre|agentpost|attn wait|ask|clear  (hook JSON on stdin)
 # Rules: never print anything, always exit 0, do nothing unless CC_PANEL_ID is set.
 #   pre/post            Write/Edit/NotebookEdit: snapshot before the edit, record of the last edit
 #   agentpre/agentpost  PreToolUse/PostToolUse of the Agent tool: orchestration records
 #   substart/substop    SubagentStart/SubagentStop: orchestration records
+#   attn LEVEL          Stop / Notification / UserPromptSubmit / PreToolUse: tab attention mark (see below)
 # Orchestration records go to ~/.cache/cc-panel/<id>.orch (read by panel.py), one tab-separated line each:
 #   event  time(epoch)  tool_use_id  agent_id  agent_type  description  status
 # status is the STATUS: verified|blocked|needs_review line of the worker's report, or "-" when it has none.
@@ -19,6 +20,24 @@ D="$HOME/.cache/cc-panel"
 id=$CC_PANEL_ID
 input=$(cat) || exit 0
 mkdir -p "$D" || exit 0
+
+# attn wait|ask|clear: tab attention (Stop, Notification, UserPromptSubmit, PreToolUse hooks). The window option @ccx_attn of this
+# tab is set (wait: turn ended / idle prompt; ask: permission prompt or question) or unset (clear: Claude works again), and for
+# wait/ask a BEL is written to the Claude pane's tty: tmux then flags the window (window_bell_flag, drawn with
+# window-status-bell-style) only while the tab is not the one on screen, and clears the flag when the tab is selected;
+# bell-action none in tmux.conf keeps the terminal silent. Only on the ccx server, only for the pane of this CC_PANEL_ID.
+if [ "$ev" = attn ]; then
+  lvl=${2:-}
+  case "$lvl" in wait|ask|clear) ;; *) exit 0 ;; esac
+  [ -n "${TMUX:-}" ] && [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]] || exit 0
+  sock=${TMUX%%,*}; [ -S "$sock" ] || exit 0
+  IFS=' ' read -r wid tty < <(tmux -S "$sock" display-message -p -t "$TMUX_PANE" '#{@ccx_id} #{pane_tty}' 2>/dev/null) || exit 0
+  [ "$wid" = "$id" ] || exit 0
+  if [ "$lvl" = clear ]; then tmux -S "$sock" set-option -w -t "$TMUX_PANE" -u @ccx_attn 2>/dev/null; exit 0; fi
+  tmux -S "$sock" set-option -w -t "$TMUX_PANE" @ccx_attn "$lvl" 2>/dev/null
+  [[ "$tty" = /dev/* ]] && printf '\a' > "$tty" 2>/dev/null
+  exit 0
+fi
 
 # Append one record to <id>.orch (kept to the last 400 lines) under flock
 orch() {
