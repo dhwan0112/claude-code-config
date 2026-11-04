@@ -1,10 +1,16 @@
 # ccterm
 
-A terminal built for running Claude Code, aiming at Linux and Windows. This
-repository currently holds the backend: pseudo-terminal handling, terminal
-emulation, input encoding and a Send-able snapshot API that a GUI frontend
-will draw from. There is no window yet; `ccterm-headless` runs programs
-without one for testing.
+A terminal built for running Claude Code on Linux and Windows: one window,
+one session, a single executable per platform. The backend handles
+pseudo-terminals, terminal emulation (libghostty-vt) and input encoding; the
+`ccterm` window draws on the CPU (winit + softbuffer + swash).
+`ccterm-headless` runs programs without a window for testing.
+
+```sh
+ccterm                     # your shell ($SHELL / %COMSPEC%)
+ccterm claude              # or any program with arguments
+ccterm --font "Iosevka" --font-size 12 --cols 140 --rows 40 -- claude --resume
+```
 
 ## Crates
 
@@ -12,7 +18,8 @@ without one for testing.
 |---|---|
 | `ccterm-pty` | Pseudo-terminals. Unix: `portable-pty`. Windows: the ConPTY API called directly, preferring Microsoft's out-of-band `conpty.dll` + `OpenConsole.exe` (embedded, feature `embedded-conpty`) over the in-box console host. |
 | `ccterm-core` | `Session`: child in a PTY, a libghostty-vt `Terminal` on its own engine thread, replies to terminal queries, key/mouse/paste/focus encoding, synchronized-output handling, OSC notification/progress events, snapshots. |
-| `ccterm-headless` | CLI that runs a program in a session and drives it with a step script (type, keys, wheel, resize, wait for text, dump the screen). |
+| `ccterm-headless` | CLI that runs a program in a session and drives it with a step script (type, keys, wheel, drag, resize, wait for text, dump the screen). |
+| `ccterm-gui` | The `ccterm` window: winit (X11 and Wayland loaded at run time, Win32), CPU rendering into softbuffer behind a `Renderer` trait, glyphs by swash, fonts found with fontdb, clipboard via copypasta. |
 
 ### Threads and data flow
 
@@ -42,7 +49,30 @@ cargo test
 
 Windows binaries can be cross-built from Linux with `rustup target add
 x86_64-pc-windows-gnu` and mingw-w64 (`cargo build --release --target
-x86_64-pc-windows-gnu`); the result depends only on system DLLs.
+x86_64-pc-windows-gnu`); the result depends only on system DLLs. On Linux the
+binary links only libc/libm/libgcc_s; X11, Wayland and xkbcommon are loaded at
+run time.
+
+For shipping, `cargo build --profile dist [--target ...]` (opt-level "s",
+thin LTO, stripped): `ccterm` 5.6 MB on Linux, 4.2 MB on Windows.
+
+## ccterm (the window)
+
+- Paste: Ctrl+Shift+V or Shift+Insert; on Windows also Ctrl+V. Plain Ctrl+V
+  reaches the application on Linux (Claude Code pastes images with it).
+- Copy: applications copy with OSC 52 — in Claude Code's fullscreen renderer
+  (`CLAUDE_CODE_NO_FLICKER=1`) select with the mouse.
+- Wheel: sent to applications that track the mouse, otherwise scrolls the
+  scrollback.
+- IME: composition is drawn underlined at the cursor; the candidate window
+  follows the cursor.
+- Fonts: `--font FAMILY` (default Cascadia Mono / Consolas on Windows,
+  DejaVu Sans Mono / Noto Sans Mono on Linux), fallback for Hangul/CJK
+  (Malgun Gothic, Noto Sans CJK, Nanum) and symbols, then any installed
+  font. Box drawing and block characters are drawn, not taken from fonts.
+- Environment: `CCTERM_LOG=info|debug`, `CCTERM_LOG_FILE=path` (the Windows
+  build has no console), `CCTERM_FONT_DIR=dir`, `CCTERM_DUMP_FRAME=file.ppm`
+  (writes every frame, for debugging).
 
 ## ccterm-headless
 
@@ -61,7 +91,7 @@ output byte; `--trace` prints replies to queries and events.
 
 ## Status
 
-Verified on Linux (x86_64):
+See `docs/HANDOFF.md` §3 for details and evidence. Verified on Linux (x86_64):
 
 - `cargo test`: 5 unit tests (OSC scanner) and 9 end-to-end tests with real
   children in real PTYs (query replies, key/mouse/paste/focus encoding,
@@ -73,9 +103,15 @@ Verified on Linux (x86_64):
   colour output, Hangul input, Shift+Enter for a second input line, Ctrl+C
   twice to exit with status 0.
 
-Windows: `ccterm-pty` and `ccterm-headless` compile and link for
-`x86_64-pc-windows-gnu`. Nothing has been run on Windows yet;
-`scripts/windows-smoke.ps1` is the first check to run there.
+- `ccterm` window with Claude Code under X11 and native Wayland: rendering,
+  typing (ASCII, Hangul through ibus-hangul/XIM), Shift+Enter, wheel,
+  resize, selection copy to the clipboard, paste, idle CPU ~0%.
+
+Windows 11 (native, x86_64): `scripts/windows-smoke.ps1` passes (embedded
+ConPTY 1.25), Claude Code's fullscreen renderer works through it (kitty
+keyboard flags 5 included), and the `ccterm` window runs Claude Code
+(typing, Shift+Enter, Ctrl+V paste, exit code passed on). Not yet checked by
+hand: the Microsoft IME, a real mouse wheel and HiDPI monitors.
 
 ## Windows notes
 
@@ -95,6 +131,8 @@ npm's `claude.cmd` is started through `cmd.exe /d /s /c`.
 - libghostty-vt (Ghostty, MIT) via `libghostty-vt` / `libghostty-vt-sys`
   (MIT OR Apache-2.0).
 - `portable-pty` (MIT) on Unix.
+- winit, softbuffer (Apache-2.0 / MIT), swash, fontdb, copypasta, memmap2,
+  unicode-width (MIT / Apache-2.0).
 - Microsoft.Windows.Console.ConPTY `conpty.dll` / `OpenConsole.exe` (MIT,
   Microsoft) via `conpty-bin-vendored` (MIT) on Windows.
 

@@ -1,9 +1,10 @@
 # ccterm — instructions for Claude Code
 
 A lightweight terminal for running Claude Code, on **Windows and Linux both**.
-The backend (PTY + terminal emulation) is done and tested on Linux; the GUI is
-next. Read `docs/HANDOFF.md` once at the start of a session: it holds the
-design decisions, verified facts, pitfalls and the task list.
+The backend (PTY + terminal emulation) and the first GUI milestone (`ccterm`,
+crate `ccterm-gui`) are done. Read `docs/HANDOFF.md` once at the start of a
+session: it holds the design decisions, verified facts, pitfalls and the task
+list.
 
 ## Hard requirements
 
@@ -34,14 +35,17 @@ design decisions, verified facts, pitfalls and the task list.
 cargo build --release
 cargo test                                   # 5 unit + 9 end-to-end (Linux, needs python3)
 cargo clippy --all-targets                   # must stay warning-free
-cargo clippy -p ccterm-pty --target x86_64-pc-windows-gnu
+cargo clippy --all-targets --target x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu
+cargo build --profile dist --target <triple>   # size-optimised, stripped
 cargo fmt                                    # rustfmt.toml: max_width 120
 ```
 
 `ccterm-headless` drives any program without a window (see README), e.g.
 `ccterm-headless --trace -e "wait-idle 3000 60000" -e modes -- claude`.
 Use it to check behaviour against a real Claude Code before and after a change.
+`CCTERM_DUMP_FRAME=f.ppm ccterm ...` writes every GUI frame to a file, which
+is how rendering can be checked without a screen capture.
 
 ## Conventions
 

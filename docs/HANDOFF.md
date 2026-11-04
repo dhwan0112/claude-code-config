@@ -1,7 +1,7 @@
 # ccterm handoff
 
-State as of 2026-11-04, commit after `09cdcf1`. Written for whoever continues
-the work (Claude Code included).
+State as of 2026-11-05, after the `ccterm-gui` milestone 1 commits
+(`26e0056`..). Written for whoever continues the work (Claude Code included).
 
 ## 1. Goal
 
@@ -21,8 +21,8 @@ line JSON). Requirements set by the user:
 |---|---|
 | `ccterm-pty` | Done. Unix via portable-pty. Windows: own ConPTY code (`src/win/mod.rs`), host order sideloaded `conpty.dll` (`CCTERM_CONPTY_DLL` or next to the exe) → embedded Microsoft ConPTY 1.25.260930003 (crate `conpty-bin-vendored`, written to `%LOCALAPPDATA%\ccterm\conpty\<version>\`) → kernel32. PATH/PATHEXT lookup; `.cmd/.bat` (npm's `claude.cmd`) run via `cmd.exe /d /s /c`. |
 | `ccterm-core` | Done. `Session::spawn(SessionConfig)` → `SessionHandle` + `Receiver<SessionEvent>`. Engine thread owns `libghostty_vt::Terminal`, `RenderState`, key/mouse encoders and the PTY writer. |
-| `ccterm-headless` | Done. Step-script runner (README lists the steps). |
-| `ccterm-gui` | Not started. Next task, see §6. |
+| `ccterm-headless` | Done. Step-script runner (README lists the steps; `drag` added for selection tests). |
+| `ccterm-gui` | Milestone 1 done (binary `ccterm`). See below. |
 
 Public API a frontend uses (`ccterm-core`):
 
@@ -37,9 +37,50 @@ Public API a frontend uses (`ccterm-core`):
 while the application holds synchronized output (DEC 2026), up to
 `sync_timeout` (500 ms).
 
-## 3. Verified (Linux x86_64, 2026-11-04)
+### `ccterm-gui` layout
 
-- `cargo test`: 5 unit tests (OSC scanner), 9 end-to-end tests, stable over 5 runs.
+| Module | Role |
+|---|---|
+| `main.rs` | CLI (`--font`, `--font-size` pt, `--cols`, `--rows`, program), logger (`CCTERM_LOG`, `CCTERM_LOG_FILE`), fatal errors (message box on Windows; the release build uses the GUI subsystem, no console). |
+| `app.rs` | winit `ApplicationHandler`: one window, one `Session`. A forwarder thread turns `SessionEvent`s into `EventLoopProxy` user events (`ControlFlow::Wait`, no polling). On `Wakeup` the snapshot is taken immediately (re-arms the next wakeup) and rows are diffed; `RedrawRequested` renders. Keyboard, mouse, wheel, IME, focus, resize, scale factor, title, bell, clipboard, exit (exit code passed on). |
+| `input.rs` | `KeyCode` → libghostty `Key`; text/consumed-mods rules; mouse buttons; wheel notch accumulator; paste shortcut. Unit-tested without winit events. |
+| `geom.rs` | Window pixels ↔ grid (padding 4 px × scale). |
+| `damage.rs` | Per-row dirty flags from two snapshots (no core API change was needed). |
+| `font.rs` | fontdb (no fontconfig) + memory-mapped faces; primary/bold/italic, fallback lists, once-per-character scan of all faces. |
+| `render/mod.rs` | `Renderer` trait (`cell_metrics`, `set_font_px`, `set_padding`, `resize`, `render(&Scene)`), `Scene`, `Preedit`. |
+| `render/paint.rs` | Window-independent painter: rows → pixels; colours, attributes, wide cells, cursor shapes, preedit; glyph cache keyed by (face, glyph, size, synthetic bold/italic); glyphs wider than their cells scaled to fit. Pixel tests. |
+| `render/boxdraw.rs` | U+2500–U+259F drawn procedurally. Pixel tests. |
+| `render/soft.rs` | softbuffer backend: own canvas = back buffer; dirty bands copied when `buffer.age() == 1`, else full copy; `present_with_damage`; `CCTERM_DUMP_FRAME`. |
+| `clipboard.rs` | copypasta: Win32; Wayland via the window's `wl_display`; X11 via x11rb. |
+
+Key decisions made while building it (in addition to §5):
+
+- Paste: Ctrl+Shift+V and Shift+Insert everywhere, plus Ctrl+V on Windows
+  (Windows Terminal convention). On Linux plain Ctrl+V goes to the
+  application (Claude Code pastes images with it). No own copy shortcut yet:
+  copying is the application's job via OSC 52 (Claude Code fullscreen
+  selection).
+- Wheel: one wheel event per notch when the application tracks the mouse,
+  three lines of scrollback otherwise.
+- Wayland decorations: winit `wayland-csd-adwaita` (title drawn on GNOME).
+  Measured on Linux: adwaita 3.27 MB, adwaita-notitle 3.10 MB, none 2.74 MB
+  (window-only build).
+- No cursor blink (keeps idle CPU at 0; Claude Code draws its own caret).
+- `release` profile unchanged (debug info for cargo-bloat); `dist` profile
+  added for shipping.
+
+## 3. Verified
+
+Environment of the 2026-11-05 session: Windows 11 host (x86_64, 16 threads)
+with WSL2 Ubuntu 24.04 + WSLg (Weston, X11 via XWayland and native
+Wayland). Rust 1.99.1, Zig 0.15.2, mingw-w64 (Ubuntu package), Claude Code
+2.1.318 in both. Builds and tests ran in WSL; Windows binaries were
+cross-built there and run natively on the host.
+
+### Backend (Linux, first verified 2026-11-04, re-run 2026-11-05)
+
+- `cargo test`: 5 unit tests (OSC scanner), 9 end-to-end tests; plus 31
+  `ccterm-gui` unit/pixel tests.
 - Query replies: DA1 `\e[?62;1;6;22;52c`, DA2, XTVERSION `ccterm(0.1.0)`,
   DECRQM 2026/2004/1006 supported, kitty keyboard query and push, CPR,
   CSI 14/16/18 t, CSI ?996 n, OSC 10/11 (needs default colours set — done).
@@ -52,21 +93,86 @@ while the application holds synchronized output (DEC 2026), up to
   bracketed paste, focus events; output 24-bit colour (33 `38;2` SGRs, zero
   `38;5`) because `TMUX` is removed from the child environment; Hangul input,
   Shift+Enter second line, Ctrl+C twice exits with 0.
-  To reach the main screen without login: `HOME` with a `.claude.json`
-  containing `hasCompletedOnboarding: true`, trusted project dir, and
-  `ANTHROPIC_API_KEY` set to any `sk-ant-...` string (approve it once in the
-  "custom API key" dialog with ArrowUp + Enter).
-- Size/weight: stripped `ccterm-headless` 9.5 MB Linux, 7.3 MB Windows
-  (incl. ~1.2 MB embedded ConPTY). RSS ~14 MB with Claude Code fullscreen at
-  120x36, 4 threads.
-- GUI spike (not in repo): winit 0.30 + softbuffer 0.4 + swash 0.2, empty
-  window, `opt-level="s"`, thin LTO, strip: 2.9 MB Linux (X11+Wayland),
-  0.6 MB Windows.
+- Selection in Claude Code's fullscreen renderer (headless `drag 5 9 19 9`
+  over `!echo selectme-12345` output) → `ClipboardWrite("selectme-12345")`.
 
-Not verified: anything run on Windows. `ccterm-pty` and `ccterm-headless`
-compile and link for `x86_64-pc-windows-gnu` only. `scripts/windows-smoke.ps1`
-is the first check to run on a Windows machine; its output decides the
-Windows fixes.
+How to reach Claude Code's main screen without a login (used for all checks):
+an isolated home with a `.claude.json` containing
+`hasCompletedOnboarding: true`, the project directory under `projects` with
+`hasTrustDialogAccepted: true`, and `customApiKeyResponses.approved`
+holding the last 20 characters of `ANTHROPIC_API_KEY`, which is set to any
+`sk-ant-...` string (then no "custom API key" dialog appears; without that
+entry approve it once with ArrowUp + Enter). If `CLAUDE_CONFIG_DIR` is set,
+the file must be `$CLAUDE_CONFIG_DIR/.claude.json`. Strip `CLAUDE_CODE_*` /
+`CLAUDECODE` from the environment first (§4). Claude Code's `!command` bash
+mode runs locally without the API — useful for scrollable content.
+
+### Windows 11, native (new 2026-11-05)
+
+- `scripts/windows-smoke.ps1` (release and dist builds): `[pty] conpty
+  embedded 1.25.260930003 flags=0x8`; PASS cmd echo with `ok-한글`, PASS
+  PowerShell input (`42`), PASS resize (`77`).
+- `ccterm-headless.exe` + native Claude Code 2.1.318
+  (`C:\Users\...\.local\bin\claude.exe`): fullscreen renderer through the
+  embedded ConPTY — `alt_screen, mouse_tracking, sgr_mouse,
+  bracketed_paste, focus_events: true, kitty_keyboard: 5`; `안녕 hello` +
+  Shift+Enter + `second line` shown as two input lines; Ctrl+C twice exits 0.
+  So kitty keyboard negotiation does pass through OpenConsole 1.25.
+- `ccterm.exe` window: Claude Code drawn (Cascadia Mono, synthetic bold,
+  title `✳ Claude Code`, fallback symbols from Segoe UI Symbol), typing via
+  SendKeys, Shift+Enter, Unicode text `안녕` (VK_PACKET, not the IME),
+  Ctrl+V pastes the Windows clipboard, the window closes when the child
+  exits and `ccterm.exe` returns the child's exit code (3 in the test). No
+  console window (GUI subsystem); `OpenConsole.exe` runs as a hidden child.
+- Idle with Claude Code idle (30 s): 0.063 s CPU time = 0.2 % of one core;
+  working set 46.9 MB, private 12.8 MB, 12 threads.
+
+### `ccterm` window on Linux (WSLg, new 2026-11-05)
+
+- X11 backend (`WAYLAND_DISPLAY` unset), keys and mouse from xdotool
+  (XTest), frames from `CCTERM_DUMP_FRAME`: Claude Code main screen
+  rendered (block-element logo, bold, faint, colours, `─` rules continuous,
+  `⚠` from the symbol fallback, block cursor); `hello 안녕` (xdotool keysym
+  typing) + Shift+Enter + `second line` → two input lines; `!seq 1 200`
+  then wheel up/down moves Claude Code's view (159–183 ↔ bottom); window
+  resized to 640×400 → log `grid 70x23`, content reflowed by Claude Code;
+  mouse drag over output → Claude Code "copied 14 chars", `xclip -o` reads
+  `selectme-12345`; Ctrl+Shift+V pastes `pasted-from-clipboard 한글`;
+  Ctrl+C twice → window closes, exit 0.
+- Real IME path: ibus-daemon (XIM, `XMODIFIERS=@im=ibus`) + ibus-hangul,
+  keys `g k s r m f` from xdotool → winit `Preedit("ㅎ")`, `("하")`,
+  `("한")`, `Commit("한")`, `Preedit("그")`…`Commit("글")`; frame shows the
+  composing syllable underlined at the cursor with the caret after it, then
+  `한글` in Claude Code's input.
+- Native Wayland (WSLg Weston): window opens, `clipboard: wayland`,
+  libwayland-client mapped, frame identical to X11.
+- Idle with Claude Code idle (60 s): ccterm 0 ticks (Wayland), 2 ticks
+  = 0.03 % of one core (X11); Claude Code itself ~0.8 %. RSS ~55 MB
+  (RssAnon 25.7 MB, RssFile 25 MB = shared libraries and mapped fonts),
+  6 threads; Claude Code ~230 MB.
+- Linkage: `readelf -d ccterm` NEEDED = libgcc_s, libm, libc, ld-linux only;
+  `ccterm.exe` imports system DLLs only (KERNEL32, USER32, GDI32, IMM32,
+  ADVAPI32, SHELL32, ole32, dwmapi, uxtheme, userenv, ws2_32, ntdll,
+  msvcrt, bcryptprimitives, api-ms-win-core-synch).
+
+### Sizes (stripped)
+
+| Build | ccterm Linux | ccterm Windows | headless Linux | headless Windows |
+|---|---|---|---|---|
+| `release` + strip | 14.44 MB | 10.64 MB | 9.49 MB | 7.34 MB |
+| `dist` profile | 5.60 MB | 4.25 MB | 1.81 MB | 3.03 MB |
+
+Per step (`release` + strip, Linux / Windows): empty winit+softbuffer window
+3.27 / 1.41 MB; + session (libghostty-vt, ccterm-core) and text stack
+13.76 / 10.60 MB — text stack .text per cargo-bloat ~1.0 MiB Linux (skrifa
+397 KiB, swash 279, read-fonts 150, ttf-parser 90, zeno 74), ~1.9 MiB Windows
+(skrifa 655, swash 576, read-fonts 550, yazi 38, fontdb 32, zeno 21,
+memmap2 15); input/IME +35 KB / +20 KB; copypasta +644 KB / +25 KB
+(x11rb's pure-Rust connection and smithay-clipboard on Linux).
+
+### Not verified (needs a person or other hardware)
+
+See §6.1.
 
 ## 4. Pitfalls already hit (do not repeat)
 
@@ -77,8 +183,8 @@ Windows fixes.
 - portable-pty 0.9 hard-codes ConPTY flags and cannot pick the DLL; that is
   why Windows has its own backend.
 - The in-box conhost re-renders output and has dropped mouse-mode requests
-  (older builds), APC strings and kitty keyboard negotiation; kitty keyboard
-  through ConPTY end-to-end is still unknown even with OpenConsole.
+  (older builds), APC strings and kitty keyboard negotiation. Through the
+  embedded OpenConsole 1.25 kitty flags 5 do arrive (verified 2026-11-05).
 - `conpty.dll` starts `OpenConsole.exe` from its own directory and silently
   falls back to the system conhost if it is missing: always write both.
 - libghostty-vt callbacks run inside `vt_write`; they only queue replies and
@@ -98,6 +204,59 @@ Windows fixes.
 - The libghostty-vt crate is pinned to `=0.2.2` (API pre-1.0; crate `main`
   already differs, e.g. `set_terminfo_name`). Upgrade deliberately.
 
+New in the GUI work (2026-11-05):
+
+- **winit#4746 is not fixed in winit 0.30.13** (PR still open). The
+  egui-winit workaround is in `app.rs::preedit_cursor` (Windows only: a
+  preedit caret `Some((0,0))` = unknown, no caret drawn). Remove it once a
+  winit release has the fix.
+- **winit 0.30 X11 double-counts wheel clicks from XTest**: buttons 4–7 give
+  a `MouseWheel` on press *and* release unless the server flags them as
+  pointer-emulated. `xdotool click 4` therefore scrolls two notches. Real
+  wheels arrive as XI2 scroll valuators (their emulated button events are
+  dropped), so do not "fix" this by halving. Also, `xdotool click --window`
+  uses XSendEvent, which winit ignores: use plain XTest (`mousemove --window`
+  then `click` without `--window`).
+- softbuffer's buffer is not a back buffer (Wayland double-buffers): keep
+  the own canvas and copy, checking `buffer.age()`.
+- A snapshot with a different grid size must force a full repaint: after
+  shrinking, the old last row stayed in what became padding.
+- On X11 `request_inner_size` right after creation was ignored: set
+  `with_inner_size` in the attributes, computing cell metrics with the
+  primary monitor's scale before the window exists.
+- smithay-clipboard 0.7.3 depends on smithay-client-toolkit 0.20 while winit
+  0.30 uses 0.19 (second sctk + calloop, +89 KB): pinned to `=0.7.2`.
+- fontdb 0.24 without its `memmap` feature has no `Source::SharedFile`; the
+  GUI maps font files itself (memmap2) and keeps the maps alive.
+- swash's `underline_offset` sign is not reliable across fonts: the painter
+  uses its absolute value below the baseline.
+- Cascadia Mono on Windows 11 is a variable font; fontdb sees only the
+  default (regular) instance, so bold/italic are synthesised. Fine for now;
+  variable-axis support would need swash variations.
+- Linux in WSL has no Noto Sans Symbols 2: some Claude Code symbols (`⏸`)
+  had no glyph there; on Windows they come from Segoe UI Symbol.
+- **Testing Claude Code from inside a Claude Code session**: the parent's
+  `CLAUDE_CODE_*` variables (e.g. `CLAUDE_CODE_CHILD_SESSION`) leak into
+  the child ("Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION
+  marker"). Strip `CLAUDE_CODE_*` and `CLAUDECODE` before test runs.
+- With `CLAUDE_CONFIG_DIR` set, Claude Code reads
+  `$CLAUDE_CONFIG_DIR/.claude.json`, not `~/.claude.json`. Write that JSON
+  with a JSON library: a shell heredoc with Windows paths produced `\U`
+  escapes and Claude Code reported the file as corrupted.
+- In Claude Code's fullscreen renderer Ctrl+C with an active selection
+  copies instead of exiting: a test that drags must not expect Ctrl+C twice
+  to exit. Claude Code also wants the two Ctrl+C presses close together.
+- Windows automation: `SetForegroundWindow` is refused while the user is
+  active elsewhere; check the foreground window's process before
+  `SendKeys`, never type blind. Windows PowerShell 5 reads BOM-less UTF-8
+  scripts as ANSI (Hangul garbled): use `pwsh` or a BOM.
+- Dev setup on a Windows host with WSL: `wsl.exe -- bash -lc '...'` from Git
+  Bash expands `$VARS` on the Windows side and MSYS rewrites `/mnt/...`
+  paths; run script files with `MSYS_NO_PATHCONV=1`. The WSL VM shuts down
+  when idle and `/tmp` is cleared: keep logs elsewhere. `sctk_adwaita`
+  logs an ERROR about the XDG settings portal timing out under WSLg —
+  harmless.
+
 ## 5. Decisions taken for the GUI (with reasons)
 
 - **Window/input: winit** (0.30 line). IME on Windows, X11 (XIM; needs
@@ -106,58 +265,53 @@ Windows fixes.
   the preedit cursor at 0 instead of after the syllable); if not, apply the
   same workaround egui-winit uses. On Wayland sessions run the native Wayland
   backend, not XWayland (Hangul commits were reported lost under XWayland in
-  another project).
+  another project). — Applied: 0.30.13 lacks the fix, workaround in place;
+  winit picks Wayland when `WAYLAND_DISPLAY` is set.
 - **Drawing: CPU via softbuffer** first (Win32, X11, Wayland all tier 1; no
   GPU driver dependency, works in RDP/VMs). Hide it behind a `Renderer`
   trait so an OpenGL backend (glutin + glow) can be added later only if
-  profiling shows the need. wgpu is out (weight).
+  profiling shows the need. wgpu is out (weight). — Applied.
 - **Glyphs: swash** for rasterization with a glyph cache keyed by
   (font, glyph id, size, style). Font fallback for Hangul/CJK and symbols:
   Windows `Malgun Gothic`, Linux Noto Sans CJK / Nanum via fontconfig-free
-  discovery (e.g. `fontdb`), configurable primary monospace font.
+  discovery (e.g. `fontdb`), configurable primary monospace font. — Applied.
 - Rejected: GPUI (standalone crate documented for macOS/Linux only;
   gpui-libghostty is macOS + Wayland only), egui/iced for the terminal body
   (extra layers, no IME advantage), Electron/Tauri.
 
-## 6. Next task: `ccterm-gui`, milestone 1
+## 6. Next tasks
 
-One window, one session, the user's shell or `claude` given on the command
-line. Scope:
+### 6.1 Manual checks still open for milestone 1
 
-1. Window via winit, CPU frame via softbuffer, HiDPI scale factor handled.
-2. Text: monospace grid from `Snapshot`; fg/bg, bold, italic, underline,
-   strikethrough, inverse, faint; wide characters (`Width::Wide` spans two
-   cells, `Spacer` draws nothing); box-drawing characters aligned to cells;
-   cursor shapes (block, bar, underline, hollow when unfocused).
-3. Redraw only on `SessionEvent::Wakeup`; repaint only rows that changed
-   (compare with the previous snapshot or add row dirty flags to `Snapshot`
-   in `ccterm-core`; keep the API change small and tested).
-4. Input: map winit `KeyEvent` (physical key + logical text) to `KeyInput`;
-   modifiers; mouse buttons, motion with button held, wheel (`wheel()`),
-   focus in/out.
-5. IME: `set_ime_allowed(true)`, `Ime::Preedit` drawn inline at the cursor
-   (underlined), `Ime::Commit` sent as text, IME cursor area updated with
-   `set_ime_cursor_area` every frame the cursor moves.
-6. Resize: window size → cols/rows from cell metrics → `SessionHandle::resize`.
-7. Clipboard: `ClipboardWrite` → system clipboard; paste shortcut
-   (Ctrl+Shift+V on Linux, Ctrl+V on Windows when not sent to the app —
-   decide and document) → `paste()`. Use a small clipboard crate and report
-   its size.
-8. Title from `SessionEvent::Title`; window closes on `Exited`.
+1. Windows: type Hangul with the Microsoft Korean IME in `ccterm.exe` running
+   Claude Code — composition shown inline and underlined at the cursor, no
+   caret at the start of the syllable (winit#4746 workaround), candidate
+   window (Hanja key) next to the cursor, commit on Space/Enter, Enter right
+   after a syllable submits once.
+2. Linux on a real desktop: Hangul with ibus or fcitx5 under native Wayland
+   (`zwp_text_input_v3`) and under X11 (XIM).
+3. A physical mouse wheel and a touchpad: one notch = one step in Claude
+   Code; touchpad scrolling smooth enough.
+4. HiDPI: a 150–200 % monitor on Windows and Wayland; moving the window
+   between monitors with different scales (ScaleFactorChanged path).
+5. Interactive resize by dragging the window edge (only programmatic
+   resizes were tested).
+6. Real clipboard managers: copy from Claude Code, paste in another app;
+   paste a large text (bracketed) into Claude Code.
+7. Font choice with `--font` on each platform; Noto Sans Symbols 2 / emoji
+   rendering on a full Linux desktop.
 
-Acceptance (report each with evidence):
+### 6.2 Known gaps (not in milestone 1's scope)
 
-- Builds for both targets; stripped size reported for both.
-- Linux: Claude Code 2.1.x runs in fullscreen renderer; typing ASCII and
-  Hangul (via IME) works; Shift+Enter makes a second line; wheel scrolls the
-  conversation; resizing the window reflows; selection copy from Claude Code
-  reaches the clipboard. Verify what can be verified headlessly with
-  `ccterm-headless` and unit tests; list the manual checks for the user.
-- Idle CPU with Claude Code idle: report (target: ~0%).
-- RSS: report.
-- No regression in `cargo test`.
+- Own text selection and copy when the application does not track the
+  mouse (plain shell); Shift+drag override while it does.
+- Cursor blink; font size zoom shortcuts; config file.
+- Glyph shaping (ligatures, ZWJ emoji sequences are drawn as the first
+  character).
 
-Later milestones (not now): tabs; status panel and diff pane rebuilt from
-the `ccx` hook scripts (status line JSON + hook events, ideally via a local
-socket instead of files); saved tab sets; config file; OpenGL renderer if
-needed; Windows fixes from the smoke test.
+### 6.3 Later milestones
+
+Tabs; status panel and diff pane rebuilt from the `ccx` hook scripts (status
+line JSON + hook events, ideally via a local socket instead of files); saved
+tab sets; config file; OpenGL renderer if needed; Windows fixes from the
+smoke test (none needed so far).

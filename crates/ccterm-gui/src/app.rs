@@ -219,6 +219,7 @@ impl Win {
     }
 
     fn ime(&mut self, ime: Ime) {
+        log::debug!("ime {ime:?}");
         match ime {
             Ime::Enabled => {}
             Ime::Preedit(text, cursor) => {
