@@ -1,7 +1,7 @@
 # ccterm handoff
 
 State as of 2026-11-05, after the `ccterm-gui` milestone 1 commits
-(`26e0056`..). Written for whoever continues the work (Claude Code included).
+(`26e0056`..) and the window decoration work (`01e1d32`..). Written for whoever continues the work (Claude Code included).
 
 ## 1. Goal
 
@@ -41,16 +41,18 @@ while the application holds synchronized output (DEC 2026), up to
 
 | Module | Role |
 |---|---|
-| `main.rs` | CLI (`--font`, `--font-size` pt, `--cols`, `--rows`, program), logger (`CCTERM_LOG`, `CCTERM_LOG_FILE`), fatal errors (message box on Windows; the release build uses the GUI subsystem, no console). |
+| `config.rs` | Settings with `Config::set(key, value)`: `window-padding`, `window-padding-balance`, `window-padding-color`, `decorations`; the CLI passes `--KEY VALUE`, a config file will too. |
+| `chrome.rs` | Native title bar/frame colours (Windows 11) and dark/light theme request, updated when the default colours change. |
+| `main.rs` | CLI (`--font`, `--font-size` pt, `--cols`, `--rows`, settings, program), logger (`CCTERM_LOG`, `CCTERM_LOG_FILE`), fatal errors (message box on Windows; the release build uses the GUI subsystem, no console). |
 | `app.rs` | winit `ApplicationHandler`: one window, one `Session`. A forwarder thread turns `SessionEvent`s into `EventLoopProxy` user events (`ControlFlow::Wait`, no polling). On `Wakeup` the snapshot is taken immediately (re-arms the next wakeup) and rows are diffed; `RedrawRequested` renders. Keyboard, mouse, wheel, IME, focus, resize, scale factor, title, bell, clipboard, exit (exit code passed on). |
 | `input.rs` | `KeyCode` → libghostty `Key`; text/consumed-mods rules; mouse buttons; wheel notch accumulator; paste shortcut. Unit-tested without winit events. |
-| `geom.rs` | Window pixels ↔ grid (padding 4 px × scale). |
+| `geom.rs` | Window pixels ↔ grid; `Layout::origin` (padding, balance) shared by renderer and input mapping. |
 | `damage.rs` | Per-row dirty flags from two snapshots (no core API change was needed). |
 | `font.rs` | fontdb (no fontconfig) + memory-mapped faces; primary/bold/italic, fallback lists, once-per-character scan of all faces. |
 | `render/mod.rs` | `Renderer` trait (`cell_metrics`, `set_font_px`, `set_padding`, `resize`, `render(&Scene)`), `Scene`, `Preedit`. |
 | `render/paint.rs` | Window-independent painter: rows → pixels; colours, attributes, wide cells, cursor shapes, preedit; glyph cache keyed by (face, glyph, size, synthetic bold/italic); glyphs wider than their cells scaled to fit. Pixel tests. |
 | `render/boxdraw.rs` | U+2500–U+259F drawn procedurally. Pixel tests. |
-| `render/soft.rs` | softbuffer backend: own canvas = back buffer; dirty bands copied when `buffer.age() == 1`, else full copy; `present_with_damage`; `CCTERM_DUMP_FRAME`. |
+| `render/soft.rs` | softbuffer backend: own canvas = back buffer (always the complete frame); bands changed during `buffer.age()` frames are copied (history of 4), everything when the age is 0 or older; only the current bands are presented as damage; `CCTERM_DUMP_FRAME`, `CCTERM_DEBUG_PADDING`. |
 | `clipboard.rs` | copypasta: Win32; Wayland via the window's `wl_display`; X11 via x11rb. |
 
 Key decisions made while building it (in addition to §5):
@@ -66,6 +68,17 @@ Key decisions made while building it (in addition to §5):
   Measured on Linux: adwaita 3.27 MB, adwaita-notitle 3.10 MB, none 2.74 MB
   (window-only build).
 - No cursor blink (keeps idle CPU at 0; Claude Code draws its own caret).
+- Padding (as Ghostty): `window-padding-balance` default **true** (Ghostty's
+  default is false; chosen because uneven right/bottom margins were the
+  visible problem). `window-padding-color` default `extend`: left/right
+  padding takes the edge cell's background; top/bottom the first/last
+  row's, except on the primary screen when that row has a default-background
+  cell or a powerline glyph (Ghostty's third case, prompt rows, needs shell
+  integration — not done). Full frames and resizes paint every pixel.
+- Chrome: Windows 11 caption/border = terminal background, caption text =
+  foreground; the theme request follows the background's luminance (dark
+  for the default background). `decorations = integrated` is reserved for
+  the tabs milestone and currently falls back to `native`.
 - `release` profile unchanged (debug info for cargo-bloat); `dist` profile
   added for shipping.
 
@@ -170,12 +183,44 @@ mode runs locally without the API — useful for scrollable content.
   ADVAPI32, SHELL32, ole32, dwmapi, uxtheme, userenv, ws2_32, ntdll,
   msvcrt, bcryptprimitives, api-ms-win-core-synch).
 
+### Window decorations (2026-11-05)
+
+- The "white band": `CCTERM_DEBUG_PADDING=1` plus captures of the whole
+  window from the Windows side (`PrintWindow` on the WSLg RAIL window) show
+  the red padding strictly inside a light title bar and ~6 px grey border
+  — that frame is WSLg Weston's X11 window manager, not ccterm. ccterm's
+  client area had no light pixels (also before the change). Native
+  Wayland windows get no frame under WSLg; native Windows draws its own.
+- Balance/colour: frame dumps of a 60x10 grid with blue first/last rows:
+  `extend` → top/bottom padding blue, left of a row whose first cell is
+  default stays default; `background` → all padding `#1e1e1e`;
+  `extend-always` → no heuristics. Windows 11, 921x572 client: red padding
+  6/6 px left/right, 5/6 px top/bottom.
+- Windows 11 (build 26300), screen capture of the visible frame: edges and
+  title bar `#1e1e1e` (before: border `#3b3b3b`/`#353535`, title bar
+  `#202020`), title text `#dcdcdc`; a child setting OSC 11/10 to
+  `#f2efe6`/`#202830` turns the title bar and text to those colours.
+- X11: `_GTK_THEME_VARIANT = "dark"` on the window (before: unset). WSLg's
+  Weston WM ignores it (frame stays `#ffffff`/`#cccccc`); needs a GTK-aware
+  WM (mutter, KWin) to show.
+- `decorations none`: Windows window rect = client rect; X11
+  `_MOTIF_WM_HINTS` decorations 0, no frame under WSLg. `integrated`:
+  native frame and a warning in the log.
+- Not checked: Windows 10 (no machine), the Wayland CSD theme (WSLg shows
+  no CSD), live resizing by dragging.
+
 ### Sizes (stripped)
 
 | Build | ccterm Linux | ccterm Windows | headless Linux | headless Windows |
 |---|---|---|---|---|
 | `release` + strip | 14.44 MB | 10.64 MB | 9.49 MB | 7.34 MB |
 | `dist` profile | 5.60 MB | 4.25 MB | 1.81 MB | 3.03 MB |
+
+Window decoration work (`release`+strip / `dist`, Linux and Windows):
+padding balance/colour + buffer-age copy +14.4 / +17.4 KB release, +17.2 /
++15.9 KB dist; chrome colours/theme +11.0 / +2.6 KB release, +3.7 / +4.1 KB
+dist; `decorations` key < 1 KB. Current: release 14.46 / 10.66 MB, dist
+5.63 / 4.27 MB.
 
 Per step (`release` + strip, Linux / Windows): empty winit+softbuffer window
 3.27 / 1.41 MB; + session (libghostty-vt, ccterm-core) and text stack
@@ -269,6 +314,17 @@ New in the GUI work (2026-11-05):
   active elsewhere; check the foreground window's process before
   `SendKeys`, never type blind. Windows PowerShell 5 reads BOM-less UTF-8
   scripts as ANSI (Hangul garbled): use `pwsh` or a BOM.
+- WSLg's X11 frame (Weston XWM) is white/grey and ignores
+  `_GTK_THEME_VARIANT`: what looks like a white band around the window there
+  is not ccterm. Check with `CCTERM_DEBUG_PADDING=1` before changing
+  padding code.
+- DWM colour attributes (caption, border, text: 34–36) are set-only —
+  `DwmGetWindowAttribute` returns E_INVALIDARG — and `PrintWindow` does not
+  include the DWM border (comes back black). Check them with a real screen
+  capture of the visible frame (`DWMWA_EXTENDED_FRAME_BOUNDS`).
+- `cargo build --target <triple>` builds into `target/<triple>/`, not
+  `target/release/`: after a size measurement with explicit targets, the
+  plain `target/release/ccterm` may be stale.
 - Dev setup on a Windows host with WSL: `wsl.exe -- bash -lc '...'` from Git
   Bash expands `$VARS` on the Windows side and MSYS rewrites `/mnt/...`
   paths; run script files with `MSYS_NO_PATHCONV=1`. The WSL VM shuts down
@@ -324,11 +380,21 @@ New in the GUI work (2026-11-05):
 7. Font choice with `--font` on each platform; Noto Sans Symbols 2 / emoji
    rendering on a full Linux desktop.
 
+8. Windows 10: dark title bar from the theme request (Windows 11 colours
+   do not apply there).
+9. Linux on a GNOME/KDE session: dark title bar on X11 (mutter/KWin read
+   `_GTK_THEME_VARIANT`) and the dark adwaita CSD on Wayland; padding while
+   dragging the window edge.
+
 ### 6.2 Known gaps (not in milestone 1's scope)
 
 - Own text selection and copy when the application does not track the
   mouse (plain shell); Shift+drag override while it does.
-- Cursor blink; font size zoom shortcuts; config file.
+- Cursor blink; font size zoom shortcuts; config file (keys exist, see
+  `config.rs`).
+- `decorations = integrated` (own title bar with tabs) — tabs milestone.
+- `window-padding-color = extend`: prompt-row heuristic needs shell
+  integration (OSC 133).
 - Glyph shaping (ligatures, ZWJ emoji sequences are drawn as the first
   character).
 

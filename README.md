@@ -70,9 +70,24 @@ thin LTO, stripped): `ccterm` 5.6 MB on Linux, 4.2 MB on Windows.
   DejaVu Sans Mono / Noto Sans Mono on Linux), fallback for Hangul/CJK
   (Malgun Gothic, Noto Sans CJK, Nanum) and symbols, then any installed
   font. Box drawing and block characters are drawn, not taken from fonts.
+- Settings, as `--KEY VALUE` or `--KEY=VALUE` (a config file will use the
+  same keys):
+
+  | key | values | default |
+  |---|---|---|
+  | `window-padding` | minimum padding, logical px | `4` |
+  | `window-padding-balance` | `true` / `false` — spread leftover space evenly | `true` |
+  | `window-padding-color` | `background` / `extend` / `extend-always` (as in Ghostty) | `extend` |
+  | `decorations` | `native` / `integrated` (tabs milestone; native until then) / `none` | `native` |
+
+- Window chrome: on Windows 11 the title bar and border take the terminal
+  background and the title text its foreground; Windows 10 and Linux get
+  the dark theme request (light if the background is light).
 - Environment: `CCTERM_LOG=info|debug`, `CCTERM_LOG_FILE=path` (the Windows
   build has no console), `CCTERM_FONT_DIR=dir`, `CCTERM_DUMP_FRAME=file.ppm`
-  (writes every frame, for debugging).
+  (writes every frame, for debugging), `CCTERM_DEBUG_PADDING=1` (paints
+  everything outside the grid red, to tell ccterm's padding from a window
+  manager's frame).
 
 ## ccterm-headless
 
