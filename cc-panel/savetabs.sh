@@ -11,7 +11,8 @@
 # session_id). A tab whose Claude Code has not written it yet (the first seconds) is saved with its Claude pane's folder
 # and no session id, and is restored as a new session. An empty set is written only with --without (the last tab was
 # closed on purpose); nothing is written when the set did not change. Writes are atomic. Run by: C-a W (NAME last, with a message), ccx after it opened a tab, left.sh when
-# a tab closes (--without), and the tmux hooks window-renamed / session-window-changed / client-detached (tmux.conf).
+# a tab closes (--without), and the tmux hooks window-renamed / session-window-changed / client-detached /
+# window-unlinked (tmux.conf). Nothing is written while the server does not answer. Tabs that leave "last" go to "closed".
 set -u
 sock=${1:-}; shift 2>/dev/null || exit 0
 [[ "$sock" =~ ^[A-Za-z0-9_-]+$ ]] || exit 0
@@ -33,6 +34,9 @@ msg() {
 [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { msg "ccx: tab set name: letters, digits, - and _ only"; exit 0; }
 D="$HOME/.cache/cc-panel"
 out="${XDG_CONFIG_HOME:-$HOME/.config}/cc-panel/tabs/$sock"
+# No answer from the server (gone or dying): nothing is written, so the set keeps the tabs of the last answer
+wins=$(tmux -L "$sock" list-windows -t '=cc' \
+  -F '#{window_index}	#{window_id}	#{@ccx_id}	#{@ccx_perm}	#{@ccx_layout}	#{window_name}' 2>/dev/null) || exit 0
 body=""; n=0
 while IFS=$'\t' read -r _ wid id perm layout wname; do
   [ -n "$id" ] && [ "$id" != "$without" ] || continue
@@ -53,8 +57,7 @@ while IFS=$'\t' read -r _ wid id perm layout wname; do
   wname=${wname//[$'\t\n\r']/ }
   body+="$wname	$pdir	$sid	$perm	$layout"$'\n'
   n=$((n + 1))
-done < <(tmux -L "$sock" list-windows -t '=cc' \
-  -F '#{window_index}	#{window_id}	#{@ccx_id}	#{@ccx_perm}	#{@ccx_layout}	#{window_name}' 2>/dev/null | sort -n)
+done < <(printf '%s\n' "$wins" | sort -n)
 if [ "$n" -eq 0 ] && [ -z "$without" ]; then msg "ccx: no tabs to save"; exit 0; fi
 f="$out/$name.tsv"
 if [ -f "$f" ] && [ "$(tail -n +2 "$f" 2>/dev/null)" = "${body%$'\n'}" ]; then
@@ -62,6 +65,20 @@ if [ -f "$f" ] && [ "$(tail -n +2 "$f" 2>/dev/null)" = "${body%$'\n'}" ]; then
   exit 0
 fi
 mkdir -p "$out" 2>/dev/null || exit 0
+# Tabs that left "last" (closed on purpose, or a tab whose session changed) are kept in "closed", newest first, one line per
+# session id, 20 at most: ccx --list-tabs shows them, ccx --resume <session id> opens one, ccx --restore-tabs closed all of them.
+if [ "$name" = last ] && [ -f "$f" ]; then
+  gone=$(tail -n +2 "$f" | awk -F'\t' -v live=" $(printf '%s' "$body" | awk -F'\t' '$3 != "" { printf "%s ", $3 }')" \
+    '$3 != "" && index(live, " " $3 " ") == 0')
+  if [ -n "$gone" ]; then
+    c="$out/closed.tsv"
+    if ctmp=$(mktemp "$out/.closed.XXXXXX" 2>/dev/null); then
+      { printf '# ccx tabs "closed": tabs that left the set "last", newest first, 20 at most. Columns as in "last". ccx --resume <session id> opens one, ccx --restore-tabs closed all of them\n'
+        { printf '%s\n' "$gone"; [ -f "$c" ] && tail -n +2 "$c"; } | awk -F'\t' '$3 != "" && !seen[$3]++' | head -n 20
+      } > "$ctmp" 2>/dev/null && mv -f -- "$ctmp" "$c" || rm -f -- "$ctmp"
+    fi
+  fi
+fi
 tmp=$(mktemp "$out/.$name.XXXXXX" 2>/dev/null) || exit 0
 if { printf '# ccx tabs "%s" saved %s on %s: %s tab(s). Columns: tab name, project folder, session id, permissions, layout. Open again: ccx --restore-tabs %s\n' \
        "$name" "$(date '+%Y-%m-%d %H:%M %z')" "$(hostname -s 2>/dev/null || echo host)" "$n" "$name"

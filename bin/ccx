@@ -4,7 +4,7 @@
 #   sidebar (default): left top claude · left bottom diff (CCX_DIFF, default 22%, at least 6 rows) · right
 #                      full-height status panel (CCX_SIDEBAR, default 22%, at least 36 columns)
 #   split:             left claude · right top status panel (14 rows) · right bottom diff
-# Usage: ccx [--safe] [claude arguments...]
+# Usage: ccx [--safe] [--no-restore] [claude arguments...]
 #        ccx --save-tabs [NAME] | --restore-tabs [NAME] | --list-tabs      (tab sets, see below)
 #   New tabs start in bypass permission mode (permissions.defaultMode in ccx's --settings). ccx --safe or
 #   CCX_SAFE=1 leaves it out, so the user's global defaultMode applies. A --permission-mode or
@@ -17,9 +17,10 @@
 # Env: CCX_SAFE=1 (same as --safe), CCX_NO_ATTACH=1 (do not attach), CCX_SELECT=1 (select the new tab), CCX_SIZE=WxH (size of a new
 #      detached server), CCX_SOCKET=name (tmux -L socket, default cc), CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF,
 #      CCX_HOME (folder with the cc-panel scripts, default ~/.claude/cc-panel; for testing a copy), CCX_TABNAME (first name
-#      of the new tab instead of repo:branch / folder; used by --restore-tabs).
+#      of the new tab instead of repo:branch / folder; used by --restore-tabs), CCX_RESTORE=0 (same as --no-restore: a new server
+#      opens only the requested tab; the previous run's tabs stay in the set "previous").
 # Defaults file: ~/.config/cc-panel/config ($XDG_CONFIG_HOME/cc-panel/config), lines KEY=value for
-#      CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF. Environment variables win. C-a w writes it (savesize.sh).
+#      CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF, CCX_TUI, CCX_RESTORE. Environment variables win. C-a w writes it (savesize.sh).
 set -euo pipefail
 
 P=${CCX_HOME:-$HOME/.claude/cc-panel}
@@ -34,7 +35,7 @@ cfg="${XDG_CONFIG_HOME:-$HOME/.config}/cc-panel/config"
 if [ -f "$cfg" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%%#*}; line=${line//[[:space:]]/}
-    [[ "$line" =~ ^(CCX_LAYOUT|CCX_SIDEBAR|CCX_DIFF|CCX_TUI)=([A-Za-z0-9.%]+)$ ]] || continue
+    [[ "$line" =~ ^(CCX_LAYOUT|CCX_SIDEBAR|CCX_DIFF|CCX_TUI|CCX_RESTORE)=([A-Za-z0-9.%]+)$ ]] || continue
     k=${BASH_REMATCH[1]}
     [ -n "${!k:-}" ] || printf -v "$k" '%s' "${BASH_REMATCH[2]}"
   done < "$cfg"
@@ -48,15 +49,18 @@ case "${CCX_TUI:-fullscreen}" in
   classic) CCX_TUI=default ;;
   *) echo "ccx: CCX_TUI=$CCX_TUI is not fullscreen, default or user; using fullscreen" >&2; CCX_TUI=fullscreen ;;
 esac
+case "${CCX_RESTORE:-1}" in 0|1) ;; *) echo "ccx: CCX_RESTORE=$CCX_RESTORE is not 0 or 1; using 1" >&2; CCX_RESTORE=1 ;; esac
 
 # Tab sets. "ccx --save-tabs [NAME]" writes the open tabs of this server (savetabs.sh: tab name, project folder, Claude Code
 # session id, permissions, layout) to ${XDG_CONFIG_HOME:-~/.config}/cc-panel/tabs/<socket>/NAME.tsv; "ccx --restore-tabs [NAME]"
 # opens one tab per line again, in order, each with "claude --resume <session id>" in its project folder (a tab whose session
 # is already open is skipped, a missing folder is skipped with a message, a session whose transcript is gone starts anew);
 # "ccx --list-tabs" lists the sets. NAME defaults to "last", which ccx (tab opened), left.sh (tab closed) and the tmux hooks
-# in tmux.conf (tab renamed or selected, client detached) keep up to date, so after a reboot "ccx --restore-tabs" is enough.
+# in tmux.conf (tab renamed or selected, client detached) keep up to date. A new server
+# reopens the tabs of the previous run by itself (set "previous", below), so after a logout or reboot plain "ccx" brings them back;
+# ccx --no-restore / CCX_RESTORE=0 leaves them to "ccx --restore-tabs previous". Tabs that left "last" are kept in the set "closed".
 tabsdir="${XDG_CONFIG_HOME:-$HOME/.config}/cc-panel/tabs/$SOCK"
-hint=""
+hint=""; restore_prev=0
 self=$(readlink -f -- "$0" 2>/dev/null || echo "$0")
 case "${1:-}" in
   --save-tabs|--restore-tabs)
@@ -99,7 +103,7 @@ case "${1:-}" in
       fi
       safeflag=(); [ "$perm" = safe ] && safeflag=(--safe)
       case "$tlayout" in sidebar|split) ;; *) tlayout=sidebar ;; esac
-      if (cd "$pdir" && CCX_TABNAME=$tname CCX_SAFE= CCX_SOCKET=$SOCK CCX_HOME=$P CCX_LAYOUT=$tlayout CCX_NO_ATTACH=1 CCX_SIZE=${size:-} \
+      if (cd "$pdir" && CCX_TABNAME=$tname CCX_SAFE= CCX_RESTORE=0 CCX_SOCKET=$SOCK CCX_HOME=$P CCX_LAYOUT=$tlayout CCX_NO_ATTACH=1 CCX_SIZE=${size:-} \
             "$self" "${safeflag[@]}" "${resume[@]}" >/dev/null); then
         opened=$((opened + 1))
       else
@@ -167,6 +171,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --) args+=("$@"); break ;;
     --safe) safe=1; shift ;;
+    --no-restore) CCX_RESTORE=0; shift ;;
     --settings) [ $# -ge 2 ] || { echo "ccx: --settings needs a value" >&2; exit 2; }; user_settings=$2; shift 2 ;;
     --settings=*) user_settings=${1#--settings=}; shift ;;
     --permission-mode|--permission-mode=*|--dangerously-skip-permissions) userperm=1; args+=("$1"); shift ;;
@@ -207,12 +212,21 @@ else
   else
     size=${CCX_SIZE:-240x60}
   fi
-  # A new server: the tab set "last" of the previous run is kept as "previous" before this tab replaces "last"; told once below
+  # A new server: the tab set "last" of the previous run becomes "previous" (and "last" is removed, so savetabs.sh does not file the
+  # whole previous run under "closed"); its tabs are reopened below unless CCX_RESTORE=0 / --no-restore, which leaves a hint instead
   if [ -s "$tabsdir/last.tsv" ] && n=$(grep -c -v '^#' "$tabsdir/last.tsv" 2>/dev/null) && [ "$n" -gt 0 ]; then
-    tmp=$(mktemp "$tabsdir/.previous.XXXXXX" 2>/dev/null) \
-      && sed '1s/^# ccx tabs "last"/# ccx tabs "previous" (the set "last" of the previous run)/; 1s/ccx --restore-tabs last$/ccx --restore-tabs previous/' "$tabsdir/last.tsv" > "$tmp" \
-      && mv -f -- "$tmp" "$tabsdir/previous.tsv" || rm -f -- "${tmp:-}"
-    hint="ccx: $n tab(s) of the previous run are saved as 'previous' · ccx --restore-tabs previous opens them again"
+    if tmp=$(mktemp "$tabsdir/.previous.XXXXXX" 2>/dev/null) \
+       && sed '1s/^# ccx tabs "last"/# ccx tabs "previous" (the set "last" of the previous run)/; 1s/ccx --restore-tabs last$/ccx --restore-tabs previous/' "$tabsdir/last.tsv" > "$tmp" \
+       && mv -f -- "$tmp" "$tabsdir/previous.tsv"; then
+      rm -f -- "$tabsdir/last.tsv"
+    else
+      rm -f -- "${tmp:-}"
+    fi
+    if [ "${CCX_RESTORE:-1}" = 0 ]; then
+      hint="ccx: $n tab(s) of the previous run are saved as 'previous' · ccx --restore-tabs previous opens them again"
+    else
+      restore_prev=$n
+    fi
   fi
   win=$(tm new-session -d -P -F '#{window_id}' -s cc -n "$name" -c "$dir" -x "${size%x*}" -y "${size#*x}" "${envs[@]}" -- "$P/left.sh" "${args[@]}")
 fi
@@ -248,6 +262,23 @@ tm set-option -p -t "$diffp" @ccx_role diff 2>/dev/null || true
 tm select-pane -t "$left" 2>/dev/null || true
 # Tab set "last" (savetabs.sh): the new tab is listed with its folder now, with its session id from the next hook run
 "$P/savetabs.sh" "$SOCK" last --quiet 2>/dev/null || true
+
+# A new server with CCX_RESTORE unset or 1: the tabs of the previous run (set "previous") are opened again right after this tab,
+# before attaching, each with its Claude Code session resumed (ccx --restore-tabs previous). This tab's session id is awaited
+# first (up to 5 s; statusline-tee.sh writes it), so a session resumed here by hand (ccx --resume / --continue) is not opened
+# twice. The tabs of that restore run get CCX_RESTORE=0 and TMUX= (no second restore, no second nested-tmux message).
+if [ "$restore_prev" -gt 0 ]; then
+  for _ in $(seq 25); do
+    [[ "$(jq -r '.session_id // ""' "$D/$id.json" 2>/dev/null)" =~ ^[0-9a-fA-F-]{36}$ ]] && break
+    sleep 0.2
+  done
+  echo "ccx: reopening the $restore_prev tab(s) of the previous run (set 'previous'; ccx --no-restore skips this)"
+  if CCX_RESTORE=0 CCX_NO_ATTACH=1 TMUX= CCX_SOCKET=$SOCK CCX_HOME=$P "$self" --restore-tabs previous; then
+    hint="ccx: the tabs of the previous run were reopened (set 'previous'); ccx --no-restore starts without them"
+  else
+    hint="ccx: no tab of the previous run could be reopened; ccx --list-tabs shows the saved sets"
+  fi
+fi
 
 in_cc_server=0
 case "${TMUX:-}" in */"$SOCK",*) in_cc_server=1 ;; esac
