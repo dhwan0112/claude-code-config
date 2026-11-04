@@ -29,3 +29,8 @@ softbuffer = { version = "0.4.8", default-features = false, features = [
   "wayland",
   "wayland-dlopen",
 ] }
+swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
+# Font discovery without fontconfig; files are memory-mapped by us.
+fontdb = { version = "0.24.0", default-features = false, features = ["std", "fs"] }
+memmap2 = "0.9"
+unicode-width = { version = "0.2", default-features = false }
