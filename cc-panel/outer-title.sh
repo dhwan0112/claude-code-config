@@ -8,7 +8,7 @@
 exec >/dev/null 2>&1
 sock=${1:-}
 [[ "$sock" =~ ^[A-Za-z0-9_-]+$ ]] || exit 0
-outer=$(tmux -L "$sock" show-options -sv @ccx_outer) || exit 0
+outer=$(tmux -L "$sock" show-options -sqv @ccx_outer) || exit 0  # -q: no "invalid option" message when unset
 osock=${outer%%$'\t'*}; owin=${outer#*$'\t'}
 [ -S "$osock" ] && [[ "$owin" =~ ^@[0-9]+$ ]] || exit 0
 tab=$(tmux -L "$sock" display-message -p -t '=cc:' '#{window_name}') || exit 0  # '=cc:' = the active window of session cc
