@@ -11,6 +11,7 @@
 - Updated: 2026-11-04 15:42 +08 on kramers (ccx: tab attention colours: a tab that is not on screen turns amber when its Claude Code finished a turn or waits at the prompt, red with `?` while a permission prompt or question is pending; `cc-panel/hook.sh attn` from Stop/Notification/UserPromptSubmit/PreToolUse hooks in `cc-panel/ccx_settings.py`, bell options and `window-status-format` in `cc-panel/tmux.conf`)
 - Updated: 2026-11-04 15:54 +08 on kramers (baseline moved to git: private repository github.com/dhwan0112/claude-code-config, Dropbox `history/` snapshots imported as tagged commits; Dropbox `current/` and `hosts/` are now a mirror written by `tools/mirror-dropbox.sh`; top-level README.md added)
 - Updated: 2026-11-04 16:27 +08 on kramers (ccx: fullscreen renderer by default: the prompt stays at the bottom and the mouse wheel scrolls the conversation inside Claude Code; `CCX_TUI` = fullscreen | default | user (environment or `~/.config/cc-panel/config`) chooses the `tui` key in `cc-panel/ccx_settings.py` and `CLAUDE_CODE_NO_FLICKER` in `cc-panel/left.sh`, the variable because the `tui` setting alone loses to Claude Code's per-version fullscreen auto-off; README Renderer paragraph, Development notes describe the git flow)
+- Updated: 2026-11-04 16:51 +08 on kramers (ccx README: Claude Code's own diff panel opens in a fullscreen tab after the first edit at 144+ columns in a git repo, verified; disabling the built-in `diff` mod does not prevent it, close it once and it stays closed)
 - Claude Code version on source host: 2.1.318
 - Minimum Claude Code version: 2.1.271 (`omitClaudeMd` in subagent frontmatter)
 - Mirrors the OpenCode baseline in ~/Dropbox/opencode-config/current (orchestrator + generic workers).
@@ -66,7 +67,7 @@ Claude Code in a separate tmux server (`tmux -L cc`), tabs on top. Default layou
 - 42f30f33b2fd39f94026c5f0a9f9bc82  cc-panel/outer-title.sh
 - f8a45b79b8c34e3b7ea1b5391e71e8f8  cc-panel/panel.py
 - 1be9d675b84b54e94f2b682c819e7576  cc-panel/post.sh
-- 207f85bf1d39db7b6859d460b5696cb5  cc-panel/README.md
+- 6a6559dc2bf25c647a6ba3d6f00eabf9  cc-panel/README.md
 - c068c94a3e2aa4452ed91b90bfa3d9dd  cc-panel/savesize.sh
 - 03f458156e7c66fc0c66f6a6f08dee7f  cc-panel/statusline-tee.sh
 - 83decc2bf6ccb4eb78d2401bcc1d9107  cc-panel/tabrename.sh
