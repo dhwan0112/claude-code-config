@@ -16,6 +16,7 @@ mod app;
 mod damage;
 mod font;
 mod geom;
+mod input;
 mod render;
 
 use std::io::Write;

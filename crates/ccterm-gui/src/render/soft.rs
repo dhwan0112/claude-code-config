@@ -133,7 +133,9 @@ impl Renderer for SoftRenderer {
         };
         result.map_err(|e| RenderError(e.to_string()))?;
         if let Some(p) = &self.dump {
-            if let Err(e) = std::fs::write(p, self.canvas.to_ppm()) {
+            // Write and rename so readers never see a half-written file.
+            let tmp = p.with_extension("tmp");
+            if let Err(e) = std::fs::write(&tmp, self.canvas.to_ppm()).and_then(|_| std::fs::rename(&tmp, p)) {
                 log::warn!("frame dump {}: {e}", p.display());
             }
         }

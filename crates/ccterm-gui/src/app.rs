@@ -2,16 +2,22 @@
 
 use std::rc::Rc;
 
-use ccterm_core::{GridSize, Session, SessionConfig, SessionEvent, SessionHandle, Snapshot};
+use ccterm_core::{
+    GridSize, Key, KeyInput, MouseAction, MouseButton, MouseInput, Session, SessionConfig, SessionEvent, SessionHandle,
+    Snapshot,
+};
 use winit::application::ApplicationHandler;
-use winit::dpi::PhysicalSize;
-use winit::event::WindowEvent;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::event::{ElementState, Ime, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-use winit::window::{Window, WindowId};
+use winit::keyboard::{Key as WKey, ModifiersState, NamedKey, PhysicalKey};
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use winit::window::{ImePurpose, Window, WindowId};
 
 use crate::damage;
 use crate::font::Fonts;
 use crate::geom::Layout;
+use crate::input::{self, RawKey, Wheel};
 use crate::render::paint::Painter;
 use crate::render::soft::SoftRenderer;
 use crate::render::{Preedit, Renderer, Scene};
@@ -44,6 +50,13 @@ struct Win {
     full: bool,
     focused: bool,
     preedit: Option<Preedit>,
+    mods: ModifiersState,
+    mouse: PhysicalPosition<f64>,
+    /// Mouse buttons currently held, in press order.
+    held: Vec<MouseButton>,
+    wheel: Wheel,
+    /// Last IME cursor area sent to the window (cell column, row).
+    ime_at: Option<(u16, u16)>,
 }
 
 impl App {
@@ -67,6 +80,8 @@ impl App {
             Layout { cell: painter.cell_metrics(), padding: padding0 }.window_size(self.opts.cols, self.opts.rows);
         let attrs = Window::default_attributes().with_title("ccterm").with_inner_size(PhysicalSize::new(w, h));
         let window = Rc::new(el.create_window(attrs).map_err(|e| format!("window: {e}"))?);
+        window.set_ime_allowed(true);
+        window.set_ime_purpose(ImePurpose::Terminal);
         let scale = window.scale_factor();
         painter.set_px(self.font_px(scale));
         let mut renderer: Box<dyn Renderer> =
@@ -116,6 +131,11 @@ impl App {
             full: true,
             focused: true,
             preedit: None,
+            mods: ModifiersState::empty(),
+            mouse: PhysicalPosition::new(0.0, 0.0),
+            held: vec![],
+            wheel: Wheel::default(),
+            ime_at: None,
         });
         Ok(())
     }
@@ -130,9 +150,85 @@ impl Win {
     /// schedule a redraw.
     fn refresh(&mut self) {
         let Some(next) = self.handle().snapshot() else { return };
+        // A grid of a different size leaves stale pixels outside the new
+        // rows (e.g. the old last row in what is now padding): repaint all.
+        if self.snap.as_ref().is_some_and(|s| (s.cols, s.rows) != (next.cols, next.rows)) {
+            self.full = true;
+        }
         let d = damage::dirty_rows(self.snap.as_ref(), &next);
         damage::merge(&mut self.dirty, &d);
         self.snap = Some(next);
+        self.update_ime_area();
+        self.window.request_redraw();
+    }
+
+    /// Keep the IME candidate window next to the terminal cursor.
+    fn update_ime_area(&mut self) {
+        let Some(c) = self.snap.as_ref().and_then(|s| s.cursor) else { return };
+        if self.ime_at == Some((c.x, c.y)) {
+            return;
+        }
+        self.ime_at = Some((c.x, c.y));
+        let (x, y) = self.layout.cell_origin(c.x, c.y);
+        let cell = self.layout.cell;
+        self.window.set_ime_cursor_area(PhysicalPosition::new(x, y), PhysicalSize::new(cell.width, cell.height));
+    }
+
+    fn mouse_tracking(&self) -> bool {
+        self.snap.as_ref().is_some_and(|s| s.modes.mouse_tracking)
+    }
+
+    fn mouse_event(&self, action: MouseAction, button: Option<MouseButton>) {
+        let (x, y) = self.layout.grid_px(self.mouse.x, self.mouse.y);
+        let mut m = MouseInput::at_pixel(action, button, x, y);
+        m.mods = input::mods(self.mods);
+        m.any_pressed = !self.held.is_empty();
+        self.handle().mouse(m);
+    }
+
+    fn keyboard(&mut self, ev: &KeyEvent) {
+        // While a composition is shown, text keys belong to the IME; the
+        // result arrives as Ime::Commit.
+        if self.preedit.is_some() && ev.state == ElementState::Pressed && ev.text.is_some() {
+            return;
+        }
+        let unshifted = match ev.key_without_modifiers() {
+            WKey::Character(s) => s.chars().next(),
+            WKey::Named(NamedKey::Space) => Some(' '),
+            _ => None,
+        };
+        let raw = RawKey {
+            code: match ev.physical_key {
+                PhysicalKey::Code(c) => Some(c),
+                PhysicalKey::Unidentified(_) => None,
+            },
+            state: ev.state,
+            repeat: ev.repeat,
+            text: ev.text.as_deref(),
+            unshifted,
+            mods: self.mods,
+        };
+        let k = input::key_input(&raw);
+        log::debug!("key {:?} {:?} mods={:?} text={:?} unshifted={:?}", k.key, k.action, k.mods, k.text, k.unshifted);
+        self.handle().key(k);
+    }
+
+    fn ime(&mut self, ime: Ime) {
+        match ime {
+            Ime::Enabled => {}
+            Ime::Preedit(text, cursor) => {
+                self.preedit =
+                    if text.is_empty() { None } else { Some(Preedit { text, cursor: preedit_cursor(cursor) }) };
+            }
+            Ime::Commit(text) => {
+                self.preedit = None;
+                if !text.is_empty() {
+                    self.handle().key(KeyInput::press(Key::Unidentified).with_text(text));
+                }
+            }
+            Ime::Disabled => self.preedit = None,
+        }
+        self.mark_cursor_row();
         self.window.request_redraw();
     }
 
@@ -166,6 +262,7 @@ impl Win {
         }
         let grid = self.layout.grid(size.width, size.height);
         if grid != self.grid {
+            log::debug!("resize {}x{} px -> grid {}x{}", size.width, size.height, grid.cols, grid.rows);
             self.grid = grid;
             self.handle().resize(grid);
         }
@@ -222,6 +319,41 @@ impl ApplicationHandler<UserEvent> for App {
                 win.grid = GridSize::new(0, 0);
                 win.resized(size);
             }
+            WindowEvent::ModifiersChanged(m) => win.mods = m.state(),
+            WindowEvent::KeyboardInput { event, is_synthetic: false, .. } => win.keyboard(&event),
+            WindowEvent::Ime(ime) => win.ime(ime),
+            WindowEvent::CursorMoved { position, .. } => {
+                win.mouse = position;
+                if win.mouse_tracking() {
+                    win.mouse_event(MouseAction::Motion, win.held.first().copied());
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let Some(b) = input::mouse_button(button) else { return };
+                let action = match state {
+                    ElementState::Pressed => {
+                        win.held.retain(|x| *x != b);
+                        win.held.push(b);
+                        MouseAction::Press
+                    }
+                    ElementState::Released => {
+                        win.held.retain(|x| *x != b);
+                        MouseAction::Release
+                    }
+                };
+                if win.mouse_tracking() {
+                    win.mouse_event(action, Some(b));
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let n = win.wheel.notches(delta, win.layout.cell.height);
+                if n != 0 {
+                    let (col, row) = win.layout.cell_at(win.mouse.x, win.mouse.y, win.grid);
+                    let lines = input::wheel_lines(n, win.mouse_tracking());
+                    log::debug!("wheel {delta:?} -> {n} notches, {lines} lines at {col},{row}");
+                    win.handle().wheel(lines, col, row, input::mods(win.mods));
+                }
+            }
             WindowEvent::Focused(f) => {
                 win.focused = f;
                 win.handle().focus(f);
@@ -229,6 +361,35 @@ impl ApplicationHandler<UserEvent> for App {
                 win.window.request_redraw();
             }
             _ => {}
+        }
+    }
+}
+
+/// The IME caret inside the preedit text. Workaround for winit#4746 (not
+/// fixed in winit 0.30.13): on Windows the Microsoft Korean IME never reports
+/// GCS_CURSORPOS and winit then claims the caret is at 0. Like egui-winit
+/// (emilk/egui#8083), treat an empty range at 0 as "unknown" and draw no
+/// caret; the composition itself stays visible and underlined.
+fn preedit_cursor(cursor: Option<(usize, usize)>) -> Option<(usize, usize)> {
+    match cursor {
+        Some((0, 0)) if cfg!(windows) => None,
+        c => c,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preedit_cursor;
+
+    #[test]
+    fn korean_ime_cursor_workaround() {
+        assert_eq!(preedit_cursor(Some((3, 3))), Some((3, 3)));
+        assert_eq!(preedit_cursor(None), None);
+        let zero = preedit_cursor(Some((0, 0)));
+        if cfg!(windows) {
+            assert_eq!(zero, None);
+        } else {
+            assert_eq!(zero, Some((0, 0)));
         }
     }
 }
