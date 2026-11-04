@@ -1,0 +1,31 @@
+[package]
+name = "ccterm-gui"
+description = "ccterm window: winit + softbuffer frontend for a ccterm-core session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "ccterm"
+path = "src/main.rs"
+
+[dependencies]
+ccterm-core.workspace = true
+log.workspace = true
+# X11 and Wayland client libraries are loaded at run time (dlopen), so the
+# binary links no windowing library. Wayland window decorations: see
+# docs/HANDOFF.md (size trade-off).
+winit = { version = "0.30.13", default-features = false, features = [
+  "rwh_06",
+  "x11",
+  "wayland",
+  "wayland-dlopen",
+  "wayland-csd-adwaita",
+] }
+softbuffer = { version = "0.4.8", default-features = false, features = [
+  "x11",
+  "x11-dlopen",
+  "wayland",
+  "wayland-dlopen",
+] }

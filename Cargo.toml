@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/ccterm-pty", "crates/ccterm-core", "crates/ccterm-headless"]
+members = ["crates/ccterm-pty", "crates/ccterm-core", "crates/ccterm-headless", "crates/ccterm-gui"]
 
 [workspace.package]
 version = "0.1.0"
