@@ -1,0 +1,10 @@
+[package]
+name = "ccterm-headless"
+description = "Run a program in a ccterm session without a window: scripted input, screen dumps"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ccterm-core.workspace = true
