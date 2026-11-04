@@ -7,6 +7,10 @@ Usage: ccx_settings.py [USER_SETTINGS] [bypass]
   it out, so the user's global defaultMode applies). A --permission-mode or --dangerously-skip-permissions
   flag on the claude command line still wins over any defaultMode.
 Claude Code applies only the last --settings flag it gets, so ccx passes exactly one.
+Environment: CCX_TUI (set by bin/ccx) = fullscreen | default | user chooses the "tui" key: "fullscreen" (the alternate-screen
+  renderer: prompt fixed at the bottom, mouse wheel scrolls the conversation; left.sh adds CLAUDE_CODE_NO_FLICKER=1, because
+  this key alone loses to Claude Code's fullscreenAutoDisabled fallback), "default" (classic renderer), or no key ("user":
+  ~/.claude/settings.json decides).
 Merge rules: the user's keys override ccx's, except
   - "hooks": both sets are kept (ccx's hooks first, then the user's, per event);
   - "permissions": list keys (ask, allow, deny, ...) are concatenated, other keys (defaultMode, ...) the user's win;
@@ -18,6 +22,7 @@ import os
 import sys
 
 P = os.environ.get("CCX_HOME") or os.path.expanduser("~/.claude/cc-panel")
+TUI = os.environ.get("CCX_TUI") or "fullscreen"  # fullscreen | default | user, see the module docstring
 
 
 # ccx-only "ask" rules: destructive git/gh commands still ask in bypass mode (ask rules apply in every mode).
@@ -58,8 +63,8 @@ def base(bypass=False):
     perms = {"ask": list(ASK)}
     if bypass:
         perms["defaultMode"] = "bypassPermissions"
-    return {
-        "tui": "default",
+    settings = {
+        "tui": TUI,  # renderer, from CCX_TUI (see the module docstring); removed below for "user"
         "autoCompactWindow": 180000,  # compact at about 180k tokens in ccx sessions only; a user --settings value wins
         # statusline-tee.sh prints nothing (the status panel shows the data); it saves the JSON and renames the tab
         "statusLine": {"type": "command", "command": f'"{P}/statusline-tee.sh"', "refreshInterval": 3},
@@ -79,6 +84,9 @@ def base(bypass=False):
             "UserPromptSubmit": hook("attn clear", background=True),
         },
     }
+    if TUI not in ("fullscreen", "default"):
+        del settings["tui"]
+    return settings
 
 
 def load_user(value):

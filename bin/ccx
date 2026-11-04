@@ -27,16 +27,25 @@ SOCK=${CCX_SOCKET:-cc}
 [ -d "$P" ] || { echo "ccx: no such folder: $P (CCX_HOME)" >&2; exit 2; }
 tm() { tmux -L "$SOCK" -f "$P/tmux.conf" "$@"; }
 
-# Defaults file: only the three keys, values letters/digits/./% only, no shell evaluation. Env wins.
+# Defaults file: only these keys, values letters/digits/./% only, no shell evaluation. Env wins.
 cfg="${XDG_CONFIG_HOME:-$HOME/.config}/cc-panel/config"
 if [ -f "$cfg" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%%#*}; line=${line//[[:space:]]/}
-    [[ "$line" =~ ^(CCX_LAYOUT|CCX_SIDEBAR|CCX_DIFF)=([A-Za-z0-9.%]+)$ ]] || continue
+    [[ "$line" =~ ^(CCX_LAYOUT|CCX_SIDEBAR|CCX_DIFF|CCX_TUI)=([A-Za-z0-9.%]+)$ ]] || continue
     k=${BASH_REMATCH[1]}
     [ -n "${!k:-}" ] || printf -v "$k" '%s' "${BASH_REMATCH[2]}"
   done < "$cfg"
 fi
+# Renderer of the Claude pane (CCX_TUI): fullscreen (default: prompt fixed at the bottom, the mouse wheel scrolls the conversation
+# inside Claude Code), default (Claude Code's classic renderer: the wheel enters tmux copy mode and the whole pane scrolls) or user
+# (no "tui" key, ~/.claude/settings.json decides). Passed to ccx_settings.py and to left.sh, which sets CLAUDE_CODE_NO_FLICKER from it.
+# Not exported: a tmux server started here would otherwise hand it to every later ccx run and the config file would stop applying.
+case "${CCX_TUI:-fullscreen}" in
+  fullscreen|default|user) CCX_TUI=${CCX_TUI:-fullscreen} ;;
+  classic) CCX_TUI=default ;;
+  *) echo "ccx: CCX_TUI=$CCX_TUI is not fullscreen, default or user; using fullscreen" >&2; CCX_TUI=fullscreen ;;
+esac
 
 layout=${CCX_LAYOUT:-sidebar}
 case "$layout" in sidebar|split) ;; *) echo "ccx: CCX_LAYOUT must be sidebar or split" >&2; exit 2 ;; esac
@@ -97,10 +106,10 @@ for f in "$D"/* "$D"/.[!.]*; do
   [ -n "$(find "$f" -maxdepth 0 -mmin -10 2>/dev/null)" ] && continue
   rm -rf -- "$f"
 done
-CCX_HOME=$P python3 "$P/ccx_settings.py" "$user_settings" $mode_arg > "$D/$id.settings.json"
+CCX_HOME=$P CCX_TUI=$CCX_TUI python3 "$P/ccx_settings.py" "$user_settings" $mode_arg > "$D/$id.settings.json"
 
 # CCX_TAB_RENAME=1: statusline-tee.sh renames this tab after the session name (tabs opened before it lack it)
-envs=(-e "CC_PANEL_ID=$id" -e "CC_PANEL_DIR=$dir" -e "CCX_TAB_RENAME=1" -e "CCX_HOME=$P")
+envs=(-e "CC_PANEL_ID=$id" -e "CC_PANEL_DIR=$dir" -e "CCX_TAB_RENAME=1" -e "CCX_HOME=$P" -e "CCX_TUI=$CCX_TUI")
 
 if tm has-session -t "=cc" 2>/dev/null; then
   win=$(tm new-window -d -P -F '#{window_id}' -t "=cc:" -n "$name" -c "$dir" "${envs[@]}" -- "$P/left.sh" "${args[@]}")
