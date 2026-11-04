@@ -105,12 +105,14 @@ See `docs/HANDOFF.md` §3 for details and evidence. Verified on Linux (x86_64):
 
 - `ccterm` window with Claude Code under X11 and native Wayland: rendering,
   typing (ASCII, Hangul through ibus-hangul/XIM), Shift+Enter, wheel,
-  resize, selection copy to the clipboard, paste, idle CPU ~0%.
+  resize, selection copy to the clipboard and paste (X11), idle CPU ~0%.
 
-Windows 11 (native, x86_64): `scripts/windows-smoke.ps1` passes (embedded
-ConPTY 1.25), Claude Code's fullscreen renderer works through it (kitty
-keyboard flags 5 included), and the `ccterm` window runs Claude Code
-(typing, Shift+Enter, Ctrl+V paste, exit code passed on). Not yet checked by
+Windows 11 (native, x86_64): the PTY checks of `scripts/windows-smoke.ps1`
+pass (embedded ConPTY 1.25); its Claude Code checks need a prepared Claude
+Code config (see `docs/HANDOFF.md` §3) and pass with one, run through
+`ccterm-headless` (fullscreen renderer, kitty keyboard flags 5 included).
+The `ccterm` window runs Claude Code (typing, Shift+Enter, Ctrl+V paste,
+exit code passed on), and the GUI unit tests pass there. Not yet checked by
 hand: the Microsoft IME, a real mouse wheel and HiDPI monitors.
 
 ## Windows notes

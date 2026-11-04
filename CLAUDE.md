@@ -33,7 +33,7 @@ list.
 
 ```sh
 cargo build --release
-cargo test                                   # 5 unit + 9 end-to-end (Linux, needs python3)
+cargo test                                   # core: 5 unit + 9 end-to-end (Linux, needs python3); gui: 31
 cargo clippy --all-targets                   # must stay warning-free
 cargo clippy --all-targets --target x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu

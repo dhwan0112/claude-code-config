@@ -111,7 +111,14 @@ mode runs locally without the API — useful for scrollable content.
 
 - `scripts/windows-smoke.ps1` (release and dist builds): `[pty] conpty
   embedded 1.25.260930003 flags=0x8`; PASS cmd echo with `ok-한글`, PASS
-  PowerShell input (`42`), PASS resize (`77`).
+  PowerShell input (`42`), PASS resize (`77`). Its two Claude Code checks
+  FAIL unless Claude Code is prepared (onboarding/login screen otherwise):
+  run with the isolated config below and `ANTHROPIC_API_KEY` set, or use
+  the direct `ccterm-headless.exe` run in the next item.
+- `ccterm-gui` unit tests built for `x86_64-pc-windows-gnu` and run natively:
+  31 passed — including the Windows-only branches (winit#4746 workaround,
+  AltGr text, Ctrl+V paste) and the pixel tests with Windows fonts
+  (Malgun Gothic for the wide-character test).
 - `ccterm-headless.exe` + native Claude Code 2.1.318
   (`C:\Users\...\.local\bin\claude.exe`): fullscreen renderer through the
   embedded ConPTY — `alt_screen, mouse_tracking, sgr_mouse,
@@ -137,15 +144,23 @@ mode runs locally without the API — useful for scrollable content.
   then wheel up/down moves Claude Code's view (159–183 ↔ bottom); window
   resized to 640×400 → log `grid 70x23`, content reflowed by Claude Code;
   mouse drag over output → Claude Code "copied 14 chars", `xclip -o` reads
-  `selectme-12345`; Ctrl+Shift+V pastes `pasted-from-clipboard 한글`;
-  Ctrl+C twice → window closes, exit 0.
+  `selectme-12345`; Ctrl+Shift+V pastes `pasted-from-clipboard 한글`.
+- Ctrl+C twice in the window: one run logged both presses
+  (`key C Press mods=Mods(CTRL)` ×2), then `child exited: code 0`, and the
+  window closed with exit 0. Another run did not exit (its log was lost).
+  A dedicated 3-run re-test could not run: while the Windows desktop was in
+  use, WSLg windows did not get keyboard focus (hollow cursor, no key
+  events). Encoding itself is fine (headless Ctrl+C twice always exits).
+  Listed in §6.1.
 - Real IME path: ibus-daemon (XIM, `XMODIFIERS=@im=ibus`) + ibus-hangul,
   keys `g k s r m f` from xdotool → winit `Preedit("ㅎ")`, `("하")`,
   `("한")`, `Commit("한")`, `Preedit("그")`…`Commit("글")`; frame shows the
   composing syllable underlined at the cursor with the caret after it, then
   `한글` in Claude Code's input.
-- Native Wayland (WSLg Weston): window opens, `clipboard: wayland`,
-  libwayland-client mapped, frame identical to X11.
+- Native Wayland (WSLg Weston): window opens, `clipboard: wayland`
+  (initialised only; copy/paste not exercised there), libwayland-client
+  mapped, frame identical to X11. Wheel was checked only with XTest under
+  X11 (each click counts twice, §4); IME only under X11/XIM.
 - Idle with Claude Code idle (60 s): ccterm 0 ticks (Wayland), 2 ticks
   = 0.03 % of one core (X11); Claude Code itself ~0.8 %. RSS ~55 MB
   (RssAnon 25.7 MB, RssFile 25 MB = shared libraries and mapped fonts),
@@ -245,7 +260,11 @@ New in the GUI work (2026-11-05):
   escapes and Claude Code reported the file as corrupted.
 - In Claude Code's fullscreen renderer Ctrl+C with an active selection
   copies instead of exiting: a test that drags must not expect Ctrl+C twice
-  to exit. Claude Code also wants the two Ctrl+C presses close together.
+  to exit.
+- WSLg windows only get keyboard focus when the Windows desktop allows it:
+  with the user active in another Windows app, `xdotool windowfocus` has no
+  effect (cursor drawn hollow, no key events). Check the cursor in the
+  frame dump before blaming input code.
 - Windows automation: `SetForegroundWindow` is refused while the user is
   active elsewhere; check the foreground window's process before
   `SendKeys`, never type blind. Windows PowerShell 5 reads BOM-less UTF-8
@@ -283,6 +302,8 @@ New in the GUI work (2026-11-05):
 
 ### 6.1 Manual checks still open for milestone 1
 
+0. Ctrl+C twice in the window exits Claude Code and closes the window
+   (Linux and Windows); see §3 for the partial evidence.
 1. Windows: type Hangul with the Microsoft Korean IME in `ccterm.exe` running
    Claude Code — composition shown inline and underlined at the cursor, no
    caret at the start of the syllable (winit#4746 workaround), candidate
@@ -297,7 +318,9 @@ New in the GUI work (2026-11-05):
 5. Interactive resize by dragging the window edge (only programmatic
    resizes were tested).
 6. Real clipboard managers: copy from Claude Code, paste in another app;
-   paste a large text (bracketed) into Claude Code.
+   paste a large text (bracketed) into Claude Code; the same on a Wayland
+   session (only initialisation was seen) and on Windows (selection copy
+   from Claude Code was only checked on X11).
 7. Font choice with `--font` on each platform; Noto Sans Symbols 2 / emoji
    rendering on a full Linux desktop.
 

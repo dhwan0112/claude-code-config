@@ -10,7 +10,7 @@
 //! `CCTERM_LOG_FILE=path` (log there instead of stderr; on Windows the
 //! release build has no console), `CCTERM_DUMP_FRAME=path.ppm` (write every
 //! frame as an image, for debugging), `CCTERM_FONT_DIR=dir` (extra fonts).
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(all(windows, not(debug_assertions), not(test)), windows_subsystem = "windows")]
 
 mod app;
 mod clipboard;
