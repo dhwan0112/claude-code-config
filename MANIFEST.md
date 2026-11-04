@@ -9,6 +9,7 @@
 - Updated: 2026-11-04 14:50 +08 on kramers (ccx: drag a tab on the top bar to move it (`cc-panel/dragtab.sh`); renaming a tab renames the Claude Code session (`cc-panel/tabrename.sh`, window-renamed hook); `keys` rows one per key)
 - Updated: 2026-11-04 15:35 +08 on kramers (ccx: the Claude pane runs with `CLAUDE_CODE_TMUX_TRUECOLOR=1`, so Claude Code draws in 24-bit colour inside tmux instead of 256 colours (`cc-panel/left.sh`); README Colours paragraph)
 - Updated: 2026-11-04 15:42 +08 on kramers (ccx: tab attention colours: a tab that is not on screen turns amber when its Claude Code finished a turn or waits at the prompt, red with `?` while a permission prompt or question is pending; `cc-panel/hook.sh attn` from Stop/Notification/UserPromptSubmit/PreToolUse hooks in `cc-panel/ccx_settings.py`, bell options and `window-status-format` in `cc-panel/tmux.conf`)
+- Updated: 2026-11-04 15:54 +08 on kramers (baseline moved to git: private repository github.com/dhwan0112/claude-code-config, Dropbox `history/` snapshots imported as tagged commits; Dropbox `current/` and `hosts/` are now a mirror written by `tools/mirror-dropbox.sh`; top-level README.md added)
 - Claude Code version on source host: 2.1.317
 - Minimum Claude Code version: 2.1.271 (`omitClaudeMd` in subagent frontmatter)
 - Mirrors the OpenCode baseline in ~/Dropbox/opencode-config/current (orchestrator + generic workers).
