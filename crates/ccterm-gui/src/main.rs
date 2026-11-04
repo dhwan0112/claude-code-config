@@ -53,7 +53,7 @@ fn default_shell() -> CommandSpec {
 const USAGE: &str =
     "usage: ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
      settings (KEY): window-padding N, window-padding-balance true|false,\n\
-     window-padding-color background|extend|extend-always";
+     window-padding-color background|extend|extend-always, decorations native|integrated|none";
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
     let mut o = Options {
@@ -234,6 +234,8 @@ mod tests {
         assert!(!o.config.padding_balance);
         assert_eq!(o.command.program, "sh");
         assert!(args(&["--window-padding-color", "pink"]).is_err());
+        assert_eq!(args(&["--decorations", "none"]).unwrap().config.decorations, config::Decorations::None);
+        assert!(args(&["--decorations"]).is_err());
 
         assert!(!args(&[]).unwrap().command.program.is_empty());
     }

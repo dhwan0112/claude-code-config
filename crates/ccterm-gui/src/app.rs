@@ -16,6 +16,7 @@ use winit::window::{ImePurpose, Window, WindowId};
 
 use crate::chrome::{self, Chrome};
 use crate::clipboard::Clipboard;
+use crate::config::Decorations;
 use crate::damage;
 use crate::font::Fonts;
 use crate::geom::Layout;
@@ -90,7 +91,8 @@ impl App {
             .window_size(self.opts.cols, self.opts.rows);
         let mut cfg = SessionConfig::new(self.opts.command.clone());
         let attrs = Window::default_attributes().with_title("ccterm").with_inner_size(PhysicalSize::new(w, h));
-        let attrs = chrome::attributes(attrs, cfg.default_bg, cfg.default_fg);
+        let attrs = chrome::attributes(attrs, cfg.default_bg, cfg.default_fg)
+            .with_decorations(decorated(self.opts.config.decorations));
         let chrome = Chrome::new(cfg.default_bg, cfg.default_fg);
         let window = Rc::new(el.create_window(attrs).map_err(|e| format!("window: {e}"))?);
         window.set_ime_allowed(true);
@@ -393,6 +395,19 @@ impl ApplicationHandler<UserEvent> for App {
                 win.window.request_redraw();
             }
             _ => {}
+        }
+    }
+}
+
+/// Whether the platform draws a title bar and frame.
+fn decorated(d: Decorations) -> bool {
+    match d {
+        Decorations::Native => true,
+        Decorations::None => false,
+        Decorations::Integrated => {
+            // The tabs milestone draws its own title bar here.
+            log::warn!("decorations = integrated is not implemented yet; using native");
+            true
         }
     }
 }

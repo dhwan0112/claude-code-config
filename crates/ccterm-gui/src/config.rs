@@ -7,6 +7,7 @@
 //! | `window-padding` | logical pixels around the grid (minimum) | 4 |
 //! | `window-padding-balance` | `true` / `false`: spread the leftover space evenly on all sides | `true` |
 //! | `window-padding-color` | `background` / `extend` / `extend-always` | `extend` |
+//! | `decorations` | `native` / `integrated` / `none` | `native` |
 
 /// Colour of the padding around the grid (Ghostty's `window-padding-color`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,20 +22,38 @@ pub enum PaddingColor {
     ExtendAlways,
 }
 
+/// Window decorations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Decorations {
+    /// The platform's title bar and frame (coloured to match on Windows 11).
+    Native,
+    /// Title bar drawn by ccterm with tabs — planned for the tabs milestone;
+    /// falls back to `Native` until then.
+    Integrated,
+    /// No title bar or frame.
+    None,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     pub window_padding: f64,
     pub padding_balance: bool,
     pub padding_color: PaddingColor,
+    pub decorations: Decorations,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { window_padding: 4.0, padding_balance: true, padding_color: PaddingColor::Extend }
+        Config {
+            window_padding: 4.0,
+            padding_balance: true,
+            padding_color: PaddingColor::Extend,
+            decorations: Decorations::Native,
+        }
     }
 }
 
-pub const KEYS: &[&str] = &["window-padding", "window-padding-balance", "window-padding-color"];
+pub const KEYS: &[&str] = &["window-padding", "window-padding-balance", "window-padding-color", "decorations"];
 
 impl Config {
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
@@ -62,6 +81,14 @@ impl Config {
                     _ => return Err(bad()),
                 }
             }
+            "decorations" => {
+                self.decorations = match value {
+                    "native" => Decorations::Native,
+                    "integrated" => Decorations::Integrated,
+                    "none" => Decorations::None,
+                    _ => return Err(bad()),
+                }
+            }
             _ => return Err(format!("unknown setting {key:?}")),
         }
         Ok(())
@@ -80,10 +107,13 @@ mod tests {
         c.set("window-padding-color", "extend-always").unwrap();
         c.set("window-padding-balance", "false").unwrap();
         c.set("window-padding", "10").unwrap();
+        c.set("decorations", "none").unwrap();
         assert_eq!(c.padding_color, PaddingColor::ExtendAlways);
         assert!(!c.padding_balance);
         assert_eq!(c.window_padding, 10.0);
+        assert_eq!(c.decorations, Decorations::None);
         assert!(c.set("window-padding-color", "red").is_err());
+        assert!(c.set("decorations", "fancy").is_err());
         assert!(c.set("window-padding", "-1").is_err());
         assert!(c.set("nope", "1").is_err());
         for k in KEYS {
