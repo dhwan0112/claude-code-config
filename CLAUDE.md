@@ -2,8 +2,9 @@
 
 A lightweight terminal for running Claude Code, on **Windows and Linux both**.
 The backend (PTY + terminal emulation) is done and tested on Linux; the GUI is
-next. Read `docs/HANDOFF.md` once at the start of a session: it holds the
-design decisions, verified facts, pitfalls and the task list.
+next. Read `docs/HANDOFF.md` (state, verified facts, pitfalls, tasks) and
+`docs/DESIGN.md` (target outer and inner design) once at the start of a
+session.
 
 ## Hard requirements
 
@@ -16,6 +17,8 @@ design decisions, verified facts, pitfalls and the task list.
 - Standalone: one executable per platform, no installer, no runtime
   dependencies beyond system libraries (Windows: system DLLs only; Linux:
   X11/Wayland client libraries loaded at run time).
+- Rust only, except libghostty-vt (Zig, FFI inside `ccterm-core`) and the
+  ConPTY binaries. No Python or shell at run time.
 - libghostty-vt objects are `!Send`: they live only on the engine thread in
   `ccterm-core`. Frontends use `SessionHandle`, `SessionEvent` and `Snapshot`.
 

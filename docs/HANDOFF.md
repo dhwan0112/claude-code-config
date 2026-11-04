@@ -161,3 +161,11 @@ Later milestones (not now): tabs; status panel and diff pane rebuilt from
 the `ccx` hook scripts (status line JSON + hook events, ideally via a local
 socket instead of files); saved tab sets; config file; OpenGL renderer if
 needed; Windows fixes from the smoke test.
+
+## 7. Long-term direction (constrains current work)
+
+See `docs/DESIGN.md`. In short: one binary with three layers (terminal,
+Claude Code adapter, orchestrator); sessions move into a daemon behind a
+local socket later, so GUI code uses only `SessionHandle`, `SessionEvent` and
+`Snapshot`; hooks become `<bin> hook <event>`; everything except
+libghostty-vt is Rust; never touch Claude credentials.
