@@ -2,9 +2,9 @@
 
 A lightweight terminal for running Claude Code, on **Windows and Linux both**.
 The backend (PTY + terminal emulation) and the first GUI milestone (`ccterm`,
-crate `ccterm-gui`) are done. Read `docs/HANDOFF.md` once at the start of a
-session: it holds the design decisions, verified facts, pitfalls and the task
-list.
+crate `ccterm-gui`) are done. Read `docs/HANDOFF.md` (state, verified facts,
+pitfalls, tasks) and `docs/DESIGN.md` (target outer and inner design) once at
+the start of a session.
 
 ## Hard requirements
 
@@ -17,8 +17,21 @@ list.
 - Standalone: one executable per platform, no installer, no runtime
   dependencies beyond system libraries (Windows: system DLLs only; Linux:
   X11/Wayland client libraries loaded at run time).
+- Rust only, except libghostty-vt (Zig, FFI inside `ccterm-core`) and the
+  ConPTY binaries. No Python or shell at run time.
 - libghostty-vt objects are `!Send`: they live only on the engine thread in
-  `ccterm-core`. Frontends use `SessionHandle`, `SessionEvent` and `Snapshot`.
+  `ccterm-core`. Frontends use `SessionHandle`, `SessionEvent` and `Snapshot`
+  — and nothing else of a session, so sessions can move into a daemon behind
+  a local socket later (`docs/HANDOFF.md` §7–§8).
+- Never read, store or forward Claude credentials or OAuth tokens; run the
+  user's installed `claude` and observe it only through hooks, the status
+  line and transcripts. Logs must not record typed text.
+- Future hooks are the same executable (`<bin> hook <event>`), no cache
+  files, no jq, no flock. The daemon API is a typed, versioned schema with
+  durable ids and an append-only event log; remote parties (CLI over SSH,
+  MCP) never answer Claude Code permission prompts (`docs/DESIGN.md` §6).
+- Outer design (`docs/DESIGN.md` §2): events never change the layout; no
+  accent colour on an idle screen; no sounds, pop-ups or animations.
 
 ## Environment
 

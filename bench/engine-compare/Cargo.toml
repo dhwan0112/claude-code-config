@@ -1,0 +1,23 @@
+[workspace]
+
+[package]
+name = "engine-compare"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+libghostty-vt = { version = "=0.2.2", optional = true }
+alacritty_terminal = { version = "0.26", optional = true }
+[features]
+ghostty = ["dep:libghostty-vt"]
+alacritty = ["dep:alacritty_terminal"]
+[[bin]]
+name = "bench-ghostty"
+path = "src/bin/ghostty.rs"
+required-features = ["ghostty"]
+[[bin]]
+name = "bench-alacritty"
+path = "src/bin/alacritty.rs"
+required-features = ["alacritty"]
+[profile.release]
+strip = true
+lto = "thin"

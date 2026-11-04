@@ -404,3 +404,84 @@ Tabs; status panel and diff pane rebuilt from the `ccx` hook scripts (status
 line JSON + hook events, ideally via a local socket instead of files); saved
 tab sets; config file; OpenGL renderer if needed; Windows fixes from the
 smoke test (none needed so far).
+
+## 7. Long-term direction (constrains current work)
+
+ccterm grows into one standalone binary with three layers: the terminal, a
+Claude Code adapter (hook events, status line JSON, session ids, transcripts,
+permission waits) and an orchestrator (task queue, worker sessions, worktrees,
+worker reports in the STATUS/ARTIFACT/EVIDENCE/BLOCKERS/NEXT_ACTION format).
+
+Rules for work done now:
+- GUI code talks to sessions only through SessionHandle, SessionEvent and
+  Snapshot, so sessions can later move into a daemon behind a local socket
+  (Unix socket / Windows named pipe) without rewriting the GUI.
+- Hooks will be the same executable (`<bin> hook <event>`) forwarding stdin
+  JSON to the daemon; no cache files, no jq, no flock.
+- Never read, store or forward Claude credentials or OAuth tokens. Always run
+  the user's installed `claude`; observe it only through hooks, the status
+  line and transcript files.
+
+The target design (outer and inner) is in `docs/DESIGN.md`; external
+integration (Rakazo) in its §6.
+
+## 8. Where the code stands against §7 and DESIGN.md §2/§6 (audit 2026-11-05)
+
+- **GUI ↔ session boundary: holds.** `ccterm-gui` uses `SessionHandle`
+  (key, mouse, wheel, paste, focus, resize, snapshot; `backend`/`pid` only
+  for a log line), `SessionEvent` and `Snapshot`, plus plain data types from
+  `ccterm-core` (`GridSize`, `KeyInput`, `MouseInput`, `Rgb`, `Cell`, …).
+  The one in-process seam is `Session::spawn` and owning the `Session` in
+  `app.rs::App::create`; a daemon client replaces exactly that. Nothing in
+  the GUI touches libghostty or the PTY.
+- **Not yet in place (needed for the daemon / CLI / MCP):** the commands and
+  events are Rust types without a wire format or version (the engine's `Cmd`
+  is private; the public `SessionHandle` methods plus `SessionEvent` are the
+  natural schema — serde would add size, measure first). Sessions have no
+  durable id (only a pid). `snapshot()` is a blocking request returning the
+  whole viewport; over a socket it wants row diffs keyed by `seq`. No event
+  log yet.
+- **Input stays human-only for permission prompts:** `SessionHandle`'s
+  `key` / `paste` / `write` are exactly what could answer a Claude Code
+  permission prompt. When the API goes over a socket, input commands are for
+  the local GUI only; CLI over SSH and MCP get read-only access by default
+  and never input to a session waiting on a permission.
+- **Credentials:** no code reads credential files, keychains or token
+  variables. The child inherits the parent environment unchanged (except
+  `TMUX`/`TMUX_PANE` removal and `TERM*`), so a user's own
+  `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` setup keeps working;
+  nothing is forwarded anywhere else. Debug outputs that could capture
+  secrets are opt-in and local: `CCTERM_LOG=debug` no longer records typed or
+  IME text (only non-text keys and character counts); `CCTERM_DUMP_FRAME` and
+  `ccterm-headless --raw-log` / `--trace` (prints OSC 52 clipboard text)
+  write screen contents or PTY bytes — never use them around `claude
+  /login` or `setup-token`, and never ship them enabled.
+- **Test practice:** tests use an isolated `HOME` / `USERPROFILE` and a dummy
+  `sk-ant-...` key, never the user's login. Strip every `CLAUDE_CODE_*`,
+  `CLAUDECODE` and `CLAUDE_*SESSION*` variable before starting a test
+  `claude` from inside a Claude Code session: on 2026-11-05 some Windows
+  headless runs started from Git Bash removed only three of them, so the
+  test child inherited the host session's `CLAUDE_CODE_SESSION_ID` and
+  `CLAUDE_CODE_MESSAGING_TOKEN` (not Claude credentials; nothing logged or
+  stored them). The scripts in `C:\Users\denny\ccterm-win\scripts` strip
+  them all (`cchome.sh`, the `.ps1` files).
+- **Hooks / adapter / orchestrator / CLI JSON / MCP:** not started; nothing
+  conflicts. The binary is still the GUI (`ccterm`); the first non-option
+  word is taken as the program today, so subcommand names (`gui`, `daemon`,
+  `hook`, `statusline`, `run`, `headless`, `install-desktop`, `status`) must
+  be reserved before they are added.
+- **DESIGN.md §2.3 checks, current GUI (no status line, tabs or panels yet):**
+  - Layout changes without user input: 0 in steady state — the grid changes
+    only on `Resized` / `ScaleFactorChanged` from the window system. At
+    startup under WSLg the window passes through scale 1.75 → 1.0 before the
+    first frame (several resizes, see the ccterm log), which costs Claude
+    Code one extra redraw; not seen on Windows.
+  - Accent colours on an idle screen: 0 drawn by ccterm (it draws no UI of
+    its own; padding `extend` repeats the application's own edge colours).
+  - With one tab: nothing besides the terminal — the status line does not
+    exist yet (adapter milestone).
+  - §2.2 "no sounds, pop-ups": the bell only sets the OS attention hint, and
+    only when the window is unfocused. Exception: a fatal start-up error on
+    Windows shows a message box (the GUI build has no console to print to).
+  - Not built yet: status line, command palette (Ctrl+Shift+P), panels,
+    first-show key hints, theme struct with the neutral greys.

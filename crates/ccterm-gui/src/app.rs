@@ -234,12 +234,12 @@ impl Win {
         let raw =
             RawKey { code, state: ev.state, repeat: ev.repeat, text: ev.text.as_deref(), unshifted, mods: self.mods };
         let k = input::key_input(&raw);
-        log::debug!("key {:?} {:?} mods={:?} text={:?} unshifted={:?}", k.key, k.action, k.mods, k.text, k.unshifted);
+        log_key(&k);
         self.handle().key(k);
     }
 
     fn ime(&mut self, ime: Ime) {
-        log::debug!("ime {ime:?}");
+        log_ime(&ime);
         match ime {
             Ime::Enabled => {}
             Ime::Preedit(text, cursor) => {
@@ -321,9 +321,12 @@ impl ApplicationHandler<UserEvent> for App {
                 el.exit();
             }
             SessionEvent::Error(e) => log::error!("session: {e}"),
-            SessionEvent::Bell => {
+            // No sound or pop-up (DESIGN.md §2.2): only an attention hint
+            // (taskbar / urgency), and only when the window is unfocused.
+            SessionEvent::Bell if !win.focused => {
                 win.window.request_user_attention(Some(winit::window::UserAttentionType::Informational))
             }
+            SessionEvent::Bell => {}
             // OSC 52 from the application, e.g. Claude Code copying a
             // mouse selection in its fullscreen renderer.
             SessionEvent::ClipboardWrite(text) => {
@@ -396,6 +399,30 @@ impl ApplicationHandler<UserEvent> for App {
             }
             _ => {}
         }
+    }
+}
+
+/// Debug log of a key event without its content: keys that produce text are
+/// logged as `<text>` plus a character count, so a debug log never holds what
+/// was typed (passwords, tokens).
+fn log_key(k: &KeyInput) {
+    if !log::log_enabled!(log::Level::Debug) {
+        return;
+    }
+    let shortcut = k.mods.intersects(ccterm_core::Mods::CTRL | ccterm_core::Mods::ALT | ccterm_core::Mods::SUPER);
+    match &k.text {
+        Some(t) if !shortcut => log::debug!("key <text> {:?} chars={}", k.action, t.chars().count()),
+        _ if !shortcut && k.unshifted.is_some() => log::debug!("key <text> {:?}", k.action),
+        _ => log::debug!("key {:?} {:?} mods={:?}", k.key, k.action, k.mods),
+    }
+}
+
+/// Debug log of an IME event without the composed text.
+fn log_ime(ime: &Ime) {
+    match ime {
+        Ime::Preedit(t, c) => log::debug!("ime preedit chars={} cursor={c:?}", t.chars().count()),
+        Ime::Commit(t) => log::debug!("ime commit chars={}", t.chars().count()),
+        other => log::debug!("ime {other:?}"),
     }
 }
 
