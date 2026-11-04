@@ -19,3 +19,13 @@ log = "0.4"
 
 [profile.release]
 debug = 1
+
+# Size-optimised build for shipping: `cargo build --profile dist [--target ...]`.
+# `release` keeps debug info for profiling and size analysis (cargo bloat).
+[profile.dist]
+inherits = "release"
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+debug = 0
+strip = true
