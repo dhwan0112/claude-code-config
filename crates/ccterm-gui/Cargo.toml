@@ -34,3 +34,12 @@ swash = { version = "0.2.10", default-features = false, features = ["std", "scal
 fontdb = { version = "0.24.0", default-features = false, features = ["std", "fs"] }
 memmap2 = "0.9"
 unicode-width = { version = "0.2", default-features = false }
+# Clipboard: Win32; X11 via x11rb (pure Rust); Wayland via smithay-clipboard
+# (shares smithay-client-toolkit with winit), libwayland-client dlopen'ed.
+copypasta = { version = "0.10.2", default-features = false, features = ["x11", "wayland", "wayland-dlopen"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+# Not used directly: pins copypasta's Wayland clipboard to the release that
+# shares smithay-client-toolkit 0.19 with winit 0.30 (0.7.3 pulls in 0.20,
+# a second copy of sctk and calloop, +89 KB stripped).
+smithay-clipboard = { version = "=0.7.2", default-features = false }

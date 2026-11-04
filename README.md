@@ -55,7 +55,7 @@ ccterm-headless --cols 120 --rows 36 --trace \
 Steps: `sleep MS`, `wait-text TEXT [MS]`, `wait-idle MS [MAX]`, `wait-exit [MS]`,
 `type TEXT`, `send TEXT` (raw bytes), `key SPEC` (`Enter`, `shift+Enter`,
 `ctrl+c`, `ArrowUp`, `F5`, …), `paste TEXT`, `wheel up|down N COL ROW`,
-`click COL ROW`, `focus in|out`, `resize COLS ROWS`, `expect TEXT`,
+`click COL ROW`, `drag C1 R1 C2 R2`, `focus in|out`, `resize COLS ROWS`, `expect TEXT`,
 `expect-not TEXT`, `print`, `modes`, `save FILE`. `--raw-log FILE` keeps every
 output byte; `--trace` prints replies to queries and events.
 

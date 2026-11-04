@@ -14,6 +14,7 @@ use winit::keyboard::{Key as WKey, ModifiersState, NamedKey, PhysicalKey};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{ImePurpose, Window, WindowId};
 
+use crate::clipboard::Clipboard;
 use crate::damage;
 use crate::font::Fonts;
 use crate::geom::Layout;
@@ -57,6 +58,7 @@ struct Win {
     wheel: Wheel,
     /// Last IME cursor area sent to the window (cell column, row).
     ime_at: Option<(u16, u16)>,
+    clipboard: Clipboard,
 }
 
 impl App {
@@ -120,6 +122,7 @@ impl App {
             })
             .map_err(|e| e.to_string())?;
 
+        let clipboard = Clipboard::new(&window);
         self.win = Some(Win {
             window,
             renderer,
@@ -136,6 +139,7 @@ impl App {
             held: vec![],
             wheel: Wheel::default(),
             ime_at: None,
+            clipboard,
         });
         Ok(())
     }
@@ -192,22 +196,23 @@ impl Win {
         if self.preedit.is_some() && ev.state == ElementState::Pressed && ev.text.is_some() {
             return;
         }
+        let code = match ev.physical_key {
+            PhysicalKey::Code(c) => Some(c),
+            PhysicalKey::Unidentified(_) => None,
+        };
+        if ev.state == ElementState::Pressed && input::is_paste(code, self.mods) {
+            if let Some(text) = self.clipboard.get() {
+                self.handle().paste(text);
+            }
+            return;
+        }
         let unshifted = match ev.key_without_modifiers() {
             WKey::Character(s) => s.chars().next(),
             WKey::Named(NamedKey::Space) => Some(' '),
             _ => None,
         };
-        let raw = RawKey {
-            code: match ev.physical_key {
-                PhysicalKey::Code(c) => Some(c),
-                PhysicalKey::Unidentified(_) => None,
-            },
-            state: ev.state,
-            repeat: ev.repeat,
-            text: ev.text.as_deref(),
-            unshifted,
-            mods: self.mods,
-        };
+        let raw =
+            RawKey { code, state: ev.state, repeat: ev.repeat, text: ev.text.as_deref(), unshifted, mods: self.mods };
         let k = input::key_input(&raw);
         log::debug!("key {:?} {:?} mods={:?} text={:?} unshifted={:?}", k.key, k.action, k.mods, k.text, k.unshifted);
         self.handle().key(k);
@@ -295,7 +300,12 @@ impl ApplicationHandler<UserEvent> for App {
             SessionEvent::Bell => {
                 win.window.request_user_attention(Some(winit::window::UserAttentionType::Informational))
             }
-            SessionEvent::ClipboardWrite(_) => {}
+            // OSC 52 from the application, e.g. Claude Code copying a
+            // mouse selection in its fullscreen renderer.
+            SessionEvent::ClipboardWrite(text) => {
+                log::debug!("clipboard write from application: {} bytes", text.len());
+                win.clipboard.set(text);
+            }
             SessionEvent::Pwd(_)
             | SessionEvent::Notification { .. }
             | SessionEvent::Progress(_)

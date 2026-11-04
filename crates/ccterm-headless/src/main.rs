@@ -23,6 +23,7 @@
 //!   paste TEXT                bracketed paste if the application enabled it
 //!   wheel up|down N COL ROW   mouse wheel at a cell
 //!   click COL ROW             left click at a cell
+//!   drag C1 R1 C2 R2          left button down at C1 R1, move with the button held, release at C2 R2
 //!   focus in|out
 //!   resize COLS ROWS
 //!   expect TEXT               fail unless TEXT is on screen
@@ -289,6 +290,29 @@ impl Runner {
                 press.action = MouseAction::Release;
                 h.mouse(press);
                 self.pump(Duration::from_millis(30));
+            }
+            "drag" => {
+                let p: Vec<u16> = rest.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                if p.len() != 4 {
+                    return Err("drag C1 R1 C2 R2".into());
+                }
+                let size = self.size;
+                let at = |action, c, r, held| {
+                    let mut m = MouseInput::at_cell(action, Some(MouseButton::Left), c, r, size);
+                    m.any_pressed = held;
+                    m
+                };
+                h.mouse(at(MouseAction::Press, p[0], p[1], true));
+                self.pump(Duration::from_millis(30));
+                // Move cell by cell, as a real drag reports motion.
+                let steps = p[0].abs_diff(p[2]).max(p[1].abs_diff(p[3])).max(1);
+                for i in 1..=steps {
+                    let lerp = |a: u16, b: u16| (a as i32 + (b as i32 - a as i32) * i as i32 / steps as i32) as u16;
+                    h.mouse(at(MouseAction::Motion, lerp(p[0], p[2]), lerp(p[1], p[3]), true));
+                    self.pump(Duration::from_millis(10));
+                }
+                h.mouse(at(MouseAction::Release, p[2], p[3], false));
+                self.pump(Duration::from_millis(50));
             }
             "focus" => {
                 h.focus(rest == "in");
