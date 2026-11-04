@@ -17,6 +17,7 @@
 #![cfg_attr(all(windows, not(debug_assertions), not(test)), windows_subsystem = "windows")]
 
 mod app;
+mod chrome;
 mod clipboard;
 mod config;
 mod damage;

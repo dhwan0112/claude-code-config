@@ -14,6 +14,7 @@ use winit::keyboard::{Key as WKey, ModifiersState, NamedKey, PhysicalKey};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{ImePurpose, Window, WindowId};
 
+use crate::chrome::{self, Chrome};
 use crate::clipboard::Clipboard;
 use crate::damage;
 use crate::font::Fonts;
@@ -61,6 +62,7 @@ struct Win {
     /// Last IME cursor area sent to the window (cell column, row).
     ime_at: Option<(u16, u16)>,
     clipboard: Clipboard,
+    chrome: Chrome,
 }
 
 impl App {
@@ -86,7 +88,10 @@ impl App {
         let pad0 = self.padding(scale0);
         let (w, h) = Layout { cell: painter.cell_metrics(), padding: pad0.min, balance: pad0.balance }
             .window_size(self.opts.cols, self.opts.rows);
+        let mut cfg = SessionConfig::new(self.opts.command.clone());
         let attrs = Window::default_attributes().with_title("ccterm").with_inner_size(PhysicalSize::new(w, h));
+        let attrs = chrome::attributes(attrs, cfg.default_bg, cfg.default_fg);
+        let chrome = Chrome::new(cfg.default_bg, cfg.default_fg);
         let window = Rc::new(el.create_window(attrs).map_err(|e| format!("window: {e}"))?);
         window.set_ime_allowed(true);
         window.set_ime_purpose(ImePurpose::Terminal);
@@ -102,7 +107,6 @@ impl App {
             if size.width > 0 && size.height > 0 { layout.grid(size.width, size.height) } else { layout.grid(w, h) };
         renderer.resize(size.width, size.height);
 
-        let mut cfg = SessionConfig::new(self.opts.command.clone());
         cfg.size = grid;
         let session = Session::spawn(cfg).map_err(|e| format!("cannot start {:?}: {e}", self.opts.command.program))?;
         log::info!(
@@ -147,6 +151,7 @@ impl App {
             wheel: Wheel::default(),
             ime_at: None,
             clipboard,
+            chrome,
         });
         Ok(())
     }
@@ -173,6 +178,7 @@ impl Win {
         }
         let d = damage::dirty_rows(self.snap.as_ref(), &next);
         damage::merge(&mut self.dirty, &d);
+        self.chrome.update(&self.window, next.default_bg, next.default_fg);
         self.snap = Some(next);
         self.update_ime_area();
         self.window.request_redraw();
