@@ -8,7 +8,9 @@ pub mod canvas;
 pub mod paint;
 pub mod soft;
 
-use ccterm_core::Snapshot;
+use ccterm_core::{Rgb, Snapshot};
+
+use crate::config::PaddingColor;
 
 /// Cell size in physical pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +38,26 @@ pub struct Scene<'a> {
     pub preedit: Option<&'a Preedit>,
 }
 
+/// How the area around the grid is laid out and coloured.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PaddingStyle {
+    /// Minimum padding, physical pixels.
+    pub min: u32,
+    pub balance: bool,
+    pub color: PaddingColor,
+    /// Paint everything outside the grid red (`CCTERM_DEBUG_PADDING=1`), to
+    /// tell application padding from window-manager frames.
+    pub debug: bool,
+}
+
+impl Default for PaddingStyle {
+    fn default() -> Self {
+        PaddingStyle { min: 0, balance: false, color: PaddingColor::Background, debug: false }
+    }
+}
+
+pub const DEBUG_PADDING: Rgb = Rgb { r: 255, g: 0, b: 0 };
+
 #[derive(Debug)]
 pub struct RenderError(pub String);
 
@@ -49,8 +71,8 @@ pub trait Renderer {
     fn cell_metrics(&self) -> CellMetrics;
     /// Font size in physical pixels (point size × scale factor × 96/72).
     fn set_font_px(&mut self, px: f32);
-    /// Distance from the window edge to the grid, in physical pixels.
-    fn set_padding(&mut self, px: u32);
+    /// Padding around the grid (size in physical pixels, balance, colour).
+    fn set_padding(&mut self, style: PaddingStyle);
     /// Window size in physical pixels.
     fn resize(&mut self, width: u32, height: u32);
     fn render(&mut self, scene: &Scene) -> Result<(), RenderError>;

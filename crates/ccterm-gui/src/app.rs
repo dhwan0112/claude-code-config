@@ -21,7 +21,7 @@ use crate::geom::Layout;
 use crate::input::{self, RawKey, Wheel};
 use crate::render::paint::Painter;
 use crate::render::soft::SoftRenderer;
-use crate::render::{Preedit, Renderer, Scene};
+use crate::render::{PaddingStyle, Preedit, Renderer, Scene};
 use crate::Options;
 
 /// Events from other threads into the event loop.
@@ -43,6 +43,8 @@ struct Win {
     window: Rc<Window>,
     renderer: Box<dyn Renderer>,
     layout: Layout,
+    /// Window inner size, physical pixels.
+    size: PhysicalSize<u32>,
     grid: GridSize,
     session: Session,
     snap: Option<Snapshot>,
@@ -70,6 +72,10 @@ impl App {
         (self.opts.font_size * 96.0 / 72.0 * scale) as f32
     }
 
+    fn padding(&self, scale: f64) -> PaddingStyle {
+        padding_style(&self.opts.config, scale)
+    }
+
     fn create(&mut self, el: &ActiveEventLoop) -> Result<(), String> {
         // Cell metrics are needed for the initial window size, before the
         // window (and its scale factor) exists: use the primary monitor's
@@ -77,9 +83,9 @@ impl App {
         let scale0 = el.primary_monitor().map_or(1.0, |m| m.scale_factor());
         let fonts = self.fonts.take().ok_or("fonts already used")?;
         let mut painter = Painter::new(fonts, self.font_px(scale0));
-        let padding0 = (4.0 * scale0).round() as u32;
-        let (w, h) =
-            Layout { cell: painter.cell_metrics(), padding: padding0 }.window_size(self.opts.cols, self.opts.rows);
+        let pad0 = self.padding(scale0);
+        let (w, h) = Layout { cell: painter.cell_metrics(), padding: pad0.min, balance: pad0.balance }
+            .window_size(self.opts.cols, self.opts.rows);
         let attrs = Window::default_attributes().with_title("ccterm").with_inner_size(PhysicalSize::new(w, h));
         let window = Rc::new(el.create_window(attrs).map_err(|e| format!("window: {e}"))?);
         window.set_ime_allowed(true);
@@ -88,9 +94,9 @@ impl App {
         painter.set_px(self.font_px(scale));
         let mut renderer: Box<dyn Renderer> =
             Box::new(SoftRenderer::new(window.clone(), painter).map_err(|e| format!("renderer: {e}"))?);
-        let padding = (4.0 * scale).round() as u32;
-        renderer.set_padding(padding);
-        let layout = Layout { cell: renderer.cell_metrics(), padding };
+        let pad = self.padding(scale);
+        renderer.set_padding(pad);
+        let layout = Layout { cell: renderer.cell_metrics(), padding: pad.min, balance: pad.balance };
         let size = window.inner_size();
         let grid =
             if size.width > 0 && size.height > 0 { layout.grid(size.width, size.height) } else { layout.grid(w, h) };
@@ -127,6 +133,7 @@ impl App {
             window,
             renderer,
             layout,
+            size,
             grid,
             session,
             snap: None,
@@ -148,6 +155,11 @@ impl App {
 impl Win {
     fn handle(&self) -> &SessionHandle {
         &self.session.handle
+    }
+
+    /// Grid origin in the window (same computation as the renderer's).
+    fn origin(&self) -> (u32, u32) {
+        self.layout.origin(self.size.width, self.size.height, self.grid.cols, self.grid.rows)
     }
 
     /// Take a snapshot now (so the engine may send the next wakeup) and
@@ -173,7 +185,7 @@ impl Win {
             return;
         }
         self.ime_at = Some((c.x, c.y));
-        let (x, y) = self.layout.cell_origin(c.x, c.y);
+        let (x, y) = self.layout.cell_origin(self.origin(), c.x, c.y);
         let cell = self.layout.cell;
         self.window.set_ime_cursor_area(PhysicalPosition::new(x, y), PhysicalSize::new(cell.width, cell.height));
     }
@@ -183,7 +195,7 @@ impl Win {
     }
 
     fn mouse_event(&self, action: MouseAction, button: Option<MouseButton>) {
-        let (x, y) = self.layout.grid_px(self.mouse.x, self.mouse.y);
+        let (x, y) = self.layout.grid_px(self.origin(), self.mouse.x, self.mouse.y);
         let mut m = MouseInput::at_pixel(action, button, x, y);
         m.mods = input::mods(self.mods);
         m.any_pressed = !self.held.is_empty();
@@ -262,7 +274,10 @@ impl Win {
 
     fn resized(&mut self, size: PhysicalSize<u32>) {
         self.renderer.resize(size.width, size.height);
+        self.size = size;
         self.full = true;
+        // The IME area depends on the (balanced) origin.
+        self.ime_at = None;
         if size.width == 0 || size.height == 0 {
             return; // minimised
         }
@@ -323,9 +338,9 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 let px = (self.opts.font_size * 96.0 / 72.0 * scale_factor) as f32;
                 win.renderer.set_font_px(px);
-                let padding = (4.0 * scale_factor).round() as u32;
-                win.renderer.set_padding(padding);
-                win.layout = Layout { cell: win.renderer.cell_metrics(), padding };
+                let pad = padding_style(&self.opts.config, scale_factor);
+                win.renderer.set_padding(pad);
+                win.layout = Layout { cell: win.renderer.cell_metrics(), padding: pad.min, balance: pad.balance };
                 let size = win.window.inner_size();
                 win.grid = GridSize::new(0, 0);
                 win.resized(size);
@@ -359,7 +374,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::MouseWheel { delta, .. } => {
                 let n = win.wheel.notches(delta, win.layout.cell.height);
                 if n != 0 {
-                    let (col, row) = win.layout.cell_at(win.mouse.x, win.mouse.y, win.grid);
+                    let (col, row) = win.layout.cell_at(win.origin(), win.mouse.x, win.mouse.y, win.grid);
                     let lines = input::wheel_lines(n, win.mouse_tracking());
                     log::debug!("wheel {delta:?} -> {n} notches, {lines} lines at {col},{row}");
                     win.handle().wheel(lines, col, row, input::mods(win.mods));
@@ -373,6 +388,16 @@ impl ApplicationHandler<UserEvent> for App {
             }
             _ => {}
         }
+    }
+}
+
+/// Padding settings at a scale factor; `CCTERM_DEBUG_PADDING=1` paints it red.
+fn padding_style(c: &crate::config::Config, scale: f64) -> PaddingStyle {
+    PaddingStyle {
+        min: (c.window_padding * scale).round() as u32,
+        balance: c.padding_balance,
+        color: c.padding_color,
+        debug: std::env::var_os("CCTERM_DEBUG_PADDING").is_some_and(|v| !v.is_empty() && v != "0"),
     }
 }
 

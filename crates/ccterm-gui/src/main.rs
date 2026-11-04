@@ -1,7 +1,7 @@
 //! `ccterm`: a terminal window for one ccterm-core session.
 //!
 //! ```text
-//! ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--] [PROGRAM [ARGS...]]
+//! ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
 //! ```
 //! Without a program it runs the user's shell (`$SHELL`, else `/bin/sh`;
 //! Windows: `%COMSPEC%`, else `cmd.exe`).
@@ -9,11 +9,16 @@
 //! Environment: `CCTERM_LOG=error|warn|info|debug` (default warn),
 //! `CCTERM_LOG_FILE=path` (log there instead of stderr; on Windows the
 //! release build has no console), `CCTERM_DUMP_FRAME=path.ppm` (write every
-//! frame as an image, for debugging), `CCTERM_FONT_DIR=dir` (extra fonts).
+//! frame as an image, for debugging), `CCTERM_FONT_DIR=dir` (extra fonts),
+//! `CCTERM_DEBUG_PADDING=1` (paint everything outside the grid red).
+//!
+//! `KEY` is any setting in [`config`] (`--window-padding-color extend` or
+//! `--window-padding-color=extend`).
 #![cfg_attr(all(windows, not(debug_assertions), not(test)), windows_subsystem = "windows")]
 
 mod app;
 mod clipboard;
+mod config;
 mod damage;
 mod font;
 mod geom;
@@ -33,6 +38,7 @@ pub struct Options {
     pub cols: u16,
     pub rows: u16,
     pub command: CommandSpec,
+    pub config: config::Config,
 }
 
 fn default_shell() -> CommandSpec {
@@ -43,10 +49,20 @@ fn default_shell() -> CommandSpec {
     CommandSpec::new(prog)
 }
 
-const USAGE: &str = "usage: ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--] [PROGRAM [ARGS...]]";
+const USAGE: &str =
+    "usage: ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
+     settings (KEY): window-padding N, window-padding-balance true|false,\n\
+     window-padding-color background|extend|extend-always";
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
-    let mut o = Options { font: None, font_size: 11.0, cols: 120, rows: 36, command: default_shell() };
+    let mut o = Options {
+        font: None,
+        font_size: 11.0,
+        cols: 120,
+        rows: 36,
+        command: default_shell(),
+        config: config::Config::default(),
+    };
     let mut it = args.into_iter();
     let mut program: Vec<String> = vec![];
     while let Some(a) = it.next() {
@@ -67,7 +83,20 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
                 program.extend(it.by_ref());
                 break;
             }
-            s if s.starts_with("--") => return Err(format!("unknown option {s}\n{USAGE}")),
+            s if s.starts_with("--") => {
+                let (key, inline) = match s[2..].split_once('=') {
+                    Some((k, v)) => (k, Some(v.to_owned())),
+                    None => (&s[2..], None),
+                };
+                if !config::KEYS.contains(&key) {
+                    return Err(format!("unknown option {s}\n{USAGE}"));
+                }
+                let value = match inline {
+                    Some(v) => v,
+                    None => it.next().ok_or(format!("--{key} needs a value"))?,
+                };
+                o.config.set(key, &value)?;
+            }
             _ => {
                 program.push(a);
                 program.extend(it.by_ref());
@@ -199,6 +228,12 @@ mod tests {
         assert_eq!(o.command.program, "--weird-program");
         assert!(args(&["--font-size", "1000"]).is_err());
         assert!(args(&["--bogus"]).is_err());
+        let o = args(&["--window-padding-color=background", "--window-padding-balance", "false", "sh"]).unwrap();
+        assert_eq!(o.config.padding_color, config::PaddingColor::Background);
+        assert!(!o.config.padding_balance);
+        assert_eq!(o.command.program, "sh");
+        assert!(args(&["--window-padding-color", "pink"]).is_err());
+
         assert!(!args(&[]).unwrap().command.program.is_empty());
     }
 

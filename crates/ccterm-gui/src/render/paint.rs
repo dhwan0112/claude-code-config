@@ -8,7 +8,8 @@ use swash::zeno::{Angle, Format, Transform};
 
 use super::boxdraw;
 use super::canvas::{mix, Canvas, Rect};
-use super::{CellMetrics, Preedit, Scene};
+use super::{CellMetrics, PaddingStyle, Preedit, Scene, DEBUG_PADDING};
+use crate::config::PaddingColor;
 use crate::font::{Fonts, Style};
 
 /// Pixel metrics derived from the primary face at the current size.
@@ -106,7 +107,7 @@ impl Painter {
     /// Paint row `y` of the scene with the grid origin at `origin`. The whole
     /// window-wide band of the row is cleared first, so the row can be
     /// repainted on its own.
-    pub fn paint_row(&mut self, cv: &mut Canvas, origin: (i32, i32), scene: &Scene, y: u16) {
+    pub fn paint_row(&mut self, cv: &mut Canvas, origin: (i32, i32), scene: &Scene, y: u16, pad: PaddingStyle) {
         let snap = scene.snap;
         let m = self.m;
         let top = origin.1 + y as i32 * m.cell_h;
@@ -114,6 +115,12 @@ impl Painter {
         cv.reset_clip();
         cv.set_clip(band);
         cv.fill(band, snap.default_bg);
+        // Left and right padding of this row.
+        if snap.cols > 0 {
+            let right = origin.0 + snap.cols as i32 * m.cell_w;
+            cv.fill(Rect::new(0, top, origin.0, m.cell_h), side_color(snap, 0, y, pad));
+            cv.fill(Rect::new(right, top, cv.width as i32 - right, m.cell_h), side_color(snap, snap.cols - 1, y, pad));
+        }
 
         let cursor = snap.cursor.filter(|c| c.y == y);
         let cursor_block = cursor.is_some_and(|c| scene.focused && c.shape == CursorShape::Block);
@@ -176,6 +183,42 @@ impl Painter {
             self.paint_preedit(cv, origin, snap, c.x, y, pre);
         }
         cv.reset_clip();
+    }
+
+    /// Paint the padding above the grid (`top`) or below it, with the colours
+    /// of the nearest row when extending applies. Returns the band painted
+    /// (y, height); height 0 when there is no such padding.
+    pub fn paint_vertical_padding(
+        &mut self,
+        cv: &mut Canvas,
+        origin: (i32, i32),
+        scene: &Scene,
+        top: bool,
+        pad: PaddingStyle,
+    ) -> (i32, i32) {
+        let snap = scene.snap;
+        let m = self.m;
+        let grid_bottom = origin.1 + snap.rows as i32 * m.cell_h;
+        let (y0, h) = if top { (0, origin.1) } else { (grid_bottom, cv.height as i32 - grid_bottom) };
+        if h <= 0 || snap.rows == 0 || snap.cols == 0 {
+            return (y0, 0);
+        }
+        cv.reset_clip();
+        let band = Rect::new(0, y0, cv.width as i32, h);
+        let row = if top { 0 } else { snap.rows - 1 };
+        if pad.debug {
+            cv.fill(band, DEBUG_PADDING);
+        } else if extends_vertically(snap, row, pad.color) {
+            let right = origin.0 + snap.cols as i32 * m.cell_w;
+            cv.fill(Rect::new(0, y0, origin.0, h), side_color(snap, 0, row, pad));
+            cv.fill(Rect::new(right, y0, cv.width as i32 - right, h), side_color(snap, snap.cols - 1, row, pad));
+            for x in 0..snap.cols {
+                cv.fill(Rect::new(origin.0 + x as i32 * m.cell_w, y0, m.cell_w, h), colors(snap, x, row).1);
+            }
+        } else {
+            cv.fill(band, snap.default_bg);
+        }
+        (y0, h)
     }
 
     fn paint_preedit(&mut self, cv: &mut Canvas, origin: (i32, i32), snap: &Snapshot, cx: u16, y: u16, pre: &Preedit) {
@@ -355,6 +398,43 @@ fn downscale_color(r: Raster, s: f32) -> Raster {
     }
 }
 
+/// Colour of the left/right padding next to cell (x, y).
+fn side_color(snap: &Snapshot, x: u16, y: u16, pad: PaddingStyle) -> Rgb {
+    if pad.debug {
+        return DEBUG_PADDING;
+    }
+    match pad.color {
+        PaddingColor::Background => snap.default_bg,
+        PaddingColor::Extend | PaddingColor::ExtendAlways => colors(snap, x, y).1,
+    }
+}
+
+/// Whether the top/bottom padding takes the colours of row `y` (Ghostty's
+/// heuristics for `extend`: not on the primary screen when the row has a cell
+/// with the default background — default padding looks right then — or a
+/// powerline glyph, which looks wrong stretched). Prompt rows, Ghostty's
+/// third case, are not known here (no shell integration yet).
+fn extends_vertically(snap: &Snapshot, y: u16, mode: PaddingColor) -> bool {
+    match mode {
+        PaddingColor::Background => false,
+        PaddingColor::ExtendAlways => true,
+        PaddingColor::Extend => {
+            if snap.modes.alt_screen {
+                return true;
+            }
+            !(0..snap.cols).any(|x| {
+                let c = snap.cell(x, y).expect("cell");
+                let default_bg = c.bg.is_none() && c.flags.has(CellFlags::INVERSE) == c.flags.has(CellFlags::SELECTED);
+                default_bg || c.text.chars().any(is_powerline)
+            })
+        }
+    }
+}
+
+fn is_powerline(c: char) -> bool {
+    matches!(c as u32, 0xE0B0..=0xE0D7)
+}
+
 /// Foreground and background of cell (x, y) after inverse, selection, faint
 /// and invisible.
 pub fn colors(snap: &Snapshot, x: u16, y: u16) -> (Rgb, Rgb) {
@@ -429,7 +509,7 @@ mod tests {
         let m = p.metrics();
         let mut cv = Canvas::new((sc.snap.cols as i32 * m.cell_w) as u32, (sc.snap.rows as i32 * m.cell_h) as u32);
         for y in 0..sc.snap.rows {
-            p.paint_row(&mut cv, (0, 0), sc, y);
+            p.paint_row(&mut cv, (0, 0), sc, y, PaddingStyle::default());
         }
         cv
     }
@@ -551,7 +631,98 @@ mod tests {
         // no glyph leaks across rows.
         let mut again = Canvas::new(full.width, full.height);
         again.pixels.clone_from(&full.pixels);
-        p.paint_row(&mut again, (0, 0), &scene(&s, &[false, true], true, None), 1);
+        p.paint_row(&mut again, (0, 0), &scene(&s, &[false, true], true, None), 1, PaddingStyle::default());
         assert!(again.pixels == full.pixels);
+    }
+
+    const BLUE: Rgb = Rgb { r: 0, g: 0, b: 200 };
+
+    fn padded(p: &mut Painter, s: &Snapshot, color: PaddingColor, debug: bool, pad: i32) -> Canvas {
+        let m = p.metrics();
+        let w = s.cols as i32 * m.cell_w + 2 * pad + 3; // +3: uneven leftover on the right
+        let h = s.rows as i32 * m.cell_h + 2 * pad + 1;
+        let mut cv = Canvas::new(w as u32, h as u32);
+        let style = PaddingStyle { min: pad as u32, balance: false, color, debug };
+        let sc = Scene { snap: s, dirty: &[], full: true, focused: true, preedit: None };
+        for y in 0..s.rows {
+            p.paint_row(&mut cv, (pad, pad), &sc, y, style);
+        }
+        p.paint_vertical_padding(&mut cv, (pad, pad), &sc, true, style);
+        p.paint_vertical_padding(&mut cv, (pad, pad), &sc, false, style);
+        cv
+    }
+
+    /// 2x2 grid, every cell blue except (0,1) which keeps the default bg.
+    fn two_by_two() -> Snapshot {
+        let mut s = snap(2, 2);
+        for (x, y) in [(0, 0), (1, 0), (1, 1)] {
+            set(&mut s, x, y, Cell { bg: Some(BLUE), ..Default::default() });
+        }
+        s
+    }
+
+    #[test]
+    fn padding_background_mode_uses_default_bg_everywhere() {
+        let Some(mut p) = painter() else { return };
+        let cv = padded(&mut p, &two_by_two(), PaddingColor::Background, false, 6);
+        let bg = crate::render::canvas::pack(BG);
+        assert_eq!(cv.get(0, 0), bg);
+        assert_eq!(cv.get(cv.width as i32 - 1, cv.height as i32 - 1), bg);
+        assert_eq!(cv.get(0, 6), bg);
+    }
+
+    #[test]
+    fn padding_extend_copies_edge_cells_with_heuristics() {
+        let Some(mut p) = painter() else { return };
+        let m = p.metrics();
+        let s = two_by_two();
+        let (blue, bg) = (crate::render::canvas::pack(BLUE), crate::render::canvas::pack(BG));
+        let cv = padded(&mut p, &s, PaddingColor::Extend, false, 6);
+        let (w, h) = (cv.width as i32, cv.height as i32);
+        // Left/right padding always extends: row 0 is blue on both sides,
+        // row 1 left is the default bg (cell (0,1)), right blue — including
+        // the uneven leftover pixels.
+        assert_eq!(cv.get(0, 6), blue);
+        assert_eq!(cv.get(w - 1, 6), blue);
+        assert_eq!(cv.get(0, 6 + m.cell_h), bg);
+        assert_eq!(cv.get(w - 1, 6 + m.cell_h), blue);
+        // Top: row 0 has no default-bg cell -> extended.
+        assert_eq!(cv.get(6, 0), blue);
+        assert_eq!(cv.get(w - 1, 0), blue);
+        // Bottom: row 1 has a default-bg cell -> not extended (primary screen).
+        assert_eq!(cv.get(6 + m.cell_w, h - 1), bg);
+        // Alternate screen: heuristics off.
+        let mut alt = s.clone();
+        alt.modes.alt_screen = true;
+        let cv = padded(&mut p, &alt, PaddingColor::Extend, false, 6);
+        assert_eq!(cv.get(6 + m.cell_w, cv.height as i32 - 1), blue);
+        // extend-always: no heuristics either.
+        let cv = padded(&mut p, &s, PaddingColor::ExtendAlways, false, 6);
+        assert_eq!(cv.get(6 + m.cell_w, cv.height as i32 - 1), blue);
+        assert_eq!(cv.get(0, cv.height as i32 - 1), bg); // corner follows cell (0,1)
+    }
+
+    #[test]
+    fn padding_extend_skips_powerline_rows() {
+        let Some(mut p) = painter() else { return };
+        let mut s = snap(2, 1);
+        set(&mut s, 0, 0, Cell { bg: Some(BLUE), text: "\u{e0b0}".into(), ..Default::default() });
+        set(&mut s, 1, 0, Cell { bg: Some(BLUE), ..Default::default() });
+        let cv = padded(&mut p, &s, PaddingColor::Extend, false, 6);
+        assert_eq!(cv.get(6, 0), crate::render::canvas::pack(BG));
+    }
+
+    #[test]
+    fn debug_padding_is_red_and_grid_is_not() {
+        let Some(mut p) = painter() else { return };
+        let m = p.metrics();
+        let cv = padded(&mut p, &two_by_two(), PaddingColor::Extend, true, 6);
+        let red = crate::render::canvas::pack(DEBUG_PADDING);
+        let (w, h) = (cv.width as i32, cv.height as i32);
+        for (x, y) in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1), (5, 10), (w - 2, 10), (10, 5), (10, h - 2)] {
+            assert_eq!(cv.get(x, y), red, "({x},{y})");
+        }
+        assert_ne!(cv.get(6, 6), red);
+        assert_ne!(cv.get(6 + 2 * m.cell_w - 1, 6 + 2 * m.cell_h - 1), red);
     }
 }
