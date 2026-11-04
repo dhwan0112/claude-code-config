@@ -34,7 +34,7 @@ P_MAIN, P_LIMITS, P_COST, P_LINES, P_CACHE, P_KEYS = 0, 1, 2, 3, 4, 5
 KEYS = (  # (key, description, short description for narrow panes)
     ("C-a c", "new tab", "new tab"), ("C-a C", "new tab in a folder…", "tab (dir)"), ("C-a S", "new tab (safe)", "safe tab"),
     ("C-a n/p", "next/previous tab", "next/prev"), ("C-a z", "zoom pane", "zoom"), ("C-a d", "fold/unfold diff pane", "fold diff"),
-    ("C-a w", "save pane sizes", "save size"), ("C-a ←↑↓→", "resize panes", "resize"), ("C-a hjkl", "move between panes", "focus"),
+    ("C-a w", "save pane sizes", "save size"), ("C-a W", "save tabs (ccx --restore-tabs)", "save tabs"), ("C-a ←↑↓→", "resize panes", "resize"), ("C-a hjkl", "move between panes", "focus"),
     ("C-a ,", "rename tab + session", "rename"), ("drag tab", "move it along the bar", "move tab"),
     ("C-a D", "detach", "detach"), ("C-a C-a", "send C-a", "send C-a"),
 )

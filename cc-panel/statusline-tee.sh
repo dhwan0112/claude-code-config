@@ -9,6 +9,9 @@
 #      is this CC_PANEL_ID) when it differs from the name last applied (~/.cache/cc-panel/$CC_PANEL_ID.tabname).
 #      An empty session name restores the first name (@ccx_name0). Names: at most 20 characters, characters
 #      that tmux could treat specially (control characters, # ; quotes \ $ ` { }) removed.
+#   3. when the session id appears or changes (session start, /clear, /resume), savetabs.sh refreshes the tab set
+#      "last" in the background (~/.cache/cc-panel/$CC_PANEL_ID.sid remembers the id last seen), so
+#      "ccx --restore-tabs" resumes the session each tab actually had.
 input=$(cat)
 if [ -z "${CC_PANEL_ID:-}" ] || [[ "$CC_PANEL_ID" = *[!A-Za-z0-9_-]* ]]; then
   printf '%s' "$input" | "$HOME/.claude/statusline.sh"
@@ -19,6 +22,14 @@ if mkdir -p "$d" 2>/dev/null; then
   tmp=$(mktemp "$d/.$CC_PANEL_ID.json.XXXXXX" 2>/dev/null) \
     && printf '%s\n' "$input" > "$tmp" \
     && mv -f -- "$tmp" "$d/$CC_PANEL_ID.json"
+fi
+if [ -n "${TMUX:-}" ] && [ -x "${CCX_HOME:-}/savetabs.sh" ]; then
+  sid=$(jq -r '.session_id // ""' <<<"$input" 2>/dev/null)
+  if [[ "$sid" =~ ^[0-9a-fA-F-]{36}$ ]] && [ "$sid" != "$(cat "$d/$CC_PANEL_ID.sid" 2>/dev/null)" ]; then
+    printf '%s' "$sid" > "$d/$CC_PANEL_ID.sid"
+    s=${TMUX%%,*}; s=${s##*/}
+    "$CCX_HOME/savetabs.sh" "$s" last --quiet >/dev/null 2>&1 &
+  fi
 fi
 if [ "${CCX_TAB_RENAME:-}" = 1 ] && [ -n "${TMUX:-}" ] && [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]]; then
   want=$(jq -r '(.session_name // "") | tostring

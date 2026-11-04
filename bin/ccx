@@ -5,6 +5,7 @@
 #                      full-height status panel (CCX_SIDEBAR, default 22%, at least 36 columns)
 #   split:             left claude · right top status panel (14 rows) · right bottom diff
 # Usage: ccx [--safe] [claude arguments...]
+#        ccx --save-tabs [NAME] | --restore-tabs [NAME] | --list-tabs      (tab sets, see below)
 #   New tabs start in bypass permission mode (permissions.defaultMode in ccx's --settings). ccx --safe or
 #   CCX_SAFE=1 leaves it out, so the user's global defaultMode applies. A --permission-mode or
 #   --dangerously-skip-permissions flag given to ccx goes to claude unchanged and wins (no bypass default added).
@@ -15,7 +16,8 @@
 #   window only; automatic-rename off for it) and prints the attach command.
 # Env: CCX_SAFE=1 (same as --safe), CCX_NO_ATTACH=1 (do not attach), CCX_SELECT=1 (select the new tab), CCX_SIZE=WxH (size of a new
 #      detached server), CCX_SOCKET=name (tmux -L socket, default cc), CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF,
-#      CCX_HOME (folder with the cc-panel scripts, default ~/.claude/cc-panel; for testing a copy).
+#      CCX_HOME (folder with the cc-panel scripts, default ~/.claude/cc-panel; for testing a copy), CCX_TABNAME (first name
+#      of the new tab instead of repo:branch / folder; used by --restore-tabs).
 # Defaults file: ~/.config/cc-panel/config ($XDG_CONFIG_HOME/cc-panel/config), lines KEY=value for
 #      CCX_LAYOUT, CCX_SIDEBAR, CCX_DIFF. Environment variables win. C-a w writes it (savesize.sh).
 set -euo pipefail
@@ -47,6 +49,87 @@ case "${CCX_TUI:-fullscreen}" in
   *) echo "ccx: CCX_TUI=$CCX_TUI is not fullscreen, default or user; using fullscreen" >&2; CCX_TUI=fullscreen ;;
 esac
 
+# Tab sets. "ccx --save-tabs [NAME]" writes the open tabs of this server (savetabs.sh: tab name, project folder, Claude Code
+# session id, permissions, layout) to ${XDG_CONFIG_HOME:-~/.config}/cc-panel/tabs/<socket>/NAME.tsv; "ccx --restore-tabs [NAME]"
+# opens one tab per line again, in order, each with "claude --resume <session id>" in its project folder (a tab whose session
+# is already open is skipped, a missing folder is skipped with a message, a session whose transcript is gone starts anew);
+# "ccx --list-tabs" lists the sets. NAME defaults to "last", which ccx (tab opened), left.sh (tab closed) and the tmux hooks
+# in tmux.conf (tab renamed or selected, client detached) keep up to date, so after a reboot "ccx --restore-tabs" is enough.
+tabsdir="${XDG_CONFIG_HOME:-$HOME/.config}/cc-panel/tabs/$SOCK"
+hint=""
+self=$(readlink -f -- "$0" 2>/dev/null || echo "$0")
+case "${1:-}" in
+  --save-tabs|--restore-tabs)
+    setname=${2:-last}
+    [[ "$setname" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "ccx: tab set name: letters, digits, - and _ only" >&2; exit 2; }
+    [ $# -le 2 ] || { echo "ccx: $1 takes at most one argument (the set name)" >&2; exit 2; }
+    if [ "$1" = --save-tabs ]; then
+      tm has-session -t "=cc" 2>/dev/null || { echo "ccx: no ccx server on socket $SOCK; nothing to save" >&2; exit 1; }
+      exec "$P/savetabs.sh" "$SOCK" "$setname"
+    fi
+    f="$tabsdir/$setname.tsv"
+    [ -f "$f" ] || { echo "ccx: no saved tab set '$setname' ($f); see ccx --list-tabs" >&2; exit 1; }
+    mapfile -t setlines < "$f"
+    # Sessions already open on any server of this user are not opened twice
+    livesids=""
+    for s in "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)"/*; do
+      [ -S "$s" ] || continue
+      for lid in $(tmux -S "$s" list-windows -a -F '#{@ccx_id}' 2>/dev/null); do
+        [ -f "$D/$lid.json" ] && livesids+=$(jq -r '.session_id // ""' "$D/$lid.json" 2>/dev/null || true)$'\n'
+      done
+    done
+    size=${CCX_SIZE:-}
+    [ -n "$size" ] || { [ -z "${TMUX:-}" ] && [ -t 1 ] && size="$(tput cols)x$(tput lines)"; } || true
+    opened=0; skipped=0
+    for line in "${setlines[@]}"; do
+      case "$line" in '#'*|'') continue ;; esac
+      IFS=$'\t' read -r tname pdir sid perm tlayout _ <<<"$line"
+      [ -n "$pdir" ] || continue
+      if [ ! -d "$pdir" ]; then echo "ccx: $tname: folder $pdir is missing, tab skipped"; skipped=$((skipped + 1)); continue; fi
+      resume=()
+      if [[ "$sid" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+        if grep -qxF -- "$sid" <<<"$livesids"; then echo "ccx: $tname: session $sid is already open, tab skipped"; skipped=$((skipped + 1)); continue; fi
+        slug=$(printf '%s' "$pdir" | sed 's/[^A-Za-z0-9]/-/g')
+        if [ -f "$HOME/.claude/projects/$slug/$sid.jsonl" ] \
+           || [ -n "$(find "$HOME/.claude/projects" -mindepth 2 -maxdepth 2 -name "$sid.jsonl" -print -quit 2>/dev/null)" ]; then
+          resume=(--resume "$sid")
+        else
+          echo "ccx: $tname: session $sid has no transcript any more; opening a new session in $pdir"
+        fi
+      fi
+      safeflag=(); [ "$perm" = safe ] && safeflag=(--safe)
+      case "$tlayout" in sidebar|split) ;; *) tlayout=sidebar ;; esac
+      if (cd "$pdir" && CCX_TABNAME=$tname CCX_SAFE= CCX_SOCKET=$SOCK CCX_HOME=$P CCX_LAYOUT=$tlayout CCX_NO_ATTACH=1 CCX_SIZE=${size:-} \
+            "$self" "${safeflag[@]}" "${resume[@]}" >/dev/null); then
+        opened=$((opened + 1))
+      else
+        echo "ccx: $tname: could not open a tab in $pdir"; skipped=$((skipped + 1))
+      fi
+    done
+    [ "$((opened + skipped))" -gt 0 ] || echo "ccx: tab set '$setname' is empty (its last tab was closed on purpose)"
+    echo "ccx: tab set '$setname': $opened tab(s) opened, $skipped skipped"
+    [ "$opened" -gt 0 ] || exit 1
+    "$P/outer-title.sh" "$SOCK" 2>/dev/null || true
+    if [ -n "${CCX_NO_ATTACH:-}" ] || [ -n "${TMUX:-}" ]; then
+      case "${TMUX:-}" in */"$SOCK",*) ;; "") ;; *) echo "  attach with: TMUX= tmux -L $SOCK attach -t cc" ;; esac
+      exit 0
+    fi
+    exec tmux -L "$SOCK" -f "$P/tmux.conf" attach-session -t "=cc"
+    ;;
+  --list-tabs)
+    [ $# -le 1 ] || { echo "ccx: --list-tabs takes no argument" >&2; exit 2; }
+    found=0
+    for f in "$tabsdir"/*.tsv; do
+      [ -f "$f" ] || continue
+      found=1; b=$(basename "$f" .tsv)
+      printf '%s (%s tab(s), %s): %s\n' "$b" "$(grep -c -v '^#' "$f")" "$(date -r "$f" '+%Y-%m-%d %H:%M')" \
+        "$(grep -v '^#' "$f" | cut -f1 | paste -sd ',' - | sed 's/,/, /g')"
+    done
+    [ "$found" = 1 ] || echo "ccx: no saved tab sets in $tabsdir (C-a W or ccx --save-tabs writes one)"
+    exit 0
+    ;;
+esac
+
 layout=${CCX_LAYOUT:-sidebar}
 case "$layout" in sidebar|split) ;; *) echo "ccx: CCX_LAYOUT must be sidebar or split" >&2; exit 2 ;; esac
 
@@ -65,6 +148,11 @@ if top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null); then
   name="$(basename "$top"):$br"
 else
   name=$(basename "$dir")
+fi
+# CCX_TABNAME (ccx --restore-tabs): the saved tab name instead; cleaned like statusline-tee.sh cleans session names
+if [ -n "${CCX_TABNAME:-}" ]; then
+  t=$(printf '%s' "$CCX_TABNAME" | tr -d '\000-\037\177#;"'"'"'\\$`{}' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  [ -n "$t" ] && name=$t
 fi
 
 id="$(date +%Y%m%d%H%M%S)-$$-$RANDOM"
@@ -119,10 +207,16 @@ else
   else
     size=${CCX_SIZE:-240x60}
   fi
+  # A new server: the tab set "last" of the previous run is kept as "previous" before this tab replaces "last"; told once below
+  if [ -s "$tabsdir/last.tsv" ] && n=$(grep -c -v '^#' "$tabsdir/last.tsv" 2>/dev/null) && [ "$n" -gt 0 ]; then
+    tmp=$(mktemp "$tabsdir/.previous.XXXXXX" 2>/dev/null) \
+      && sed '1s/^# ccx tabs "last"/# ccx tabs "previous" (the set "last" of the previous run)/; 1s/ccx --restore-tabs last$/ccx --restore-tabs previous/' "$tabsdir/last.tsv" > "$tmp" \
+      && mv -f -- "$tmp" "$tabsdir/previous.tsv" || rm -f -- "${tmp:-}"
+    hint="ccx: $n tab(s) of the previous run are saved as 'previous' · ccx --restore-tabs previous opens them again"
+  fi
   win=$(tm new-session -d -P -F '#{window_id}' -s cc -n "$name" -c "$dir" -x "${size%x*}" -y "${size#*x}" "${envs[@]}" -- "$P/left.sh" "${args[@]}")
 fi
 # Where tmux.conf bindings find the scripts and this launcher (server options, so a test copy works too)
-self=$(readlink -f -- "$0" 2>/dev/null || echo "$0")
 tm set-option -s @ccx_home "$P" 2>/dev/null || true
 tm set-option -s @ccx_bin "$self" 2>/dev/null || true
 
@@ -152,6 +246,8 @@ fi
 tm set-option -p -t "$panel" @ccx_role panel 2>/dev/null || true
 tm set-option -p -t "$diffp" @ccx_role diff 2>/dev/null || true
 tm select-pane -t "$left" 2>/dev/null || true
+# Tab set "last" (savetabs.sh): the new tab is listed with its folder now, with its session id from the next hook run
+"$P/savetabs.sh" "$SOCK" last --quiet 2>/dev/null || true
 
 in_cc_server=0
 case "${TMUX:-}" in */"$SOCK",*) in_cc_server=1 ;; esac
@@ -174,14 +270,17 @@ if [ -n "${CCX_NO_ATTACH:-}" ]; then
   [ -n "${CCX_SELECT:-}" ] && tm select-window -t "$win"
   "$P/outer-title.sh" "$SOCK" 2>/dev/null || true
   echo "ccx: opened tab $name ($win, layout $layout, permissions $perm), id $id"
+  [ -z "$hint" ] || echo "$hint"
 elif [ "$in_cc_server" = 1 ]; then
   tm select-window -t "$win"
 elif [ -n "${TMUX:-}" ]; then
   tm select-window -t "$win"
   "$P/outer-title.sh" "$SOCK" 2>/dev/null || true
+  [ -z "$hint" ] || echo "$hint"
   echo "ccx: opened tab $name. You are inside another tmux server; attach with:"
   echo "  TMUX= tmux -L $SOCK attach -t cc"
 else
   tm select-window -t "$win"
+  [ -z "$hint" ] || tm set-option -s @ccx_hint "$hint" 2>/dev/null || true   # shown once by the client-attached hook (tmux.conf)
   exec tmux -L "$SOCK" -f "$P/tmux.conf" attach-session -t "=cc"
 fi

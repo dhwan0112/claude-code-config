@@ -25,5 +25,11 @@ case "$CC_PANEL_ID" in
   ''|*[!A-Za-z0-9_-]*) ;;
   *) rm -rf -- "$D/$CC_PANEL_ID" "$D/$CC_PANEL_ID".* "$D/.$CC_PANEL_ID".* ;;
 esac
+# Keep the saved tab set "last" in step (savetabs.sh): this tab closes on purpose, so it is left out. A dying server
+# (reboot, kill-server) never reaches this line, and the set then still lists every tab for ccx --restore-tabs.
+if [ -n "${TMUX:-}" ] && [ -x "${CCX_HOME:-}/savetabs.sh" ]; then
+  s=${TMUX%%,*}; s=${s##*/}
+  "$CCX_HOME/savetabs.sh" "$s" last --quiet --without "$CC_PANEL_ID" 2>/dev/null || true
+fi
 tmux kill-window -t "$TMUX_PANE" 2>/dev/null
 exit "$rc"
