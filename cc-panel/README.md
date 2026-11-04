@@ -18,6 +18,8 @@ The top bar shows only the tabs (the key help is in the status panel, `keys` row
 when ccx runs inside another tmux, that outer window are named `ccx · <active tab>`.
 
 New tabs start in **bypass permissions** mode (see Permissions below). Nothing here changes `~/.claude/settings.json`, `~/.claude/statusline.sh` or `~/.tmux.conf`.
+
+**Colours.** Claude Code caps its colours at 256 when `TMUX` is set in its environment, whatever `COLORTERM` says, so inside tmux its logo and the `bypass permissions on` line come out pale (#D97757 becomes palette colour 173). `left.sh` exports `CLAUDE_CODE_TMUX_TRUECOLOR=1` for the Claude pane, which lifts that cap (Claude Code 2.1.318 reads the variable; it is not in the documentation, so check it after updates), and `tmux.conf` declares RGB for the outer terminal (`terminal-features *:RGB`). Tabs opened before this change keep 256 colours until their Claude session is restarted. `CLAUDE_CODE_TMUX_TRUECOLOR= ccx` (empty) keeps the 256-colour output; `/theme` → `dark-ansi` in Claude Code uses the terminal's own 16-colour palette instead.
 ccx passes its hooks and status line to Claude Code with `--settings`, so only ccx sessions run them.
 
 ## Files
@@ -29,7 +31,7 @@ ccx passes its hooks and status line to Claude Code with `--settings`, so only c
 | `dragtab.sh` | Mouse drag on the top bar (`MouseDrag1Status`): swaps the active tab with the tab under the pointer and keeps it active |
 | `tabrename.sh` | `window-renamed` hook: a tab renamed by the user renames its Claude Code session (`/rename` typed into the Claude pane); no-op when the tab already matches the session name or no claude process of the tab runs |
 | `newtab.sh` | Opens a ccx tab on a given tmux socket and folder; used by `C-a C`, `C-a S` and the `+` / `safe` buttons. `--once` drops repeated clicks (lock plus 1.5 s cooldown) |
-| `left.sh` | Left pane: runs `claude`, then removes this tab's cache files and closes the tab |
+| `left.sh` | Left pane: runs `claude` with `CLAUDE_CODE_TMUX_TRUECOLOR=1` (24-bit colour inside tmux, see Colours above), then removes this tab's cache files and closes the tab |
 | `statusline-tee.sh` | Status line command of ccx sessions: saves the input JSON to `~/.cache/cc-panel/$CC_PANEL_ID.json` (atomic), renames the tab after the session name when it changed (tabs started with `CCX_TAB_RENAME=1`), and prints nothing, so Claude Code shows no status line in ccx tabs (empty output = no status line, verified with 2.1.317). Without `CC_PANEL_ID` it runs `~/.claude/statusline.sh` unchanged |
 | `hook.sh` | `pre`: snapshot before Write/Edit/NotebookEdit (skip over 2 MB, keep 20). `post` (async): record the last edited file and who edited it, only if this edit is newer than the recorded one (edit time = when its `pre` hook ran; compare-and-replace under `flock`). `agentpre`/`agentpost` (PreToolUse/PostToolUse of the Agent tool) and `substart`/`substop` (SubagentStart/SubagentStop): orchestration records in `<id>.orch` (type, description, start/end, `STATUS: verified|blocked|needs_review` line of the worker's report, else `-`). Never prints, always exits 0 |
 | `post.sh` | Async PostToolUse hook: runs `apply_edit.py`, then `hook.sh post` |
