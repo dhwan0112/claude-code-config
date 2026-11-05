@@ -1,0 +1,1 @@
+primary "DejaVu Sans Mono" (bold true, italic true), fallback [Noto Sans Mono CJK KR, Noto Sans CJK KR, DejaVu Sans]

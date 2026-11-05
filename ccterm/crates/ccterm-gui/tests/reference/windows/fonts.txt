@@ -1,0 +1,1 @@
+primary "Cascadia Mono" (bold false, italic false), fallback [Malgun Gothic, Segoe UI Symbol, Segoe UI, Cambria Math, MS Gothic, Segoe UI Emoji]
