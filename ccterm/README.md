@@ -45,10 +45,13 @@ ccterm statusline        (run by Claude Code)
   It exits when it has had no session and no window for 10 s, and logs to
   `daemon.log` in the state directory.
 - Sessions belong to the daemon. If the window crashes or is killed, its
-  sessions keep running and show in `ccterm status`; they cannot be
-  reattached to a new window yet. Closing the window normally ends its
-  sessions (the tab set `last` keeps them for the next start, see
-  [Tab sets](#tab-sets)).
+  sessions keep running (`ccterm status` shows them with `attached` 0), and
+  the next ccterm window takes them back as tabs, as they are — the
+  programs are not restarted. Palette: "Attach detached sessions" does the
+  same at any time. Closing the window normally ends its sessions (the tab
+  set `last` keeps them for the next start, see [Tab sets](#tab-sets)).
+- `ccterm` without a program opens no new tab when it took sessions back or
+  reopened tabs; `ccterm PROGRAM` always opens `PROGRAM` as well.
 - `ccterm status` lists the daemon's sessions; `--json` prints the same as
   JSON; `--screen ID` prints one session's screen as text (IDs come from
   `ccterm status`). It is read-only and never starts a daemon: without one
@@ -175,13 +178,16 @@ environment variables.
 | `previous` | at start, from `last` | automatically at start; palette "Open the previous run's tabs" |
 | `saved` | palette "Save tabs" | palette "Open saved tabs" |
 
-- At start, `last` becomes `previous` and its tabs are reopened *after* the
-  tab you asked for, so `ccterm PROGRAM` always runs `PROGRAM` too.
-  `restore-tabs = false` (or `--restore-tabs false`) turns this off.
+- At start, ccterm first takes back the daemon's running sessions that no
+  window shows, then `last` becomes `previous` and only its tabs that the
+  daemon does not have are reopened (Claude Code tabs are matched by
+  conversation, other tabs by program, arguments and folder).
+  `restore-tabs = false` (or `--restore-tabs false`) turns reopening off.
 - Tabs whose folder no longer exists are skipped (logged). A Claude Code
-  conversation that is already open in a tab is not opened again.
-- A restored tab is a new session: the program is started again, not
-  reattached. For Claude Code tabs see [Resume](#resume).
+  conversation that is running in any tab or window is never opened (or
+  resumed) a second time.
+- A reopened tab is a new session: the program is started again. For
+  Claude Code tabs see [Resume](#resume).
 
 ### Claude Code integration
 
@@ -194,8 +200,12 @@ as in any terminal.
 line, pointing to a per-session file in a private runtime directory (mode
 0600; Windows `%LOCALAPPDATA%\ccterm\run`), removed when the session ends.
 The file contains only `hooks` and `statusLine`: ccterm does not change
-permissions, the renderer or other Claude Code behaviour, and never touches
-`~/.claude/settings.json`. If you pass your own `--settings` (file or inline
+Claude Code's permission mode (no `--dangerously-skip-permissions`, no
+`defaultMode`, no allow/ask/deny rules) or any other behaviour — your own
+settings (`~/.claude/settings.json`, project and local settings, managed
+policy, command-line flags) apply exactly as in any other terminal — and it
+never touches those files. The hooks only report: they print nothing and
+never answer a permission prompt. If you pass your own `--settings` (file or inline
 JSON), it is merged into that file: your hooks are kept after ccterm's, your
 other keys are kept, and your `statusLine` is dropped with a log warning
 (ccterm's status row uses it). The hooks run `ccterm hook EVENT` directly
@@ -295,8 +305,6 @@ right daemon and tab.
 
 - `decorations = integrated` (own title bar with tabs) is not implemented;
   it falls back to `native`.
-- Sessions left by a crashed or killed window keep running but cannot be
-  reattached; `ccterm status` shows them.
 - Tab sets are not per window: with several ccterm windows open, the last
   one to write wins the `last` set.
 - The diff view shows the last edit only (no diff against `HEAD`, no file

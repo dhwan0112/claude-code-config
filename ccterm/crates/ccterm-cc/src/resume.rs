@@ -52,6 +52,13 @@ pub fn resume_args(args: &[String], id: &str) -> Vec<String> {
     out
 }
 
+/// Claude Code arguments without a resume or continue request.
+pub fn without_resume(args: &[String]) -> Vec<String> {
+    let mut a = resume_args(args, "x");
+    a.truncate(a.len() - 2);
+    a
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

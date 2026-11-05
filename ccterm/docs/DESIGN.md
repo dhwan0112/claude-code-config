@@ -166,7 +166,8 @@ line every 3 s):
 | GUI + daemon, one Claude Code tab, little scrollback | — | 5.9 + 5.1 MB |
 | Key → frame through the daemon, 120x36 | ≤ 16 ms | median 1.95 ms, p95 2.33 ms (Linux); 1.65 ms (Windows, P1) |
 | GUI draw per incremental frame, 120x36 | — | median 0.09 ms |
-| `ccterm hook` process, no daemon / with daemon | ≤ 50 ms | Linux 2.9 / 3.2 ms; Windows 64 ms (process start alone 52 ms: not met there) |
+| Claude Code's wait for a **synchronous** ccterm hook (edit-tool PreToolUse, PermissionRequest): from Claude Code starting the process to its exit | ≤ 250 ms always (enforced by the hook's own deadline); typical ≤ 10 ms Linux, ≤ 100 ms Windows | Linux median 4.4 ms, max 5.1; Windows median 69 ms (PermissionRequest) / 76 ms (PreToolUse), max 92 ms — process start alone 57 ms there |
+| Asynchronous hooks and the status line | not waited for by Claude Code; each ends within 1 s | Linux ~3 ms, Windows ~64 ms |
 
 ### 3.5 Local socket
 
@@ -268,6 +269,20 @@ line every 3 s):
   machine). A restored tab is a new session (new id): a tab set stores what
   to start, not the session; Claude Code session ids (UUIDs, from hooks) are
   stored with it so that Claude Code itself resumes (`--resume`).
+- Reattach (review C8): a window that is gone (crashed, killed) leaves its
+  sessions in the daemon. At start the GUI asks the daemon first
+  (`SessionInfo.attached` = Control clients attached, `claude_session`):
+  running sessions with no window become tabs again as they are; exited
+  ones nobody shows are closed. Tab-set restore then applies only to saved
+  tabs the daemon does not have (`tabsets::not_live`: Claude Code tabs by
+  conversation id, others by program, arguments without resume requests,
+  folder; each live session matches one saved tab), and a conversation
+  running anywhere in the daemon is never resumed again (checked against
+  the daemon's list at that moment, not the tabs' Claude Code state, which
+  arrives later). `ccterm` without a program opens no extra tab when
+  anything came back; `ccterm PROGRAM` still opens `PROGRAM`. Palette:
+  "Attach detached sessions". Sessions of another open window
+  (`attached` > 0) are never taken.
 - Tab sets (`tabs/<name>.tsv` in the state directory, after ccx's
   `savetabs.sh`): per tab name, folder (OSC 7, else the start folder),
   program, arguments, Claude Code session id, active flag; never

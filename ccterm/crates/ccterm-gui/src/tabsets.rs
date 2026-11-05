@@ -12,6 +12,8 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use ccterm_proto::wire::{SessionInfo, SessionState};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SavedTab {
     pub name: String,
@@ -112,6 +114,43 @@ pub fn load(dir: &Path, name: &str) -> Option<Vec<SavedTab>> {
     std::fs::read_to_string(path(dir, name)).ok().map(|t| parse(&t))
 }
 
+fn plain_dir(p: &str) -> &str {
+    let p = match p.strip_prefix("file://") {
+        Some(r) => r.find('/').map_or(r, |i| &r[i..]),
+        None => p,
+    };
+    p.trim_end_matches('/')
+}
+
+/// The saved tabs that are not running in the daemon (DESIGN.md §3.8): a
+/// Claude Code tab is there when a live session has its conversation id;
+/// any other tab when a live session runs the same program with the same
+/// arguments (resume requests aside) in the same folder — each live
+/// session counts for one saved tab.
+pub fn not_live(saved: &[SavedTab], live: &[SessionInfo]) -> Vec<SavedTab> {
+    let mut free: Vec<&SessionInfo> = live.iter().filter(|s| s.state == SessionState::Running).collect();
+    let mut out = vec![];
+    for t in saved {
+        let hit = if !t.claude_session.is_empty() {
+            free.iter().position(|s| s.claude_session == t.claude_session)
+        } else {
+            let args = ccterm_cc::resume::without_resume(&t.args);
+            free.iter().position(|s| {
+                s.program == t.program
+                    && ccterm_cc::resume::without_resume(&s.args) == args
+                    && plain_dir(&s.cwd) == plain_dir(&t.cwd)
+            })
+        };
+        match hit {
+            Some(i) => {
+                free.remove(i);
+            }
+            None => out.push(t.clone()),
+        }
+    }
+    out
+}
+
 /// At start: `last` becomes `previous` (returned) and `last` is removed.
 pub fn rotate_last(dir: &Path) -> Vec<SavedTab> {
     let Some(tabs) = load(dir, "last") else { return vec![] };
@@ -156,5 +195,54 @@ mod tests {
         assert_eq!(load(&d, "previous").unwrap(), tabs);
         assert!(rotate_last(&d).is_empty());
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn live(program: &str, args: &[&str], cwd: &str, claude: &str, running: bool) -> SessionInfo {
+        SessionInfo {
+            id: "x".into(),
+            program: program.into(),
+            title: String::new(),
+            cwd: cwd.into(),
+            state: if running { SessionState::Running } else { SessionState::Exited { code: Some(0) } },
+            created_ms: 0,
+            pid: None,
+            cols: 80,
+            rows: 24,
+            args: args.iter().map(|s| s.to_string()).collect(),
+            attached: 0,
+            claude_session: claude.into(),
+            attention: Default::default(),
+        }
+    }
+
+    #[test]
+    fn only_tabs_missing_from_the_daemon_are_restored() {
+        let tab = |prog: &str, cwd: &str, sid: &str| SavedTab {
+            name: "n".into(),
+            cwd: cwd.into(),
+            program: prog.into(),
+            args: vec![],
+            claude_session: sid.into(),
+            active: false,
+        };
+        let saved = vec![
+            tab("claude", "/p", "aaa"),
+            tab("claude", "/p", "bbb"),
+            tab("bash", "/home", ""),
+            tab("bash", "/home", ""),
+        ];
+        let live = vec![
+            // Conversation aaa runs (resumed earlier: its args say so).
+            live("claude", &["--resume", "aaa"], "file://host/p/", "aaa", true),
+            // One bash in /home runs; an exited one does not count.
+            live("bash", &[], "file://host/home", "", true),
+            live("bash", &[], "/home", "", false),
+        ];
+        let missing = not_live(&saved, &live);
+        assert_eq!(
+            missing.iter().map(|t| (t.program.as_str(), t.claude_session.as_str())).collect::<Vec<_>>(),
+            [("claude", "bbb"), ("bash", "")]
+        );
+        assert_eq!(not_live(&saved, &[]).len(), 4);
     }
 }

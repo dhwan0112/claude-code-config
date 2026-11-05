@@ -13,7 +13,7 @@ use ccterm_core::{
     GridSize, Key, KeyInput, MouseAction, MouseButton, MouseInput, SessionConfig, SessionEvent, Snapshot,
 };
 use ccterm_proto::paths::Endpoint;
-use ccterm_proto::wire::{rgb, Attention, ClaudeInfo, CreateSpec};
+use ccterm_proto::wire::{rgb, Attention, ClaudeInfo, CreateSpec, SessionInfo, SessionState};
 use ccterm_proto::{Client, Origin, RemoteHandle, RemoteSession, Role};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
@@ -272,13 +272,40 @@ impl App {
         };
         // "last" becomes "previous" before the first tab rewrites "last".
         let previous = if self.opts.config.restore_tabs { tabsets::rotate_last(&tabsets::dir()) } else { vec![] };
-        win.open_tab(None)?;
-        if !previous.is_empty() {
-            let n = win.open_saved(&previous);
-            if n > 0 {
-                win.select(0);
-                win.show_hint(format!("reopened {n} tab(s) of the previous run"));
+        // Sessions of a window that is gone (crashed or killed) are still in
+        // the daemon: take them back first; restore only the saved tabs the
+        // daemon does not have (DESIGN.md §3.8).
+        let live = win.client.list_sessions().unwrap_or_default();
+        for s in live.iter().filter(|s| s.attached == 0 && s.state != SessionState::Running) {
+            let _ = win.client.close(&s.id); // exited, and no window shows it
+        }
+        let detached: Vec<SessionInfo> =
+            live.iter().filter(|s| s.attached == 0 && s.state == SessionState::Running).cloned().collect();
+        let missing = tabsets::not_live(&previous, &live);
+        if self.opts.explicit_program || (detached.is_empty() && missing.is_empty()) {
+            win.open_tab(None)?;
+        }
+        let mut back = 0;
+        for s in &detached {
+            match win.reattach(s) {
+                Ok(()) => back += 1,
+                Err(e) => log::warn!("reattach {}: {e}", s.id),
             }
+        }
+        let reopened = win.open_saved(&missing);
+        if win.tabs.is_empty() {
+            win.open_tab(None)?;
+        }
+        if back + reopened > 0 {
+            win.select(0);
+            let mut parts = vec![];
+            if back > 0 {
+                parts.push(format!("reattached {back} running session(s)"));
+            }
+            if reopened > 0 {
+                parts.push(format!("reopened {reopened} tab(s) of the previous run"));
+            }
+            win.show_hint(parts.join(", "));
         }
         win.save_last();
         self.win = Some(win);
@@ -333,9 +360,35 @@ impl Win {
         self.claude_integration && ccterm_cc::settings::is_claude(program)
     }
 
+    /// Shows a session of the daemon that no window shows, as a new tab.
+    fn reattach(&mut self, s: &SessionInfo) -> Result<(), String> {
+        let spec =
+            TabSpec { program: s.program.clone(), args: s.args.clone(), cwd: Some(osc7_path(&s.cwd)), name: None };
+        let integrated = self.is_integrated(&s.program);
+        let size = self.term_grid_for(integrated, self.tabs.len() + 1);
+        log::info!("reattaching session {} ({})", s.id, s.program);
+        self.add_tab(s.id.clone(), spec, size, integrated)
+    }
+
+    /// Attaches every detached running session that is not a tab yet.
+    fn attach_detached(&mut self) -> usize {
+        let live = self.client.list_sessions().unwrap_or_default();
+        let mut n = 0;
+        for s in live.iter().filter(|s| s.attached == 0 && s.state == SessionState::Running) {
+            if self.tabs.iter().all(|t| t.session.id != s.id) && self.reattach(s).is_ok() {
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// Opens the tabs of a set after the current ones; tabs whose folder is
     /// gone are skipped. Returns how many opened.
     fn open_saved(&mut self, set: &[SavedTab]) -> usize {
+        // Conversations running in the daemon right now (any window): never
+        // resumed a second time. Asked now, not taken from the tabs' Claude
+        // Code state, which arrives later.
+        let live = self.client.list_sessions().unwrap_or_default();
         let mut n = 0;
         for t in set {
             if !t.cwd.is_empty() && !std::path::Path::new(&t.cwd).is_dir() {
@@ -344,8 +397,12 @@ impl Win {
             }
             let mut args = t.args.clone();
             if ccterm_cc::settings::is_claude(&t.program) && !t.claude_session.is_empty() {
-                // The conversation is already open in a tab: do not open it twice.
-                if self.tabs.iter().any(|x| x.claude.as_ref().is_some_and(|c| c.claude_session == t.claude_session)) {
+                // The conversation is already open: do not open it twice.
+                let running =
+                    live.iter().any(|s| s.claude_session == t.claude_session && s.state == SessionState::Running);
+                if running
+                    || self.tabs.iter().any(|x| x.claude.as_ref().is_some_and(|c| c.claude_session == t.claude_session))
+                {
                     log::info!("tab set: conversation of {:?} is already open; skipped", t.name);
                     continue;
                 }
@@ -382,7 +439,7 @@ impl Win {
                     cwd: pwd.or_else(|| t.spec.cwd.clone()).unwrap_or_default(),
                     program: t.spec.program.clone(),
                     // Without an earlier --resume: the session id below says which.
-                    args: strip_resume(&t.spec.args),
+                    args: ccterm_cc::resume::without_resume(&t.spec.args),
                     claude_session: t.claude.as_ref().map(|c| c.claude_session.clone()).unwrap_or_default(),
                     active: i == self.active,
                 }
@@ -424,6 +481,12 @@ impl Win {
             claude_integration: self.claude_integration,
         };
         let id = self.client.create(create).map_err(|e| e.to_string())?;
+        let spec = TabSpec { cwd, ..spec };
+        self.add_tab(id, spec, size, integrated)
+    }
+
+    /// Attaches session `id` as a new, selected tab.
+    fn add_tab(&mut self, id: String, spec: TabSpec, size: GridSize, integrated: bool) -> Result<(), String> {
         let session = self.client.attach(&id, None).map_err(|e| format!("attach: {e}"))?;
         log::info!(
             "tab {} = session {id} in daemon {}, grid {}x{}",
@@ -449,7 +512,6 @@ impl Win {
             t.session.handle.focus(false);
         }
         let program = spec.program.clone();
-        let spec = TabSpec { cwd, ..spec };
         self.tabs.push(Tab { session, snap: None, spec, program, exited: None, size, integrated, claude: None });
         self.active = self.tabs.len() - 1;
         if self.focused {
@@ -598,6 +660,10 @@ impl Win {
                 self.panel_open = true;
                 save_ui_state(self.panel_open, self.panel_width);
                 self.relayout();
+            }
+            Action::AttachDetached => {
+                let n = self.attach_detached();
+                self.show_hint(if n == 0 { "no detached sessions".into() } else { format!("attached {n} session(s)") });
             }
             Action::SaveTabs => {
                 let tabs = self.saved_tabs();
@@ -1039,14 +1105,6 @@ fn install_panic_report(r: ccterm_proto::Reporter) {
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
-}
-
-/// Claude Code arguments without a resume request (saved tabs resume by
-/// their session id instead).
-fn strip_resume(args: &[String]) -> Vec<String> {
-    let mut a = ccterm_cc::resume::resume_args(args, "x");
-    a.truncate(a.len() - 2);
-    a
 }
 
 /// A desktop notification without content from the session (Linux:

@@ -59,6 +59,8 @@ pub struct Options {
     pub cols: u16,
     pub rows: u16,
     pub command: CommandSpec,
+    /// A program was named on the command line (else the default shell).
+    pub explicit_program: bool,
     pub config: config::Config,
     /// Settings given on the command line, applied after the config file.
     pub settings: Vec<(String, String)>,
@@ -134,6 +136,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
         cols: 120,
         rows: 36,
         command: default_shell(),
+        explicit_program: false,
         config: config::Config::default(),
         settings: vec![],
         keymap: keymap::Keymap::default(),
@@ -194,6 +197,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
     }
     if let Some((prog, rest)) = program.split_first() {
         o.command = CommandSpec::new(prog).args(rest);
+        o.explicit_program = true;
     }
     o.cols = o.cols.max(2);
     o.rows = o.rows.max(1);

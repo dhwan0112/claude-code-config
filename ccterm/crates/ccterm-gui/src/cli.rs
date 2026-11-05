@@ -99,7 +99,7 @@ pub fn status_json(pid: u32, list: &[SessionInfo]) -> String {
                 SessionState::Exited { code } => ("exited", code.map_or("null".into(), |c| c.to_string())),
             };
             format!(
-                r#"{{"id":{},"title":{},"cwd":{},"state":"{state}","exit_code":{code},"created_ms":{},"created":{},"program":{},"pid":{},"cols":{},"rows":{}}}"#,
+                r#"{{"id":{},"title":{},"cwd":{},"state":"{state}","exit_code":{code},"created_ms":{},"created":{},"program":{},"pid":{},"cols":{},"rows":{},"attached":{},"claude_session":{},"attention":"{:?}"}}"#,
                 json_str(&s.id),
                 json_str(&s.title),
                 json_str(&s.cwd),
@@ -108,7 +108,10 @@ pub fn status_json(pid: u32, list: &[SessionInfo]) -> String {
                 json_str(&s.program),
                 s.pid.map_or("null".into(), |p| p.to_string()),
                 s.cols,
-                s.rows
+                s.rows,
+                s.attached,
+                json_str(&s.claude_session),
+                s.attention
             )
         })
         .collect();
@@ -178,6 +181,6 @@ mod tests {
         };
         let j = status_json(7, &[s]);
         assert!(j.starts_with(r#"{"daemon_pid":7,"sessions":[{"id":"x-1","title":"✳ Claude Code","cwd":"/tmp/p","state":"exited","exit_code":3,"#), "{j}");
-        assert!(j.ends_with(r#""program":"claude","pid":42,"cols":120,"rows":36}]}"#), "{j}");
+        assert!(j.ends_with(r#""program":"claude","pid":42,"cols":120,"rows":36,"attached":0,"claude_session":"","attention":"None"}]}"#), "{j}");
     }
 }

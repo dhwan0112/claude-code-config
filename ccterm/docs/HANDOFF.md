@@ -949,6 +949,30 @@ regression list, measurements), then committed, pushed and mirrored.
     p90 88.0, max 92.3; PreToolUse median 76.1 ms (n=30) against
     `hostname.exe` 56.7 ms on the same run (`synctime.ps1`).
 
+- **2026-11-05 Review C8 + D — session reattach, docs.**
+  - At start the GUI reattaches the daemon's running sessions that no
+    window shows, closes exited orphans, then restores only the saved tabs
+    the daemon does not have; a running conversation is never resumed
+    again; palette "Attach detached sessions" (DESIGN.md §3.8).
+  - Unit test `only_tabs_missing_from_the_daemon_are_restored`.
+  - Regression section 9 (`reg.sh`, a fake `claude` logging every start
+    with its arguments; 27/27 with the rest): tab set `last` holds both
+    conversation ids; `kill -9` of the GUI → restart without a program:
+    2 sessions, 2 attached, 2 Claude starts in total (none new), no
+    `--resume`; restart with the program: 3 attached, 3 starts, no
+    `--resume`; GUI and daemon killed → restart: 3 tabs, `--resume
+    aaaa-1111` and `--resume bbbb-2222` exactly once each; a window killed
+    beside a running one → palette "Attach detached sessions" → 4 attached.
+    The regression's `stop()` now also ends the daemon (sections must not
+    reattach each other's sessions).
+  - Real Claude Code (`e2e5.sh`): a prompt, `kill -9` of the GUI, restart
+    without a program → the same Claude Code process (pid unchanged)
+    attached again, no `--resume` in its command line.
+  - D9: DESIGN.md §3.4 hook budget is now Claude Code's wait for a
+    synchronous hook (≤ 250 ms enforced; measured Linux 4.4 ms, Windows
+    69–76 ms median). D10: README — ccterm does not change Claude Code's
+    permission mode; the user's settings apply unchanged.
+
 ### ccx comparison (milestone 3)
 
 | ccx | ccterm | |

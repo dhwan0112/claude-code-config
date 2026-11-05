@@ -28,6 +28,8 @@ pub enum Action {
     StatusPanel,
     StatusPanelWider,
     StatusPanelNarrower,
+    /// Attach the daemon's sessions that no window shows (a crashed GUI).
+    AttachDetached,
 }
 
 impl Action {
@@ -48,6 +50,7 @@ impl Action {
             Action::StatusPanel => "status_panel".into(),
             Action::StatusPanelWider => "status_panel_wider".into(),
             Action::StatusPanelNarrower => "status_panel_narrower".into(),
+            Action::AttachDetached => "attach_detached".into(),
         }
     }
 
@@ -68,6 +71,7 @@ impl Action {
             Action::StatusPanel => "Status panel (Claude Code)".into(),
             Action::StatusPanelWider => "Status panel wider".into(),
             Action::StatusPanelNarrower => "Status panel narrower".into(),
+            Action::AttachDetached => "Attach detached sessions".into(),
         }
     }
 
@@ -86,6 +90,7 @@ impl Action {
             "status_panel" => Action::StatusPanel,
             "status_panel_wider" => Action::StatusPanelWider,
             "status_panel_narrower" => Action::StatusPanelNarrower,
+            "attach_detached" => Action::AttachDetached,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -105,6 +110,7 @@ impl Action {
             Action::StatusPanel,
             Action::StatusPanelWider,
             Action::StatusPanelNarrower,
+            Action::AttachDetached,
             Action::SaveTabs,
             Action::OpenSavedTabs,
             Action::OpenPreviousTabs,
