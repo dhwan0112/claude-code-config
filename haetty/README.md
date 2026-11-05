@@ -215,6 +215,9 @@ selection-foreground = #141414
 - Colour keys in the config file apply after the theme, wherever they
   stand: `theme = IBM 5153 CGA` plus `palette = 4=#3a3aff` changes only
   blue. Keys a theme file leaves out keep `haetty classic`'s values.
+- Selected text keeps its own colour when that is easier to read on the
+  selection background than the theme's `selection-foreground` (WCAG
+  contrast; details in `assets/themes/README.md`).
 - Only colours 0–15 are themed; 16–255 stay xterm's colour cube and grey
   ramp. Programs asking for the colours (OSC 4, 10, 11, 12) get the theme's
   values.

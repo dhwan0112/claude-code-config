@@ -1370,6 +1370,15 @@ regression list, measurements), then committed, pushed and mirrored.
   colour 9 and the status row its dim grey, no white pixel in either row;
   at 1 the program's text is unchanged). Reference frames unchanged.
 
+- **2026-11-06 Selected text: the theme's colour only if not worse.**
+  `paint::colors_with`: a selected cell uses the theme's
+  `selection-foreground` only when its contrast on the selection
+  background is not lower than the cell's own text colour's (ties: the
+  theme's). Unit test with IBM 5153 CGA (`#141414` on the `#4e4e4e` fill-in
+  = 2.21): default text `#cecece` (5.29) and white (8.32) keep their own;
+  blue (1.19) and colour 8 (1.00) take `#141414`. Rule, formula and the
+  16-colour table in `assets/themes/README.md`.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

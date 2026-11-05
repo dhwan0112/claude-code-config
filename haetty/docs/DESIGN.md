@@ -602,7 +602,11 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   left as libghostty-vt's xterm cube and grey ramp), so OSC 4/10/11/12
   queries answer with them and snapshot cells carry the theme's RGB;
   `CreateSpec` carries them to the daemon (protocol version 5). Cursor text
-  and selection colours are the painter's (`paint::Look`). The window's
+  and selection colours are the painter's (`paint::Look`); a selected
+  cell uses the theme's selection text colour only when its contrast with
+  the selection background is not lower than the cell's own text colour's
+  (`assets/themes/README.md`: CGA's `#141414` is 2.21:1 on `#4e4e4e`, the
+  default text 5.29:1). The window's
   first frame and the Windows 11 title bar use the theme's background
   before a snapshot exists.
 - `minimum-contrast` (1–21, default 1 = off; Ghostty's meaning and

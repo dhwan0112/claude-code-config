@@ -645,7 +645,11 @@ pub fn colors(snap: &Snapshot, x: u16, y: u16) -> (Rgb, Rgb) {
 
 /// [`colors`] with the theme's selection colours: a selected cell takes
 /// those that are set (as Ghostty's `selection-background` /
-/// `selection-foreground`), the rest from the cell.
+/// `selection-foreground`), the rest from the cell — except that the
+/// theme's selection text colour is used only when its contrast with the
+/// selection background is not lower than that of the cell's own text
+/// colour (IBM 5153 CGA: `#141414` on `#4e4e4e` is 2.21:1, the default
+/// text `#cecece` 5.29:1, so selected default text stays `#cecece`).
 pub fn colors_with(snap: &Snapshot, x: u16, y: u16, look: &Look) -> (Rgb, Rgb) {
     let cell = snap.cell(x, y).expect("cell");
     let f = cell.flags;
@@ -658,7 +662,11 @@ pub fn colors_with(snap: &Snapshot, x: u16, y: u16, look: &Look) -> (Rgb, Rgb) {
     }
     if themed {
         bg = look.selection_bg.unwrap_or(bg);
-        fg = look.selection_fg.unwrap_or(fg);
+        if let Some(sf) = look.selection_fg {
+            if super::contrast::ratio(sf, bg) >= super::contrast::ratio(fg, bg) {
+                fg = sf;
+            }
+        }
     }
     if f.has(CellFlags::FAINT) {
         fg = mix(fg, bg, 128);
@@ -720,6 +728,22 @@ mod tests {
         assert_eq!(colors_with(&s, 0, 0, &bg_only), (RED, sel));
         assert_eq!(colors_with(&s, 1, 0, &bg_only), (BG, sel), "inverse still applies to the text");
         assert_eq!(colors_with(&s, 0, 0, &Look::default()), colors(&s, 0, 0));
+        // IBM 5153 CGA: the selection text colour #141414 (2.21:1 on the
+        // #4e4e4e fill-in) only where the cell's own colour is worse.
+        let t = haetty_core::theme::Theme::builtin("IBM 5153 CGA").unwrap();
+        let look = Look::of(&t);
+        let rgb = |v: u32| Rgb { r: (v >> 16) as u8, g: (v >> 8) as u8, b: v as u8 };
+        let mut s = Snapshot { default_fg: t.foreground, default_bg: t.background, ..snap(4, 1) };
+        let sel = CellFlags(CellFlags::SELECTED);
+        set(&mut s, 0, 0, Cell { flags: sel, ..Default::default() });
+        set(&mut s, 1, 0, Cell { fg: Some(t.palette[4]), flags: sel, ..Default::default() });
+        set(&mut s, 2, 0, Cell { fg: Some(t.palette[15]), flags: sel, ..Default::default() });
+        set(&mut s, 3, 0, Cell { fg: Some(t.palette[8]), flags: sel, ..Default::default() });
+        let fill = rgb(0x4e4e4e);
+        assert_eq!(colors_with(&s, 0, 0, &look), (rgb(0xcecece), fill), "default text 5.29 > 2.21: its own");
+        assert_eq!(colors_with(&s, 1, 0, &look), (rgb(0x141414), fill), "blue 1.19 < 2.21: the theme's");
+        assert_eq!(colors_with(&s, 2, 0, &look), (rgb(0xffffff), fill), "white 8.32: its own");
+        assert_eq!(colors_with(&s, 3, 0, &look), (rgb(0x141414), fill), "colour 8 = the fill (1.00): the theme's");
     }
 
     // Tests below need a system font; they are skipped when none is found
