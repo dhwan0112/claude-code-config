@@ -6,7 +6,9 @@
 //! `%LOCALAPPDATA%`. Anything else panics before a byte is written.
 //!
 //! The run directory is `<base>/haetty-test-<pid>-<time>/`, where `<base>` is
-//! `HAETTY_TEST_TMP` when set (empty = refused), else the system temporary
+//! `HAETTY_TEST_TMP` when set (empty or not absolute = refused: a relative
+//! base would land wherever the test happens to run, e.g. the repository),
+//! else the system temporary
 //! directory on Unix and `%PUBLIC%\haetty-test` on Windows (the Windows temp
 //! directory is under `%LOCALAPPDATA%`). The real home and configuration
 //! directories are taken from the environment at the first call, before a
@@ -82,12 +84,29 @@ pub fn refusal(path: &Path, root: &Path, protected: &[PathBuf]) -> Option<String
     None
 }
 
+/// Why `HAETTY_TEST_TMP` cannot be the base: empty, or not absolute
+/// (`C:foo` and `\foo` are not absolute on Windows either).
+pub fn base_refusal(base: &Path) -> Option<String> {
+    if base.as_os_str().is_empty() {
+        return Some("HAETTY_TEST_TMP is set but empty".into());
+    }
+    if !base.is_absolute() {
+        return Some(format!("HAETTY_TEST_TMP={} is not an absolute path", base.display()));
+    }
+    None
+}
+
 fn guard() -> &'static Guard {
     GUARD.get_or_init(|| {
         let protected = protected_dirs();
         let base = match std::env::var_os("HAETTY_TEST_TMP") {
-            Some(v) if v.is_empty() => panic!("test isolation: HAETTY_TEST_TMP is set but empty — refusing to run"),
-            Some(v) => PathBuf::from(v),
+            Some(v) => {
+                let v = PathBuf::from(v);
+                if let Some(why) = base_refusal(&v) {
+                    panic!("test isolation: {why} — refusing to run");
+                }
+                v
+            }
             None if cfg!(windows) => {
                 PathBuf::from(std::env::var_os("PUBLIC").expect("test isolation: %PUBLIC% unset")).join("haetty-test")
             }
@@ -154,6 +173,12 @@ mod tests {
         assert!(refusal(&home.join(".local/share/applications/x.desktop"), &root, &protected).is_some());
         assert!(refusal(&home.join(".claude/settings.json"), &root, &protected).is_some());
         assert!(refusal(Path::new(""), &root, &protected).is_some(), "empty variable");
+        // The base itself: empty or relative (a path whose separators a
+        // shell ate, e.g. `C:UsersdennyTemp`) is refused.
+        assert!(base_refusal(Path::new("")).is_some());
+        assert!(base_refusal(Path::new("C:UsersdennyAppDataLocalTempx")).is_some());
+        assert!(base_refusal(Path::new("haetty-test")).is_some());
+        assert!(base_refusal(&root).is_none());
         // A run directory inside the home is refused even for its own files.
         let bad_root = home.join("tmp/run");
         assert!(refusal(&bad_root.join("x"), &bad_root, &protected).is_some());

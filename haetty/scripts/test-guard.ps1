@@ -3,7 +3,9 @@
 #   Initialize-HaettyGuard -Name HAETTY_TEST_TMP   # the NAME of the environment variable holding the base
 #   Assert-HaettyPath $path                        # before writing or removing $path
 #
-# Initialize-HaettyGuard throws when the variable is unset or empty, or when
+# Initialize-HaettyGuard throws when the variable is unset, empty or not a
+# fully qualified path (a relative base, or `C:foo`, lands in the current
+# folder), or when
 # the base is, or is inside, the real %USERPROFILE%, ~\.config, ~\.local,
 # ~\.claude, %APPDATA% or %LOCALAPPDATA% (so %TEMP% is refused: use e.g.
 # $env:PUBLIC\haetty-test). It creates the run directory $env:HAETTY_RUN
@@ -31,6 +33,7 @@ function Test-HaettyInside([string]$path, [string]$dir) {
 function Initialize-HaettyGuard([string]$Name) {
     $base = [Environment]::GetEnvironmentVariable($Name)
     if (-not $base) { throw "test-guard: refusing: `$env:$Name is unset or empty" }
+    if (-not [System.IO.Path]::IsPathFullyQualified($base)) { throw "test-guard: refusing: `$env:$Name=$base is not an absolute path" }
     foreach ($d in Get-HaettyProtected) {
         if (Test-HaettyInside $base $d) { throw "test-guard: refusing: `$env:$Name=$base is (inside) the real $d" }
     }

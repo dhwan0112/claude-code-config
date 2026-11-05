@@ -1151,6 +1151,16 @@ regression list, measurements), then committed, pushed and mirrored.
   - Note: PowerShell may refuse to dot-source a script from
     `\\wsl.localhost\…` inside a `-File` run; copy `test-guard.ps1` locally.
 
+  - 2026-11-06 follow-up: a relative base is refused too (all three guards).
+    An earlier guard check had passed a Windows path whose backslashes the
+    shell ate (`C:UsersdennyAppDataLocalTempx`): a relative path, which the
+    guard resolved against the current folder — the repository — and an
+    empty `haetty-run.*` folder appeared in `haetty/` (removed, never
+    committed). Now `haetty-test`, `C:Users…`, `./x`, `x/../y` (and in WSL
+    `C:/…`) are refused before anything is created: `test-guard.sh` on WSL
+    and Git Bash, `test-guard.ps1` (`IsPathFullyQualified`), and
+    `haetty_testkit` (`base_refusal`, unit-tested); nothing appeared in the
+    scratch folder the checks ran from.
 - **2026-11-06 Windows status line with spaces in paths (protected area,
   approved: the injected settings).** Claude Code's docs (status line
   guide, settings reference) show no shell-free form for `statusLine`

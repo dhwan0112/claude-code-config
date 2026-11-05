@@ -3,7 +3,9 @@
 #   haetty_guard_init HAETTY_TEST_TMP    # the NAME of the variable holding the base directory
 #   haetty_guard "$path"                 # before writing or removing $path
 #
-# haetty_guard_init refuses (exit 3) when the variable is unset or empty, or
+# haetty_guard_init refuses (exit 3) when the variable is unset, empty or not
+# an absolute path (a relative base lands in the current folder, e.g. the
+# repository; `C:/…` counts only in Git Bash), or
 # when the base or the run directory it creates there is, or is inside, the
 # real HOME, ~/.config, ~/.local, ~/.claude, $XDG_{CONFIG,DATA,STATE}_HOME,
 # %APPDATA% or %LOCALAPPDATA% (Git Bash). It creates the run directory
@@ -58,6 +60,11 @@ haetty_guard_init() {
   local name=$1 base
   base=${!name}
   [ -n "$base" ] || _haetty_refuse "\$$name is unset or empty"
+  case "$base" in
+    /*) ;;
+    [A-Za-z]:[/\\]*) command -v cygpath >/dev/null 2>&1 || _haetty_refuse "\$$name=$base is not an absolute path here" ;;
+    *) _haetty_refuse "\$$name=$base is not an absolute path" ;;
+  esac
   local d
   while read -r d; do
     [ -n "$d" ] && _haetty_inside "$base" "$d" && _haetty_refuse "\$$name=$base is (inside) the real $d"
