@@ -89,6 +89,7 @@ ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [
   | `window-padding-balance` | `true` / `false` — spread leftover space evenly | `true` |
   | `window-padding-color` | `background` / `extend` / `extend-always` (as in Ghostty) | `extend` |
   | `decorations` | `native` / `integrated` (tabs milestone; native until then) / `none` | `native` |
+  | `scrollback-limit` | bytes of scrollback per session, as in Ghostty (rows of 120 columns take ~1.1 KB; the default keeps ~11 000 of them) | `12000000` |
 
 - Window chrome: on Windows 11 the title bar and border take the terminal
   background and the title text its foreground; Windows 10 and Linux get

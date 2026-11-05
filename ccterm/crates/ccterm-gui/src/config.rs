@@ -8,6 +8,7 @@
 //! | `window-padding-balance` | `true` / `false`: spread the leftover space evenly on all sides | `true` |
 //! | `window-padding-color` | `background` / `extend` / `extend-always` | `extend` |
 //! | `decorations` | `native` / `integrated` / `none` | `native` |
+//! | `scrollback-limit` | bytes of scrollback per session (as Ghostty; ~1.1 KB per 120-column row) | 12000000 |
 
 /// Colour of the padding around the grid (Ghostty's `window-padding-color`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +41,8 @@ pub struct Config {
     pub padding_balance: bool,
     pub padding_color: PaddingColor,
     pub decorations: Decorations,
+    /// Bytes ([`ccterm_core::SessionConfig::scrollback_limit`]).
+    pub scrollback_limit: usize,
 }
 
 impl Default for Config {
@@ -49,11 +52,13 @@ impl Default for Config {
             padding_balance: true,
             padding_color: PaddingColor::Extend,
             decorations: Decorations::Native,
+            scrollback_limit: ccterm_core::DEFAULT_SCROLLBACK_LIMIT,
         }
     }
 }
 
-pub const KEYS: &[&str] = &["window-padding", "window-padding-balance", "window-padding-color", "decorations"];
+pub const KEYS: &[&str] =
+    &["window-padding", "window-padding-balance", "window-padding-color", "decorations", "scrollback-limit"];
 
 impl Config {
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
@@ -89,6 +94,11 @@ impl Config {
                     _ => return Err(bad()),
                 }
             }
+            "scrollback-limit" => {
+                // Plain bytes; `_` separators allowed (12_000_000).
+                let v: u64 = value.replace('_', "").parse().map_err(|_| bad())?;
+                self.scrollback_limit = usize::try_from(v).map_err(|_| bad())?;
+            }
             _ => return Err(format!("unknown setting {key:?}")),
         }
         Ok(())
@@ -116,6 +126,13 @@ mod tests {
         assert!(c.set("decorations", "fancy").is_err());
         assert!(c.set("window-padding", "-1").is_err());
         assert!(c.set("nope", "1").is_err());
+        assert_eq!(c.scrollback_limit, ccterm_core::DEFAULT_SCROLLBACK_LIMIT);
+        c.set("scrollback-limit", "4_000_000").unwrap();
+        assert_eq!(c.scrollback_limit, 4_000_000);
+        c.set("scrollback-limit", "0").unwrap();
+        assert_eq!(c.scrollback_limit, 0);
+        assert!(c.set("scrollback-limit", "10MB").is_err());
+        assert!(c.set("scrollback-limit", "-1").is_err());
         for k in KEYS {
             assert!(!c.clone().set(k, "?").unwrap_err().starts_with("unknown"));
         }

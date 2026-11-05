@@ -64,7 +64,8 @@ pub const SUBCOMMANDS: &[&str] =
 const USAGE: &str =
     "usage: ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
      settings (KEY): window-padding N, window-padding-balance true|false,\n\
-     window-padding-color background|extend|extend-always, decorations native|integrated|none\n\
+     window-padding-color background|extend|extend-always, decorations native|integrated|none,\n\
+     scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row)\n\
      reserved subcommands (not implemented yet): gui, daemon, hook, statusline, run, headless,\n\
      install-desktop, status; to run a program with one of these names: ccterm [OPTIONS] -- NAME [ARGS...]";
 

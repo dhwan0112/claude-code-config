@@ -110,6 +110,7 @@ impl App {
         renderer.resize(size.width, size.height);
 
         cfg.size = grid;
+        cfg.scrollback_limit = self.opts.config.scrollback_limit;
         let session = Session::spawn(cfg).map_err(|e| format!("cannot start {:?}: {e}", self.opts.command.program))?;
         log::info!(
             "session: {} pid {:?}, grid {}x{}",

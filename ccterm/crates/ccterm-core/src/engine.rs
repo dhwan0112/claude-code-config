@@ -49,7 +49,8 @@ pub(crate) enum Cmd {
 
 pub(crate) struct EngineConfig {
     pub size: GridSize,
-    pub scrollback: usize,
+    /// Bytes (libghostty-vt `max_scrollback`).
+    pub scrollback_limit: usize,
     pub color_scheme: ColorSchemePref,
     pub default_fg: Rgb,
     pub default_bg: Rgb,
@@ -85,7 +86,7 @@ pub(crate) fn run(
     let mut term = match Terminal::new(TerminalOptions {
         cols: cfg.size.cols.max(1),
         rows: cfg.size.rows.max(1),
-        max_scrollback: cfg.scrollback,
+        max_scrollback: cfg.scrollback_limit,
     }) {
         Ok(t) => t,
         Err(e) => {

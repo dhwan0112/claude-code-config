@@ -42,11 +42,20 @@ pub enum ColorSchemePref {
     Unknown,
 }
 
+/// Default [`SessionConfig::scrollback_limit`]: 12 MB keeps about 11 000
+/// rows of history at 120 columns (measured with `examples/mem.rs`; about
+/// 1.1 KB per 120-column row), about 12.9 MB of anonymous memory per session.
+pub const DEFAULT_SCROLLBACK_LIMIT: usize = 12_000_000;
+
 #[derive(Clone, Debug)]
 pub struct SessionConfig {
     pub command: CommandSpec,
     pub size: GridSize,
-    pub scrollback: usize,
+    /// Scrollback limit in **bytes** of terminal pages (libghostty-vt's
+    /// `max_scrollback`, like Ghostty's `scrollback-limit`), rounded to whole
+    /// pages. How many rows fit depends on the width: rows of 120 columns
+    /// take about 1.1 KB.
+    pub scrollback_limit: usize,
     pub pty: PtyOptions,
     pub color_scheme: ColorSchemePref,
     /// Default foreground/background. Applications query these with OSC 10/11
@@ -69,7 +78,7 @@ impl SessionConfig {
         Self {
             command,
             size: GridSize::new(120, 36),
-            scrollback: 10_000,
+            scrollback_limit: DEFAULT_SCROLLBACK_LIMIT,
             pty: PtyOptions::default(),
             color_scheme: ColorSchemePref::Dark,
             default_fg: Rgb { r: 0xdc, g: 0xdc, b: 0xdc },
@@ -187,7 +196,7 @@ impl Session {
 
         let ecfg = EngineConfig {
             size: gs,
-            scrollback: cfg.scrollback,
+            scrollback_limit: cfg.scrollback_limit,
             color_scheme: cfg.color_scheme,
             default_fg: cfg.default_fg,
             default_bg: cfg.default_bg,

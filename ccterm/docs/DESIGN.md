@@ -122,8 +122,13 @@ private working set: heap, stacks and anonymous mappings of ccterm itself.
 Not counted: file-backed pages (shared libraries, memory-mapped fonts;
 `RssFile`), shared memory with the display server (X11 MIT-SHM, Wayland
 pool buffers; `RssShmem`) and the child process (Claude Code).
-`SessionConfig::scrollback` is libghostty-vt's `max_scrollback`, a byte
-limit; "10k lines" means a limit large enough to keep 10 000 rows.
+Scrollback is a byte limit (`scrollback-limit`, `SessionConfig::
+scrollback_limit` = libghostty-vt's `max_scrollback`, as Ghostty's
+`scrollback-limit`); "10k lines" means a limit large enough to keep 10 000
+rows of 120 columns. The default, 12 000 000 bytes, keeps about 11 000 such
+rows (~1.1 KB per row). Measured 2026-11-05 with the default filled and
+Claude Code idle: Linux 19.2 MB `RssAnon`, Windows 22.6 MB private working
+set — inside the budget.
 
 ## 4. VT engine decision (measured 2026-11-04)
 
