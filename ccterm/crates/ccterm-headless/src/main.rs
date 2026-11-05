@@ -15,6 +15,7 @@
 //! Steps:
 //!   sleep MS                  wait
 //!   wait-text TEXT [MS]       until TEXT is on screen (default 10000 ms), else fail
+//!   wait-title TEXT [MS]      until the window title (OSC 0/2) contains TEXT
 //!   wait-idle MS [MAX_MS]     until no screen change for MS
 //!   wait-exit [MS]            until the program exits
 //!   type TEXT                 send TEXT as key presses (\n \t \e \\ escapes)
@@ -154,6 +155,8 @@ struct Runner {
     size: GridSize,
     trace: bool,
     exited: Option<ExitStatus>,
+    /// Last title set by the program (OSC 0/2).
+    title: String,
     deadline: Instant,
     last_change: Instant,
 }
@@ -183,6 +186,12 @@ impl Runner {
                         eprintln!("[event] exited {s:?}");
                     }
                     self.exited = Some(s);
+                }
+                SessionEvent::Title(t) => {
+                    if self.trace {
+                        eprintln!("[event] title {t:?}");
+                    }
+                    self.title = t;
                 }
                 SessionEvent::Reply(bytes) => {
                     if self.trace {
@@ -226,6 +235,16 @@ impl Runner {
                         return Err(format!("text not shown within {ms} ms: {text:?}"));
                     }
                     self.pump(Duration::from_millis(50));
+                }
+            }
+            "wait-title" => {
+                let (text, ms) = split_trailing_ms(rest, 10_000);
+                let end = Instant::now() + Duration::from_millis(ms);
+                while !self.title.contains(&text) {
+                    if Instant::now() >= end || self.timed_out() {
+                        return Err(format!("title did not contain {text:?} within {ms} ms (title {:?})", self.title));
+                    }
+                    self.pump(Duration::from_millis(20));
                 }
             }
             "wait-idle" => {
@@ -440,6 +459,7 @@ fn main() {
         size,
         trace: args.trace,
         exited: None,
+        title: String::new(),
         deadline: Instant::now() + args.timeout,
         last_change: Instant::now(),
     };
