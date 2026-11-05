@@ -634,6 +634,21 @@ line JSON + hook events, ideally via a local socket instead of files); saved
 tab sets; config file; OpenGL renderer if needed; Windows fixes from the
 smoke test (none needed so far).
 
+### 6.4 Progress log (milestones 2–3)
+
+Phases P0–P6 of the milestone 2+3 work; each entry is written when the
+phase passed its gate (both builds, clippy 0 on both, all tests, the
+regression list, measurements), then committed, pushed and mirrored.
+
+- **2026-11-05 P0 — design.** DESIGN.md §3 filled: processes and daemon
+  lifecycle (§3.1), crates (§3.2), local socket (§3.5), wire format and
+  frame protocol (§3.6), roles and the `origin` rule for permission waits
+  (§3.7), ids, state directory and event log (§3.8), product name constant
+  (§3.9), layout rules from §2 (§3.10: exited tabs stay, the status line row
+  is reserved, Ctrl+Shift for app shortcuts, `statusLine` replaced in
+  ccterm tabs). Serialization chosen by measurement: postcard
+  +13.1 / +13.3 KB dist vs a hand-written codec, bincode +21.8 / +18.4 KB.
+
 ## 7. Long-term direction (constrains current work)
 
 ccterm grows into one standalone binary with three layers: the terminal, a

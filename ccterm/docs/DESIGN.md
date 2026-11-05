@@ -33,7 +33,7 @@ away. Functions stay; what changes is when they are visible.
   persist per user.
 - Events never change the layout. An edit, a finished worker or a pending
   permission shows an indicator in the status line or on the tab
-  ("3 files changed · Ctrl+D"); only the user opens panes. Reason: every
+  ("3 files changed · Ctrl+Shift+D"; plain Ctrl+D belongs to Claude Code, §3.10); only the user opens panes. Reason: every
   resize makes Claude Code's fullscreen renderer redraw the whole screen.
 - No information Claude Code already shows (model, effort, mode). The status
   line and panel show context use, rate limits, cost and workers.
@@ -69,34 +69,51 @@ claude (in PTY) ──hook command──▶ `<bin> hook <event>` ───▶ �
                                                             └─ orchestrator (tasks, workers, reports)
 ```
 
-- The daemon owns all sessions; closing the window does not stop work.
-  Milestone 1 may run sessions in the GUI process, but the GUI talks only
-  through `SessionHandle` / `SessionEvent` / `Snapshot`, so moving the
-  boundary later does not touch GUI code.
-- Hooks and the status line are the same executable (`<bin> hook ...`,
+- One executable. `ccterm` (no subcommand, or `gui`) is a GUI **client**;
+  `ccterm daemon` owns the sessions. The GUI connects to the daemon's
+  socket and, when nothing answers, starts `<own exe> daemon` detached and
+  retries for up to 2 s. Subcommands are dispatched in `main` before any
+  font, winit or softbuffer code runs, so `daemon`, `hook`, `statusline`
+  and `status` never initialise GUI libraries.
+- The daemon outlives the GUI. Linux: `setsid()` in the child before exec
+  (new session, no controlling terminal), stdin/stdout/stderr on
+  `/dev/null`, log to the state directory. Windows: `DETACHED_PROCESS |
+  CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB` (no console; out of
+  a job object the GUI may be in, e.g. a terminal's or a launcher's); if the
+  job forbids breakaway, `CreateProcess` fails with access denied and the
+  spawn is retried without the flag (logged; the daemon then dies with the
+  job).
+- The daemon exits when it has had no session and no client for 10 s.
+  Two GUIs starting at once may both spawn a daemon: binding the socket
+  decides, the loser exits quietly.
+- Hooks and the status line are the same executable (`<bin> hook <event>`,
   `<bin> statusline`), reading stdin JSON and forwarding it over the socket.
   Paths in hook commands are quoted and use forward slashes (Windows runs hook
   commands through bash).
+- `ccterm-headless` keeps running sessions in-process (tests, scripts).
 
-### 3.2 Crates (target)
+### 3.2 Crates
 
-| Crate | Responsibility | Language |
-|---|---|---|
-| `ccterm-pty` | PTY / ConPTY | Rust (+ Microsoft ConPTY binaries) |
-| `ccterm-core` | VT engine thread, snapshots, input encoding | Rust + libghostty-vt (Zig, FFI) |
-| `ccterm-render` | cell grids → pixels, glyph cache, damage, softbuffer present | Rust |
-| `ccterm-ui` | layout, tabs, panels as cell grids, theme, input routing | Rust |
-| `ccterm-cc` | Claude Code adapter: hook/status-line protocol, `--settings` injection, transcripts, session ids, rate limits | Rust |
-| `ccterm-orch` | task queue, worker sessions, worktrees, report parsing | Rust |
-| `ccterm-ipc` | daemon protocol (length-prefixed messages, versioned) | Rust |
-| `ccterm` (bin) | subcommands: `gui` (default), `daemon`, `hook`, `statusline`, `run`, `headless`, `install-desktop` | Rust |
+| Crate | Responsibility |
+|---|---|
+| `ccterm-pty` | PTY / ConPTY |
+| `ccterm-core` | VT engine thread, snapshots, input encoding (libghostty-vt behind FFI) |
+| `ccterm-proto` | product name constants, paths, wire types (postcard), framing, local socket / named pipe transport, client for the session API |
+| `ccterm-daemon` | session owner: sessions, subscriptions and frame diffs, roles, state file, event log |
+| `ccterm-cc` | Claude Code adapter: `--settings` builder, hook and status-line parsing, edit snapshots (milestone 3) |
+| `ccterm-gui` (bin `ccterm`) | window, renderer, tabs, palette, panels; subcommand dispatch (`gui`, `daemon`, `status`, `hook`, `statusline`, `install-desktop`) |
+| `ccterm-headless` | in-process step runner |
 
-Replacements for `ccx` pieces: `panel.py` → `ccterm-ui` status panel;
-`diffview.py` + `delta` + `apply_edit.py` → `ccterm-ui` diff pane with a
+Rendering and UI stay in `ccterm-gui` until a second consumer needs them
+(the earlier plan had `ccterm-render` / `ccterm-ui` crates; splitting now
+would only move files). The orchestrator (`ccterm-orch`) is milestone 4.
+
+Replacements for `ccx` pieces: `panel.py` → status panel in `ccterm-gui`;
+`diffview.py` + `delta` + `apply_edit.py` → diff pane in `ccterm-gui` with a
 Rust diff (e.g. `similar`) and the pre-edit snapshot logic; `hook.sh`,
 `post.sh`, `statusline-tee.sh`, `savetabs.sh` → `ccterm-cc` + daemon state;
 `ccx_settings.py` → `ccterm-cc` settings builder; `tmux.conf` key bindings →
-`ccterm-ui` keymap.
+`ccterm-gui` keymap.
 
 ### 3.3 Rendering pipeline
 
@@ -129,6 +146,121 @@ rows of 120 columns. The default, 12 000 000 bytes, keeps about 11 000 such
 rows (~1.1 KB per row). Measured 2026-11-05 with the default filled and
 Claude Code idle: Linux 19.2 MB `RssAnon`, Windows 22.6 MB private working
 set — inside the budget.
+
+### 3.5 Local socket
+
+- Linux: a Unix socket `$XDG_RUNTIME_DIR/<app>/daemon.sock`; without
+  `XDG_RUNTIME_DIR`, `/tmp/<app>-<uid>/daemon.sock`. The directory is
+  created with mode 0700; an existing one is used only if it is a real
+  directory (not a symlink) owned by the user with no group/other bits —
+  otherwise the daemon refuses to start (the `/tmp` fallback is open to
+  squatting). A stale socket (connect refused) is unlinked before binding.
+- Windows: a named pipe `\\.\pipe\<app>-<user SID>` (the pipe namespace is
+  global, so the SID keeps users apart). Created with a DACL that grants
+  only the user's SID (SDDL `D:P(A;;GA;;;<SID>)`), `PIPE_REJECT_REMOTE_CLIENTS`,
+  and `FILE_FLAG_FIRST_PIPE_INSTANCE` on the first instance so nobody can
+  pre-create it. Overlapped I/O on both ends: with synchronous handles a
+  blocking `ReadFile` in the reader thread would block `WriteFile` from the
+  writer thread on the same handle.
+- No network listener, ever (remote access is DESIGN §6's job: CLI over SSH,
+  MCP adapter in a separate binary).
+
+### 3.6 Wire format and session protocol
+
+- Frames: `u32` little-endian length, then a postcard-encoded message;
+  frames over 32 MiB close the connection. Serialization measured with the
+  same 11-message schema (dist profile, stripped, 2026-11-05): hand-written
+  codec = baseline, **postcard +13.1 KB Linux / +13.3 KB Windows**, bincode
+  +21.8 / +18.4 KB; encoded size of a two-row 120-column frame 3 328 /
+  2 336 / 4 307 bytes. postcard is chosen: derive-based (no hand-written
+  codec for ~40 message types), smallest frames (varints).
+- Versioning: the client's first message is `Hello { magic: "CCTM",
+  version, role, name }`, the daemon answers `Welcome { version }` or
+  `Refused`. postcard encodes enum variants by index, so variants and
+  fields are only **appended**; any other change bumps the version.
+- Schema: the `SessionHandle` methods (`key`, `mouse`, `wheel`, `paste`,
+  `focus`, `resize`, `scroll`, `set_color_scheme`) and `SessionEvent`
+  carried over one-to-one, plus `CreateSession`, `ListSessions`,
+  `Attach`/`Detach`, `NextFrame`, `Close`, and later `Hook`, `StatusLine`,
+  tab and tab-set messages. libghostty key/mouse enums travel as their
+  `u32` values, `Mods` as `u16`.
+- Screen transfer: on `Attach`, and whenever the grid size changes, a full
+  frame; otherwise the rows that differ from what that client last
+  received, with `seq`. The daemon keeps one baseline snapshot per
+  (client, session). Backpressure: a client gets the next frame only after
+  it sent `NextFrame`; while it is busy, the daemon keeps only the newest
+  snapshot, so a flood of output costs the slow client intermediate frames,
+  never memory. This is the same contract as `SessionEvent::Wakeup`
+  ("not repeated until a snapshot was taken"), so the GUI code is
+  unchanged: the client library turns a received frame into `Wakeup` and
+  `snapshot()` into "apply, then `NextFrame`".
+- The session's grid size is the last `Resize` from a control client.
+- `CreateSession` carries the command, working directory and the
+  requesting client's **environment** (PATH, DISPLAY, the user's own API
+  key setup…); the environment lives only in the child process — never in
+  the state file, tab sets or the event log.
+
+### 3.7 Roles
+
+- `control`: the local GUI. Input (`Key`, `Mouse`, `Wheel`, `Paste`,
+  `Focus`, `Resize`, `Scroll`, raw writes), `CreateSession`, `Close`.
+- `observe`: read-only (`ccterm status`, later CLI over SSH and MCP per §6).
+  Any input or session-changing message is answered with `Denied` and has no
+  effect.
+- `report`: hook and status-line processes; may only send `Hook` and
+  `StatusLine`.
+- Every input message carries `origin` (`Human` = typed by the person at
+  the GUI, `Program` = generated, e.g. a future automation). While a session
+  waits for a Claude Code permission answer or a question (known from hook
+  events, milestone 3), the daemon rejects input whose origin is not
+  `Human`, whatever the role. Remote parties never answer permission
+  prompts (§6).
+
+### 3.8 Identity, state and event log
+
+- Session and tab ids: `<unix ms, hex>-<counter, hex>` (sortable, unique per
+  machine). A tab keeps its id across restarts through tab sets; Claude Code
+  session ids (UUIDs, from hooks) are stored next to it.
+- State directory: Linux `$XDG_STATE_HOME/<app>` (default
+  `~/.local/state/<app>`), Windows `%LOCALAPPDATA%\<app>`. Config:
+  Linux `$XDG_CONFIG_HOME/<app>/config` (`~/.config/<app>/config`), Windows
+  `%APPDATA%\<app>\config`.
+- `events.log` in the state directory: append-only, one tab-separated line
+  per event — `seq`, unix ms, kind, session id, derived fields. A reader
+  continues from a `seq` cursor. **Only derived fields** are written: event
+  names, tool names, file paths, Claude Code session ids, exit codes,
+  titles. Never environment variables, prompts (`UserPromptSubmit` carries
+  the typed prompt), `tool_input` contents, transcripts or credentials.
+- Tab sets and the daemon's session list are files in the state directory
+  (milestone 2, P3).
+
+### 3.9 Product name
+
+The working name (`ccterm`; candidates haetty, trinitty) lives in one
+constant module, `ccterm_proto::product`: executable name used when
+spawning the daemon and in hook commands (taken from `current_exe()` at run
+time, falling back to the constant), app id (Wayland `app_id`, X11
+`WM_CLASS`, `.desktop` file, Windows AppUserModelID), socket, pipe, state and
+config directory names, window title prefix. Renaming = that module plus the
+`[[bin]] name` in `crates/ccterm-gui/Cargo.toml` (Cargo needs a literal).
+
+### 3.10 Layout rules derived from §2
+
+- A tab whose program exits stays, dimmed with its exit status, until the
+  user closes it; with one tab, the window closes when its program exits
+  (as in milestone 1). So an event never removes a tab or the tab bar.
+- The status line row is part of the layout from the first frame when
+  Claude Code integration is on (it shows `-` until the first status line
+  JSON), so its arrival does not resize the terminal. Window size requests
+  add that row, so the terminal keeps the requested rows.
+- The diff indicator says "N files changed · Ctrl+Shift+D": plain Ctrl+D
+  reaches Claude Code (and exits it on an empty prompt), so app shortcuts
+  use Ctrl+Shift.
+- `statusLine` is a single value: injecting ccterm's replaces the user's own
+  status line in ccterm tabs (as in ccx). `ccterm statusline` prints
+  nothing, so Claude Code draws no line of its own; the information goes to
+  ccterm's status line instead.
+- Settings are injected only into tabs whose program is `claude`.
 
 ## 4. VT engine decision (measured 2026-11-04)
 
