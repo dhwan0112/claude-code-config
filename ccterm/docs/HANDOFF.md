@@ -1,7 +1,10 @@
 # ccterm handoff
 
 State as of 2026-11-05, after the `ccterm-gui` milestone 1 commits
-(`26e0056`..) and the window decoration work (`01e1d32`..). Written for whoever continues the work (Claude Code included).
+(`26e0056`..), the window decoration work (`01e1d32`..) and the milestone 1
+finishing work (`e9312a4`..; §3 "Milestone 1 finishing work"). The code
+lives in `ccterm/` of the `dhwan0112/claude-code-config` repository.
+Written for whoever continues the work (Claude Code included).
 
 ## 1. Goal
 
@@ -43,14 +46,15 @@ while the application holds synchronized output (DEC 2026), up to
 |---|---|
 | `config.rs` | Settings with `Config::set(key, value)`: `window-padding`, `window-padding-balance`, `window-padding-color`, `decorations`; the CLI passes `--KEY VALUE`, a config file will too. |
 | `chrome.rs` | Native title bar/frame colours (Windows 11) and dark/light theme request, updated when the default colours change. |
-| `main.rs` | CLI (`--font`, `--font-size` pt, `--cols`, `--rows`, settings, program), logger (`CCTERM_LOG`, `CCTERM_LOG_FILE`), fatal errors (message box on Windows; the release build uses the GUI subsystem, no console). |
+| `main.rs` | CLI (`--font`, `--font-size` pt, `--cols`, `--rows`, settings, program; reserved subcommand names `SUBCOMMANDS` end with "not implemented yet", a program of that name goes after `--`), logger (`CCTERM_LOG`, `CCTERM_LOG_FILE`), fatal and CLI errors (Windows GUI subsystem: redirected stdout/stderr, else the parent's console, else a message box). |
 | `app.rs` | winit `ApplicationHandler`: one window, one `Session`. A forwarder thread turns `SessionEvent`s into `EventLoopProxy` user events (`ControlFlow::Wait`, no polling). On `Wakeup` the snapshot is taken immediately (re-arms the next wakeup) and rows are diffed; `RedrawRequested` renders. Keyboard, mouse, wheel, IME, focus, resize, scale factor, title, bell, clipboard, exit (exit code passed on). |
-| `input.rs` | `KeyCode` → libghostty `Key`; text/consumed-mods rules; mouse buttons; wheel notch accumulator; paste shortcut. Unit-tested without winit events. |
+| `input.rs` | `KeyCode` → libghostty `Key`; text/consumed-mods rules; which keys the IME owns during a composition (`ime_owns_key`: not Ctrl/Super shortcuts); mouse buttons; wheel notch accumulator; paste shortcut. Unit-tested without winit events. |
 | `geom.rs` | Window pixels ↔ grid; `Layout::origin` (padding, balance) shared by renderer and input mapping. |
 | `damage.rs` | Per-row dirty flags from two snapshots (no core API change was needed). |
-| `font.rs` | fontdb (no fontconfig) + memory-mapped faces; primary/bold/italic, fallback lists, once-per-character scan of all faces. |
-| `render/mod.rs` | `Renderer` trait (`cell_metrics`, `set_font_px`, `set_padding`, `resize`, `render(&Scene)`), `Scene`, `Preedit`. |
-| `render/paint.rs` | Window-independent painter: rows → pixels; colours, attributes, wide cells, cursor shapes, preedit; glyph cache keyed by (face, glyph, size, synthetic bold/italic); glyphs wider than their cells scaled to fit. Pixel tests. |
+| `font.rs` | fontdb (no fontconfig) + memory-mapped faces; primary/bold/italic, fallback lists, once-per-character scan of all faces; colour faces (CBDT/sbix/COLR/SVG) only when no monochrome face has a text-presentation character, first for emoji presentation (`pick`). |
+| `emoji.rs` | `Presentation::of(cell text)`: VS16/VS15, else `Emoji_Presentation` (Unicode 16.0 table, 80 ranges). |
+| `render/mod.rs` | `Renderer` trait (`cell_metrics`, `set_font_px`, `set_padding`, `resize`, `render(&Scene)`, `memory()` for the exit log line), `Scene`, `Preedit`. |
+| `render/paint.rs` | Window-independent painter: rows → pixels; colours, attributes, wide cells, cursor shapes, preedit; glyph cache keyed by (face, glyph, size, synthetic bold/italic); glyphs wider than their cells scaled to fit; fallback CJK faces scaled to fill wide cells (§5). Pixel tests. |
 | `render/boxdraw.rs` | U+2500–U+259F drawn procedurally. Pixel tests. |
 | `render/soft.rs` | softbuffer backend: own canvas = back buffer (always the complete frame); bands changed during `buffer.age()` frames are copied (history of 4), everything when the age is 0 or older; only the current bands are presented as damage; `CCTERM_DUMP_FRAME`, `CCTERM_DEBUG_PADDING`. |
 | `clipboard.rs` | copypasta: Win32; Wayland via the window's `wl_display`; X11 via x11rb. |
@@ -92,8 +96,8 @@ cross-built there and run natively on the host.
 
 ### Backend (Linux, first verified 2026-11-04, re-run 2026-11-05)
 
-- `cargo test`: 5 unit tests (OSC scanner), 9 end-to-end tests; plus 31
-  `ccterm-gui` unit/pixel tests.
+- `cargo test`: 5 unit tests (OSC scanner), 10 end-to-end tests; plus 47
+  `ccterm-gui` unit/pixel tests (31 at the first GUI commits).
 - Query replies: DA1 `\e[?62;1;6;22;52c`, DA2, XTVERSION `ccterm(0.1.0)`,
   DECRQM 2026/2004/1006 supported, kitty keyboard query and push, CPR,
   CSI 14/16/18 t, CSI ?996 n, OSC 10/11 (needs default colours set — done).
@@ -164,7 +168,7 @@ mode runs locally without the API — useful for scrollable content.
   A dedicated 3-run re-test could not run: while the Windows desktop was in
   use, WSLg windows did not get keyboard focus (hollow cursor, no key
   events). Encoding itself is fine (headless Ctrl+C twice always exits).
-  Listed in §6.1.
+  Re-tested in 20-run batches: see "Milestone 1 finishing work" below.
 - Real IME path: ibus-daemon (XIM, `XMODIFIERS=@im=ibus`) + ibus-hangul,
   keys `g k s r m f` from xdotool → winit `Preedit("ㅎ")`, `("하")`,
   `("한")`, `Commit("한")`, `Preedit("그")`…`Commit("글")`; frame shows the
@@ -209,6 +213,88 @@ mode runs locally without the API — useful for scrollable content.
 - Not checked: Windows 10 (no machine), the Wayland CSD theme (WSLg shows
   no CSD), live resizing by dragging.
 
+### Milestone 1 finishing work (2026-11-05)
+
+Linux checks ran under a private Xvfb (96 dpi, scale 1, §4) with Claude
+Code 2.1.318, an isolated `HOME` and a dummy `sk-ant-` key; Windows checks
+natively on Windows 11 with the cross-built binaries. Frame dumps are kept
+outside the repository on the dev machine
+(`%USERPROFILE%\ccterm-win\m2\dumps`, `…\m2\ctrlc`, `…\m2\mem`).
+
+- **Wide fallback glyphs** (§5): pixel test
+  `wide_fallback_hangul_fills_two_cells` (unclipped glyph box: ink ≥ 72 %
+  of two cells for 한/글/스/트 and ≥ 60 % for every syllable, never
+  narrower than at the font's own size by more than 1 px, left/right
+  margins within 1 px, no row outside the cell) passes with DejaVu Sans
+  Mono + Noto Sans Mono CJK KR, DejaVu + NanumGothicCoding (Noto hidden,
+  `CCTERM_FONT_DIR` with fonts-nanum) and natively on Windows with Cascadia
+  Mono + Malgun Gothic, at 11 pt, 14 pt, 16 px and 24 px.
+  `primary_wide_hangul_is_not_rescaled` (Noto Sans Mono CJK KR as the
+  primary: identical fit to before) and
+  `box_drawing_is_unaffected_by_wide_fallback_scaling` pass. Frame dumps
+  `hangul-linux-nanum-{11,14}pt-{before,after}` and
+  `hangul-windows-malgun-{11,14}pt-{before,after}` (PNG plus 3× zoom).
+- **Emoji presentation**: unit tests `defaults_and_variation_selectors`
+  (table) and `fallback_order_by_presentation` (`pick`); ccterm-core
+  `variation_selectors_stay_in_cell_text`. Frame dumps
+  `emoji-linux-{emoji,emoji-sym2}-14pt-{before,after}`: with Noto Color
+  Emoji and fonts-noto-core, ⏸ was the orange emoji before (Symbols2 was
+  not even in the fallback list, §4) and is Noto Sans Symbols2's glyph
+  after, ⏸+VS16 stays colour, 😀 turned from DejaVu Sans's outline into the
+  colour emoji; with Noto Color Emoji only, ⏸ stays the colour emoji (no
+  monochrome font has it — colour beats tofu). Windows
+  (`emoji-windows-14pt-*`): ⏸ Segoe UI Symbol, ⏸+VS16 and 😀 Segoe UI
+  Emoji (COLR).
+- **Ctrl+C twice** (Claude Code idle, press, gap, press; "exited" = the
+  window process ended with code 0 within 4 s):
+
+  | Condition | Linux GUI (XTest) | Windows GUI (SendInput) | Linux headless |
+  |---|---|---|---|
+  | 30 ms, 1.5 s after the title | 20/20 | 20/20 | – |
+  | 300 ms, 1.5 s after the title | 19/20, then 20/20 | 20/20 | 20/20 |
+  | 700 ms, 1.5 s after the title | 18/20 | 20/20 | 20/20 |
+  | 300 / 700 ms, 6 s after the title | 20/20 / 20/20 | – | – |
+  | 1500 ms | 0/20 | 0/20 | – |
+  | 300 ms, ibus over XIM active | 20/20 | – | – |
+  | ibus-hangul composing 한, then 300 ms | 5/5 (before and after the fix) | – | – |
+
+  In every failing run the log has both presses with the same bytes as in
+  passing runs (`key C Press mods=Mods(CTRL) -> [1b 5b 39 39 3b 35 75]`),
+  focus was gained, no release or repeat in between; Claude Code's screen
+  showed its 401 "remote managed settings" notice. Not reproduced when
+  pressed 6 s after start, nor headless, nor on Windows. Conclusion: the
+  bytes leave ccterm every time; the rare misses right after start are on
+  Claude Code's side (most likely its start-up work, e.g. that notice,
+  around the first press) and were not pinned down further. One way ccterm
+  itself could lose a press was found and fixed: Ctrl+C was held back
+  while an IME composition was shown (`input::ime_owns_key`, unit test
+  `shortcuts_pass_while_composing`); ibus-hangul commits before it forwards
+  Ctrl+C, so it did not show up here — an IME that reports the key first
+  would have.
+- **Memory** (Claude Code idle, 120x36, 11 pt): Linux `ccterm` RssAnon
+  24.8 MB (`[heap]` 19.9 MB; anonymous mappings of 1.6, 1.2, 0.8, 0.4 MB =
+  libghostty-vt pages), RssFile 26.0 MB, RssShmem 2.5 MB (the MIT-SHM
+  image), 6 threads; Windows private working set 12.5 MB (private bytes
+  14.4 MB, working set 34.9 MB, 12 threads). Exit log line: canvas 1088×620
+  2.6 MB, glyph cache 59 entries (4 KB of rasters, 7 KB table), snapshot
+  4320 cells 168 KB, fonts mapped file-backed (Linux 113 MB after the
+  last-resort scan opened all 99 faces). The rest of the Linux heap is
+  freed memory glibc kept: with
+  `GLIBC_TUNABLES=glibc.malloc.mmap_threshold=131072` the same run has
+  RssAnon 6.6 MB and `[heap]` 0.7 MB — the large temporary buffers of the
+  start-up font scan raise glibc's dynamic mmap threshold and are then
+  freed into the heap. Per session (`examples/mem.rs`, 120x36, no
+  window): empty +2.2 MB; 10 000 lines kept +11.6 MB; the default limit
+  keeps 678 lines, +2.9 MB.
+- **Subcommands**: unit test `reserved_subcommands_are_errors_until_implemented`;
+  `ccterm status` → message and exit 2 on Linux; on Windows with stderr
+  redirected the message arrives there, exit 2; `ccterm -- status` runs a
+  program `status` ("not found on PATH").
+- **Public repository search**: no user names, user paths, private
+  addresses or e-mail addresses in `ccterm/` besides the HANDOFF path now
+  written `%USERPROFILE%`; the `LICENSE` and `Cargo.toml` name the author
+  and repository on purpose.
+
 ### Sizes (stripped)
 
 | Build | ccterm Linux | ccterm Windows | headless Linux | headless Windows |
@@ -219,8 +305,14 @@ mode runs locally without the API — useful for scrollable content.
 Window decoration work (`release`+strip / `dist`, Linux and Windows):
 padding balance/colour + buffer-age copy +14.4 / +17.4 KB release, +17.2 /
 +15.9 KB dist; chrome colours/theme +11.0 / +2.6 KB release, +3.7 / +4.1 KB
-dist; `decorations` key < 1 KB. Current: release 14.46 / 10.66 MB, dist
+dist; `decorations` key < 1 KB. Then release 14.46 / 10.66 MB, dist
 5.63 / 4.27 MB.
+
+Milestone 1 finishing work (`dist`, Linux / Windows, bytes): wide fallback
+scaling 5 632 456 / 4 278 272 after; emoji presentation (80-range table,
+640 bytes of data, plus code) +2 240 / +2 048; Ctrl+C/IME fix, key byte
+log and memory log line +12 952 / +9 728. Current: release 14.49 / 10.69
+MB, dist 5.65 / 4.29 MB.
 
 Per step (`release` + strip, Linux / Windows): empty winit+softbuffer window
 3.27 / 1.41 MB; + session (libghostty-vt, ccterm-core) and text stack
@@ -332,6 +424,48 @@ New in the GUI work (2026-11-05):
   logs an ERROR about the XDG settings portal timing out under WSLg —
   harmless.
 
+New in the milestone 1 finishing work (2026-11-05):
+
+- **`SessionConfig::scrollback` is bytes, not lines.** It becomes
+  libghostty-vt's `max_scrollback`, documented in `src/terminal/Screen.zig`
+  as "the amount of scrollback to keep in bytes" (rounded to whole pages).
+  The default `10_000` keeps 678 rows of history at 120 columns
+  (`cargo run --release -p ccterm-core --example mem -- 3 10000 10000`);
+  a 64 MB limit kept all 10 000 rows of 120 columns, for 11.6 MB of
+  anonymous memory. Not changed yet (§6.2).
+- Debian/Ubuntu `fonts-noto-core` 20201225 names Noto Sans Symbols 2
+  **"Noto Sans Symbols2"**; a fallback list with only the spaced name
+  silently skipped it (both names are listed now). Check family names with
+  `fc-scan --format "%{family}\n" FILE`.
+- libghostty-vt keeps VS15/VS16 in the cell text; VS16 makes the cell wide
+  only with mode 2027 (grapheme clustering). Presentation must come from
+  the cell text, not the width.
+- A larger font size can give a 1 px narrower glyph after hinting (Malgun
+  Gothic 글 at 14.67 vs 15.67 px): pixel tests need 1 px tolerance.
+- **Claude Code double press**: the second Ctrl+C must come within Claude
+  Code's own window (between 700 and 1500 ms: 1500 ms never exits). With
+  the test setup's dummy API key Claude Code also shows "Remote managed
+  settings failed to load (authentication rejected (401))" a moment after
+  start; see §3 for what that does to the exit test.
+- **Xvfb without sudo** (WSL, `/tmp/.X11-unix` is WSLg's read-only mount,
+  Xvfb runs `/usr/bin/xkbcomp` by absolute path): `apt-get download` +
+  `dpkg -x` xvfb, libxfont2, x11-xkb-utils, xfonts-base, xserver-common
+  into a private root; `unshare -rm` (root in a user namespace) to overlay
+  `/usr/bin` with the extracted `xkbcomp` and mount a tmpfs on the X11
+  socket directory (and on font directories to hide fonts), then
+  `unshare -U --map-user=<uid>` back to the normal user and start Xvfb and
+  the test in that one script (background processes do not survive the
+  tool call). No window manager: `xdotool windowfocus`, not
+  `windowactivate`; set `WINIT_X11_SCALE_FACTOR=1` and `-dpi 96`.
+- From a Windows shell, `wsl -- bash -c '…'` goes through the WSL user's
+  login shell (zsh here), which expands globs and `$vars` first: run
+  script files instead.
+- Windows SendInput tests: `SetForegroundWindow` alone is refused while
+  another app (here Firefox) holds the foreground, even after minutes of
+  user idle; attaching to the foreground thread's input
+  (`AttachThreadInput`) first is accepted. Still check the foreground
+  process before every send.
+
 ## 5. Decisions taken for the GUI (with reasons)
 
 - **Window/input: winit** (0.30 line). IME on Windows, X11 (XIM; needs
@@ -385,8 +519,10 @@ New in the GUI work (2026-11-05):
 
 ### 6.1 Manual checks still open for milestone 1
 
-0. Ctrl+C twice in the window exits Claude Code and closes the window
-   (Linux and Windows); see §3 for the partial evidence.
+0. Ctrl+C twice with a real keyboard right after Claude Code starts, a few
+   times on each platform (automated runs: §3; rare misses on Linux only,
+   within the first seconds); and Ctrl+C while composing Hangul with the
+   Microsoft Korean IME.
 1. Windows: type Hangul with the Microsoft Korean IME in `ccterm.exe` running
    Claude Code — composition shown inline and underlined at the cursor, no
    caret at the start of the syllable (winit#4746 workaround), candidate
@@ -404,8 +540,10 @@ New in the GUI work (2026-11-05):
    paste a large text (bracketed) into Claude Code; the same on a Wayland
    session (only initialisation was seen) and on Windows (selection copy
    from Claude Code was only checked on X11).
-7. Font choice with `--font` on each platform; Noto Sans Symbols 2 / emoji
-   rendering on a full Linux desktop.
+7. Font choice with `--font` on each platform; on a full Linux desktop and
+   on Windows, look at Hangul next to Latin (size and baseline after the
+   wide-cell scaling) and at Claude Code's status symbols (⏸ ⚠ ✔ ●)
+   — judged so far from frame dumps only.
 
 8. Windows 10: dark title bar from the theme request (Windows 11 colours
    do not apply there).
@@ -424,6 +562,16 @@ New in the GUI work (2026-11-05):
   integration (OSC 133).
 - Glyph shaping (ligatures, ZWJ emoji sequences are drawn as the first
   character).
+- Scrollback is configured in bytes (§4) and defaults to 678 lines at 120
+  columns. Proposal, not done: a line count in the config converted to
+  bytes from the page size, with 10 000 lines costing ~11.6 MB per session.
+- Memory budget (DESIGN.md §3.4): one session with 10 000 lines would be
+  ~24.8 + 8.7 ≈ 33 MB anonymous on Linux, over the 25 MB budget, almost
+  all of it heap glibc keeps after the start-up font scan (Windows: 12.5
+  MB). Proposals, not done: build fontdb with its `memmap` feature so the
+  scan maps files instead of reading them into the heap, or call
+  `malloc_trim(0)` once after `Fonts::load` on glibc; measured effect of
+  the equivalent malloc setting: RssAnon 24.8 → 6.6 MB.
 
 ### 6.3 Later milestones
 
@@ -495,9 +643,10 @@ integration (Rakazo) in its §6.
   (`cchome.sh`, the `.ps1` files).
 - **Hooks / adapter / orchestrator / CLI JSON / MCP:** not started; nothing
   conflicts. The binary is still the GUI (`ccterm`); the first non-option
-  word is taken as the program today, so subcommand names (`gui`, `daemon`,
-  `hook`, `statusline`, `run`, `headless`, `install-desktop`, `status`) must
-  be reserved before they are added.
+  word is the program, except the reserved subcommand names (`gui`,
+  `daemon`, `hook`, `statusline`, `run`, `headless`, `install-desktop`,
+  `status`; `main.rs` `SUBCOMMANDS`), which end with "not implemented yet"
+  until they are added.
 - **DESIGN.md §2.3 checks, current GUI (no status line, tabs or panels yet):**
   - Layout changes without user input: 0 in steady state — the grid changes
     only on `Resized` / `ScaleFactorChanged` from the window system. At

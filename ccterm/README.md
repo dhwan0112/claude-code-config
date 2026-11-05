@@ -118,7 +118,7 @@ output byte; `--trace` prints replies to queries and events.
 
 See `docs/HANDOFF.md` §3 for details and evidence. Verified on Linux (x86_64):
 
-- `cargo test`: 5 unit tests (OSC scanner) and 9 end-to-end tests with real
+- `cargo test`: 5 unit tests (OSC scanner) and 10 end-to-end tests with real
   children in real PTYs (query replies, key/mouse/paste/focus encoding,
   synchronized output hold and timeout, OSC title/notification/progress/bell,
   resize, cell colours and wide characters, exit reporting, environment).

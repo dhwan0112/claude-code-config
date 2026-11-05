@@ -46,12 +46,13 @@ the start of a session.
 
 ```sh
 cargo build --release
-cargo test                                   # core: 5 unit + 9 end-to-end (Linux, needs python3); gui: 31
+cargo test                                   # core: 5 unit + 10 end-to-end (Linux, needs python3); gui: 47
 cargo clippy --all-targets                   # must stay warning-free
 cargo clippy --all-targets --target x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu
 cargo build --profile dist --target <triple>   # size-optimised, stripped
 cargo fmt                                    # rustfmt.toml: max_width 120
+cargo run --release -p ccterm-core --example mem -- 3 67108864 10000   # anon memory per session (Linux)
 ```
 
 `ccterm-headless` drives any program without a window (see README), e.g.
