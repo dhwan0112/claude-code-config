@@ -33,6 +33,7 @@ use crate::keymap::{Action, Chord, Keymap};
 use crate::render::paint::Painter;
 use crate::render::soft::SoftRenderer;
 use crate::render::{PaddingStyle, Preedit, Renderer, Scene};
+use crate::tabsets::{self, SavedTab};
 use crate::ui::{self, Compose, Palette, TabView};
 use crate::Options;
 
@@ -55,9 +56,20 @@ pub struct App {
     pub exit_code: i32,
 }
 
+/// What a tab runs: program, arguments, folder; a name to show until the
+/// program sets a title (restored tabs).
+#[derive(Clone, Debug, Default)]
+struct TabSpec {
+    program: String,
+    args: Vec<String>,
+    cwd: Option<String>,
+    name: Option<String>,
+}
+
 struct Tab {
     session: RemoteSession,
     snap: Option<Snapshot>,
+    spec: TabSpec,
     program: String,
     /// The program ended (exit code); the tab stays until closed.
     exited: Option<Option<u32>>,
@@ -68,7 +80,10 @@ struct Tab {
 impl Tab {
     fn name(&self) -> String {
         let title = self.snap.as_ref().map_or("", |s| s.title.as_str());
-        let name = ui::tab_name(title, &self.program);
+        let name = match (&self.spec.name, title.trim().is_empty()) {
+            (Some(n), true) => n.clone(),
+            _ => ui::tab_name(title, &self.program),
+        };
         match self.exited {
             Some(code) => format!("{name} [exited{}]", code.map(|c| format!(" {c}")).unwrap_or_default()),
             None => name,
@@ -119,6 +134,8 @@ struct Win {
     scrollback_limit: usize,
     /// Set when the last tab is gone: the window closes.
     quit: Option<i32>,
+    /// The window is closing: closing its tabs must not shrink `last`.
+    shutting_down: bool,
 }
 
 impl App {
@@ -145,9 +162,21 @@ impl App {
         let (w, h) = Layout { cell: painter.cell_metrics(), padding: pad0.min, balance: pad0.balance }
             .window_size(self.opts.cols, self.opts.rows);
         let cfg = SessionConfig::new(self.opts.command.clone());
+        let icon = winit::window::Icon::from_rgba(crate::icon::rgba(64), 64, 64).ok();
         let attrs = Window::default_attributes()
             .with_title(ccterm_proto::product::DISPLAY_NAME)
-            .with_inner_size(PhysicalSize::new(w, h));
+            .with_inner_size(PhysicalSize::new(w, h))
+            .with_window_icon(icon.clone());
+        // Windows: the big icon (Alt+Tab, taskbar) as well as the small one.
+        #[cfg(windows)]
+        let attrs = winit::platform::windows::WindowAttributesExtWindows::with_taskbar_icon(attrs, icon.clone());
+        // Wayland app_id and X11 WM_CLASS = the desktop file's name.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let attrs = {
+            let id = ccterm_proto::product::APP_ID;
+            let a = winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, id, "");
+            winit::platform::x11::WindowAttributesExtX11::with_name(a, id, id)
+        };
         let attrs = chrome::attributes(attrs, cfg.default_bg, cfg.default_fg)
             .with_decorations(decorated(self.opts.config.decorations));
         let chrome = Chrome::new(cfg.default_bg, cfg.default_fg);
@@ -206,8 +235,19 @@ impl App {
             defaults: (cfg.default_fg, cfg.default_bg),
             scrollback_limit: self.opts.config.scrollback_limit,
             quit: None,
+            shutting_down: false,
         };
+        // "last" becomes "previous" before the first tab rewrites "last".
+        let previous = if self.opts.config.restore_tabs { tabsets::rotate_last(&tabsets::dir()) } else { vec![] };
         win.open_tab(None)?;
+        if !previous.is_empty() {
+            let n = win.open_saved(&previous);
+            if n > 0 {
+                win.select(0);
+                win.show_hint(format!("reopened {n} tab(s) of the previous run"));
+            }
+        }
+        win.save_last();
         self.win = Some(win);
         Ok(())
     }
@@ -235,25 +275,78 @@ impl Win {
         &self.tab().session.handle
     }
 
-    /// Opens a tab running the window's command in `cwd` (default: the
-    /// active tab's directory, else where ccterm started) and selects it.
+    /// Opens a tab running the window's command in the active tab's
+    /// directory (else where ccterm started) and selects it.
     fn open_tab(&mut self, cwd: Option<String>) -> Result<(), String> {
-        let cwd = cwd.or_else(|| {
+        let spec = TabSpec { program: self.command.0.clone(), args: self.command.1.clone(), cwd, name: None };
+        self.open_spec(spec)
+    }
+
+    /// Opens the tabs of a set after the current ones; tabs whose folder is
+    /// gone are skipped. Returns how many opened.
+    fn open_saved(&mut self, set: &[SavedTab]) -> usize {
+        let mut n = 0;
+        for t in set {
+            if !t.cwd.is_empty() && !std::path::Path::new(&t.cwd).is_dir() {
+                log::warn!("tab set: folder {:?} is gone; tab {:?} skipped", t.cwd, t.name);
+                continue;
+            }
+            let spec = TabSpec {
+                program: t.program.clone(),
+                args: t.args.clone(),
+                cwd: (!t.cwd.is_empty()).then(|| t.cwd.clone()),
+                name: (!t.name.is_empty()).then(|| t.name.clone()),
+            };
+            match self.open_spec(spec) {
+                Ok(()) => n += 1,
+                Err(e) => log::warn!("tab set: {:?}: {e}", t.name),
+            }
+        }
+        n
+    }
+
+    /// The open tabs as a tab set.
+    fn saved_tabs(&self) -> Vec<SavedTab> {
+        self.tabs
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.exited.is_none())
+            .map(|(i, t)| {
+                let pwd = t.snap.as_ref().map(|s| osc7_path(&s.pwd)).filter(|p| !p.is_empty());
+                SavedTab {
+                    name: t.name(),
+                    cwd: pwd.or_else(|| t.spec.cwd.clone()).unwrap_or_default(),
+                    program: t.spec.program.clone(),
+                    args: t.spec.args.clone(),
+                    claude_session: String::new(),
+                    active: i == self.active,
+                }
+            })
+            .collect()
+    }
+
+    /// Keeps the tab set "last" equal to the open tabs.
+    fn save_last(&self) {
+        if self.shutting_down {
+            return;
+        }
+        if let Err(e) = tabsets::save(&tabsets::dir(), "last", &self.saved_tabs()) {
+            log::warn!("tab set last: {e}");
+        }
+    }
+
+    fn open_spec(&mut self, spec: TabSpec) -> Result<(), String> {
+        let cwd = spec.cwd.clone().or_else(|| {
             self.tabs.get(self.active).and_then(|t| t.snap.as_ref()).map(|s| s.pwd.clone()).filter(|p| !p.is_empty())
         });
-        let cwd = cwd.or_else(|| self.start_cwd.clone()).map(|p| {
-            p.strip_prefix("file://").map_or(p.clone(), |r| {
-                // OSC 7 gives file://host/path.
-                r.find('/').map_or(r.to_string(), |i| r[i..].to_string())
-            })
-        });
+        let cwd = cwd.or_else(|| self.start_cwd.clone()).map(|p| osc7_path(&p));
         // The new tab may bring the tab bar: size it for the grid it will have.
         let mut size = self.grid;
         size.rows = size.rows.saturating_sub(u16::from(!self.tabs.is_empty())).max(1);
-        let spec = CreateSpec {
-            program: self.command.0.clone(),
-            args: self.command.1.clone(),
-            cwd,
+        let create = CreateSpec {
+            program: spec.program.clone(),
+            args: spec.args.clone(),
+            cwd: cwd.clone(),
             // The daemon may run in an older environment: the child gets ours
             // (never stored, DESIGN.md §3.6).
             env: std::env::vars_os()
@@ -264,7 +357,7 @@ impl Win {
             default_fg: rgb(self.defaults.0),
             default_bg: rgb(self.defaults.1),
         };
-        let id = self.client.create(spec).map_err(|e| e.to_string())?;
+        let id = self.client.create(create).map_err(|e| e.to_string())?;
         let session = self.client.attach(&id, None).map_err(|e| format!("attach: {e}"))?;
         log::info!(
             "tab {} = session {id} in daemon {}, grid {}x{}",
@@ -289,12 +382,15 @@ impl Win {
         if let Some(t) = self.tabs.get(self.active) {
             t.session.handle.focus(false);
         }
-        self.tabs.push(Tab { session, snap: None, program: self.command.0.clone(), exited: None, size });
+        let program = spec.program.clone();
+        let spec = TabSpec { cwd, ..spec };
+        self.tabs.push(Tab { session, snap: None, spec, program, exited: None, size });
         self.active = self.tabs.len() - 1;
         if self.focused {
             self.handle().focus(true);
         }
         self.relayout();
+        self.save_last();
         Ok(())
     }
 
@@ -327,6 +423,7 @@ impl Win {
         self.ime_at = None;
         self.update_title();
         self.recompose();
+        self.save_last();
     }
 
     fn close_tab(&mut self, i: usize) {
@@ -337,6 +434,7 @@ impl Win {
         let _ = self.client.detach(&t.session.id);
         if self.tabs.is_empty() {
             self.quit = Some(t.exited.flatten().map_or(0, |c| c as i32));
+            self.save_last();
             return;
         }
         if self.active >= self.tabs.len() || self.active > i {
@@ -347,6 +445,7 @@ impl Win {
         }
         self.update_title();
         self.relayout();
+        self.save_last();
     }
 
     /// Close needs the same shortcut twice within [`CONFIRM`] while the
@@ -395,6 +494,19 @@ impl Win {
                     }
                 }
             }
+            Action::SaveTabs => {
+                let tabs = self.saved_tabs();
+                match tabsets::save(&tabsets::dir(), "saved", &tabs) {
+                    Ok(()) => self.show_hint(format!("{} tab(s) saved as \"saved\"", tabs.len())),
+                    Err(e) => self.show_hint(format!("saving tabs failed: {e}")),
+                }
+            }
+            Action::OpenSavedTabs | Action::OpenPreviousTabs => {
+                let name = if a == Action::OpenSavedTabs { "saved" } else { "previous" };
+                let set = tabsets::load(&tabsets::dir(), name).unwrap_or_default();
+                let n = self.open_saved(&set);
+                self.show_hint(format!("{n} tab(s) of \"{name}\" opened"));
+            }
         }
     }
 
@@ -436,6 +548,9 @@ impl Win {
             self.recompose();
         } else if title_changed && self.tabs.len() >= 2 {
             self.recompose(); // the tab bar shows its name
+        }
+        if title_changed {
+            self.save_last();
         }
     }
 
@@ -682,6 +797,14 @@ impl Win {
     }
 }
 
+/// A directory from OSC 7 (`file://host/path`) or a plain path.
+fn osc7_path(p: &str) -> String {
+    match p.strip_prefix("file://") {
+        Some(r) => r.find('/').map_or(r.to_string(), |i| r[i..].to_string()),
+        None => p.to_string(),
+    }
+}
+
 /// The chord of a key press: modifiers plus the key without modifiers.
 fn chord_of(ev: &KeyEvent, m: ModifiersState) -> Option<Chord> {
     let key = match ev.key_without_modifiers() {
@@ -778,8 +901,11 @@ impl ApplicationHandler<UserEvent> for App {
         match event {
             WindowEvent::CloseRequested => {
                 win.log_memory();
-                // Closing the window ends its sessions (tab sets bring them
-                // back, P3). A crashed or killed GUI leaves them running.
+                // Closing the window ends its sessions; the tab set "last"
+                // keeps them for the next start. A crashed or killed GUI
+                // leaves them running.
+                win.save_last();
+                win.shutting_down = true;
                 while !win.tabs.is_empty() {
                     win.close_tab(win.tabs.len() - 1);
                 }

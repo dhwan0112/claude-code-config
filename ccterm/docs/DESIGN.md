@@ -224,8 +224,24 @@ the GUI; a full default scrollback adds up to about 11 MB to its session
 ### 3.8 Identity, state and event log
 
 - Session and tab ids: `<unix ms, hex>-<counter, hex>` (sortable, unique per
-  machine). A tab keeps its id across restarts through tab sets; Claude Code
-  session ids (UUIDs, from hooks) are stored next to it.
+  machine). A restored tab is a new session (new id): a tab set stores what
+  to start, not the session; Claude Code session ids (UUIDs, from hooks) are
+  stored with it so that Claude Code itself resumes (`--resume`).
+- Tab sets (`tabs/<name>.tsv` in the state directory, after ccx's
+  `savetabs.sh`): per tab name, folder (OSC 7, else the start folder),
+  program, arguments, Claude Code session id, active flag; never
+  environment variables. `last` follows the open tabs (rewritten only when
+  the content changes); at start it becomes `previous` and is reopened
+  after the requested tab; `restore-tabs = false` (config or
+  `--restore-tabs false`) turns that off; palette: save as `saved`, open
+  `saved`, open `previous`. Decision: restore *after* the requested tab
+  rather than instead of it, so `ccterm PROGRAM` always runs `PROGRAM` and
+  nothing is lost when a set is broken; tabs whose folder is gone are
+  skipped with a log line. Alternatives not taken: reattaching the
+  sessions a killed GUI left in the daemon (possible later: they are in
+  `status`), a set per window (one window today; with several windows the
+  last writer wins `last`), JSON (no parser in the binary; TSV with
+  escapes is enough).
 - State directory: Linux `$XDG_STATE_HOME/<app>` (default
   `~/.local/state/<app>`), Windows `%LOCALAPPDATA%\<app>`. Config:
   Linux `$XDG_CONFIG_HOME/<app>/config` (`~/.config/<app>/config`), Windows
@@ -292,6 +308,18 @@ Terminal uses Ctrl+Shift+T/W and Ctrl+Tab the same way; Alt+digit is free.
 Every binding can be changed in the config file (`keybind = CHORD=ACTION`,
 `CHORD=unbind`). Irreversible actions (close) ask for the same chord again
 within 3 s, with a short hint over the bottom row; no dialog.
+
+### 3.12 Icon and desktop integration
+
+The icon is a placeholder drawn in code (`ccterm-gui/src/icon.rs`, the
+single point to replace): neutral greys, `>_` on a rounded square. It
+feeds the window icon (X11 `_NET_WM_ICON`, Windows small and big icons),
+`ccterm install-desktop` (Linux: `~/.local/share/applications/ccterm.desktop`
+with `StartupWMClass`, hicolor 48/128/256 PNG and SVG; Windows: nothing to
+install) and `build.rs` (Windows `.exe` icon resource via `windres`, sizes
+16–64: PNGs are written uncompressed by our own writer, and a 256 px entry
+would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
+("ccterm"), so docks match the window to the desktop file.
 
 ## 4. VT engine decision (measured 2026-11-04)
 

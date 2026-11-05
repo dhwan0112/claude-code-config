@@ -4,6 +4,7 @@
 //! ccterm [gui] [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
 //! ccterm daemon
 //! ccterm status [--json | --screen ID]
+//! ccterm install-desktop
 //! ```
 //! Without a program it runs the user's shell (`$SHELL`, else `/bin/sh`;
 //! Windows: `%COMSPEC%`, else `cmd.exe`). The first word after the options is
@@ -30,9 +31,12 @@ mod damage;
 mod emoji;
 mod font;
 mod geom;
+mod icon;
 mod input;
+mod install;
 mod keymap;
 mod render;
+mod tabsets;
 mod ui;
 
 use std::io::Write;
@@ -68,7 +72,7 @@ fn default_shell() -> CommandSpec {
 /// that name, so adding them later does not change what a command line does.
 pub const SUBCOMMANDS: &[&str] =
     &["gui", "daemon", "hook", "statusline", "run", "headless", "install-desktop", "status"];
-pub const IMPLEMENTED: &[&str] = &["gui", "daemon", "status"];
+pub const IMPLEMENTED: &[&str] = &["gui", "daemon", "status", "install-desktop"];
 
 /// What the command line asks for.
 #[derive(Debug)]
@@ -82,6 +86,7 @@ pub enum Command {
     Screen {
         id: String,
     },
+    InstallDesktop,
 }
 
 fn parse_command(args: Vec<String>) -> Result<Command, String> {
@@ -96,6 +101,10 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
             [s, id] if s == "--screen" => Ok(Command::Screen { id: id.clone() }),
             _ => Err("usage: ccterm status [--json | --screen ID]".into()),
         },
+        Some("install-desktop") => match args.len() {
+            1 => Ok(Command::InstallDesktop),
+            _ => Err("usage: ccterm install-desktop".into()),
+        },
         Some("gui") => parse_args(args.into_iter().skip(1)).map(|o| Command::Gui(Box::new(o))),
         _ => parse_args(args).map(|o| Command::Gui(Box::new(o))),
     }
@@ -106,8 +115,8 @@ const USAGE: &str =
      settings (KEY): window-padding N, window-padding-balance true|false,\n\
      window-padding-color background|extend|extend-always, decorations native|integrated|none,\n\
      scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row)\n\
-     subcommands: ccterm gui [OPTIONS] [PROGRAM...], ccterm daemon, ccterm status [--json | --screen ID]\n\
-     reserved (not implemented yet): hook, statusline, run, headless, install-desktop;\n\
+     subcommands: ccterm gui [OPTIONS] [PROGRAM...], ccterm daemon, ccterm status [--json | --screen ID],\n\
+     ccterm install-desktop; reserved (not implemented yet): hook, statusline, run, headless;\n\
      to run a program with a subcommand's name: ccterm [OPTIONS] -- NAME [ARGS...]";
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
@@ -346,6 +355,13 @@ fn main() {
             init_log(None);
             let (text, code) = cli::status(json);
             exit_with(&text, code)
+        }
+        Command::InstallDesktop => {
+            init_log(None);
+            match install::install_desktop() {
+                Ok(msg) => exit_with(&msg, 0),
+                Err(e) => exit_with(&format!("ccterm install-desktop: {e}"), 1),
+            }
         }
         Command::Screen { id } => {
             init_log(None);

@@ -614,6 +614,12 @@ New in the milestone 1 finishing work (2026-11-05):
 9. Linux on a GNOME/KDE session: dark title bar on X11 (mutter/KWin read
    `_GTK_THEME_VARIANT`) and the dark adwaita CSD on Wayland; padding while
    dragging the window edge.
+10. (M2) Tabs with a real keyboard on both platforms: Ctrl+Shift+T/W,
+    Ctrl+Tab, Alt+1..9, Ctrl+Shift+P; Hangul typed into the palette; the
+    tab bar and hint legible on a real display (frame dumps only so far).
+11. (M2) After `ccterm install-desktop` on a GNOME/KDE desktop: the
+    launcher entry, the dock icon matched to the running window (Wayland
+    and X11); on Windows the taskbar, Alt+Tab and Explorer icons.
 
 ### 6.2 Known gaps (not in milestone 1's scope)
 
@@ -732,6 +738,34 @@ regression list, measurements), then committed, pushed and mirrored.
     scrollback.
   - Size (`dist`): Linux 5 901 656 → 5 957 016 (+55 KB), Windows 4 558 848
     → 4 618 752 (+60 KB); no new dependency.
+- **2026-11-05 P3 — tab sets, `install-desktop`, icons.** `tabsets.rs`
+  (TSV with escapes, atomic write, `last` → `previous` at start, DESIGN.md
+  §3.8), palette actions save/open tab sets, config/CLI `restore-tabs`;
+  `icon.rs` (placeholder icon in code, own PNG/ICO writer), `install.rs`,
+  `build.rs` (Windows icon resource), app id on Wayland/X11 (DESIGN.md
+  §3.12). Evidence:
+  - Unit tests (gui 58): tab set round trip with tabs/backslashes/Hangul,
+    bad lines, rotation; icon PNG/ICO structure and greys only; desktop
+    entry quoting; install into `XDG_DATA_HOME`.
+  - `reg.sh p3` (Linux, Xvfb) 21/21: the 17 of P2 plus `last` has 2 tabs
+    after Ctrl+Shift+T in another folder; `WM_CLASS "ccterm", "ccterm"`;
+    `_NET_WM_ICON` set; restart reopens 2 tabs + the requested one and
+    writes `previous`; `--restore-tabs false` opens one; install-desktop
+    files. (One of three runs had Ctrl+C twice exit 2/3, then 3/3 twice —
+    the Claude Code timing case of §3, not a regression.) The regression
+    runs now pass `--restore-tabs false` except in the restore checks.
+  - Windows 11 (`p3win.ps1`): one icon resource in the exe, WM_GETICON big
+    and small set, `last.tsv` with the cmd tab and its folder, restart →
+    2 sessions and `previous.tsv`, `install-desktop` prints that nothing
+    is needed.
+  - Idle 30 s (Linux, Claude Code idle): GUI 1 tick, RssAnon 6.0 MB; daemon
+    1 tick, 5.2 MB, 8 threads; key → frame through the daemon median
+    2.04 ms, p95 2.65 ms; draw median 0.04 ms.
+  - Size (`dist`): Linux 5 957 016 → 5 984 152 (+27 KB), Windows 4 618 752
+    → 4 673 536 (+55 KB; with a 256 px ICO entry it was +318 KB, hence
+    16–64 px). No new dependency; `windres` from mingw at build time.
+  - Not done: reattaching sessions left by a killed GUI (they keep running
+    and show in `status`); per-window sets.
 
 ## 7. Long-term direction (constrains current work)
 

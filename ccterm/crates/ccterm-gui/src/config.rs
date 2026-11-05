@@ -10,6 +10,7 @@
 //! | `window-padding-balance` | `true` / `false`: spread the leftover space evenly on all sides | `true` |
 //! | `window-padding-color` | `background` / `extend` / `extend-always` | `extend` |
 //! | `decorations` | `native` / `integrated` / `none` | `native` |
+//! | `restore-tabs` | `true` / `false`: reopen the previous run's tabs at start | `true` |
 //! | `scrollback-limit` | bytes of scrollback per session (as Ghostty; ~1.1 KB per 120-column row) | 12000000 |
 
 /// Colour of the padding around the grid (Ghostty's `window-padding-color`).
@@ -45,6 +46,8 @@ pub struct Config {
     pub decorations: Decorations,
     /// Bytes ([`ccterm_core::SessionConfig::scrollback_limit`]).
     pub scrollback_limit: usize,
+    /// Reopen the previous run's tabs (tab set "previous") at start.
+    pub restore_tabs: bool,
 }
 
 impl Default for Config {
@@ -55,12 +58,19 @@ impl Default for Config {
             padding_color: PaddingColor::Extend,
             decorations: Decorations::Native,
             scrollback_limit: ccterm_core::DEFAULT_SCROLLBACK_LIMIT,
+            restore_tabs: true,
         }
     }
 }
 
-pub const KEYS: &[&str] =
-    &["window-padding", "window-padding-balance", "window-padding-color", "decorations", "scrollback-limit"];
+pub const KEYS: &[&str] = &[
+    "window-padding",
+    "window-padding-balance",
+    "window-padding-color",
+    "decorations",
+    "scrollback-limit",
+    "restore-tabs",
+];
 
 impl Config {
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
@@ -72,6 +82,13 @@ impl Config {
                     return Err(bad());
                 }
                 self.window_padding = v;
+            }
+            "restore-tabs" => {
+                self.restore_tabs = match value {
+                    "true" | "yes" | "1" => true,
+                    "false" | "no" | "0" => false,
+                    _ => return Err(bad()),
+                }
             }
             "window-padding-balance" => {
                 self.padding_balance = match value {

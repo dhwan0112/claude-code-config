@@ -16,6 +16,12 @@ pub enum Action {
     GotoTab(u8),
     CommandPalette,
     Paste,
+    /// Save the open tabs as the tab set "saved".
+    SaveTabs,
+    /// Open the tabs of the set "saved".
+    OpenSavedTabs,
+    /// Open the tabs of the previous run (set "previous").
+    OpenPreviousTabs,
 }
 
 impl Action {
@@ -29,6 +35,9 @@ impl Action {
             Action::GotoTab(n) => format!("goto_tab:{n}"),
             Action::CommandPalette => "command_palette".into(),
             Action::Paste => "paste".into(),
+            Action::SaveTabs => "save_tabs".into(),
+            Action::OpenSavedTabs => "open_saved_tabs".into(),
+            Action::OpenPreviousTabs => "open_previous_tabs".into(),
         }
     }
 
@@ -42,6 +51,9 @@ impl Action {
             Action::GotoTab(n) => format!("Go to tab {n}"),
             Action::CommandPalette => "Command palette".into(),
             Action::Paste => "Paste".into(),
+            Action::SaveTabs => "Save tabs (set \"saved\")".into(),
+            Action::OpenSavedTabs => "Open saved tabs".into(),
+            Action::OpenPreviousTabs => "Open the previous run's tabs".into(),
         }
     }
 
@@ -53,6 +65,9 @@ impl Action {
             "previous_tab" => Action::PreviousTab,
             "command_palette" => Action::CommandPalette,
             "paste" => Action::Paste,
+            "save_tabs" => Action::SaveTabs,
+            "open_saved_tabs" => Action::OpenSavedTabs,
+            "open_previous_tabs" => Action::OpenPreviousTabs,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -67,7 +82,13 @@ impl Action {
     pub fn all() -> Vec<Action> {
         let mut v = vec![Action::NewTab, Action::CloseTab, Action::NextTab, Action::PreviousTab];
         v.extend((1..=9).map(Action::GotoTab));
-        v.extend([Action::Paste, Action::CommandPalette]);
+        v.extend([
+            Action::SaveTabs,
+            Action::OpenSavedTabs,
+            Action::OpenPreviousTabs,
+            Action::Paste,
+            Action::CommandPalette,
+        ]);
         v
     }
 }
