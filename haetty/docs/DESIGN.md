@@ -612,7 +612,11 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   cursor (cursor-text decides) nor box drawing, block elements, legacy
   computing and Powerline glyphs (Ghostty's `noMinContrast`). The default
   keeps the theme's colours as they are (IBM 5153 CGA: blue 1.85:1, bright
-  black 2.21:1 on `#141414`; table in `assets/themes/README.md`).
+  black 2.21:1 on `#141414`; table in `assets/themes/README.md`). It also
+  reaches haetty's own cells: with CGA at 4.5 the `?` mark (4.02:1 on the
+  bar) and the dim labels (3.55:1) turn white, which bends §2.2's accent
+  and dimming rules; at 3 none of them changes. Open question whether to
+  exempt them.
 - Windows 11: title bar, border and the padding take the theme's
   background (`chrome.rs`, from the first frame); checked by screen capture
   for each built-in theme and an override.

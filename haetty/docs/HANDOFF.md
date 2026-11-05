@@ -690,7 +690,9 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     (Windows 11), padding, tab bar and status row in the same greys; the
     waiting mark brown, the question mark red. `theme = haetty classic`
     brings the old look back; a Ghostty theme file in the themes folder
-    works by its name; `minimum-contrast = 3` makes dark blue text white.
+    works by its name (for a `HAETTY_INSTANCE=dev` build the folder is
+    `~/.config/haetty-dev/themes`, Windows `%APPDATA%\haetty-dev\themes`);
+    `minimum-contrast = 3` makes dark blue text white.
     In Claude Code, `/theme` → "Dark mode (ANSI colors only)": its screen
     then uses the theme's colours.
 
@@ -1289,7 +1291,9 @@ regression list, measurements), then committed, pushed and mirrored.
 - **2026-11-06 Theme checks: Windows frame, §2.3, Claude Code's ANSI
   theme, size.**
   - Windows 11 (`chromewin.ps1`, test-guarded, dev instance; screen capture
-    of the visible frame, the window made topmost for it — no focus taken):
+    of the visible frame; the script made each window topmost and asked
+    for no focus, but every newly started window became the foreground
+    window by itself):
     title bar, border, left and bottom padding are `#141414` (IBM 5153
     CGA), `#1e1e1e` (haetty classic), `#000000` (CGA Black) and `#203040`
     (`--background "#203040"` on CGA) — each exactly the theme background.
@@ -1311,6 +1315,29 @@ regression list, measurements), then committed, pushed and mirrored.
     `40`×2). So with that theme Claude Code's screen takes the haetty
     theme's colours (e.g. `37` → `#cecece`, `94` → `#4e4edc`). README says
     how to choose it.
+  - The palette really travels through `CreateSpec` and the daemon
+    (the default theme alone would hide a dropped palette, since sessions
+    fall back to it): Linux frame dumps of the GUI — `--theme "haetty
+    classic"` has `#cc6666`/`#b5bd68`/`#81a2be` (classic 1/2/4) 45–46 px
+    each and none of CGA's `#d03333`/`#1bd01b`/`#1b1bd0`, the default dump
+    the reverse; Windows (`winpal.ps1`, PowerShell DarkRed/Red text through
+    ConPTY = SGR 31/91): CGA `#d03333` 151 px / `#dc4e4e` 231 px, classic
+    `#cc6666` / `#d54e53` the same counts, `--palette 1=#00ff00 --palette
+    9=#ff00ff` exactly those, never another theme's colours.
+  - `haetty-headless --theme "IBM 5153 CGA" --trace` (the binary): replies
+    `4;1 rgb:d0d0/3333/3333`, `4;196 ffff/0000/0000`, `10 cece/cece/cece`,
+    `11 1414/1414/1414`, `12 cece/cece/cece`; `--theme "haetty classic"`:
+    `4;1 cccc/6666/6666`, `11 1e1e/1e1e/1e1e`; an unknown name is refused
+    with the built-in names.
+  - `minimum-contrast` also applies to haetty's own cells (they are cells
+    like the program's). With IBM 5153 CGA, on the bar grey `#212121`: `?`
+    mark and usage ≥ 95 % (colour 9) 4.02, waiting mark (colour 3) 5.71,
+    dim labels `#767676` 3.55 (4.06 on the background), normal `#b0b0b0`
+    7.42. So at 3 nothing of haetty's changes; at 4.5 the `?` mark turns
+    white (loses its red) and the dim labels turn white (brighter than
+    normal text) — against DESIGN §2.2's accent and dimming rules. Not
+    changed (Ghostty has no own UI to compare with); exempting haetty's
+    cells is a small change if wanted.
   - Size (`dist`, stripped) after the themes and `minimum-contrast`: Linux
     6 402 872 → 6 422 992 (+20 120 B), Windows 4 981 760 → 5 001 216
     (+19 456 B); no new dependency (the theme parser, contrast code, ~1.2

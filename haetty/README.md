@@ -208,7 +208,9 @@ selection-foreground = #141414
 - Your own: put the file into the themes folder — Linux
   `~/.config/haetty/themes/` (`$XDG_CONFIG_HOME/haetty/themes/`), Windows
   `%APPDATA%\haetty\themes\` — and use its file name: `theme = My Theme`.
-  A file there wins over a built-in theme of the same name. A value with
+  A file there wins over a built-in theme of the same name (a
+  `HAETTY_INSTANCE=dev` build reads `haetty-dev/themes/` instead, like its
+  config file). A value with
   `/` or `\` is a path (relative to the config folder).
 - Colour keys in the config file apply after the theme, wherever they
   stand: `theme = IBM 5153 CGA` plus `palette = 4=#3a3aff` changes only
@@ -219,7 +221,9 @@ selection-foreground = #141414
 - `minimum-contrast = 3` (or 4.5) keeps dim colours readable: with IBM
   5153 CGA, blue (1.85:1 on its background) and bright black (2.21:1) are
   hard to read; at 3 they — and colour 0 — turn white, at 4.5 also red,
-  magenta and bright blue. The table and frame dumps are in
+  magenta and bright blue. It applies to haetty's own rows too: at 4.5
+  the red `?` mark (4.0:1 on the tab bar) and the dim labels (3.6:1) turn
+  white as well. The table and frame dumps are in
   `assets/themes/README.md` and `docs/theme/`.
 - **Claude Code in the theme's colours:** Claude Code's own themes use
   fixed 24-bit colours, which no terminal theme changes. To have Claude
