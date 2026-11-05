@@ -247,7 +247,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
     let s = screen(
         COLS,
         ROWS - 1,
-        &["$ cargo build", "   Compiling ccterm v0.1.0", "    Finished `dev` profile in 4.2s", "$ "],
+        &["$ cargo build", "   Compiling haetty v0.1.0", "    Finished `dev` profile in 4.2s", "$ "],
         Some((2, 3)),
     );
     let tabs = [
