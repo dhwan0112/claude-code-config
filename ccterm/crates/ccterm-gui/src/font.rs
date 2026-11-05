@@ -56,6 +56,8 @@ pub struct Face {
     offset: u32,
     key: CacheKey,
     pub name: String,
+    /// Colour glyphs (CBDT, sbix, COLR or SVG table): an emoji font.
+    pub color: bool,
 }
 
 impl Face {
@@ -210,7 +212,8 @@ impl Fonts {
         let data = self.map_file(&path)?;
         let font = FontRef::from_index(&data[..], index as usize)?;
         let (offset, key) = (font.offset, font.key);
-        self.faces.push(Face { data, offset, key, name });
+        let color = [b"CBDT", b"sbix", b"COLR", b"SVG "].iter().any(|t| font.table(swash::tag_from_bytes(t)).is_some());
+        self.faces.push(Face { data, offset, key, name, color });
         let i = self.faces.len() - 1;
         self.by_id.insert(id, i);
         Some(i)
@@ -222,6 +225,11 @@ impl Fonts {
 
     pub fn primary(&self) -> &Face {
         &self.faces[self.primary[0].expect("primary face")]
+    }
+
+    /// Whether `face` is one of the primary family's faces (any style).
+    pub fn is_primary(&self, face: usize) -> bool {
+        self.primary.contains(&Some(face))
     }
 
     fn glyph_in(&self, face: usize, c: char) -> u16 {

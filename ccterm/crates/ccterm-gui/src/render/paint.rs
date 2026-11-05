@@ -48,11 +48,21 @@ struct Raster {
 }
 
 /// How a glyph is placed in a span of `n` cells: the size it is rendered at
-/// and the horizontal offset, so wide symbols from fallback fonts fit.
-#[derive(Clone, Copy)]
+/// and the horizontal offset of its origin, so glyphs from fallback fonts fit.
+#[derive(Clone, Copy, Debug)]
 struct Fit {
     px: f32,
     dx: i32,
+}
+
+/// Ink box of a rasterised glyph: `left` from the glyph origin, `top` above
+/// the baseline, width and height.
+#[derive(Clone, Copy, Debug)]
+struct Ink {
+    left: i32,
+    top: i32,
+    w: i32,
+    h: i32,
 }
 
 pub struct Painter {
@@ -60,13 +70,22 @@ pub struct Painter {
     ctx: ScaleContext,
     glyphs: HashMap<GlyphKey, Option<Raster>>,
     fits: HashMap<(usize, u16, u8), Fit>,
+    /// Per fallback face: the size factor that makes its Hangul/ideographs
+    /// fill two cells (`None`: not a CJK face).
+    face_scales: HashMap<usize, Option<f32>>,
     m: Metrics,
 }
 
 impl Painter {
     pub fn new(fonts: Fonts, px: f32) -> Self {
-        let mut p =
-            Painter { fonts, ctx: ScaleContext::new(), glyphs: HashMap::new(), fits: HashMap::new(), m: zero() };
+        let mut p = Painter {
+            fonts,
+            ctx: ScaleContext::new(),
+            glyphs: HashMap::new(),
+            fits: HashMap::new(),
+            face_scales: HashMap::new(),
+            m: zero(),
+        };
         p.set_px(px);
         p
     }
@@ -86,6 +105,7 @@ impl Painter {
         }
         self.glyphs.clear();
         self.fits.clear();
+        self.face_scales.clear();
         let font = self.fonts.primary().font();
         let fm = font.metrics(&[]).scale(px);
         let gm = font.glyph_metrics(&[]).scale(px);
@@ -269,22 +289,9 @@ impl Painter {
     }
 
     fn draw_char(&mut self, cv: &mut Canvas, c: char, rect: Rect, span: u8, style: Style, fg: Rgb) {
-        let Some(res) = self.fonts.resolve(c, style) else { return };
-        let fit = self.fit(res.face, res.glyph, span);
-        let key = GlyphKey {
-            face: res.face,
-            glyph: res.glyph,
-            px_bits: fit.px.to_bits(),
-            bold: res.synth_bold,
-            italic: res.synth_italic,
-        };
-        if !self.glyphs.contains_key(&key) {
-            let r = self.rasterize(key, fit.px);
-            self.glyphs.insert(key, r);
-        }
+        let Some((key, x, y)) = self.place(c, span, style) else { return };
         let Some(g) = self.glyphs.get(&key).and_then(|g| g.as_ref()) else { return };
-        let x0 = rect.x + fit.dx + g.left;
-        let y0 = rect.y + self.m.baseline - g.top;
+        let (x0, y0) = (rect.x + x, rect.y + y);
         // Clip to the cell span so a glyph never spills into a neighbour that
         // may be repainted without it.
         cv.set_clip(Rect::new(rect.x, rect.y, rect.w, rect.h));
@@ -307,25 +314,148 @@ impl Painter {
         cv.set_clip(Rect::new(0, rect.y, cv.width as i32, rect.h));
     }
 
-    /// Size and offset that make a glyph fit `span` cells: glyphs wider than
-    /// the span are scaled down, and narrower glyphs in wide cells centred.
-    fn fit(&mut self, face: usize, glyph: u16, span: u8) -> Fit {
+    /// The glyph for `c` in a span of `span` cells (rasterised and cached)
+    /// and the top-left corner of its raster relative to the span's top-left
+    /// corner, before clipping.
+    fn place(&mut self, c: char, span: u8, style: Style) -> Option<(GlyphKey, i32, i32)> {
+        let res = self.fonts.resolve(c, style)?;
+        let fit = self.fit(res.face, res.glyph, span, c);
+        let key = GlyphKey {
+            face: res.face,
+            glyph: res.glyph,
+            px_bits: fit.px.to_bits(),
+            bold: res.synth_bold,
+            italic: res.synth_italic,
+        };
+        let baseline = self.m.baseline;
+        let g = self.raster(key)?;
+        Some((key, fit.dx + g.left, baseline - g.top))
+    }
+
+    fn raster(&mut self, key: GlyphKey) -> Option<&Raster> {
+        if !self.glyphs.contains_key(&key) {
+            let r = self.rasterize(key, f32::from_bits(key.px_bits));
+            self.glyphs.insert(key, r);
+        }
+        self.glyphs.get(&key).and_then(|g| g.as_ref())
+    }
+
+    /// Ink box of `glyph` of `face` at `px` (regular style); `None` for a
+    /// blank glyph.
+    fn ink(&mut self, face: usize, glyph: u16, px: f32) -> Option<Ink> {
+        let key = GlyphKey { face, glyph, px_bits: px.to_bits(), bold: false, italic: false };
+        self.raster(key).map(|g| Ink { left: g.left, top: g.top, w: g.width, h: g.height })
+    }
+
+    /// Size and offset that make a glyph fit `span` cells.
+    fn fit(&mut self, face: usize, glyph: u16, span: u8, c: char) -> Fit {
         if let Some(f) = self.fits.get(&(face, glyph, span)) {
             return *f;
         }
+        let f = match self.wide_fallback_fit(face, glyph, span, c) {
+            Some(f) => f,
+            None => self.plain_fit(face, glyph, span),
+        };
+        self.fits.insert((face, glyph, span), f);
+        f
+    }
+
+    /// Wide cells drawn from a fallback CJK face (Hangul, kana, ideographs,
+    /// CJK punctuation): the face is scaled so its syllables/ideographs fill
+    /// the two cells, as wide as the primary font's two cells (fallback CJK
+    /// fonts are designed for a 1 em ideograph, narrower than two cells of
+    /// most Latin monospace fonts). The scale is capped so the face's tall
+    /// glyphs stay inside the cell height on the primary baseline; a single
+    /// glyph that still overflows is shrunk. Hangul syllables and ideographs
+    /// are centred on their ink, other glyphs on their advance, which keeps
+    /// punctuation (。，「) where the font designed it. Primary faces — a
+    /// font that already has two-cell Hangul — and colour faces are not
+    /// touched (`None`).
+    fn wide_fallback_fit(&mut self, face: usize, glyph: u16, span: u8, c: char) -> Option<Fit> {
+        if span != 2 || self.fonts.is_primary(face) || self.fonts.face(face).color {
+            return None;
+        }
+        let scale = self.face_scale(face)?;
+        let m = self.m;
+        let span_w = (m.cell_w * 2) as f32;
+        let mut px = m.px * scale;
+        for _ in 0..3 {
+            let f = self.ink(face, glyph, px).map_or(1.0, |ink| overflow_factor(ink, span_w, m));
+            if f >= 1.0 {
+                break;
+            }
+            px *= f * 0.995;
+        }
+        let ink = if centre_on_ink(c) { self.ink(face, glyph, px) } else { None };
+        let dx = match ink {
+            Some(ink) => ((span_w - ink.w as f32) / 2.0).round() as i32 - ink.left,
+            None => {
+                let adv = self.fonts.face(face).font().glyph_metrics(&[]).scale(px).advance_width(glyph);
+                ((span_w - adv) / 2.0).round().max(0.0) as i32
+            }
+        };
+        Some(Fit { px, dx })
+    }
+
+    /// The size factor for a fallback face in wide cells: two cells over the
+    /// advance of its Hangul syllable 한 (else the ideograph 水), reduced
+    /// until its tall reference glyphs of that script fit the cell height.
+    /// `None` when the face has neither (not a CJK face).
+    fn face_scale(&mut self, face: usize) -> Option<f32> {
+        if let Some(s) = self.face_scales.get(&face) {
+            return *s;
+        }
+        let m = self.m;
+        let span_w = (m.cell_w * 2) as f32;
+        let font = self.fonts.face(face).font();
+        let map = |c: char| Some(font.charmap().map(c)).filter(|&g| g != 0);
+        // Hangul faces are sized by their Hangul (ideographs in them are
+        // often taller and are shrunk one by one if they overflow).
+        let (reference, tall_set) = match map('한') {
+            Some(g) => (Some(g), ['한', '뷁', '읽']),
+            None => (map('水'), ['水', '國', '龍']),
+        };
+        let tall: Vec<u16> = tall_set.into_iter().filter_map(map).collect();
+        let adv = reference.map(|g| font.glyph_metrics(&[]).scale(m.px).advance_width(g)).filter(|&a| a > 0.0);
+        let fits_at = |p: &mut Self, s: f32| {
+            tall.iter()
+                .filter_map(|&g| p.ink(face, g, m.px * s))
+                .map(|ink| overflow_factor(ink, span_w, m))
+                .fold(1.0f32, f32::min)
+        };
+        let s = adv.map(|adv| {
+            let mut s = span_w / adv;
+            for _ in 0..3 {
+                let f = fits_at(self, s);
+                if f >= 1.0 {
+                    break;
+                }
+                s *= f * 0.995;
+            }
+            // Never smaller than the font's own size when that already fits.
+            if s < 1.0 && fits_at(self, 1.0) >= 1.0 {
+                s = 1.0;
+            }
+            s
+        });
+        log::debug!("font: {:?} in wide cells: scale {s:?}", self.fonts.face(face).name);
+        self.face_scales.insert(face, s);
+        s
+    }
+
+    /// Glyphs wider than the span are scaled down, and narrower glyphs in
+    /// wide cells centred on their advance.
+    fn plain_fit(&mut self, face: usize, glyph: u16, span: u8) -> Fit {
         let px = self.m.px;
         let span_w = (self.m.cell_w * span as i32) as f32;
         let adv = self.fonts.face(face).font().glyph_metrics(&[]).scale(px).advance_width(glyph);
-        let f = if adv > span_w * 1.05 && adv > 0.0 {
-            let px2 = px * span_w / adv;
-            Fit { px: px2, dx: 0 }
+        if adv > span_w * 1.05 && adv > 0.0 {
+            Fit { px: px * span_w / adv, dx: 0 }
         } else if span > 1 && adv > 0.0 && adv < span_w {
             Fit { px, dx: ((span_w - adv) / 2.0).round() as i32 }
         } else {
             Fit { px, dx: 0 }
-        };
-        self.fits.insert((face, glyph, span), f);
-        f
+        }
     }
 
     fn rasterize(&mut self, key: GlyphKey, px: f32) -> Option<Raster> {
@@ -370,6 +500,31 @@ impl Painter {
         }
         Some(r)
     }
+}
+
+/// Factor (≤ 1) that keeps an ink box inside `span_w` and inside the cell
+/// above and below the primary baseline.
+fn overflow_factor(ink: Ink, span_w: f32, m: Metrics) -> f32 {
+    let mut f = 1.0f32;
+    if ink.w as f32 > span_w {
+        f = f.min(span_w / ink.w as f32);
+    }
+    if ink.top > m.baseline && ink.top > 0 {
+        f = f.min(m.baseline as f32 / ink.top as f32);
+    }
+    let below = ink.h - ink.top;
+    let room = m.cell_h - m.baseline;
+    if below > room && below > 0 {
+        f = f.min(room.max(0) as f32 / below as f32);
+    }
+    f
+}
+
+/// Characters centred on their ink in wide cells: Hangul syllables and CJK
+/// ideographs, whose ink fills the em box evenly. Jamo, kana and punctuation
+/// keep the font's own placement.
+fn centre_on_ink(c: char) -> bool {
+    matches!(c as u32, 0xAC00..=0xD7A3 | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x3FFFF)
 }
 
 fn zero() -> Metrics {
@@ -633,6 +788,100 @@ mod tests {
         again.pixels.clone_from(&full.pixels);
         p.paint_row(&mut again, (0, 0), &scene(&s, &[false, true], true, None), 1, PaddingStyle::default());
         assert!(again.pixels == full.pixels);
+    }
+
+    /// Face and unclipped ink box (relative to the span's top-left corner) of
+    /// `c` drawn in a span of `span` cells.
+    fn placed(p: &mut Painter, c: char, span: u8) -> Option<(usize, Rect)> {
+        let (key, x, y) = p.place(c, span, Style::default())?;
+        let g = p.glyphs.get(&key)?.as_ref()?;
+        Some((key.face, Rect::new(x, y, g.width, g.height)))
+    }
+
+    /// Hangul from a fallback face in a wide cell fills most of the two
+    /// cells, is centred, and stays inside the cell height — at 11 pt and
+    /// 14 pt (96 dpi) and two more sizes. Run with the platform's fonts:
+    /// Linux DejaVu Sans Mono + Noto Sans Mono CJK / Nanum (hide Noto and set
+    /// `CCTERM_FONT_DIR` to test Nanum), Windows Cascadia Mono + Malgun Gothic.
+    #[test]
+    fn wide_fallback_hangul_fills_two_cells() {
+        let Ok(fonts) = Fonts::load(None) else { return };
+        let mut p = Painter::new(fonts, 16.0);
+        let primary = p.fonts.primary().name.clone();
+        for px in [11.0 * 96.0 / 72.0, 14.0 * 96.0 / 72.0, 16.0, 24.0] {
+            p.set_px(px);
+            let m = p.metrics();
+            let span_w = 2 * m.cell_w;
+            for c in "한글입력테스트뷁".chars() {
+                let Some((face, b)) = placed(&mut p, c, 2) else {
+                    eprintln!("no font for {c}; skipped");
+                    return;
+                };
+                let name = p.fonts.face(face).name.clone();
+                if p.fonts.is_primary(face) {
+                    eprintln!("{primary} has {c}; nothing to test");
+                    return;
+                }
+                let (left, right) = (b.x, span_w - (b.x + b.w));
+                let ratio = b.w as f32 / span_w as f32;
+                let glyph = p.fonts.resolve(c, Style::default()).expect("glyph").glyph;
+                let unscaled = p.ink(face, glyph, m.px).map(|i| (i.w, m.baseline - i.top, m.baseline - i.top + i.h));
+                let fit = p.fit(face, glyph, 2, c);
+                eprintln!(
+                    "{primary} + {name} px {px:.2}→{:.2} cell {}x{} base {} {c}: ink {} of {span_w} ({ratio:.2}; unscaled {unscaled:?}), margins {left}/{right}, rows {}..{}",
+                    fit.px, m.cell_w, m.cell_h, m.baseline, b.w, b.y, b.y + b.h
+                );
+                // Wide-ink syllables fill most of the span; every syllable is at
+                // least as wide as at the font's own size unless that
+                // overflowed the cell (1 px tolerance: hinting can make a
+                // larger size 1 px narrower, e.g. Malgun Gothic 글 at 14.67
+                // and 15.67 px).
+                let min = if "한글스트".contains(c) { 0.72 } else { 0.60 };
+                assert!(ratio >= min, "{c} at {px}: ink {} of {span_w}", b.w);
+                if let Some((w, top, bottom)) = unscaled {
+                    if top >= 0 && bottom <= m.cell_h {
+                        assert!(b.w + 1 >= w, "{c} at {px}: narrower than unscaled ({} < {w})", b.w);
+                    }
+                }
+                assert!((left - right).abs() <= 1, "{c} at {px}: margins {left}/{right}");
+                assert!(b.y >= 0 && b.y + b.h <= m.cell_h, "{c} at {px}: rows {}..{} of {}", b.y, b.y + b.h, m.cell_h);
+            }
+        }
+    }
+
+    /// A primary font with its own two-cell Hangul (Noto Sans Mono CJK here,
+    /// D2Coding for users) is drawn exactly as before: no scaling, no shift.
+    #[test]
+    fn primary_wide_hangul_is_not_rescaled() {
+        let name = "Noto Sans Mono CJK KR";
+        let Ok(fonts) = Fonts::load(Some(name)) else { return };
+        if fonts.primary().name != name {
+            eprintln!("{name} not installed; skipped");
+            return;
+        }
+        let mut p = Painter::new(fonts, 16.0);
+        let res = p.fonts.resolve('한', Style::default()).expect("한");
+        assert!(p.fonts.is_primary(res.face));
+        let fit = p.fit(res.face, res.glyph, 2, '한');
+        let plain = p.plain_fit(res.face, res.glyph, 2);
+        assert_eq!((fit.px, fit.dx), (plain.px, plain.dx));
+        assert_eq!(fit.px, p.metrics().px);
+        assert!(p.wide_fallback_fit(res.face, res.glyph, 2, '한').is_none());
+    }
+
+    /// Box drawing in a wide span is still drawn procedurally, not scaled.
+    #[test]
+    fn box_drawing_is_unaffected_by_wide_fallback_scaling() {
+        let Some(mut p) = painter() else { return };
+        let mut s = snap(2, 1);
+        set(&mut s, 0, 0, Cell { text: "─".into(), width: Width::Wide, ..Default::default() });
+        set(&mut s, 1, 0, Cell { width: Width::Spacer, ..Default::default() });
+        let cv = render(&mut p, &scene(&s, &[true], true, None));
+        let m = p.metrics();
+        let fgp = crate::render::canvas::pack(FG);
+        // A full-width line through the middle of both cells.
+        let mid = (0..m.cell_h).find(|&y| cv.get(0, y) == fgp).expect("line");
+        assert!((0..2 * m.cell_w).all(|x| cv.get(x, mid) == fgp));
     }
 
     const BLUE: Rgb = Rgb { r: 0, g: 0, b: 200 };

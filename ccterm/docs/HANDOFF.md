@@ -350,6 +350,33 @@ New in the GUI work (2026-11-05):
   (font, glyph id, size, style). Font fallback for Hangul/CJK and symbols:
   Windows `Malgun Gothic`, Linux Noto Sans CJK / Nanum via fontconfig-free
   discovery (e.g. `fontdb`), configurable primary monospace font. — Applied.
+- **Wide cells from a fallback CJK font fill both cells** (2026-11-05).
+  Ghostty (source at the pinned commit) scales fallback *faces*, not
+  glyphs: `default_fallback_adjustment = .ic_width`
+  (`src/font/Collection.zig` `scaleFactor`, like CSS `font-size-adjust`)
+  matches the fallback's ideograph width (advance of 水; else ex height →
+  cap height → line height) to the primary's, and a primary without 水 is
+  estimated as `min(ascii height, 2 cells)` (`src/font/Metrics.zig`
+  `icWidth`), so Ghostty itself can stay under two cells. Per-glyph
+  constraints (`src/font/Glyph.zig` `Constraint`; `.fit` only shrinks) are
+  applied only to "symbols" and Nerd Font icons
+  (`src/renderer/generic.zig` `addGlyph`, `src/renderer/cell.zig`
+  `isSymbol`); CJK is not centred. ccterm takes the face-level idea but
+  targets the full two cells (requirement: Hangul from DejaVu Sans Mono +
+  Nanum looked spaced out, "한 글 입 력"): factor = 2 cells / advance of 한
+  (else 水), capped so the face's tall Hangul (else ideograph) reference
+  glyphs stay inside the cell on the primary baseline, and never below 1
+  when the natural size already fits; a single glyph that still overflows
+  is shrunk. Hangul syllables and ideographs are centred on their ink,
+  everything else (jamo, kana, 。，「」) on its advance, so punctuation
+  keeps its designed place. Primary faces (a font with its own two-cell
+  Hangul such as D2Coding) and colour faces are untouched; box drawing is
+  procedural anyway. Hinting can make a larger size 1 px narrower (Malgun
+  Gothic 글 at 14.67 / 15.67 px). Measured ink of 한 / two-cell width,
+  before → after, 11 pt and 14 pt at 96 dpi: DejaVu + NanumGothicCoding
+  14/18 → 16/18, 18/22 → 20/22; DejaVu + Noto Sans Mono CJK 13/18 →
+  15/18, 17/22 → 17/22 (cell height binds); Cascadia + Malgun Gothic
+  14/18 → 15/18, 17/22 → 17/22 (height binds).
 - Rejected: GPUI (standalone crate documented for macOS/Linux only;
   gpui-libghostty is macOS + Wayland only), egui/iced for the terminal body
   (extra layers, no IME advantage), Electron/Tauri.
