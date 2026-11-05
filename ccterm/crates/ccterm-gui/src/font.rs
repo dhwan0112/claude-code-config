@@ -186,6 +186,21 @@ impl Fonts {
         Ok(f)
     }
 
+    /// The chosen faces as the start-up log line names them (primary, bold
+    /// and italic availability, fallback list). Reference-frame tests keep
+    /// it next to their images: other faces mean other pixels.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn fingerprint(&self) -> String {
+        let regular = self.primary[0].map_or("", |i| self.faces[i].name.as_str());
+        format!(
+            "primary {:?} (bold {}, italic {}), fallback [{}]",
+            regular,
+            self.primary[1].is_some(),
+            self.primary[2].is_some(),
+            self.fallback.iter().map(|&i| self.faces[i].name.as_str()).collect::<Vec<_>>().join(", ")
+        )
+    }
+
     fn query(&self, name: &str, weight: Weight, style: FdStyle) -> Option<fontdb::ID> {
         let id = self.db.query(&Query { families: &[Family::Name(name)], weight, stretch: Stretch::Normal, style })?;
         // fontdb matches family names case-insensitively; keep it that way.

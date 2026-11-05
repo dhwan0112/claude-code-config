@@ -23,7 +23,7 @@ impl Endpoint {
         #[cfg(windows)]
         {
             let sid = crate::transport::current_user_sid()?;
-            Ok(Endpoint(format!(r"\\.\pipe\{}-{}", product::DIR, sid).into()))
+            Ok(Endpoint(format!(r"\\.\pipe\{}-{}", product::dir(), sid).into()))
         }
     }
 }
@@ -36,8 +36,8 @@ pub fn runtime_dir() -> io::Result<PathBuf> {
     // SAFETY: getuid has no preconditions.
     let uid = unsafe { libc::getuid() };
     let dir = match base {
-        Some(b) => PathBuf::from(b).join(product::DIR),
-        None => std::env::temp_dir().join(format!("{}-{uid}", product::DIR)),
+        Some(b) => PathBuf::from(b).join(product::dir()),
+        None => std::env::temp_dir().join(format!("{}-{uid}", product::dir())),
     };
     ensure_private_dir(&dir)?;
     Ok(dir)
@@ -96,7 +96,7 @@ pub fn state_dir() -> PathBuf {
     #[cfg(windows)]
     {
         let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-        base.join(product::DIR)
+        base.join(product::dir())
     }
     #[cfg(not(windows))]
     {
@@ -105,7 +105,7 @@ pub fn state_dir() -> PathBuf {
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
             .unwrap_or_else(std::env::temp_dir);
-        base.join(product::DIR)
+        base.join(product::dir())
     }
 }
 
@@ -118,7 +118,7 @@ pub fn config_dir() -> PathBuf {
     #[cfg(windows)]
     {
         let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-        base.join(product::DIR)
+        base.join(product::dir())
     }
     #[cfg(not(windows))]
     {
@@ -127,7 +127,7 @@ pub fn config_dir() -> PathBuf {
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
             .unwrap_or_else(std::env::temp_dir);
-        base.join(product::DIR)
+        base.join(product::dir())
     }
 }
 

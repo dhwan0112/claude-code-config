@@ -259,3 +259,39 @@ fn claude_reports_reach_the_client_and_gate_program_input() {
     assert!(!std::path::Path::new(&path).exists(), "settings file removed with the session");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Friction log (DESIGN.md §3.8): a key whose screen change comes after the
+/// 16 ms budget gives `slow_input`; closing a session writes its latency
+/// summary; a GUI friction report becomes a `gui_*` line; a Report client
+/// cannot send one. No typed text in the log.
+#[test]
+fn friction_reaches_the_event_log() {
+    let dir = tmp("friction");
+    let (ep, _h) = start(&dir, Duration::from_secs(30));
+    let gui = Client::connect(&ep, Role::Control, "gui").unwrap();
+    // No echo: the first screen change after the key is the late answer.
+    let id = gui.create(spec("stty -echo; echo ready; read x; sleep 0.08; echo answered; sleep 30")).unwrap();
+    let s = gui.attach(&id, None).unwrap();
+    let has = |sn: &ccterm_core::Snapshot, t: &str| (0..sn.rows).any(|y| sn.row_text(y).contains(t));
+    wait_screen(&s, "ready", |sn| has(sn, "ready"));
+    s.handle.paste("secret-typed-text\n");
+    wait_screen(&s, "answered", |sn| has(sn, "answered"));
+    gui.reporter().friction("slow_draw", &[("ms", "21.5".into()), ("full", "true".into())]);
+    let rep = Client::connect(&ep, Role::Report, "hook").unwrap();
+    rep.send(&ClientMsg::Friction { kind: "x".into(), fields: vec![] }).unwrap();
+    assert!(matches!(rep.next_reply(Duration::from_secs(5)), Some(DaemonMsg::Denied { .. })));
+    gui.close(&id).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    let log = std::fs::read_to_string(dir.join("state/events.log")).unwrap();
+    let line = |kind: &str| {
+        log.lines().find(|l| l.split('\t').nth(2) == Some(kind)).unwrap_or_else(|| panic!("no {kind}: {log}"))
+    };
+    let slow = line("slow_input");
+    let ms: f64 = slow.split("key_to_screen_ms=").nth(1).unwrap().split('\t').next().unwrap().parse().unwrap();
+    assert!(ms >= 70.0, "{slow}");
+    let lat = line("latency");
+    assert!(lat.contains("\tn=1\t") && lat.contains("over_16ms=1"), "{lat}");
+    assert!(line("gui_slow_draw").contains("ms=21.5"));
+    assert!(!log.contains("secret-typed-text"), "typed text must never reach the log");
+    let _ = std::fs::remove_dir_all(&dir);
+}

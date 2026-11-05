@@ -17,7 +17,7 @@ use ccterm_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -238,6 +238,12 @@ pub enum ClientMsg {
     },
     /// Answered with `Synced` once every earlier message was handled.
     Sync,
+    /// Friction seen by the GUI (a slow frame, a panic), for the daemon's
+    /// event log: a kind and derived fields, never typed or shown text.
+    Friction {
+        kind: String,
+        fields: Vec<(String, String)>,
+    },
 }
 
 /// A file as the hook found it before an edit tool ran.

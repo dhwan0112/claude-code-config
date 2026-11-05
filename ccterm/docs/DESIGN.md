@@ -57,6 +57,7 @@ away. Functions stay; what changes is when they are visible.
 - Accent colours on an idle screen: 0.
 - With one tab: no element besides the terminal and the status line.
 
+
 ## 3. Inner design
 
 ### 3.1 Processes
@@ -151,6 +152,21 @@ scrollback): 1 / 4 / 8 tabs → daemon 5.4 / 17.8 / 34.3 MB, GUI 5.5 / 6.8 /
 8.1 MB, i.e. about 4.1 MB per session in the daemon and 0.3 MB per tab in
 the GUI; a full default scrollback adds up to about 11 MB to its session
 (`examples/mem.rs`), hence the 16 MB per-session budget.
+
+Measured at the end of milestone 3 (2026-11-05; Linux under Xvfb, Windows
+11 where noted; Claude Code 2.1.318 idle with the integration on, status
+line every 3 s):
+
+| Item | Target | Measured |
+|---|---|---|
+| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6.3 MB, Windows 4.9 MB (see HANDOFF.md §6.4 for each phase) |
+| Idle CPU, Claude Code idle, 30 s | ~0 % | GUI 0 ticks, daemon 1 tick (10 ms) |
+| GUI + daemon, one session, default scrollback filled at 120 columns | ≤ 25 MB | 6.3 + 14.3 = 20.5 MB |
+| Per additional session, scrollback filled | ≤ 16 MB | +14.0 MB (2nd: daemon +13.1, GUI +0.9), +13.4 MB (3rd) |
+| GUI + daemon, one Claude Code tab, little scrollback | — | 5.9 + 5.1 MB |
+| Key → frame through the daemon, 120x36 | ≤ 16 ms | median 1.95 ms, p95 2.33 ms (Linux); 1.65 ms (Windows, P1) |
+| GUI draw per incremental frame, 120x36 | — | median 0.09 ms |
+| `ccterm hook` process, no daemon / with daemon | ≤ 50 ms | Linux 2.9 / 3.2 ms; Windows 64 ms (process start alone 52 ms: not met there) |
 
 ### 3.5 Local socket
 
@@ -264,6 +280,19 @@ the GUI; a full default scrollback adds up to about 11 MB to its session
   the typed prompt), `tool_input` contents, transcripts or credentials.
 - Tab sets and the daemon's session list are files in the state directory
   (milestone 2, P3).
+- Friction log (added on request after P4), in the same `events.log`:
+  - `slow_input` — key or paste to the next screen change over the 16 ms
+    budget (measured in the daemon; includes the program's own reaction,
+    e.g. Claude Code redrawing), at most one line per session per 10 s;
+  - `latency` — per session at close/exit, daemon stop, and every 10 min
+    with ≥ 1000 samples: `n`, `p50_ms`, `p95_ms`, `max_ms`, `over_16ms`;
+  - `panic` — daemon panics (message from our code, location, thread);
+  - `error` — session errors and failed starts;
+  - `gui_slow_draw` (a GUI frame over 16 ms, at most every 10 s) and
+    `gui_panic`, sent by the GUI as `Friction` messages (Control role only,
+    through the existing role rules).
+  Never typed or shown text (a test pastes a marker and checks it is not
+  in the log).
 
 ### 3.9 Product name
 
@@ -274,6 +303,18 @@ time, falling back to the constant), app id (Wayland `app_id`, X11
 `WM_CLASS`, `.desktop` file, Windows AppUserModelID), socket, pipe, state and
 config directory names, window title prefix. Renaming = that module plus the
 `[[bin]] name` in `crates/ccterm-gui/Cargo.toml` (Cargo needs a literal).
+
+Instances (added on request after P4): next to the name constants,
+`product::instance()` reads `CCTERM_INSTANCE` (lower-case ASCII letters,
+digits, `-`, ≤ 16; unset or empty = stable). A named instance gets its own
+socket/pipe (`ccterm-dev`), runtime, state and config directories
+(`~/.local/state/ccterm-dev`, …), app id (`ccterm-dev`, so its desktop file
+and dock icon are separate) and window title prefix (`[dev] `). The daemon
+sets `CCTERM_INSTANCE` in every session's child, so hooks of a dev session
+report to the dev daemon. Purpose: run a development build beside the
+stable one (self-hosting) without touching its sessions, tab sets or
+settings. Checked by `crates/ccterm-gui/tests/instances.rs` with two real
+daemons.
 
 ### 3.10 Layout rules derived from §2
 
@@ -411,8 +452,9 @@ would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
     focusing the window on it, clears Wait (the GUI sends
     `ClearAttention`); Ask stays until Claude Code moves on.
   - Unfocused window and Wait/Ask: `request_user_attention` (taskbar
-    flash on Windows, urgency hint on X11) and, on Linux, `notify-send`
-    when installed (`notifications = false` turns it off). The text names
+    flash on Windows, urgency hint on X11; always) and, on Linux,
+    `notify-send` when installed (`notifications = false` turns only the
+    notification off). The text names
     the tab and says "waiting"/"asks you"; never session content. Windows
     toast notifications are not done (they need WinRT registration).
   - Status row (bottom row of Claude Code tabs, reserved from creation so

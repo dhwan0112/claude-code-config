@@ -14,7 +14,9 @@
 //! [`SUBCOMMANDS`]; a program with one of those names goes after `--`
 //! (`ccterm -- status`).
 //!
-//! Environment: `CCTERM_LOG=error|warn|info|debug` (default warn),
+//! Environment: `CCTERM_LOG=off|error|warn|info|debug|trace` (default warn),
+//! `CCTERM_INSTANCE=NAME` (a separate instance: own daemon, directories,
+//! app id; DESIGN.md §3.9),
 //! `CCTERM_LOG_FILE=path` (log there instead of stderr; on Windows the
 //! release build has no console), `CCTERM_DUMP_FRAME=path.ppm` (write every
 //! frame as an image, for debugging), `CCTERM_FONT_DIR=dir` (extra fonts),
@@ -38,6 +40,8 @@ mod icon;
 mod input;
 mod install;
 mod keymap;
+#[cfg(test)]
+mod reftest;
 mod render;
 mod tabsets;
 mod ui;
@@ -118,9 +122,9 @@ const USAGE: &str =
      settings (KEY): window-padding N, window-padding-balance true|false,\n\
      window-padding-color background|extend|extend-always, decorations native|integrated|none,\n\
      scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row),\n\
-     restore-tabs true|false, claude-integration true|false (default true)\n\
+     restore-tabs true|false, claude-integration true|false, notifications true|false (default true)\n\
      subcommands: ccterm gui [OPTIONS] [PROGRAM...], ccterm daemon, ccterm status [--json | --screen ID],\n\
-     ccterm install-desktop; reserved (not implemented yet): hook, statusline, run, headless;\n\
+     ccterm install-desktop; run by Claude Code: hook EVENT, statusline; reserved: run, headless;\n\
      to run a program with a subcommand's name: ccterm [OPTIONS] -- NAME [ARGS...]";
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {

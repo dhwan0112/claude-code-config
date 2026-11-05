@@ -33,6 +33,25 @@ the start of a session.
 - Outer design (`docs/DESIGN.md` §2): events never change the layout; no
   accent colour on an idle screen; no sounds, pop-ups or animations.
 
+## Working rules
+
+- Self-hosting: develop inside the stable instance; run new builds only as a
+  separate instance (`CCTERM_INSTANCE=dev`: own daemon, socket, state and
+  config directories, app id, window title prefix). Never replace the
+  stable binary yourself; promotion to stable needs the user's approval.
+- Protected areas — changes need the user's review before commit:
+  `docs/DESIGN.md` §2 (outer design) and any change that alters reference
+  frames (`crates/ccterm-gui/tests/reference/`); hook output rules
+  (observe-only, no stdout, exit 0: `ccterm-cc/src/report.rs`); the
+  control/observe/report permission checks in IPC (`Daemon::message` and
+  `Daemon::input` in `ccterm-daemon`); anything on the path of Claude Code
+  permission prompts (attention `Ask`, `awaiting_permission`, the settings
+  ccterm injects).
+- Keep a recovery path: do not remove or break ccx (tmux) while ccterm is
+  not yet the proven default.
+- Reference frames: updating them is a separate commit whose message says
+  why the frames changed (`CCTERM_UPDATE_REFERENCE=1 cargo test reftest`).
+
 ## Environment
 
 - Rust 1.90+, Zig **0.15.2** on `PATH` (libghostty-vt-sys builds Ghostty's
@@ -46,7 +65,7 @@ the start of a session.
 
 ```sh
 cargo build --release
-cargo test                                   # core 5+10 (Linux, python3); gui 63; proto 4; cc 10; daemon 1+3 (Unix)
+cargo test                                   # core 5+10 (Linux, python3); gui 66 + instances 1; proto 4; cc 10; daemon 1+4 (Unix)
 cargo clippy --all-targets                   # must stay warning-free
 cargo clippy --all-targets --target x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu

@@ -156,6 +156,7 @@ struct Win {
     panel_open: bool,
     panel_width: u16,
     diff: Option<DiffView>,
+    last_slow_draw: Option<Instant>,
     /// Set when the last tab is gone: the window closes.
     quit: Option<i32>,
     /// The window is closing: closing its tabs must not shrink `last`.
@@ -188,7 +189,7 @@ impl App {
         let cfg = SessionConfig::new(self.opts.command.clone());
         let icon = winit::window::Icon::from_rgba(crate::icon::rgba(64), 64, 64).ok();
         let attrs = Window::default_attributes()
-            .with_title(ccterm_proto::product::DISPLAY_NAME)
+            .with_title(ccterm_proto::product::display_name())
             .with_inner_size(PhysicalSize::new(w, h))
             .with_window_icon(icon.clone());
         // Windows: the big icon (Alt+Tab, taskbar) as well as the small one.
@@ -197,9 +198,9 @@ impl App {
         // Wayland app_id and X11 WM_CLASS = the desktop file's name.
         #[cfg(all(unix, not(target_os = "macos")))]
         let attrs = {
-            let id = ccterm_proto::product::APP_ID;
-            let a = winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, id, "");
-            winit::platform::x11::WindowAttributesExtX11::with_name(a, id, id)
+            let id = ccterm_proto::product::app_id();
+            let a = winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, &id, "");
+            winit::platform::x11::WindowAttributesExtX11::with_name(a, &id, &id)
         };
         let attrs = chrome::attributes(attrs, cfg.default_bg, cfg.default_fg)
             .with_decorations(decorated(self.opts.config.decorations));
@@ -221,6 +222,7 @@ impl App {
 
         let ep = Endpoint::default_for_user().map_err(|e| format!("daemon socket: {e}"))?;
         let client = Client::connect_or_spawn(&ep, Role::Control, "gui").map_err(|e| e.to_string())?;
+        install_panic_report(client.reporter());
         let cmd = &self.opts.command;
         let command = (
             cmd.program.to_string_lossy().into_owned(),
@@ -264,6 +266,7 @@ impl App {
             panel_open: ui_state.0,
             panel_width: ui_state.1,
             diff: None,
+            last_slow_draw: None,
             quit: None,
             shutting_down: false,
         };
@@ -607,7 +610,9 @@ impl Win {
 
     fn update_title(&self) {
         let t = self.tab().snap.as_ref().map_or("", |s| s.title.as_str());
-        self.window.set_title(if t.is_empty() { ccterm_proto::product::DISPLAY_NAME } else { t });
+        let p = ccterm_proto::product::title_prefix();
+        let title = if t.is_empty() { ccterm_proto::product::display_name() } else { format!("{p}{t}") };
+        self.window.set_title(&title);
     }
 
     /// Sizes of the GUI's own heap structures, for the log (`CCTERM_LOG=info`).
@@ -954,7 +959,22 @@ impl Win {
         if let Err(e) = self.renderer.render(&scene) {
             log::error!("render: {e}");
         }
-        log::trace!("frame drawn in {} us (full {})", t0.elapsed().as_micros(), self.full);
+        let took = t0.elapsed();
+        log::trace!("frame drawn in {} us (full {})", took.as_micros(), self.full);
+        // Friction log: a frame over the 16 ms budget, at most every 10 s.
+        if took > Duration::from_millis(16)
+            && self.last_slow_draw.is_none_or(|t| t.elapsed() >= Duration::from_secs(10))
+        {
+            self.last_slow_draw = Some(Instant::now());
+            self.client.reporter().friction(
+                "slow_draw",
+                &[
+                    ("ms", format!("{:.1}", took.as_secs_f64() * 1000.0)),
+                    ("full", self.full.to_string()),
+                    ("grid", format!("{}x{}", self.grid.cols, self.grid.rows)),
+                ],
+            );
+        }
         self.full = false;
         self.dirty.iter_mut().for_each(|d| *d = false);
     }
@@ -991,6 +1011,23 @@ impl Win {
     }
 }
 
+/// A GUI panic is reported to the daemon's event log (location and our own
+/// message), then handled as before.
+fn install_panic_report(r: ccterm_proto::Reporter) {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let what = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        let at = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+        r.friction("panic", &[("what", what), ("at", at)]);
+        previous(info);
+    }));
+}
+
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -1009,8 +1046,8 @@ fn notify(tab: &str, body: &str) {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         let r = std::process::Command::new("notify-send")
-            .args(["--app-name", ccterm_proto::product::DISPLAY_NAME, "--expire-time", "8000"])
-            .arg(format!("{} — {tab}", ccterm_proto::product::DISPLAY_NAME))
+            .args(["--app-name", &ccterm_proto::product::display_name(), "--expire-time", "8000"])
+            .arg(format!("{} — {tab}", ccterm_proto::product::display_name()))
             .arg(body)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -1276,7 +1313,7 @@ fn decorated(d: Decorations) -> bool {
         Decorations::Native => true,
         Decorations::None => false,
         Decorations::Integrated => {
-            // The tabs milestone draws its own title bar here.
+            // An own title bar with the tabs would go here (not done).
             log::warn!("decorations = integrated is not implemented yet; using native");
             true
         }

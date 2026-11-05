@@ -15,7 +15,7 @@ pub fn install_desktop() -> Result<String, String> {
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
         .ok_or("neither XDG_DATA_HOME nor HOME is set")?;
     let exe = product::exe_path();
-    let id = product::APP_ID;
+    let id = product::app_id();
     let mut written = vec![];
     let mut write = |rel: String, bytes: &[u8]| -> Result<(), String> {
         let p = data.join(&rel);
@@ -49,8 +49,8 @@ pub fn desktop_entry(exe: &str) -> String {
     let quoted = exe.replace('\\', "\\\\").replace('"', "\\\"").replace('`', "\\`").replace('$', "\\$");
     format!(
         "[Desktop Entry]\nType=Application\nName={name}\nComment=Terminal for Claude Code\nExec=\"{quoted}\"\nIcon={id}\nTerminal=false\nCategories=System;TerminalEmulator;\nStartupWMClass={id}\n",
-        name = product::DISPLAY_NAME,
-        id = product::APP_ID
+        name = product::display_name(),
+        id = product::app_id()
     )
 }
 
@@ -62,8 +62,8 @@ mod tests {
     fn desktop_entry_quotes_the_path_and_matches_the_app_id() {
         let d = desktop_entry("/opt/my apps/cc$term");
         assert!(d.contains("Exec=\"/opt/my apps/cc\\$term\"\n"), "{d}");
-        assert!(d.contains(&format!("StartupWMClass={}\n", product::APP_ID)));
-        assert!(d.contains(&format!("Icon={}\n", product::APP_ID)));
+        assert!(d.contains(&format!("StartupWMClass={}\n", product::app_id())));
+        assert!(d.contains(&format!("Icon={}\n", product::app_id())));
     }
 
     #[cfg(not(windows))]

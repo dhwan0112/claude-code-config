@@ -164,6 +164,12 @@ impl Client {
         })
     }
 
+    /// A handle that can send friction reports from anywhere (a panic hook):
+    /// it never blocks on a busy connection.
+    pub fn reporter(&self) -> Reporter {
+        Reporter(self.shared.clone())
+    }
+
     pub fn clear_attention(&self, id: &str) -> io::Result<()> {
         self.send(&ClientMsg::ClearAttention { session: id.to_owned() })
     }
@@ -291,6 +297,23 @@ fn reader_loop(mut r: Stream, sh: Arc<Shared>, replies: Sender<DaemonMsg>) {
                 }
                 let _ = replies.send(other);
             }
+        }
+    }
+}
+
+/// See [`Client::reporter`].
+#[derive(Clone)]
+pub struct Reporter(Arc<Shared>);
+
+impl Reporter {
+    /// Sends a friction report unless the connection is in use right now.
+    pub fn friction(&self, kind: &str, fields: &[(&str, String)]) {
+        let msg = ClientMsg::Friction {
+            kind: kind.into(),
+            fields: fields.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
+        };
+        if let Ok(mut w) = self.0.writer.try_lock() {
+            let _ = write_msg(&mut *w, &msg);
         }
     }
 }

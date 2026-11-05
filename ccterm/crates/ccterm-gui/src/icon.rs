@@ -109,8 +109,14 @@ fn adler32(data: &[u8]) -> u32 {
 /// dependency; icons are written once).
 #[cfg_attr(windows, allow(dead_code))]
 pub fn png(size: u32, rgba: &[u8]) -> Vec<u8> {
-    let mut raw = Vec::with_capacity(rgba.len() + size as usize);
-    for row in rgba.chunks(size as usize * 4) {
+    png_wh(size, size, rgba)
+}
+
+/// [`png`] for a `w` × `h` image (reference-frame test output).
+#[cfg_attr(windows, allow(dead_code))]
+pub fn png_wh(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    let mut raw = Vec::with_capacity(rgba.len() + h as usize);
+    for row in rgba.chunks(w as usize * 4) {
         raw.push(0); // filter: none
         raw.extend_from_slice(row);
     }
@@ -132,8 +138,8 @@ pub fn png(size: u32, rgba: &[u8]) -> Vec<u8> {
         out.extend_from_slice(&crc32(&c).to_be_bytes());
     };
     let mut ihdr = vec![];
-    ihdr.extend_from_slice(&size.to_be_bytes());
-    ihdr.extend_from_slice(&size.to_be_bytes());
+    ihdr.extend_from_slice(&w.to_be_bytes());
+    ihdr.extend_from_slice(&h.to_be_bytes());
     ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8-bit RGBA
     chunk(b"IHDR", &ihdr);
     chunk(b"IDAT", &z);

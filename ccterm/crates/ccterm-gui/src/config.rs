@@ -33,8 +33,8 @@ pub enum PaddingColor {
 pub enum Decorations {
     /// The platform's title bar and frame (coloured to match on Windows 11).
     Native,
-    /// Title bar drawn by ccterm with tabs — planned for the tabs milestone;
-    /// falls back to `Native` until then.
+    /// Title bar drawn by ccterm with tabs — not implemented (milestone 2's
+    /// optional P6 was not done); falls back to `Native`.
     Integrated,
     /// No title bar or frame.
     None,

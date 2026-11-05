@@ -62,6 +62,64 @@ struct Sess {
     claude: Option<Claude>,
     /// The `--settings` file given to Claude Code; removed with the session.
     settings_file: Option<PathBuf>,
+    /// Key → screen latency (DESIGN.md §3.8, friction log).
+    lat: Latency,
+}
+
+/// Key → screen-update latency of a session: the time from a key (or
+/// paste) arriving to the next change of the screen. Samples are summarised
+/// in the event log; one over the budget is logged at most every 10 s.
+#[derive(Default)]
+struct Latency {
+    key_at: Option<Instant>,
+    samples_us: Vec<u32>,
+    over: u32,
+    last_slow: Option<Instant>,
+    last_summary: Option<Instant>,
+}
+
+/// The key → screen budget (DESIGN.md §2.3, §3.4).
+const LATENCY_BUDGET: Duration = Duration::from_millis(16);
+const MAX_SAMPLES: usize = 20_000;
+const SUMMARY_EVERY: Duration = Duration::from_secs(600);
+
+impl Latency {
+    /// A screen change: if a key waits for it, one sample; returns the
+    /// latency when it is over budget and may be logged now.
+    fn screen_changed(&mut self) -> Option<Duration> {
+        let d = self.key_at.take()?.elapsed();
+        if self.samples_us.len() < MAX_SAMPLES {
+            self.samples_us.push(d.as_micros().min(u32::MAX as u128) as u32);
+        }
+        if d <= LATENCY_BUDGET {
+            return None;
+        }
+        self.over += 1;
+        let quiet = self.last_slow.is_none_or(|t| t.elapsed() >= Duration::from_secs(10));
+        quiet.then(|| {
+            self.last_slow = Some(Instant::now());
+            d
+        })
+    }
+
+    /// Summary fields (and resets the samples), or `None` without samples.
+    fn summary(&mut self) -> Option<Vec<(&'static str, String)>> {
+        if self.samples_us.is_empty() {
+            return None;
+        }
+        let mut v = std::mem::take(&mut self.samples_us);
+        v.sort_unstable();
+        let q = |p: f64| v[((v.len() - 1) as f64 * p).round() as usize] as f64 / 1000.0;
+        let out = vec![
+            ("n", v.len().to_string()),
+            ("p50_ms", format!("{:.2}", q(0.5))),
+            ("p95_ms", format!("{:.2}", q(0.95))),
+            ("max_ms", format!("{:.2}", q(1.0))),
+            ("over_16ms", std::mem::take(&mut self.over).to_string()),
+        ];
+        self.last_summary = Some(Instant::now());
+        Some(out)
+    }
 }
 
 impl Sess {
@@ -94,6 +152,7 @@ pub fn run(cfg: Config) -> io::Result<()> {
     let listener = Listener::bind(&cfg.endpoint)?;
     std::fs::create_dir_all(&cfg.state_dir)?;
     let log = EventLog::open(&cfg.state_dir.join("events.log"))?;
+    install_panic_log(cfg.state_dir.join("events.log"));
     // Settings files of sessions a killed daemon left behind (we are the
     // only daemon now: none of them is in use).
     if let Ok(rd) = std::fs::read_dir(&cfg.run_dir) {
@@ -129,8 +188,34 @@ pub fn run(cfg: Config) -> io::Result<()> {
     let mut d = Daemon { sessions: HashMap::new(), clients: HashMap::new(), tx, log, counter: 0, run_dir: cfg.run_dir };
     d.log.write("daemon_start", "", &[("pid", &std::process::id().to_string())]);
     d.run(rx, cfg.idle_exit);
+    let ids: Vec<SessionId> = d.sessions.keys().cloned().collect();
+    for id in ids {
+        if let Some(f) = d.sessions.get_mut(&id).and_then(|s| s.lat.summary()) {
+            d.log_latency(&id, f);
+        }
+    }
     d.log.write("daemon_stop", "", &[]);
     Ok(())
+}
+
+/// A panic anywhere in the daemon goes to the event log as well (its own
+/// line; the payload is a message from our code, not session text).
+fn install_panic_log(path: PathBuf) {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let what = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        let at = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+        let thread = std::thread::current().name().unwrap_or("?").to_string();
+        if let Ok(mut l) = EventLog::open(&path) {
+            l.write("panic", "", &[("what", &what), ("at", &at), ("thread", &thread)]);
+        }
+        previous(info);
+    }));
 }
 
 /// Runs [`run`] on a thread (tests, embedding).
@@ -247,20 +332,39 @@ impl Daemon {
         match &e {
             SessionEvent::Wakeup => {
                 let Some(s) = self.sessions.get_mut(&sid) else { return };
+                let mut slow = None;
                 if let Some(snap) = s.session.handle.snapshot() {
                     s.info.title.clone_from(&snap.title);
                     if !snap.pwd.is_empty() {
                         s.info.cwd.clone_from(&snap.pwd);
                     }
+                    if s.latest.as_ref().is_none_or(|l| l.seq != snap.seq) {
+                        slow = s.lat.screen_changed();
+                    }
                     s.latest = Some(Arc::new(snap));
                 }
+                let summary =
+                    s.lat.last_summary.is_none_or(|t| t.elapsed() >= SUMMARY_EVERY) && s.lat.samples_us.len() >= 1000;
+                let summary = if summary { s.lat.summary() } else { None };
                 self.push_frames(&sid);
+                if let Some(d) = slow {
+                    let ms = format!("{:.1}", d.as_secs_f64() * 1000.0);
+                    self.log.write("slow_input", &sid, &[("key_to_screen_ms", &ms), ("budget_ms", "16")]);
+                }
+                if let Some(f) = summary {
+                    self.log_latency(&sid, f);
+                }
                 return;
             }
             SessionEvent::Exited(st) => {
+                let mut summary = None;
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     s.info.state = SessionState::Exited { code: st.code };
                     s.drop_settings_file();
+                    summary = s.lat.summary();
+                }
+                if let Some(f) = summary {
+                    self.log_latency(&sid, f);
                 }
                 let code = st.code.map(|c| c.to_string()).unwrap_or_default();
                 self.log.write("session_exited", &sid, &[("code", &code)]);
@@ -270,6 +374,7 @@ impl Daemon {
                     s.info.title.clone_from(t);
                 }
             }
+            SessionEvent::Error(e) => self.log.write("error", &sid, &[("what", e)]),
             _ => {}
         }
         if let Some(we) = event_to_wire(&e) {
@@ -362,6 +467,9 @@ impl Daemon {
             ClientMsg::Close { session } => {
                 if let Some(mut s) = self.sessions.remove(&session) {
                     s.drop_settings_file();
+                    if let Some(f) = s.lat.summary() {
+                        self.log_latency(&session, f);
+                    }
                     self.log.write("session_closed", &session, &[]);
                     for cl in self.clients.values_mut() {
                         if cl.subs.remove(&session).is_some() {
@@ -391,6 +499,14 @@ impl Daemon {
                 self.reply(c, DaemonMsg::Edit { session, edit });
             }
             ClientMsg::Sync => self.reply(c, DaemonMsg::Synced),
+            ClientMsg::Friction { kind, fields } => {
+                // Kinds and field names from the GUI: short, printable.
+                let clean = |s: &str| s.chars().filter(|c| !c.is_control()).take(200).collect::<String>();
+                let kind = format!("gui_{}", clean(&kind));
+                let f: Vec<(String, String)> = fields.iter().take(8).map(|(k, v)| (clean(k), clean(v))).collect();
+                let refs: Vec<(&str, &str)> = f.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+                self.log.write(&kind, "", &refs);
+            }
             input => self.input(c, input),
         }
     }
@@ -412,6 +528,9 @@ impl Daemon {
             self.reply(c, DaemonMsg::NoSession { session });
             return;
         };
+        if matches!(m, ClientMsg::Key { .. } | ClientMsg::Paste { .. }) && s.lat.key_at.is_none() {
+            s.lat.key_at = Some(Instant::now());
+        }
         if s.awaiting_permission() && origin.is_some_and(|o| o != Origin::Human) {
             let what = format!("{} from a program while the session waits for a permission answer", msg_name(&m));
             self.denied(c, &what);
@@ -484,6 +603,11 @@ impl Daemon {
         self.push_claude(&sid);
     }
 
+    fn log_latency(&mut self, sid: &str, f: Vec<(&'static str, String)>) {
+        let refs: Vec<(&str, &str)> = f.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        self.log.write("latency", sid, &refs);
+    }
+
     fn push_claude(&self, sid: &str) {
         let Some(info) = self.sessions.get(sid).and_then(|s| s.claude.as_ref()).map(|c| &c.info) else { return };
         for c in self.clients.values() {
@@ -533,6 +657,8 @@ impl Daemon {
             cmd = cmd.env(k, v);
         }
         cmd = cmd.env(product::SESSION_ENV, &id);
+        // Hooks of this session must reach this instance's daemon.
+        cmd = cmd.env(product::INSTANCE_ENV, product::instance());
         let mut cfg = SessionConfig::new(cmd);
         cfg.size = GridSize::from(spec.size);
         cfg.scrollback_limit = spec.scrollback_limit as usize;
@@ -567,13 +693,17 @@ impl Daemon {
                     Some((_, p)) => (Some(Claude::default()), Some(p)),
                     None => (None, None),
                 };
-                self.sessions.insert(id.clone(), Sess { session, info, latest: None, claude, settings_file });
+                self.sessions.insert(
+                    id.clone(),
+                    Sess { session, info, latest: None, claude, settings_file, lat: Latency::default() },
+                );
                 self.reply(c, DaemonMsg::Created { req, session: id });
             }
             Err(e) => {
                 if let Some((_, p)) = claude {
                     let _ = std::fs::remove_file(p);
                 }
+                self.log.write("error", &id, &[("what", "create failed"), ("program", &spec.program)]);
                 self.reply(c, DaemonMsg::CreateFailed { req, error: format!("cannot start {:?}: {e}", spec.program) })
             }
         }
@@ -603,6 +733,7 @@ fn msg_name(m: &ClientMsg) -> &'static str {
         ClientMsg::ClearAttention { .. } => "ClearAttention",
         ClientMsg::GetEdit { .. } => "GetEdit",
         ClientMsg::Sync => "Sync",
+        ClientMsg::Friction { .. } => "Friction",
     }
 }
 

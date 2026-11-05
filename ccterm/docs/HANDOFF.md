@@ -1,8 +1,9 @@
 # ccterm handoff
 
-State as of 2026-11-05, after the `ccterm-gui` milestone 1 commits
-(`26e0056`..), the window decoration work (`01e1d32`..) and the milestone 1
-finishing work (`e9312a4`..; §3 "Milestone 1 finishing work"). The code
+State as of 2026-11-05, after milestones 2 (daemon, IPC, tabs, tab sets,
+config file, palette, install-desktop) and 3 (Claude Code integration) —
+§6.4 is the progress log of those; sections 1–5 and 8 describe milestone 1
+(`26e0056`.., `01e1d32`.., `e9312a4`..) and are kept as its record. The code
 lives in `ccterm/` of the `dhwan0112/claude-code-config` repository.
 Written for whoever continues the work (Claude Code included).
 
@@ -47,7 +48,7 @@ while the application holds synchronized output (DEC 2026), up to
 
 | Module | Role |
 |---|---|
-| `config.rs` | Settings with `Config::set(key, value)`: `window-padding`, `window-padding-balance`, `window-padding-color`, `decorations`; the CLI passes `--KEY VALUE`, a config file will too. |
+| `config.rs` | Settings with `Config::set(key, value)`: `window-padding`, `window-padding-balance`, `window-padding-color`, `decorations`; the CLI passes `--KEY VALUE`, the config file (`key = value`, milestone 2) too. |
 | `chrome.rs` | Native title bar/frame colours (Windows 11) and dark/light theme request, updated when the default colours change. |
 | `main.rs` | CLI (`--font`, `--font-size` pt, `--cols`, `--rows`, settings, program; reserved subcommand names `SUBCOMMANDS` end with "not implemented yet", a program of that name goes after `--`), logger (`CCTERM_LOG`, `CCTERM_LOG_FILE`), fatal and CLI errors (Windows GUI subsystem: redirected stdout/stderr, else the parent's console, else a message box). |
 | `app.rs` | winit `ApplicationHandler`: one window, one `Session`. A forwarder thread turns `SessionEvent`s into `EventLoopProxy` user events (`ControlFlow::Wait`, no polling). On `Wakeup` the snapshot is taken immediately (re-arms the next wakeup) and rows are diffed; `RedrawRequested` renders. Keyboard, mouse, wheel, IME, focus, resize, scale factor, title, bell, clipboard, exit (exit code passed on). |
@@ -84,8 +85,8 @@ Key decisions made while building it (in addition to §5):
   integration — not done). Full frames and resizes paint every pixel.
 - Chrome: Windows 11 caption/border = terminal background, caption text =
   foreground; the theme request follows the background's luminance (dark
-  for the default background). `decorations = integrated` is reserved for
-  the tabs milestone and currently falls back to `native`.
+  for the default background). `decorations = integrated` is still not
+  implemented (milestone 2's optional P6) and falls back to `native`.
 - `release` profile unchanged (debug info for cargo-bloat); `dist` profile
   added for shipping.
 
@@ -637,9 +638,9 @@ New in the milestone 1 finishing work (2026-11-05):
 
 - Own text selection and copy when the application does not track the
   mouse (plain shell); Shift+drag override while it does.
-- Cursor blink; font size zoom shortcuts; config file (keys exist, see
-  `config.rs`).
-- `decorations = integrated` (own title bar with tabs) — tabs milestone.
+- Cursor blink; font size zoom shortcuts.
+- `decorations = integrated` (own title bar with tabs) — optional P6 of
+  milestone 2, not done.
 - `window-padding-color = extend`: prompt-row heuristic needs shell
   integration (OSC 133).
 - Glyph shaping (ligatures, ZWJ emoji sequences are drawn as the first
@@ -649,10 +650,9 @@ New in the milestone 1 finishing work (2026-11-05):
 
 ### 6.3 Later milestones
 
-Tabs; status panel and diff pane rebuilt from the `ccx` hook scripts (status
-line JSON + hook events, ideally via a local socket instead of files); saved
-tab sets; config file; OpenGL renderer if needed; Windows fixes from the
-smoke test (none needed so far).
+Done in milestones 2–3 (§6.4). Next: the orchestrator (milestone 4), MCP;
+integrated decorations; diff views against HEAD and the work tree; a
+closed-tabs list; OpenGL renderer if needed.
 
 ### 6.4 Progress log (milestones 2–3)
 
@@ -850,6 +850,66 @@ regression list, measurements), then committed, pushed and mirrored.
     4 877 824 → 4 926 976 (+49 KB); no new dependency (`similar` comes
     through `ccterm-cc`).
 
+- **2026-11-05 P5 (+ requests added during the work) — instances,
+  friction log, reference frames, §2.3 checks, budgets, README.**
+  - Instances (DESIGN.md §3.9): `CCTERM_INSTANCE=dev` → own socket/pipe,
+    runtime/state/config directories, app id, title prefix `[dev] `; the
+    daemon passes the instance to session children (hooks). Test
+    `crates/ccterm-gui/tests/instances.rs`: the real binary as a stable and
+    a dev daemon at once — separate sockets and state dirs, each lists only
+    its own session, children see their instance, `status` follows the
+    variable, separate event logs, killing dev leaves stable serving.
+    Windows 11 (`instwin.ps1`): pipes `ccterm-<SID>` and `ccterm-dev-<SID>`,
+    two daemon pids, `%LOCALAPPDATA%\ccterm` and `ccterm-dev`, stable still
+    answers after dev is killed. Protocol version 3 (`Friction`).
+  - Friction log (DESIGN.md §3.8): `slow_input`, `latency` summaries,
+    `panic`, `error`, `gui_slow_draw`, `gui_panic`. Test
+    `friction_reaches_the_event_log`: a no-echo program answering after
+    80 ms gives `slow_input key_to_screen_ms≈80`, close writes `latency
+    n=1 … over_16ms=1`, the GUI's report is `gui_slow_draw ms=21.5`, a
+    Report client's `Friction` is denied, and the pasted marker text is
+    not in the log.
+  - Reference frames (`crates/ccterm-gui/src/reftest.rs`): empty screen,
+    Hangul with preedit, four tabs with an attention mark and an exited
+    tab, Claude Code tab with status row and panel — rendered offscreen
+    like `SoftRenderer` (60x12, 13 pt), compared with committed run-length
+    references per OS (`tests/reference/{linux,windows}`, ~140 KB each)
+    when the font fingerprint matches (else skipped with a message).
+    Reports differing pixels (count, %, bounding box, max delta) and
+    writes `target/reftest/<os>/*-actual.png` / `*-diff.png`; fails above
+    0.05 % or a channel delta > 48 (a test shows a 1 px glyph move fails).
+    `CCTERM_UPDATE_REFERENCE=1` rewrites them — in a separate commit with
+    the reason (CLAUDE.md). Linux and Windows (test exe run on Windows
+    with `CCTERM_REFERENCE_DIR`): all four identical.
+  - DESIGN.md §2.3 checks (`e2e3.sh`, Linux/Xvfb, a fake `claude` that
+    draws nothing, fake hook/status-line JSON through the real binary;
+    pixel analysis of frame dumps):
+    - one Claude Code tab: the only non-background band is the status row
+      (rows 327–347 of 348), 0 non-grey pixels → only terminal + status
+      line, no accent;
+    - two idle tabs: tab bar + status row, 0 non-grey pixels;
+    - a permission question, Stop, status-line changes and a subagent
+      without input: session grids 80x18 / 80x18 before and after, 0
+      resize log lines → no layout change;
+    - sensitivity: the red `?` gives 37 non-grey pixels, 96 % context 231.
+  - Budgets (DESIGN.md §3.4 table): scrollback filled at 120 columns,
+    Linux: 1 tab GUI 6.3 + daemon 14.3 = 20.5 MB (≤ 25); 2nd tab +14.0 MB,
+    3rd +13.4 MB (≤ 16). (A first run waited too little for the fill and
+    showed 10.4 MB / +17.7 MB.) Idle with Claude Code: GUI 0 ticks, daemon
+    1. Hook process on Windows 64 ms > 50 ms target (process start 52 ms).
+  - README: usage (starting, tabs and keys, config, tab sets, Claude Code
+    integration, desktop, environment, known limits); inconsistencies it
+    found fixed (USAGE text, decorations comments, HANDOFF header/§2/§6.2/
+    §6.3/§8 notes, notification wording, log levels).
+  - CLAUDE.md: working rules (self-hosting with `CCTERM_INSTANCE=dev`,
+    protected areas needing review, keep ccx as recovery path, reference
+    frame updates as separate commits).
+  - Regression `reg.sh p5` 21/21. Size (`dist`): Linux 6 271 928 →
+    6 294 088 (+22 KB), Windows 4 926 976 → 4 950 016 (+23 KB).
+  - Not done: P6 (integrated decorations, Windows 11 snap layouts) —
+    optional, and window chrome is outer design (DESIGN.md §2, now a
+    protected area).
+
 ### ccx comparison (milestone 3)
 
 | ccx | ccterm | |
@@ -890,6 +950,10 @@ The target design (outer and inner) is in `docs/DESIGN.md`; external
 integration (Rakazo) in its §6.
 
 ## 8. Where the code stands against §7 and DESIGN.md §2/§6 (audit 2026-11-05)
+
+(Milestone 1 audit. Superseded by milestones 2–3, see §6.4: the wire
+format, durable ids, event log, roles, hooks, adapter and CLI now exist;
+§2.3 was re-measured in the P5 entry.)
 
 - **GUI ↔ session boundary: holds.** `ccterm-gui` uses `SessionHandle`
   (key, mouse, wheel, paste, focus, resize, snapshot; `backend`/`pid` only

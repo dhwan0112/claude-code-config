@@ -1,9 +1,13 @@
 # ccterm
 
-A terminal built for running Claude Code on Linux and Windows: one window,
-one session, a single executable per platform. The backend handles
-pseudo-terminals, terminal emulation (libghostty-vt) and input encoding; the
-`ccterm` window draws on the CPU (winit + softbuffer + swash).
+A terminal built for running Claude Code on Linux and Windows, as a single
+executable per platform. `ccterm` opens a window (the GUI client); the
+sessions (programs in pseudo-terminals) live in a per-user daemon,
+`ccterm daemon`, which the window starts when needed. The window has tabs,
+a command palette and a config file, and in Claude Code tabs it adds
+attention marks, a status row, a status panel and a diff view of the last
+edit, fed by Claude Code's hooks and status line. Terminal emulation is
+libghostty-vt; the window draws on the CPU (winit + softbuffer + swash).
 `ccterm-headless` runs programs without a window for testing.
 
 ```sh
@@ -12,16 +16,339 @@ ccterm claude              # or any program with arguments
 ccterm --font "Iosevka" --font-size 12 --cols 140 --rows 40 -- claude --resume
 ```
 
-## Crates
+## Usage
+
+### Starting
+
+```text
+ccterm [gui] [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
+ccterm daemon
+ccterm status [--json | --screen ID]
+ccterm install-desktop
+ccterm hook EVENT        (run by Claude Code)
+ccterm statusline        (run by Claude Code)
+```
+
+- `ccterm` runs your shell (`$SHELL`, else `/bin/sh`; Windows `%COMSPEC%`,
+  else `cmd.exe`); `ccterm claude` runs a program directly. `ccterm gui ...`
+  is the same as `ccterm ...`.
+- Subcommands must be the first word. The names `gui`, `daemon`, `status`,
+  `install-desktop`, `hook`, `statusline` are subcommands, and `run` and
+  `headless` are reserved (they end with "not implemented yet", exit code 2).
+  To run a program with one of these names, put it after `--`:
+  `ccterm -- status`.
+- `--font`, `--font-size` (points, 4–96), `--cols` and `--rows` (default
+  120x36) exist on the command line only. Every other option is a setting
+  (`--KEY VALUE` or `--KEY=VALUE`, see [Config file](#config-file)).
+- The daemon starts on demand: when no daemon answers, the window starts
+  `ccterm daemon` detached and connects to it. You do not start it yourself.
+  It exits when it has had no session and no window for 10 s, and logs to
+  `daemon.log` in the state directory.
+- Sessions belong to the daemon. If the window crashes or is killed, its
+  sessions keep running and show in `ccterm status`; they cannot be
+  reattached to a new window yet. Closing the window normally ends its
+  sessions (the tab set `last` keeps them for the next start, see
+  [Tab sets](#tab-sets)).
+- `ccterm status` lists the daemon's sessions; `--json` prints the same as
+  JSON; `--screen ID` prints one session's screen as text (IDs come from
+  `ccterm status`). It is read-only and never starts a daemon: without one
+  it prints `no daemon running` (with `--json`:
+  `{"daemon_pid":null,"sessions":[]}`).
+- If a daemon of another version is still running (after an upgrade), the
+  window says so and does not connect. That daemon exits by itself 10 s after
+  its last window closes; ending the `ccterm daemon` process also ends its
+  sessions.
+
+### In the window
+
+- Paste: Ctrl+Shift+V, Shift+Insert or the Paste key; on Windows also
+  Ctrl+V. Plain Ctrl+V reaches the application on Linux (Claude Code pastes
+  images with it).
+- Copy: applications copy with OSC 52 — in Claude Code's fullscreen renderer
+  (`CLAUDE_CODE_NO_FLICKER=1`) select with the mouse.
+- Wheel: sent to applications that track the mouse, otherwise scrolls the
+  scrollback.
+- IME: composition is drawn underlined at the cursor; the candidate window
+  follows the cursor.
+- Fonts: `--font FAMILY` (default Cascadia Mono / Consolas on Windows,
+  DejaVu Sans Mono / Noto Sans Mono on Linux), fallback for Hangul/CJK
+  (Malgun Gothic, Noto Sans CJK, Nanum) and symbols, then any installed
+  font. Box drawing and block characters are drawn, not taken from fonts.
+- Window chrome: on Windows 11 the title bar and border take the terminal
+  background and the title text its foreground; Windows 10 and Linux get
+  the dark theme request (light if the background is light).
+
+### Tabs and keys
+
+Each tab is a daemon session. The tab bar (one row) appears from two tabs
+on; click a tab to select it. A new tab runs the program the window was
+started with, in the active tab's folder. Tab names come from Claude Code's
+session name, else the title (without Claude Code's leading state glyph),
+else the program name. When a tab's program exits, the tab stays, dimmed
+and marked `[exited N]`, until you close it. With one tab, the window closes
+when its program exits and `ccterm` returns the program's exit code.
+
+Application shortcuts use Ctrl+Shift (plus Ctrl+Tab and Alt+digit); plain
+Ctrl+letter keys go to the program.
+
+| Action | Default | `keybind` action |
+|---|---|---|
+| New tab | Ctrl+Shift+T | `new_tab` |
+| Close tab (press twice) | Ctrl+Shift+W | `close_tab` |
+| Next tab | Ctrl+Tab, Ctrl+PageDown | `next_tab` |
+| Previous tab | Ctrl+Shift+Tab, Ctrl+PageUp | `previous_tab` |
+| Go to tab N | Alt+1 … Alt+9 | `goto_tab:N` (1–9) |
+| Command palette | Ctrl+Shift+P | `command_palette` |
+| Paste | Ctrl+Shift+V, Shift+Insert, Paste key; Windows also Ctrl+V | `paste` |
+| Diff of the last edit (Claude Code tabs) | Ctrl+Shift+D | `diff_view` |
+| Status panel (Claude Code tabs) | Ctrl+Shift+S | `status_panel` |
+| Status panel wider / narrower | — (palette) | `status_panel_wider` / `status_panel_narrower` |
+| Save tabs as the set "saved" | — (palette) | `save_tabs` |
+| Open saved tabs | — (palette) | `open_saved_tabs` |
+| Open the previous run's tabs | — (palette) | `open_previous_tabs` |
+
+- Close: while the program runs, the first Ctrl+Shift+W shows a hint over
+  the bottom row ("Ctrl+Shift+W again closes this tab"); the same chord
+  again within 3 s closes the tab. There is no dialog. An exited tab closes
+  on the first press.
+- Command palette (Ctrl+Shift+P): lists every action with its shortcut.
+  Type to filter, arrow keys to move, Enter to run, Esc to close.
+- Alt+digit is also bash/readline's numeric argument; rebind it if you need
+  that.
+- Rebinding, in the config file only (not on the command line):
+
+  ```text
+  keybind = ctrl+shift+n=new_tab
+  keybind = ctrl+shift+t=unbind
+  ```
+
+  `keybind = CHORD=ACTION` adds a binding and `CHORD=unbind` removes one; a
+  new binding does not remove the default chord, so unbind that separately.
+  A chord is modifiers and a key joined with `+`: `ctrl` (`control`),
+  `shift`, `alt` (`opt`, `option`), `super` (`cmd`, `win`), then a character
+  (`t`, `1`, `-`) or a key name (`tab`, `pagedown`, `pageup`, `insert`,
+  `enter`, `paste`, `f5`); case does not matter.
+
+### Config file
+
+| OS | Path |
+|---|---|
+| Linux | `$XDG_CONFIG_HOME/ccterm/config` (default `~/.config/ccterm/config`) |
+| Windows | `%APPDATA%\ccterm\config` |
+
+One `key = value` per line, as in Ghostty. Lines starting with `#` are
+comments, values may be in double quotes, booleans are `true` / `yes` / `1`
+or `false` / `no` / `0`. Bad lines are skipped and logged with their line
+number. The same keys work on the command line as `--KEY VALUE` or
+`--KEY=VALUE`, and the command line wins over the file.
+
+```text
+# ~/.config/ccterm/config
+window-padding = 6
+restore-tabs = false
+keybind = ctrl+shift+n=new_tab
+```
+
+| Key | Values | Default |
+|---|---|---|
+| `window-padding` | minimum padding around the grid, logical px (0–200) | `4` |
+| `window-padding-balance` | `true` / `false` — spread leftover space evenly on all sides | `true` |
+| `window-padding-color` | `background` / `extend` / `extend-always` (as in Ghostty) | `extend` |
+| `decorations` | `native` / `integrated` (not implemented yet; falls back to `native`) / `none` | `native` |
+| `scrollback-limit` | bytes of scrollback per session, as in Ghostty (plain bytes, `_` allowed; rows of 120 columns take ~1.1 KB, the default keeps ~11 000 of them) | `12000000` |
+| `restore-tabs` | `true` / `false` — reopen the previous run's tabs at start | `true` |
+| `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |
+| `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
+| `keybind` | `CHORD=ACTION` or `CHORD=unbind` (file only, may repeat) | see [Tabs and keys](#tabs-and-keys) |
+
+### Tab sets
+
+A tab set is a file `tabs/<NAME>.tsv` in the state directory (Linux
+`$XDG_STATE_HOME/ccterm`, default `~/.local/state/ccterm`; Windows
+`%LOCALAPPDATA%\ccterm`). Per tab it stores the name, folder, program,
+arguments, Claude Code session id and whether it was active; never
+environment variables.
+
+| Set | Written | Opened |
+|---|---|---|
+| `last` | whenever the open tabs change | — |
+| `previous` | at start, from `last` | automatically at start; palette "Open the previous run's tabs" |
+| `saved` | palette "Save tabs" | palette "Open saved tabs" |
+
+- At start, `last` becomes `previous` and its tabs are reopened *after* the
+  tab you asked for, so `ccterm PROGRAM` always runs `PROGRAM` too.
+  `restore-tabs = false` (or `--restore-tabs false`) turns this off.
+- Tabs whose folder no longer exists are skipped (logged). A Claude Code
+  conversation that is already open in a tab is not opened again.
+- A restored tab is a new session: the program is started again, not
+  reattached. For Claude Code tabs see [Resume](#resume).
+
+### Claude Code integration
+
+Applies to tabs whose program is `claude` (`claude.exe`, `claude.cmd`) while
+`claude-integration` is on (default). `claude-integration = false` (or
+`--claude-integration false`) turns it off: Claude Code then runs exactly
+as in any terminal.
+
+**What is injected.** The daemon adds `--settings <file>` to the command
+line, pointing to a per-session file in a private runtime directory (mode
+0600; Windows `%LOCALAPPDATA%\ccterm\run`), removed when the session ends.
+The file contains only `hooks` and `statusLine`: ccterm does not change
+permissions, the renderer or other Claude Code behaviour, and never touches
+`~/.claude/settings.json`. If you pass your own `--settings` (file or inline
+JSON), it is merged into that file: your hooks are kept after ccterm's, your
+other keys are kept, and your `statusLine` is dropped with a log warning
+(ccterm's status row uses it). The hooks run `ccterm hook EVENT` directly
+(no shell); the status line runs `ccterm statusline` through Claude Code's
+shell. Both forward the JSON to the daemon and print nothing.
+
+**Side effect.** Claude Code documents that with a custom status line it
+hides most of its footer hints ("esc to interrupt", "? for shortcuts").
+ccterm's status row shows "esc to interrupt" itself while Claude Code
+works. `ccterm statusline` prints nothing, so Claude Code draws no status
+line of its own.
+
+**Attention marks.** On the tab bar, on tabs other than the active one:
+
+| Mark | Meaning | Goes away |
+|---|---|---|
+| amber `●` | Claude Code stopped or is idle, waiting for you | when you select the tab, or focus the window on it |
+| red `?` | a permission prompt or a question | only when Claude Code moves on (a prompt is sent, the tool runs or is denied, it stops), not by looking |
+
+**Status row.** The bottom row of a Claude Code tab, reserved from the
+start so that Claude Code is not reflowed when the first report arrives (it
+shows `-` until then; the window adds that row, so `--rows N` still gives
+Claude Code N rows):
+
+```text
+ctx  42%  5h  12%  7d  30%  $  1.23  3 files changed · Ctrl+Shift+D
+```
+
+Context use, 5-hour and 7-day limits, cost and files changed, in greys;
+amber from 80 %, red from 95 %. "esc to interrupt" appears at the right
+while Claude Code works.
+
+**Status panel (Ctrl+Shift+S).** A column on the right, hidden by default;
+opening it resizes the program, and it is not shown when fewer than 40
+columns would be left for the program. It shows what Claude Code's own
+screen lacks: session id and name, context of size, limits with reset times
+(UTC), cost (an API estimate with subscription limits), lines, prompt cache,
+files and edits, the last edit, subagents with durations, last update.
+Model and effort are left out (Claude Code shows them). Width (24–80
+columns, palette "Status panel wider/narrower") and open state are kept in
+`ui` in the state directory.
+
+**Diff view (Ctrl+Shift+D).** The last edit (Write, Edit, MultiEdit) of the
+active tab, drawn over its screen; the program is not resized and keeps
+running. Side by side from 110 columns, unified below; header
+`[last edit] path · +A -R · by agent`. Keys: j/k, Space/b, g/G, wheel to
+scroll; Esc or q (or Ctrl+Shift+D again) to close. Files that look like
+credentials or keys (`.ssh`, `.aws`, `.env*`, `*.pem`, `*.key`, `*token*`,
+`*secret*`, `.credentials.json`, …) are never read, and files over 2 MiB
+or not UTF-8 are not copied; for those the diff view says why instead of
+showing a diff.
+
+<a id="resume"></a>**Resume.** Tab sets store each Claude Code tab's
+session id. A restored Claude Code tab gets `--resume ID` when Claude Code
+still has that transcript (under `CLAUDE_CONFIG_DIR` or `~/.claude`),
+replacing earlier `--resume` / `--continue` arguments; otherwise it starts
+a new conversation.
+
+**Notifications.** When the window is unfocused and a tab starts waiting or
+asking: the taskbar flashes (Windows) or the urgency hint is set (X11), and
+on Linux `notify-send` shows a notification when it is installed. The text
+names the tab and says that Claude Code is waiting or asks something; never
+session content. `notifications = false` turns off the `notify-send`
+notification; the taskbar/urgency hint stays.
+
+### Desktop integration
+
+- Linux: `ccterm install-desktop` writes, for the current user (under
+  `$XDG_DATA_HOME`, default `~/.local/share`),
+  `applications/ccterm.desktop` (pointing to the running executable, with
+  `StartupWMClass=ccterm`) and the icon as hicolor 48/128/256 px PNGs and
+  an SVG. The Wayland `app_id` and X11 `WM_CLASS` are `ccterm`, so docks
+  match the window to the entry. Run it again after moving the executable.
+- Windows: nothing to install; `ccterm.exe` carries its icon (pin it to
+  Start or the taskbar). `ccterm install-desktop` says so.
+
+The icon is a placeholder (`>_` on a rounded square in neutral greys).
+
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `CCTERM_LOG` | `off` / `error` / `warn` / `info` / `debug` / `trace` (default `warn`; `debug` never records typed text) |
+| `CCTERM_LOG_FILE` | log to this file instead of stderr (the Windows build has no console) |
+| `CCTERM_INSTANCE` | run a second, separate instance (e.g. a development build) with `CCTERM_INSTANCE=dev`: own daemon, sessions, settings, tab sets. Directories, app id and desktop file become `ccterm-dev`, window titles start with `[dev]`. Letters, digits and `-`, up to 16 characters; unset or empty is the normal instance. |
+| `CCTERM_FONT_DIR` | an extra font directory |
+| `CCTERM_CONPTY_DLL` | Windows: use this `conpty.dll` (see [Windows notes](#windows-notes)) |
+| `CCTERM_DUMP_FRAME` | write every frame to this `.ppm` file (debugging) |
+| `CCTERM_DEBUG_PADDING` | `1` paints everything outside the grid red, to tell ccterm's padding from a window manager's frame |
+| `CCTERM_SOCKET`, `CCTERM_STATE_DIR`, `CCTERM_CONFIG_DIR` | for tests: override the daemon socket / pipe, the state directory and the config directory |
+
+`CCTERM_SESSION_ID` (and `CCTERM_INSTANCE`) are set by the daemon in every
+session's child, so that `ccterm hook` and `ccterm statusline` reach the
+right daemon and tab.
+
+### Known limits
+
+- `decorations = integrated` (own title bar with tabs) is not implemented;
+  it falls back to `native`.
+- Sessions left by a crashed or killed window keep running but cannot be
+  reattached; `ccterm status` shows them.
+- Tab sets are not per window: with several ccterm windows open, the last
+  one to write wins the `last` set.
+- The diff view shows the last edit only (no diff against `HEAD`, no file
+  tree); NotebookEdit edits record the path only.
+- Windows: a hook process takes about 64 ms on the test machine (process
+  start alone is about 52 ms), so the 50 ms target is not met there. Only
+  the edit hook (PreToolUse for Write/Edit/MultiEdit/NotebookEdit) makes
+  Claude Code wait for it.
+- Windows: if Claude Code runs its status line through PowerShell (no Git
+  Bash) and ccterm is installed in a path with spaces, the double-quoted
+  status-line command does not run in PowerShell.
+- Windows: no toast notifications; only the taskbar flash.
+- Status panel reset times are in UTC.
+- `scrollback-limit` takes plain bytes; suffixes such as `10MB` are not
+  parsed.
+- No own text selection yet when the application does not track the mouse
+  (plain shell); copying is the application's job (OSC 52).
+- Not yet checked by hand (`docs/HANDOFF.md` §6.1): tabs and the palette
+  with a real keyboard, `install-desktop` on GNOME/KDE, the attention marks
+  and diff view with a real Claude Code account, notifications, and the
+  PowerShell status-line case above; also the Microsoft IME, a real mouse
+  wheel and HiDPI monitors.
+
+## How it works
+
+```
+              local socket (Unix socket / Windows named pipe)
+GUI client(s) ◀──────────────────────────────────────────▶ daemon
+                                                            ├─ sessions: PTY + VT engine thread each
+claude (in PTY) ──hook command──▶ `ccterm hook <event>` ──▶ └─ Claude Code adapter (hooks, status line, transcripts)
+```
+
+The socket is `$XDG_RUNTIME_DIR/ccterm/daemon.sock` on Linux (else
+`/tmp/ccterm-<uid>/daemon.sock`; in a private 0700 directory) and the named pipe `\\.\pipe\ccterm-<user SID>` on Windows
+(only that user may connect, no remote clients). There is no network
+listener. Details: `docs/DESIGN.md` §3.
+
+### Crates
 
 | Crate | Role |
 |---|---|
 | `ccterm-pty` | Pseudo-terminals. Unix: `portable-pty`. Windows: the ConPTY API called directly, preferring Microsoft's out-of-band `conpty.dll` + `OpenConsole.exe` (embedded, feature `embedded-conpty`) over the in-box console host. |
 | `ccterm-core` | `Session`: child in a PTY, a libghostty-vt `Terminal` on its own engine thread, replies to terminal queries, key/mouse/paste/focus encoding, synchronized-output handling, OSC notification/progress events, snapshots. |
+| `ccterm-proto` | Product name and instance, paths, wire types (postcard), framing, local socket / named pipe transport, the daemon client. |
+| `ccterm-daemon` | Session owner: sessions, subscriptions and row-diff frames, roles, event log. |
+| `ccterm-cc` | Claude Code adapter: `--settings` builder, hook and status-line reporters, per-session state, edit snapshots and diffs, resume. |
 | `ccterm-headless` | CLI that runs a program in a session and drives it with a step script (type, keys, wheel, drag, resize, wait for text, dump the screen). |
-| `ccterm-gui` | The `ccterm` window: winit (X11 and Wayland loaded at run time, Win32), CPU rendering into softbuffer behind a `Renderer` trait, glyphs by swash, fonts found with fontdb, clipboard via copypasta. |
+| `ccterm-gui` | The `ccterm` binary: subcommand dispatch, the window (winit: X11 and Wayland loaded at run time, Win32), tabs, palette, panels, CPU rendering into softbuffer behind a `Renderer` trait, glyphs by swash, fonts found with fontdb, clipboard via copypasta. |
 
 ### Threads and data flow
+
+Inside the daemon, per session:
 
 ```
 PTY reader thread ──Output──▶ engine thread ──Wakeup/Title/Notification/Exited──▶ frontend
@@ -34,6 +361,8 @@ Every byte to the child (query replies and user input) is written from that
 thread, in order. A frontend receives `SessionEvent::Wakeup` at most once until
 it takes a snapshot, and no wakeup is sent while the application holds
 synchronized output (mode 2026), up to `sync_timeout` (500 ms default).
+Over the socket the daemon sends a window the rows that changed since its
+last frame, and the next frame only after the window asked for it.
 
 ## Building
 
@@ -49,56 +378,15 @@ cargo test
 
 Windows binaries can be cross-built from Linux with `rustup target add
 x86_64-pc-windows-gnu` and mingw-w64 (`cargo build --release --target
-x86_64-pc-windows-gnu`); the result depends only on system DLLs. On Linux the
-binary links only libc/libm/libgcc_s; X11, Wayland and xkbcommon are loaded at
-run time.
+x86_64-pc-windows-gnu`); the result depends only on system DLLs. The icon
+resource is compiled with mingw's `windres` (`WINDRES` overrides the name);
+without it, or for an MSVC target, `ccterm.exe` gets no icon. On Linux the
+binary links only libc/libm/libgcc_s; X11, Wayland and xkbcommon are loaded
+at run time.
 
 For shipping, `cargo build --profile dist [--target ...]` (opt-level "s",
-thin LTO, stripped): `ccterm` 5.6 MB on Linux, 4.2 MB on Windows.
-
-## ccterm (the window)
-
-```text
-ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
-```
-
-- `ccterm claude` runs a program directly; without one, the user's shell.
-- Reserved subcommand names: `gui`, `daemon`, `hook`, `statusline`, `run`,
-  `headless`, `install-desktop`, `status`. As the first word they end with
-  "subcommand not implemented yet" (exit code 2) until a later milestone
-  adds them. To run a program with one of these names, put it after `--`:
-  `ccterm -- status`.
-- Paste: Ctrl+Shift+V or Shift+Insert; on Windows also Ctrl+V. Plain Ctrl+V
-  reaches the application on Linux (Claude Code pastes images with it).
-- Copy: applications copy with OSC 52 — in Claude Code's fullscreen renderer
-  (`CLAUDE_CODE_NO_FLICKER=1`) select with the mouse.
-- Wheel: sent to applications that track the mouse, otherwise scrolls the
-  scrollback.
-- IME: composition is drawn underlined at the cursor; the candidate window
-  follows the cursor.
-- Fonts: `--font FAMILY` (default Cascadia Mono / Consolas on Windows,
-  DejaVu Sans Mono / Noto Sans Mono on Linux), fallback for Hangul/CJK
-  (Malgun Gothic, Noto Sans CJK, Nanum) and symbols, then any installed
-  font. Box drawing and block characters are drawn, not taken from fonts.
-- Settings, as `--KEY VALUE` or `--KEY=VALUE` (a config file will use the
-  same keys):
-
-  | key | values | default |
-  |---|---|---|
-  | `window-padding` | minimum padding, logical px | `4` |
-  | `window-padding-balance` | `true` / `false` — spread leftover space evenly | `true` |
-  | `window-padding-color` | `background` / `extend` / `extend-always` (as in Ghostty) | `extend` |
-  | `decorations` | `native` / `integrated` (tabs milestone; native until then) / `none` | `native` |
-  | `scrollback-limit` | bytes of scrollback per session, as in Ghostty (rows of 120 columns take ~1.1 KB; the default keeps ~11 000 of them) | `12000000` |
-
-- Window chrome: on Windows 11 the title bar and border take the terminal
-  background and the title text its foreground; Windows 10 and Linux get
-  the dark theme request (light if the background is light).
-- Environment: `CCTERM_LOG=info|debug`, `CCTERM_LOG_FILE=path` (the Windows
-  build has no console), `CCTERM_FONT_DIR=dir`, `CCTERM_DUMP_FRAME=file.ppm`
-  (writes every frame, for debugging), `CCTERM_DEBUG_PADDING=1` (paints
-  everything outside the grid red, to tell ccterm's padding from a window
-  manager's frame).
+thin LTO, stripped): `ccterm` about 6.3 MB on Linux and 4.9 MB on Windows
+(milestone 3).
 
 ## ccterm-headless
 
@@ -117,9 +405,14 @@ output byte; `--trace` prints replies to queries and events.
 
 ## Status
 
-See `docs/HANDOFF.md` §3 for details and evidence. Verified on Linux (x86_64):
+Milestones 1–3 of `docs/DESIGN.md` §5 are built: the window, the daemon
+with tabs and tab sets, and the Claude Code integration. The orchestrator
+(milestone 4) is not started. Evidence per phase is in `docs/HANDOFF.md`
+§3 (milestone 1) and §6.4 (milestones 2–3); open manual checks in §6.1.
 
-- `cargo test`: 5 unit tests (OSC scanner) and 10 end-to-end tests with real
+Milestone 1, verified on Linux (x86_64):
+
+- `ccterm-core`: unit tests (OSC scanner) and end-to-end tests with real
   children in real PTYs (query replies, key/mouse/paste/focus encoding,
   synchronized output hold and timeout, OSC title/notification/progress/bell,
   resize, cell colours and wide characters, exit reporting, environment).
@@ -128,7 +421,6 @@ See `docs/HANDOFF.md` §3 for details and evidence. Verified on Linux (x86_64):
   tracking, kitty keyboard flags 5, bracketed paste, focus events), 24-bit
   colour output, Hangul input, Shift+Enter for a second input line, Ctrl+C
   twice to exit with status 0.
-
 - `ccterm` window with Claude Code under X11 and native Wayland: rendering,
   typing (ASCII, Hangul through ibus-hangul/XIM), Shift+Enter, wheel,
   resize, selection copy to the clipboard and paste (X11), idle CPU ~0%.
@@ -138,8 +430,15 @@ pass (embedded ConPTY 1.25); its Claude Code checks need a prepared Claude
 Code config (see `docs/HANDOFF.md` §3) and pass with one, run through
 `ccterm-headless` (fullscreen renderer, kitty keyboard flags 5 included).
 The `ccterm` window runs Claude Code (typing, Shift+Enter, Ctrl+V paste,
-exit code passed on), and the GUI unit tests pass there. Not yet checked by
-hand: the Microsoft IME, a real mouse wheel and HiDPI monitors.
+exit code passed on), and the GUI unit tests pass there.
+
+Milestones 2–3: daemon integration tests (a killed client's session keeps
+running and can be listed, read-only and report roles refused, settings
+injection and merge, attention rules), GUI and adapter unit tests, and
+regression runs on Linux (Xvfb, real Claude Code with a dummy key) and
+Windows 11. Key press to frame through the daemon: median about 2 ms on
+both. Idle with Claude Code idle: GUI and daemon about 0 % CPU, about 6 MB
+and 5 MB anonymous memory on Linux.
 
 ## Windows notes
 
@@ -154,6 +453,9 @@ and Microsoft's licence; kernel32. With the out-of-band host it passes
 because 0x8 meant `PSEUDOCONSOLE_PASSTHROUGH_MODE` in older declarations.
 npm's `claude.cmd` is started through `cmd.exe /d /s /c`.
 
+The daemon is started without a console and outside the window's job
+object where the job allows it; otherwise it ends with that job (logged).
+
 ## Third-party components
 
 - libghostty-vt (Ghostty, MIT) via `libghostty-vt` / `libghostty-vt-sys`
@@ -161,6 +463,8 @@ npm's `claude.cmd` is started through `cmd.exe /d /s /c`.
 - `portable-pty` (MIT) on Unix.
 - winit, softbuffer (Apache-2.0 / MIT), swash, fontdb, copypasta, memmap2,
   unicode-width (MIT / Apache-2.0).
+- postcard, serde, crossbeam-channel, log, libc, windows-sys
+  (MIT / Apache-2.0); similar (Apache-2.0).
 - Microsoft.Windows.Console.ConPTY `conpty.dll` / `OpenConsole.exe` (MIT,
   Microsoft) via `conpty-bin-vendored` (MIT) on Windows.
 

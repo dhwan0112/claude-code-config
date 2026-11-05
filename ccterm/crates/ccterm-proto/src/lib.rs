@@ -9,5 +9,5 @@ pub mod product;
 pub mod transport;
 pub mod wire;
 
-pub use client::{Client, ConnectError, RemoteHandle, RemoteSession};
+pub use client::{Client, ConnectError, RemoteHandle, RemoteSession, Reporter};
 pub use wire::{ClientMsg, DaemonMsg, Origin, Role, SessionInfo, SessionState};
