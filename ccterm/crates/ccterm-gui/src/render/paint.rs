@@ -10,7 +10,7 @@ use super::boxdraw;
 use super::canvas::{mix, Canvas, Rect};
 use super::{CellMetrics, PaddingStyle, Preedit, Scene, DEBUG_PADDING};
 use crate::config::PaddingColor;
-use crate::font::{Fonts, Style};
+use crate::font::{Fonts, Presentation, Style};
 
 /// Pixel metrics derived from the primary face at the current size.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -280,16 +280,18 @@ impl Painter {
         // Combining marks after the base character are drawn at the same
         // origin; ZWJ sequences and variation selectors are not composed.
         let zwj = text.contains('\u{200d}');
-        self.draw_char(cv, first, rect, span, style, fg);
+        let pres = Presentation::of(text);
+        self.draw_char(cv, first, rect, span, style, pres, fg);
         if !zwj {
             for c in chars.filter(|c| !matches!(*c as u32, 0xFE00..=0xFE0F | 0x200C | 0x200D)) {
-                self.draw_char(cv, c, rect, span, style, fg);
+                self.draw_char(cv, c, rect, span, style, pres, fg);
             }
         }
     }
 
-    fn draw_char(&mut self, cv: &mut Canvas, c: char, rect: Rect, span: u8, style: Style, fg: Rgb) {
-        let Some((key, x, y)) = self.place(c, span, style) else { return };
+    #[allow(clippy::too_many_arguments)]
+    fn draw_char(&mut self, cv: &mut Canvas, c: char, rect: Rect, span: u8, style: Style, pres: Presentation, fg: Rgb) {
+        let Some((key, x, y)) = self.place(c, span, style, pres) else { return };
         let Some(g) = self.glyphs.get(&key).and_then(|g| g.as_ref()) else { return };
         let (x0, y0) = (rect.x + x, rect.y + y);
         // Clip to the cell span so a glyph never spills into a neighbour that
@@ -317,8 +319,8 @@ impl Painter {
     /// The glyph for `c` in a span of `span` cells (rasterised and cached)
     /// and the top-left corner of its raster relative to the span's top-left
     /// corner, before clipping.
-    fn place(&mut self, c: char, span: u8, style: Style) -> Option<(GlyphKey, i32, i32)> {
-        let res = self.fonts.resolve(c, style)?;
+    fn place(&mut self, c: char, span: u8, style: Style, pres: Presentation) -> Option<(GlyphKey, i32, i32)> {
+        let res = self.fonts.resolve(c, style, pres)?;
         let fit = self.fit(res.face, res.glyph, span, c);
         let key = GlyphKey {
             face: res.face,
@@ -693,7 +695,7 @@ mod tests {
         let first = count(&cv, Rect::new(0, 0, m.cell_w, m.cell_h), |px| px != bgp);
         let second = count(&cv, Rect::new(m.cell_w, 0, m.cell_w, m.cell_h), |px| px != bgp);
         let rest = count(&cv, Rect::new(2 * m.cell_w, 0, 2 * m.cell_w, m.cell_h), |px| px != bgp);
-        if p.fonts.resolve('한', Style::default()).is_some() {
+        if p.fonts.resolve('한', Style::default(), Presentation::Text).is_some() {
             assert!(first > 0 && second > 0, "glyph spans both cells ({first}, {second})");
         }
         assert_eq!(rest, 0);
@@ -793,7 +795,7 @@ mod tests {
     /// Face and unclipped ink box (relative to the span's top-left corner) of
     /// `c` drawn in a span of `span` cells.
     fn placed(p: &mut Painter, c: char, span: u8) -> Option<(usize, Rect)> {
-        let (key, x, y) = p.place(c, span, Style::default())?;
+        let (key, x, y) = p.place(c, span, Style::default(), Presentation::of(&c.to_string()))?;
         let g = p.glyphs.get(&key)?.as_ref()?;
         Some((key.face, Rect::new(x, y, g.width, g.height)))
     }
@@ -824,7 +826,7 @@ mod tests {
                 }
                 let (left, right) = (b.x, span_w - (b.x + b.w));
                 let ratio = b.w as f32 / span_w as f32;
-                let glyph = p.fonts.resolve(c, Style::default()).expect("glyph").glyph;
+                let glyph = p.fonts.resolve(c, Style::default(), Presentation::Text).expect("glyph").glyph;
                 let unscaled = p.ink(face, glyph, m.px).map(|i| (i.w, m.baseline - i.top, m.baseline - i.top + i.h));
                 let fit = p.fit(face, glyph, 2, c);
                 eprintln!(
@@ -860,7 +862,7 @@ mod tests {
             return;
         }
         let mut p = Painter::new(fonts, 16.0);
-        let res = p.fonts.resolve('한', Style::default()).expect("한");
+        let res = p.fonts.resolve('한', Style::default(), Presentation::Text).expect("한");
         assert!(p.fonts.is_primary(res.face));
         let fit = p.fit(res.face, res.glyph, 2, '한');
         let plain = p.plain_fit(res.face, res.glyph, 2);

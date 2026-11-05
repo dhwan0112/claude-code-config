@@ -185,6 +185,28 @@ fn cell_attributes_and_wide_chars() {
     assert_eq!(snap.cell(3, 0).unwrap().text, "x");
 }
 
+/// Variation selectors stay in the cell text (the renderer picks text or
+/// emoji presentation from them). Row 0 without, row 1 with grapheme
+/// clustering (mode 2027).
+#[test]
+fn variation_selectors_stay_in_cell_text() {
+    // ⏸ VS16, ⚠ VS15.
+    let script = r#"printf 'A\342\217\270\357\270\217B\342\232\240\357\270\216C\n\033[?2027hA\342\217\270\357\270\217B\342\232\240\357\270\216C\nEND\n'; sleep 0.3"#;
+    let s = spawn(&["sh", "-c", script], 20, 4);
+    wait_text(&s, "END", Duration::from_secs(5));
+    let snap = s.handle.snapshot().unwrap();
+    for y in 0..2 {
+        let row: Vec<_> = (0..8).map(|x| snap.cell(x, y).unwrap().clone()).collect();
+        eprintln!("row {y}: {:?}", row.iter().map(|c| (c.text.clone(), c.width)).collect::<Vec<_>>());
+        let pause = row.iter().find(|c| c.text.starts_with('\u{23f8}')).expect("⏸ cell");
+        assert_eq!(pause.text, "\u{23f8}\u{fe0f}");
+        // VS16 widens the cell only with mode 2027 (libghostty-vt 0.2.2).
+        assert_eq!(pause.width, if y == 0 { Width::Narrow } else { Width::Wide });
+        let warn = row.iter().find(|c| c.text.starts_with('\u{26a0}')).expect("⚠ cell");
+        assert_eq!(warn.text, "\u{26a0}\u{fe0e}");
+    }
+}
+
 #[test]
 fn reports_exit_and_strips_tmux_env() {
     let spec =

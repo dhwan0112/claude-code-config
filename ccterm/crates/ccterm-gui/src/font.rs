@@ -4,7 +4,9 @@
 //! CJK collection only costs the pages that are actually read. A character is
 //! looked up in the primary face for its style, then the primary regular face
 //! (with synthetic bold/italic), then the fallback list, then — once per
-//! character — every other installed face.
+//! character — every other installed face. Colour (emoji) faces are passed
+//! over for text presentation unless nothing else has the glyph, and
+//! preferred for emoji presentation ([`pick`]).
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -14,6 +16,8 @@ use std::sync::Arc;
 use fontdb::{Database, Family, Query, Source, Stretch, Style as FdStyle, Weight};
 use memmap2::Mmap;
 use swash::{CacheKey, FontRef};
+
+pub use crate::emoji::Presentation;
 
 #[cfg(windows)]
 const PRIMARY_DEFAULTS: &[&str] = &["Cascadia Mono", "Consolas", "Lucida Console", "Courier New"];
@@ -31,7 +35,9 @@ const FALLBACK_DEFAULTS: &[&str] = &[
     "Noto Sans CJK KR",
     "NanumGothicCoding",
     "NanumGothic",
+    // Debian/Ubuntu fonts-noto-core 20201225 names it "Noto Sans Symbols2".
     "Noto Sans Symbols 2",
+    "Noto Sans Symbols2",
     "Noto Sans Symbols",
     "DejaVu Sans",
     "Noto Sans Math",
@@ -83,7 +89,7 @@ pub struct Fonts {
     /// Faces for regular, bold, italic, bold italic (index = `Style::index`).
     primary: [Option<usize>; 4],
     fallback: Vec<usize>,
-    lookup: HashMap<(char, Style), Option<Resolved>>,
+    lookup: HashMap<(char, Style, Presentation), Option<Resolved>>,
     /// Faces not yet tried in the last-resort scan.
     unscanned: Option<Vec<fontdb::ID>>,
 }
@@ -236,58 +242,113 @@ impl Fonts {
         self.faces[face].font().charmap().map(c)
     }
 
-    /// The face and glyph for `c` in `style`; `None` when no installed face
-    /// has the character.
-    pub fn resolve(&mut self, c: char, style: Style) -> Option<Resolved> {
-        if let Some(r) = self.lookup.get(&(c, style)) {
+    /// The face and glyph for `c` in `style` and presentation `pres`; `None`
+    /// when no installed face has the character.
+    pub fn resolve(&mut self, c: char, style: Style, pres: Presentation) -> Option<Resolved> {
+        if let Some(r) = self.lookup.get(&(c, style, pres)) {
             return *r;
         }
-        let r = self.resolve_uncached(c, style);
-        self.lookup.insert((c, style), r);
+        let r = self.resolve_uncached(c, style, pres);
+        self.lookup.insert((c, style, pres), r);
         r
     }
 
-    fn resolve_uncached(&mut self, c: char, style: Style) -> Option<Resolved> {
-        if let Some(face) = self.primary[style.index()] {
-            let glyph = self.glyph_in(face, c);
-            if glyph != 0 {
-                return Some(Resolved { face, glyph, synth_bold: false, synth_italic: false });
-            }
-        }
-        let synth = |face, glyph| Resolved { face, glyph, synth_bold: style.bold, synth_italic: style.italic };
+    /// Candidates in priority order — the primary face for the style, the
+    /// primary regular face (synthetic bold/italic), the fallback list, then
+    /// every other installed face (opened lazily, once per character; a face
+    /// that has the glyph joins the fallback list) — chosen by [`pick`].
+    fn resolve_uncached(&mut self, c: char, style: Style, pres: Presentation) -> Option<Resolved> {
         let regular = self.primary[0].expect("primary face");
-        let glyph = self.glyph_in(regular, c);
-        if glyph != 0 {
-            return Some(synth(regular, glyph));
-        }
-        for i in 0..self.fallback.len() {
-            let face = self.fallback[i];
-            let glyph = self.glyph_in(face, c);
-            if glyph != 0 {
-                return Some(synth(face, glyph));
-            }
-        }
-        // Last resort: every other installed face, once per character. A face
-        // that helps is appended to the fallback list for later characters.
-        if self.unscanned.is_none() {
-            let ids = self.db.faces().map(|f| f.id).filter(|id| !self.by_id.contains_key(id)).collect();
-            self.unscanned = Some(ids);
-        }
-        let ids = self.unscanned.clone().unwrap_or_default();
-        for id in ids {
-            let Some(face) = self.open(id) else { continue };
-            let glyph = self.glyph_in(face, c);
-            if glyph != 0 {
-                if !self.fallback.contains(&face) && Some(face) != self.primary[0] {
-                    log::debug!("font: {:?} added as fallback for U+{:04X}", self.faces[face].name, c as u32);
-                    self.fallback.push(face);
+        let mut fixed: Vec<(usize, bool)> = self.primary[style.index()].map(|f| (f, false)).into_iter().collect();
+        fixed.push((regular, true));
+        fixed.extend(self.fallback.iter().map(|&f| (f, true)));
+        let (mut i, mut j) = (0, 0);
+        let mut scan: Option<Vec<fontdb::ID>> = None;
+        let cands = std::iter::from_fn(|| loop {
+            let (face, synth) = if i < fixed.len() {
+                i += 1;
+                fixed[i - 1]
+            } else {
+                if self.unscanned.is_none() {
+                    let ids = self.db.faces().map(|f| f.id).filter(|id| !self.by_id.contains_key(id)).collect();
+                    self.unscanned = Some(ids);
                 }
-                if let Some(list) = self.unscanned.as_mut() {
-                    list.retain(|x| *x != id);
+                let ids = scan.get_or_insert_with(|| self.unscanned.clone().unwrap_or_default());
+                let id = *ids.get(j)?;
+                j += 1;
+                let Some(face) = self.open(id) else { continue };
+                if self.glyph_in(face, c) != 0 {
+                    if !self.fallback.contains(&face) && Some(face) != self.primary[0] {
+                        log::debug!("font: {:?} added as fallback for U+{:04X}", self.faces[face].name, c as u32);
+                        self.fallback.push(face);
+                    }
+                    if let Some(list) = self.unscanned.as_mut() {
+                        list.retain(|x| *x != id);
+                    }
                 }
-                return Some(synth(face, glyph));
-            }
+                (face, true)
+            };
+            let glyph = self.glyph_in(face, c);
+            let r = Resolved { face, glyph, synth_bold: synth && style.bold, synth_italic: synth && style.italic };
+            return Some((r, self.faces[face].color, glyph != 0));
+        });
+        pick(pres, cands)
+    }
+}
+
+/// Chooses from `(item, colour face, has the glyph)` candidates in priority
+/// order. Text presentation takes the first monochrome face with the glyph
+/// and a colour (emoji) face only when no monochrome face has it — a colour
+/// glyph beats a missing one. Emoji presentation is the reverse. Stops at
+/// the first preferred hit, so later candidates (the installed-font scan)
+/// are only consumed when needed.
+pub fn pick<T>(pres: Presentation, cands: impl IntoIterator<Item = (T, bool, bool)>) -> Option<T> {
+    let want_color = pres == Presentation::Emoji;
+    let mut other = None;
+    for (item, color, has) in cands {
+        if !has {
+            continue;
         }
-        None
+        if color == want_color {
+            return Some(item);
+        }
+        other.get_or_insert(item);
+    }
+    other
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Candidates are (name, colour face, has glyph); the iterator records
+    /// how many were consumed.
+    fn run(pres: Presentation, cands: &[(&'static str, bool, bool)]) -> (Option<&'static str>, usize) {
+        let mut n = 0;
+        let r = pick(pres, cands.iter().inspect(|_| n += 1).copied());
+        (r, n)
+    }
+
+    #[test]
+    fn fallback_order_by_presentation() {
+        use Presentation::{Emoji, Text};
+        // ⏸ with Noto Color Emoji before a symbol font: text presentation
+        // skips the colour face and takes the monochrome one.
+        let cands =
+            [("primary", false, false), ("emoji", true, true), ("symbols2", false, true), ("scan", false, true)];
+        assert_eq!(run(Text, &cands), (Some("symbols2"), 3));
+        // No monochrome face has it: colour beats tofu.
+        assert_eq!(
+            run(Text, &[("primary", false, false), ("emoji", true, true), ("x", false, false)]).0,
+            Some("emoji")
+        );
+        // Emoji presentation (default or VS16): colour first, even after a
+        // monochrome hit, which stays the fallback.
+        assert_eq!(run(Emoji, &[("primary", false, true), ("emoji", true, true)]), (Some("emoji"), 2));
+        assert_eq!(run(Emoji, &[("symbols2", false, true), ("x", false, false)]).0, Some("symbols2"));
+        // Nothing has it.
+        assert_eq!(run(Text, &[("a", false, false), ("b", true, false)]).0, None);
+        // A monochrome hit in the primary face ends the search at once.
+        assert_eq!(run(Text, &[("primary", false, true), ("emoji", true, true)]), (Some("primary"), 1));
     }
 }

@@ -24,6 +24,7 @@ mod chrome;
 mod clipboard;
 mod config;
 mod damage;
+mod emoji;
 mod font;
 mod geom;
 mod input;
