@@ -60,7 +60,9 @@ impl Claude {
         match event {
             "SessionStart" => {
                 i.busy = false;
-                i.attention = Attention::None;
+                if i.attention != Attention::Ask || later_than_ask {
+                    i.attention = Attention::None;
+                }
             }
             "UserPromptSubmit" => {
                 i.busy = true;
@@ -88,7 +90,8 @@ impl Claude {
             }
             "PermissionRequest" => {
                 i.attention = Attention::Ask;
-                self.ask_ts = ts_ms;
+                // A late, older request must not move the mark back in time.
+                self.ask_ts = self.ask_ts.max(ts_ms);
             }
             "Notification" => {
                 let kind = text(j, &["notification_type"]);
@@ -133,7 +136,9 @@ impl Claude {
             }
             "SessionEnd" => {
                 i.busy = false;
-                i.attention = Attention::None;
+                if i.attention != Attention::Ask || later_than_ask {
+                    i.attention = Attention::None;
+                }
             }
             _ => {}
         }
@@ -275,6 +280,29 @@ mod tests {
         c.hook("SubagentStart", &j(r#"{"agent_id":"a1","agent_type":"Explore"}"#), 80, None);
         c.hook("SubagentStop", &j(r#"{"agent_id":"a1"}"#), 90, None);
         assert_eq!(c.info.workers[0].ended_ms, Some(90));
+    }
+
+    #[test]
+    fn out_of_order_events_never_clear_a_newer_question() {
+        let mut c = Claude::default();
+        // Two questions; the older one's report arrives last.
+        c.hook("PermissionRequest", &j("{}"), 30, None);
+        c.hook("PermissionRequest", &j("{}"), 20, None);
+        c.hook("PostToolUse", &j(r#"{"tool_name":"Bash"}"#), 25, None);
+        assert!(c.awaiting_permission(), "25 is older than the newest question (30)");
+        // A SessionStart / SessionEnd that started before the question.
+        c.hook("SessionStart", &j(r#"{"source":"clear"}"#), 10, None);
+        c.hook("SessionEnd", &j("{}"), 12, None);
+        assert!(c.awaiting_permission(), "older session events do not clear it");
+        c.hook("SessionStart", &j(r#"{"source":"resume"}"#), 40, None);
+        assert_eq!(c.info.attention, Attention::None, "a later SessionStart does");
+        // Notification ask with an older time keeps the newest time.
+        c.hook("PermissionRequest", &j("{}"), 50, None);
+        c.hook("Notification", &j(r#"{"notification_type":"permission_prompt"}"#), 45, None);
+        c.hook("Stop", &j("{}"), 48, None);
+        assert!(c.awaiting_permission());
+        c.hook("SessionEnd", &j("{}"), 60, None);
+        assert_eq!(c.info.attention, Attention::None);
     }
 
     #[test]

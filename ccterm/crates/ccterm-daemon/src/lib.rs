@@ -412,7 +412,11 @@ impl Daemon {
         // Role check (DESIGN.md §3.7).
         let allowed = match (&m, role) {
             (ClientMsg::Hello { .. }, _) => false,
-            (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. } | ClientMsg::Sync, _) => true,
+            // Hook and status-line reports only from Report clients (the
+            // `ccterm hook` / `ccterm statusline` processes).
+            (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. }, Role::Report) => true,
+            (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. }, _) => false,
+            (ClientMsg::Sync, _) => true,
             (_, Role::Report) => false,
             (
                 ClientMsg::ListSessions

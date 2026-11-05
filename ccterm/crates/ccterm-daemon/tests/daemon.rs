@@ -141,8 +141,8 @@ fn observe_and_report_clients_cannot_send_input_or_create() {
     let s = ctl.attach(&id, None).unwrap();
     let snap = wait_screen(&s, "frame", |sn| sn.rows == 8);
     assert!(!snap.text().contains("got:"), "observe input reached the program:\n{}", snap.text());
-    s.handle.paste("ok");
-    s.handle.key(KeyInput::parse("Enter").unwrap());
+    s.handle.paste(Origin::Human, "ok");
+    s.handle.key(Origin::Human, KeyInput::parse("Enter").unwrap());
     wait_screen(&s, "control input", |sn| sn.text().contains("got:ok"));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -222,15 +222,50 @@ fn claude_reports_reach_the_client_and_gate_program_input() {
     hook("PermissionRequest", r#"{"tool_name":"Bash"}"#, 10);
     wait_info("ask", &|i| i.attention == Attention::Ask);
 
-    // Program input is refused while the question is open; Human input passes.
-    gui.send(&ClientMsg::Write { session: id.clone(), origin: Origin::Program, bytes: Secret(b"robot\n".to_vec()) })
-        .unwrap();
-    let denied = gui.next_reply(Duration::from_secs(5));
-    assert!(matches!(denied, Some(DaemonMsg::Denied { .. })), "{denied:?}");
-    s.handle.write("human\n");
+    // Program input is refused while the question is open, through every
+    // input method of the client library; Human input passes.
+    s.handle.write(Origin::Program, "robot-write\n");
+    s.handle.paste(Origin::Program, "robot-paste\n");
+    s.handle.key(Origin::Program, KeyInput::parse("x").unwrap());
+    s.handle.wheel(Origin::Program, -3, 0, 0, ccterm_core::Mods::empty());
+    for what in ["Write", "Paste", "Key", "Wheel"] {
+        match gui.next_reply(Duration::from_secs(5)) {
+            Some(DaemonMsg::Denied { what: w }) => assert!(w.starts_with(what), "{w}"),
+            other => panic!("expected Denied for {what}, got {other:?}"),
+        }
+    }
+    s.handle.write(Origin::Human, "human\n");
     let has = |sn: &ccterm_core::Snapshot, t: &str| (0..sn.rows).any(|y| sn.row_text(y).contains(t));
     wait_screen(&s, "human input", |sn| has(sn, "human"));
     assert!(!has(&s.handle.snapshot().unwrap(), "robot"));
+    // Not the role of Control or Observe to report hooks (DESIGN.md §3.7).
+    gui.send(&ClientMsg::Hook {
+        session: Some(id.clone()),
+        event: "PostToolUse".into(),
+        json: Secret(r#"{"tool_name":"Bash"}"#.into()),
+        ts_ms: 99,
+        snapshot: None,
+    })
+    .unwrap();
+    gui.send(&ClientMsg::StatusLine { session: Some(id.clone()), json: Secret("{}".into()), ts_ms: 99 }).unwrap();
+    for what in ["Hook", "StatusLine"] {
+        match gui.next_reply(Duration::from_secs(5)) {
+            Some(DaemonMsg::Denied { what: w }) => assert!(w.starts_with(what), "{w}"),
+            other => panic!("expected Denied for {what} from Control, got {other:?}"),
+        }
+    }
+    let obs = Client::connect(&ep, Role::Observe, "status").unwrap();
+    obs.send(&ClientMsg::Hook {
+        session: Some(id.clone()),
+        event: "Stop".into(),
+        json: Secret("{}".into()),
+        ts_ms: 99,
+        snapshot: None,
+    })
+    .unwrap();
+    assert!(matches!(obs.next_reply(Duration::from_secs(5)), Some(DaemonMsg::Denied { .. })));
+    assert!(gui.sync(Duration::from_secs(5)));
+    assert_eq!(s.handle.claude().unwrap().attention, Attention::Ask, "denied reports changed nothing");
 
     hook("PostToolUse", r#"{"tool_name":"Bash"}"#, 20);
     hook("Stop", "{}", 30);
@@ -274,7 +309,7 @@ fn friction_reaches_the_event_log() {
     let s = gui.attach(&id, None).unwrap();
     let has = |sn: &ccterm_core::Snapshot, t: &str| (0..sn.rows).any(|y| sn.row_text(y).contains(t));
     wait_screen(&s, "ready", |sn| has(sn, "ready"));
-    s.handle.paste("secret-typed-text\n");
+    s.handle.paste(Origin::Human, "secret-typed-text\n");
     wait_screen(&s, "answered", |sn| has(sn, "answered"));
     gui.reporter().friction("slow_draw", &[("ms", "21.5".into()), ("full", "true".into())]);
     let rep = Client::connect(&ep, Role::Report, "hook").unwrap();

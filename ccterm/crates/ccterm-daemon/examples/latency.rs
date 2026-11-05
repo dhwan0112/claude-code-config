@@ -15,6 +15,7 @@ use ccterm_core::{KeyInput, SessionEvent};
 use ccterm_daemon::Config;
 use ccterm_proto::paths::Endpoint;
 use ccterm_proto::wire::{CreateSpec, Grid};
+use ccterm_proto::Origin;
 use ccterm_proto::{Client, Role};
 
 fn main() {
@@ -64,7 +65,7 @@ fn main() {
         let before = s.handle.snapshot().map(|sn| (sn.cursor.map(|c| (c.x, c.y)), sn.seq)).unwrap();
         let ch = (b'a' + (i % 26) as u8) as char;
         let t0 = Instant::now();
-        s.handle.key(KeyInput::parse(&ch.to_string()).unwrap());
+        s.handle.key(Origin::Human, KeyInput::parse(&ch.to_string()).unwrap());
         loop {
             match s.events.recv_timeout(Duration::from_secs(2)) {
                 Ok(SessionEvent::Wakeup) => {
@@ -79,7 +80,7 @@ fn main() {
             }
         }
         if i % 100 == 99 {
-            s.handle.key(KeyInput::parse("Enter").unwrap());
+            s.handle.key(Origin::Human, KeyInput::parse("Enter").unwrap());
             std::thread::sleep(Duration::from_millis(50));
             while let Ok(SessionEvent::Wakeup) = s.events.recv_timeout(Duration::from_millis(50)) {
                 s.handle.snapshot();

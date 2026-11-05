@@ -14,7 +14,7 @@ use ccterm_core::{
 };
 use ccterm_proto::paths::Endpoint;
 use ccterm_proto::wire::{rgb, Attention, ClaudeInfo, CreateSpec};
-use ccterm_proto::{Client, RemoteHandle, RemoteSession, Role};
+use ccterm_proto::{Client, Origin, RemoteHandle, RemoteSession, Role};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, WindowEvent};
@@ -539,7 +539,10 @@ impl Win {
         self.recompose();
     }
 
-    fn run(&mut self, a: Action) {
+    /// Runs an action; `origin` is what any input it sends to the program
+    /// carries: `Human` for a shortcut pressed by the person, `Program` from
+    /// the palette.
+    fn run(&mut self, a: Action, origin: Origin) {
         log::debug!("action {}", a.name());
         match a {
             Action::NewTab => {
@@ -558,8 +561,12 @@ impl Win {
             }
             Action::Paste => {
                 if let Some(text) = self.clipboard.get() {
-                    if self.tab().exited.is_none() {
-                        self.handle().paste(text);
+                    if self.tab().exited.is_some() {
+                    } else if origin == Origin::Program && self.tab().attention() == Attention::Ask {
+                        // The daemon would refuse it anyway (§3.7); say why.
+                        self.show_hint("not sent: Claude Code waits for your answer — type it".into());
+                    } else {
+                        self.handle().paste(origin, text);
                     }
                 }
             }
@@ -793,7 +800,7 @@ impl Win {
         let mut m = MouseInput::at_pixel(action, button, x, y);
         m.mods = input::mods(self.mods);
         m.any_pressed = !self.held.is_empty();
-        self.handle().mouse(m);
+        self.handle().mouse(Origin::Human, m);
     }
 
     /// A click on the tab bar selects the tab under the pointer.
@@ -841,7 +848,7 @@ impl Win {
                 if let Some(c) = code {
                     self.swallowed.insert(c);
                 }
-                self.run(a);
+                self.run(a, Origin::Human);
                 return;
             }
         }
@@ -875,7 +882,7 @@ impl Win {
             RawKey { code, state: ev.state, repeat: ev.repeat, text: ev.text.as_deref(), unshifted, mods: self.mods };
         let k = input::key_input(&raw);
         log_key(&k);
-        self.handle().key(k);
+        self.handle().key(Origin::Human, k);
     }
 
     /// Keys while the palette is open: type to filter, arrows, Enter, Esc.
@@ -889,7 +896,9 @@ impl Win {
                 self.palette = None;
                 if let Some(a) = a {
                     self.recompose();
-                    self.run(a);
+                    // Chosen in ccterm's own UI: what it sends is made up by
+                    // ccterm, not typed into the program (DESIGN.md §3.7).
+                    self.run(a, Origin::Program);
                     return;
                 }
             }
@@ -931,7 +940,7 @@ impl Win {
                 } else if self.diff.is_some() {
                     // Not for the program while the diff view is open.
                 } else if !text.is_empty() && self.tab().exited.is_none() {
-                    self.handle().key(KeyInput::press(Key::Unidentified).with_text(text));
+                    self.handle().key(Origin::Human, KeyInput::press(Key::Unidentified).with_text(text));
                 }
             }
             Ime::Disabled => self.preedit = None,
@@ -1265,7 +1274,7 @@ impl ApplicationHandler<UserEvent> for App {
                     }
                     let lines = input::wheel_lines(n, win.mouse_tracking());
                     log::debug!("wheel {delta:?} -> {n} notches, {lines} lines at {col},{row}");
-                    win.handle().wheel(lines, col, row, input::mods(win.mods));
+                    win.handle().wheel(Origin::Human, lines, col, row, input::mods(win.mods));
                 }
             }
             WindowEvent::Focused(f) => {

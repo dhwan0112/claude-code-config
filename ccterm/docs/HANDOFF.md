@@ -910,6 +910,25 @@ regression list, measurements), then committed, pushed and mirrored.
     optional, and window chrome is outer design (DESIGN.md §2, now a
     protected area).
 
+- **2026-11-05 Review A (protected area, approved) — permission path.**
+  - A1: the client library's input methods (`key`, `mouse`, `wheel`,
+    `paste`, `write`) take an `Origin`; no default. The GUI passes `Human`
+    only from OS input events (keyboard, IME commit, mouse, wheel, a paste
+    shortcut pressed by the person) and `Program` for what its own UI makes
+    up (a palette action, e.g. "Paste" chosen in the palette; while
+    Claude Code asks, the GUI does not send it and shows a hint). Tab
+    restore sends no input. Test: with `Ask` open, `write`/`paste`/`key`/
+    `wheel` with `Program` through the client library are each `Denied`
+    and do not reach the program; `Human` passes.
+  - A2: `Hook` / `StatusLine` only from `Report` clients. Test: Control
+    and Observe sending them get `Denied`, the state is unchanged.
+  - A4: PermissionRequest keeps the newest ask time (`max`); SessionStart
+    and SessionEnd clear `Ask` only when their hook started later. Test
+    with shuffled orders (`out_of_order_events_never_clear_a_newer_question`).
+  - A5: DESIGN.md §3.7: roles are a cooperative separation between the same
+    user's processes, not a security boundary; remote adapters only on a
+    client type that cannot send Control messages.
+
 ### ccx comparison (milestone 3)
 
 | ccx | ccterm | |

@@ -239,13 +239,28 @@ line every 3 s):
   Any input or session-changing message is answered with `Denied` and has no
   effect.
 - `report`: hook and status-line processes; may only send `Hook` and
-  `StatusLine`.
-- Every input message carries `origin` (`Human` = typed by the person at
-  the GUI, `Program` = generated, e.g. a future automation). While a session
-  waits for a Claude Code permission answer or a question (known from hook
-  events, milestone 3), the daemon rejects input whose origin is not
-  `Human`, whatever the role. Remote parties never answer permission
-  prompts (§6).
+  `StatusLine` — and only they may send them (a Control or Observe client
+  sending a report is answered with `Denied`).
+- Every input message carries `origin` (`Human` = typed or clicked by the
+  person, from an OS input event; `Program` = made up by ccterm or a
+  program: palette actions, restored tabs, scripts, automation). The client
+  library has no default: every input method takes the origin. While a
+  session waits for a Claude Code permission answer or a question (known
+  from hook events), the daemon rejects input whose origin is not `Human`,
+  whatever the role. Remote parties never answer permission prompts (§6).
+- What roles are and are not: a **cooperative separation between processes
+  of the same user**, not a security boundary. Any process of that user can
+  open the socket (0700 directory / pipe ACL for the user's SID) and claim
+  any role and any origin; the roles keep ccterm's own parts honest (a hook
+  cannot type, `status` cannot close a session, a palette action cannot
+  answer a permission prompt) and make mistakes visible (`Denied`). The
+  boundary against other users is the socket's permissions; against the
+  user's own processes there is none.
+- Hence the rule for remote adapters (CLI over SSH, MCP, milestone 4+):
+  they must be built on a client type that **cannot send Control messages
+  at all** (an observe-only client API, no input or session methods), not
+  on the full client with a role set to Observe; anything a remote party
+  can make the adapter send is at most `Observe`.
 
 ### 3.8 Identity, state and event log
 

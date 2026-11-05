@@ -325,8 +325,11 @@ pub struct RemoteSession {
     pub events: Receiver<SessionEvent>,
 }
 
-/// Same methods as `ccterm_core::SessionHandle`; input is sent with
-/// `Origin::Human` (the GUI forwards what the person typed).
+/// Same methods as `ccterm_core::SessionHandle`, except that every input
+/// method takes its [`Origin`] (DESIGN.md §3.7): `Human` only for what a
+/// person typed or clicked (OS input events), `Program` for input ccterm or a
+/// script made up (palette actions, restored tabs, automation). There is no
+/// default: the caller has to say which.
 #[derive(Clone)]
 pub struct RemoteHandle {
     id: SessionId,
@@ -349,27 +352,20 @@ impl RemoteHandle {
     pub fn pid(&self) -> Option<u32> {
         self.pid
     }
-    pub fn write(&self, bytes: impl Into<Vec<u8>>) {
-        self.send(ClientMsg::Write { session: self.id.clone(), origin: Origin::Human, bytes: Secret(bytes.into()) });
+    pub fn write(&self, origin: Origin, bytes: impl Into<Vec<u8>>) {
+        self.send(ClientMsg::Write { session: self.id.clone(), origin, bytes: Secret(bytes.into()) });
     }
-    pub fn key(&self, k: KeyInput) {
-        self.send(ClientMsg::Key { session: self.id.clone(), origin: Origin::Human, key: WireKey::from(&k) });
+    pub fn key(&self, origin: Origin, k: KeyInput) {
+        self.send(ClientMsg::Key { session: self.id.clone(), origin, key: WireKey::from(&k) });
     }
-    pub fn mouse(&self, m: MouseInput) {
-        self.send(ClientMsg::Mouse { session: self.id.clone(), origin: Origin::Human, mouse: WireMouse::from(&m) });
+    pub fn mouse(&self, origin: Origin, m: MouseInput) {
+        self.send(ClientMsg::Mouse { session: self.id.clone(), origin, mouse: WireMouse::from(&m) });
     }
-    pub fn wheel(&self, lines: i32, col: u16, row: u16, mods: Mods) {
-        self.send(ClientMsg::Wheel {
-            session: self.id.clone(),
-            origin: Origin::Human,
-            lines,
-            col,
-            row,
-            mods: mods.bits(),
-        });
+    pub fn wheel(&self, origin: Origin, lines: i32, col: u16, row: u16, mods: Mods) {
+        self.send(ClientMsg::Wheel { session: self.id.clone(), origin, lines, col, row, mods: mods.bits() });
     }
-    pub fn paste(&self, text: impl Into<String>) {
-        self.send(ClientMsg::Paste { session: self.id.clone(), origin: Origin::Human, text: Secret(text.into()) });
+    pub fn paste(&self, origin: Origin, text: impl Into<String>) {
+        self.send(ClientMsg::Paste { session: self.id.clone(), origin, text: Secret(text.into()) });
     }
     pub fn focus(&self, focused: bool) {
         self.send(ClientMsg::Focus { session: self.id.clone(), focused });
