@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -115,6 +115,11 @@ pub struct CreateSpec {
     pub scrollback_limit: u64,
     pub default_fg: [u8; 3],
     pub default_bg: [u8; 3],
+    /// The theme's colours 0–15 (empty: the daemon's default theme; 16–255
+    /// are never themed). Version 5.
+    pub palette: Vec<[u8; 3]>,
+    /// The theme's cursor colour (OSC 12). Version 5.
+    pub cursor_color: Option<[u8; 3]>,
     /// Claude Code integration (hooks, status line) when the program is
     /// Claude Code (DESIGN.md §3.13).
     pub claude_integration: bool,

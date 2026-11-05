@@ -568,6 +568,38 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
     `--resume`/`--continue` arguments removed; a conversation already open
     in a tab is not opened again.
 
+### 3.14 Themes
+
+- Format: Ghostty's theme files (`palette = N=COLOR`, `background`,
+  `foreground`, `cursor-color`, `cursor-text`, `selection-background`,
+  `selection-foreground`), read by `haetty_core::theme` with the config
+  file's own line parser (`theme::lines`, shared) and libghostty-vt's colour
+  parser (Ghostty's syntax: hex, X11 names). Keys a file leaves out keep
+  "haetty classic"'s values (`Theme::base`: Ghostty's default 16 colours,
+  `#dcdcdc` on `#1e1e1e`).
+- `theme = VALUE` (config or `--theme`): a path when it contains `/` or `\`
+  (relative to the config directory), else `<config dir>/themes/VALUE`, else
+  a built-in theme (`assets/themes/`, embedded: "IBM 5153 CGA", "IBM 5153
+  CGA (Black)", "haetty classic"); unknown → the default theme and a log
+  line. The colour keys in the config apply after the theme, in their
+  order, wherever they stand.
+- The two CGA files are copied unchanged (sources: `THIRD-PARTY-NOTICES.md`);
+  at load, a selection background missing or equal to the foreground is
+  filled in with `#4e4e4e` — built-in CGA files only.
+- Where the colours go: default fg/bg, colours 0–15 and the cursor colour
+  into the session's terminal (`SessionConfig::apply_theme` →
+  `set_default_{fg,bg,cursor}_color`, `set_default_color_palette` with 16–255
+  left as libghostty-vt's xterm cube and grey ramp), so OSC 4/10/11/12
+  queries answer with them and snapshot cells carry the theme's RGB;
+  `CreateSpec` carries them to the daemon (protocol version 5). Cursor text
+  and selection colours are the painter's (`paint::Look`). The window's
+  first frame and the Windows 11 title bar use the theme's background
+  before a snapshot exists.
+- A theme takes effect for sessions created after the GUI started with
+  it; sessions already running in the daemon (reattached) keep their
+  colours. Recolouring them would need a new client message (and a role
+  rule for it, `Daemon::message`): not done.
+
 ## 4. VT engine decision (measured 2026-11-04)
 
 Replay of a real Claude Code 2.1.318 session (startup, Hangul typing,

@@ -9,9 +9,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use haetty_core::{
-    GridSize, Key, KeyInput, MouseAction, MouseButton, MouseInput, SessionConfig, SessionEvent, Snapshot,
-};
+use haetty_core::theme::Theme;
+use haetty_core::{GridSize, Key, KeyInput, MouseAction, MouseButton, MouseInput, SessionEvent, Snapshot};
 use haetty_proto::paths::Endpoint;
 use haetty_proto::wire::{rgb, Attention, ClaudeInfo, CreateSpec, SessionInfo, SessionState};
 use haetty_proto::{Client, Origin, RemoteHandle, RemoteSession, Role};
@@ -32,7 +31,7 @@ use crate::font::Fonts;
 use crate::geom::Layout;
 use crate::input::{self, RawKey, Wheel};
 use crate::keymap::{Action, Chord, Keymap};
-use crate::render::paint::Painter;
+use crate::render::paint::{Look, Painter};
 use crate::render::soft::SoftRenderer;
 use crate::render::{PaddingStyle, Preedit, Renderer, Scene};
 use crate::tabsets::{self, SavedTab};
@@ -146,7 +145,8 @@ struct Win {
     /// What new tabs run.
     command: (String, Vec<String>),
     start_cwd: Option<String>,
-    defaults: (haetty_core::Rgb, haetty_core::Rgb),
+    /// Colours for new sessions and haetty's own cells.
+    theme: Theme,
     scrollback_limit: usize,
     claude_integration: bool,
     /// OS notification (Linux `notify-send`) besides the taskbar/urgency
@@ -183,10 +183,11 @@ impl App {
         let scale0 = el.primary_monitor().map_or(1.0, |m| m.scale_factor());
         let fonts = self.fonts.take().ok_or("fonts already used")?;
         let mut painter = Painter::new(fonts, self.font_px(scale0));
+        let theme = self.opts.theme.clone();
+        painter.set_look(Look::of(&theme));
         let pad0 = self.padding(scale0);
         let (w, h) = Layout { cell: painter.cell_metrics(), padding: pad0.min, balance: pad0.balance }
             .window_size(self.opts.cols, self.opts.rows);
-        let cfg = SessionConfig::new(self.opts.command.clone());
         let attrs = Window::default_attributes()
             .with_title(haetty_proto::product::display_name())
             .with_inner_size(PhysicalSize::new(w, h));
@@ -206,9 +207,9 @@ impl App {
             let a = winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, &id, "");
             winit::platform::x11::WindowAttributesExtX11::with_name(a, &id, &id)
         };
-        let attrs = chrome::attributes(attrs, cfg.default_bg, cfg.default_fg)
+        let attrs = chrome::attributes(attrs, theme.background, theme.foreground)
             .with_decorations(decorated(self.opts.config.decorations));
-        let chrome = Chrome::new(cfg.default_bg, cfg.default_fg);
+        let chrome = Chrome::new(theme.background, theme.foreground);
         let window = Rc::new(el.create_window(attrs).map_err(|e| format!("window: {e}"))?);
         window.set_ime_allowed(true);
         window.set_ime_purpose(ImePurpose::Terminal);
@@ -263,7 +264,7 @@ impl App {
             swallowed: HashSet::new(),
             command,
             start_cwd: std::env::current_dir().ok().map(|d| d.to_string_lossy().into_owned()),
-            defaults: (cfg.default_fg, cfg.default_bg),
+            theme,
             scrollback_limit: self.opts.config.scrollback_limit,
             claude_integration: self.opts.config.claude_integration,
             notifications: self.opts.config.notifications,
@@ -483,8 +484,10 @@ impl Win {
                 .collect(),
             size: size.into(),
             scrollback_limit: self.scrollback_limit as u64,
-            default_fg: rgb(self.defaults.0),
-            default_bg: rgb(self.defaults.1),
+            default_fg: rgb(self.theme.foreground),
+            default_bg: rgb(self.theme.background),
+            palette: self.theme.palette.iter().map(|c| rgb(*c)).collect(),
+            cursor_color: self.theme.cursor_color.map(rgb),
             claude_integration: self.claude_integration,
         };
         let id = self.client.create(create).map_err(|e| e.to_string())?;
@@ -802,7 +805,7 @@ impl Win {
 
     /// Rebuilds the window grid from the active tab and haetty's cells.
     fn recompose(&mut self) {
-        let (fg, bg) = self.defaults;
+        let (fg, bg) = (self.theme.foreground, self.theme.background);
         let empty = Snapshot { default_fg: fg, default_bg: bg, ..Default::default() };
         let screen = self.tab().snap.as_ref().unwrap_or(&empty);
         let g = ui::Greys::from(screen.default_fg, screen.default_bg);

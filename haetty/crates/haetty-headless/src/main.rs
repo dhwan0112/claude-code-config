@@ -11,6 +11,8 @@
 //!   --timeout SECONDS         overall limit (default 60)
 //!   --env K=V                 extra environment variable (repeatable)
 //!   --cwd DIR
+//!   --theme NAME|FILE         colours: a built-in theme ("IBM 5153 CGA", …) or a
+//!                             Ghostty theme file (default: haetty's default theme)
 //!
 //! Steps:
 //!   sleep MS                  wait
@@ -51,11 +53,12 @@ struct Args {
     timeout: Duration,
     env: Vec<(String, String)>,
     cwd: Option<PathBuf>,
+    theme: Option<String>,
     program: Vec<String>,
 }
 
 fn usage(msg: &str) -> ! {
-    eprintln!("haetty-headless: {msg}\nusage: haetty-headless [--cols N] [--rows N] [--script FILE] [-e STEP]... [--raw-log FILE] [--trace] [--dump plain|vt|html|grid|none] [--timeout S] [--env K=V]... [--cwd DIR] -- PROGRAM [ARGS...]");
+    eprintln!("haetty-headless: {msg}\nusage: haetty-headless [--cols N] [--rows N] [--script FILE] [-e STEP]... [--raw-log FILE] [--trace] [--dump plain|vt|html|grid|none] [--timeout S] [--env K=V]... [--cwd DIR] [--theme NAME|FILE] -- PROGRAM [ARGS...]");
     std::process::exit(2);
 }
 
@@ -70,6 +73,7 @@ fn parse_args() -> Args {
         timeout: Duration::from_secs(60),
         env: vec![],
         cwd: None,
+        theme: None,
         program: vec![],
     };
     let mut it = std::env::args().skip(1);
@@ -100,6 +104,7 @@ fn parse_args() -> Args {
                 a.env.push((k.into(), v.into()));
             }
             "--cwd" => a.cwd = Some(val("--cwd").into()),
+            "--theme" => a.theme = Some(val("--theme")),
             "--" => {
                 a.program = it.by_ref().collect();
                 break;
@@ -443,6 +448,17 @@ fn main() {
     cfg.size = size;
     cfg.trace_replies = args.trace;
     cfg.raw_log = args.raw_log.clone();
+    if let Some(name) = &args.theme {
+        match theme::load(name, None, None) {
+            Ok((t, bad)) => {
+                for b in bad {
+                    eprintln!("haetty-headless: {b} (ignored)");
+                }
+                cfg.apply_theme(&t);
+            }
+            Err(e) => usage(&e),
+        }
+    }
 
     let session = match Session::spawn(cfg) {
         Ok(s) => s,

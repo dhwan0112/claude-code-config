@@ -49,6 +49,8 @@ fn main() {
             scrollback_limit: 12_000_000,
             default_fg: [220, 220, 220],
             default_bg: [30, 30, 30],
+            palette: vec![],
+            cursor_color: None,
             claude_integration: false,
         })
         .expect("create");

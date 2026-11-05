@@ -65,7 +65,24 @@ struct Ink {
     h: i32,
 }
 
+/// The theme's colours that belong to the renderer, not the terminal.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Look {
+    /// Text under a block cursor; `None`: the cell's background.
+    pub cursor_text: Option<Rgb>,
+    /// Selected cells; both `None`: the cell's colours swapped.
+    pub selection_bg: Option<Rgb>,
+    pub selection_fg: Option<Rgb>,
+}
+
+impl Look {
+    pub fn of(t: &haetty_core::theme::Theme) -> Look {
+        Look { cursor_text: t.cursor_text, selection_bg: t.selection_background, selection_fg: t.selection_foreground }
+    }
+}
+
 pub struct Painter {
+    look: Look,
     fonts: Fonts,
     ctx: ScaleContext,
     glyphs: HashMap<GlyphKey, Option<Raster>>,
@@ -79,6 +96,7 @@ pub struct Painter {
 impl Painter {
     pub fn new(fonts: Fonts, px: f32) -> Self {
         let mut p = Painter {
+            look: Look::default(),
             fonts,
             ctx: ScaleContext::new(),
             glyphs: HashMap::new(),
@@ -88,6 +106,10 @@ impl Painter {
         };
         p.set_px(px);
         p
+    }
+
+    pub fn set_look(&mut self, look: Look) {
+        self.look = look;
     }
 
     /// Glyph cache and font state sizes, for the log.
@@ -163,7 +185,7 @@ impl Painter {
         // Pass 1: backgrounds.
         for x in 0..snap.cols {
             let cell = snap.cell(x, y).expect("cell");
-            let (_, mut bg) = colors(snap, x, y);
+            let (_, mut bg) = colors_with(snap, x, y, &self.look);
             if cursor_block && cursor.is_some_and(|c| c.x == x || (c.x + 1 == x && cell.width == Width::Spacer)) {
                 bg = cursor_color;
             }
@@ -177,10 +199,10 @@ impl Painter {
                 continue;
             }
             let span = if cell.width == Width::Wide { 2 } else { 1 };
-            let (mut fg, bg) = colors(snap, x, y);
+            let (mut fg, bg) = colors_with(snap, x, y, &self.look);
             let on_cursor = cursor_block && cursor.is_some_and(|c| c.x == x);
             if on_cursor {
-                fg = bg;
+                fg = self.look.cursor_text.unwrap_or(bg);
             }
             let rect = Rect::new(origin.0 + x as i32 * m.cell_w, top, m.cell_w * span, m.cell_h);
             let f = cell.flags;
@@ -607,14 +629,27 @@ fn is_powerline(c: char) -> bool {
 }
 
 /// Foreground and background of cell (x, y) after inverse, selection, faint
-/// and invisible.
+/// and invisible (selection without theme colours: swapped).
 pub fn colors(snap: &Snapshot, x: u16, y: u16) -> (Rgb, Rgb) {
+    colors_with(snap, x, y, &Look::default())
+}
+
+/// [`colors`] with the theme's selection colours: a selected cell takes
+/// those that are set (as Ghostty's `selection-background` /
+/// `selection-foreground`), the rest from the cell.
+pub fn colors_with(snap: &Snapshot, x: u16, y: u16, look: &Look) -> (Rgb, Rgb) {
     let cell = snap.cell(x, y).expect("cell");
     let f = cell.flags;
     let mut fg = cell.fg.unwrap_or(snap.default_fg);
     let mut bg = cell.bg.unwrap_or(snap.default_bg);
-    if f.has(CellFlags::INVERSE) != f.has(CellFlags::SELECTED) {
+    let selected = f.has(CellFlags::SELECTED);
+    let themed = selected && (look.selection_bg.is_some() || look.selection_fg.is_some());
+    if f.has(CellFlags::INVERSE) != (selected && !themed) {
         std::mem::swap(&mut fg, &mut bg);
+    }
+    if themed {
+        bg = look.selection_bg.unwrap_or(bg);
+        fg = look.selection_fg.unwrap_or(fg);
     }
     if f.has(CellFlags::FAINT) {
         fg = mix(fg, bg, 128);
@@ -664,6 +699,18 @@ mod tests {
         let mut s = snap(1, 1);
         set(&mut s, 0, 0, Cell { flags: CellFlags(CellFlags::INVISIBLE), ..Default::default() });
         assert_eq!(colors(&s, 0, 0), (BG, BG));
+        // Theme selection colours replace the swap; one alone keeps the
+        // cell's other colour.
+        let sel = Rgb { r: 0x4e, g: 0x4e, b: 0x4e };
+        let mut s = snap(2, 1);
+        set(&mut s, 0, 0, Cell { fg: Some(RED), flags: CellFlags(CellFlags::SELECTED), ..Default::default() });
+        set(&mut s, 1, 0, Cell { flags: CellFlags(CellFlags::SELECTED | CellFlags::INVERSE), ..Default::default() });
+        let both = Look { selection_bg: Some(sel), selection_fg: Some(BG), ..Default::default() };
+        assert_eq!(colors_with(&s, 0, 0, &both), (BG, sel));
+        let bg_only = Look { selection_bg: Some(sel), ..Default::default() };
+        assert_eq!(colors_with(&s, 0, 0, &bg_only), (RED, sel));
+        assert_eq!(colors_with(&s, 1, 0, &bg_only), (BG, sel), "inverse still applies to the text");
+        assert_eq!(colors_with(&s, 0, 0, &Look::default()), colors(&s, 0, 0));
     }
 
     // Tests below need a system font; they are skipped when none is found

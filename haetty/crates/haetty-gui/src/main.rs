@@ -65,6 +65,8 @@ pub struct Options {
     /// Shown over the bottom row at start (migration from ccterm).
     pub first_hint: Option<String>,
     pub config: config::Config,
+    /// The colours: `config.theme` with the colour keys on top.
+    pub theme: haetty_core::theme::Theme,
     /// Settings given on the command line, applied after the config file.
     pub settings: Vec<(String, String)>,
     pub keymap: keymap::Keymap,
@@ -127,7 +129,9 @@ const USAGE: &str =
      settings (KEY): window-padding N, window-padding-balance true|false,\n\
      window-padding-color background|extend|extend-always, decorations native|integrated|none,\n\
      scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row),\n\
-     restore-tabs true|false, claude-integration true|false, notifications true|false (default true)\n\
+     restore-tabs true|false, claude-integration true|false, notifications true|false (default true),\n\
+     theme NAME|FILE (Ghostty theme format), palette N=COLOR, background/foreground/cursor-color/cursor-text/\n\
+     selection-background/selection-foreground COLOR\n\
      subcommands: haetty gui [OPTIONS] [PROGRAM...], haetty daemon, haetty status [--json | --screen ID],\n\
      haetty install-desktop; run by Claude Code: hook EVENT, statusline; reserved: run, headless;\n\
      to run a program with a subcommand's name: haetty [OPTIONS] -- NAME [ARGS...]";
@@ -142,6 +146,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
         explicit_program: false,
         first_hint: None,
         config: config::Config::default(),
+        theme: haetty_core::theme::Theme::default(),
         settings: vec![],
         keymap: keymap::Keymap::default(),
     };
@@ -439,6 +444,12 @@ fn main() {
             let mut o = *o;
             o.first_hint = migrate::run().hint();
             load_config_file(&mut o);
+            let (theme, msgs) = o.config.resolve_theme(&haetty_proto::paths::config_dir());
+            for m in msgs {
+                log::warn!("{m} (ignored)");
+            }
+            log::info!("theme: {}", o.config.theme);
+            o.theme = theme;
             o
         }
     };

@@ -39,6 +39,8 @@ fn spec(script: &str) -> CreateSpec {
         scrollback_limit: 1_000_000,
         default_fg: [200, 200, 200],
         default_bg: [20, 20, 20],
+        palette: vec![],
+        cursor_color: None,
         claude_integration: false,
     }
 }

@@ -87,6 +87,8 @@ fn old_settings_are_copied_and_an_old_daemon_is_left_alone() {
             scrollback_limit: 100_000,
             default_fg: [200, 200, 200],
             default_bg: [20, 20, 20],
+            palette: vec![],
+            cursor_color: None,
             claude_integration: false,
         })
         .unwrap();

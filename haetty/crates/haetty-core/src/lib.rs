@@ -15,6 +15,7 @@
 
 mod engine;
 pub mod osc;
+pub mod theme;
 pub mod types;
 
 use std::ffi::OsString;
@@ -62,6 +63,13 @@ pub struct SessionConfig {
     /// (Claude Code and others pick a light or dark palette from the answer).
     pub default_fg: Rgb,
     pub default_bg: Rgb,
+    /// Colours 0–15 (OSC 4 answers them; SGR 30–37/90–97 and 38;5;0–15 use
+    /// them). `None`: libghostty-vt's built-in palette. 16–255 always stay
+    /// xterm's colour cube and grey ramp.
+    pub palette: Option<[Rgb; 16]>,
+    /// Default cursor colour (OSC 12 answers it). `None`: none set; the
+    /// renderer draws the cursor in the foreground colour.
+    pub cursor_color: Option<Rgb>,
     /// Longest time a redraw is held back while the application keeps
     /// synchronized output (mode 2026) set.
     pub sync_timeout: Duration,
@@ -74,20 +82,34 @@ pub struct SessionConfig {
 }
 
 impl SessionConfig {
+    /// Colours from the default theme ([`theme::DEFAULT_THEME`]).
     pub fn new(command: CommandSpec) -> Self {
-        Self {
+        let mut c = Self {
             command,
             size: GridSize::new(120, 36),
             scrollback_limit: DEFAULT_SCROLLBACK_LIMIT,
             pty: PtyOptions::default(),
             color_scheme: ColorSchemePref::Dark,
-            default_fg: Rgb { r: 0xdc, g: 0xdc, b: 0xdc },
-            default_bg: Rgb { r: 0x1e, g: 0x1e, b: 0x1e },
+            default_fg: Rgb::default(),
+            default_bg: Rgb::default(),
+            palette: None,
+            cursor_color: None,
             sync_timeout: Duration::from_millis(500),
             terminal_env: true,
             trace_replies: false,
             raw_log: None,
-        }
+        };
+        c.apply_theme(&theme::Theme::default());
+        c
+    }
+
+    /// Default colours, colours 0–15 and the cursor colour from `t` (the
+    /// selection and cursor-text colours are the renderer's).
+    pub fn apply_theme(&mut self, t: &theme::Theme) {
+        self.default_fg = t.foreground;
+        self.default_bg = t.background;
+        self.palette = Some(t.palette);
+        self.cursor_color = t.cursor_color;
     }
 }
 
@@ -200,6 +222,8 @@ impl Session {
             color_scheme: cfg.color_scheme,
             default_fg: cfg.default_fg,
             default_bg: cfg.default_bg,
+            palette: cfg.palette,
+            cursor_color: cfg.cursor_color,
             sync_timeout: cfg.sync_timeout,
             xtversion: XTVERSION.to_owned(),
             trace_replies: cfg.trace_replies,

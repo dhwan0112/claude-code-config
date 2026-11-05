@@ -686,6 +686,10 @@ impl Daemon {
         cfg.scrollback_limit = spec.scrollback_limit as usize;
         cfg.default_fg = from_rgb(spec.default_fg);
         cfg.default_bg = from_rgb(spec.default_bg);
+        if let Ok(p) = <[[u8; 3]; 16]>::try_from(spec.palette.as_slice()) {
+            cfg.palette = Some(p.map(from_rgb));
+        }
+        cfg.cursor_color = spec.cursor_color.map(from_rgb);
         match Session::spawn(cfg) {
             Ok(session) => {
                 let info = SessionInfo {

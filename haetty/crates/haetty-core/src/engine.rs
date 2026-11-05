@@ -54,6 +54,8 @@ pub(crate) struct EngineConfig {
     pub color_scheme: ColorSchemePref,
     pub default_fg: Rgb,
     pub default_bg: Rgb,
+    pub palette: Option<[Rgb; 16]>,
+    pub cursor_color: Option<Rgb>,
     pub sync_timeout: Duration,
     pub xtversion: String,
     pub trace_replies: bool,
@@ -101,6 +103,18 @@ pub(crate) fn run(
     let rgb = |c: Rgb| libghostty_vt::style::RgbColor { r: c.r, g: c.g, b: c.b };
     let _ = term.set_default_fg_color(Some(rgb(cfg.default_fg)));
     let _ = term.set_default_bg_color(Some(rgb(cfg.default_bg)));
+    // Colours 0–15 from the theme; 16–255 keep libghostty-vt's (xterm's cube
+    // and grey ramp).
+    if let Some(p16) = cfg.palette {
+        let mut p = term.default_color_palette().unwrap_or_default();
+        for (slot, c) in p.0.iter_mut().zip(p16) {
+            *slot = rgb(c);
+        }
+        let _ = term.set_default_color_palette(Some(p));
+    }
+    if let Some(c) = cfg.cursor_color {
+        let _ = term.set_default_cursor_color(Some(rgb(c)));
+    }
     let _ = term.resize(
         cfg.size.cols.max(1),
         cfg.size.rows.max(1),

@@ -244,3 +244,57 @@ fn exit_reported_even_if_pty_stays_open() {
     }
     assert_eq!(status.expect("no exit event").code, Some(7));
 }
+
+/// A theme reaches the engine: OSC 4 (colours 0–15 from the theme, 16–255
+/// xterm's), OSC 10/11/12 answer with its values, and cells coloured by
+/// palette number (SGR 31/91, 38;5;N) come out in the theme's colours.
+#[test]
+fn theme_answers_colour_queries_and_colours_cells() {
+    let t = theme::Theme::builtin("IBM 5153 CGA").unwrap();
+    let script = concat!(
+        r"stty -echo; ",
+        r"printf '\033]4;1;?\033\\\033]4;9;?\033\\\033]4;3;?\033\\\033]4;16;?\033\\\033]4;196;?\033\\\033]4;232;?\033\\\033]4;255;?\033\\'; ",
+        r"printf '\033]10;?\033\\\033]11;?\033\\\033]12;?\033\\'; sleep 0.3; ",
+        r"printf '\033[31mA\033[91mB\033[38;5;3mC\033[38;5;16mD\033[38;5;196mE\033[38;5;231mF\033[38;5;232mG\033[38;5;255mH\033[0mI|\n'; sleep 1"
+    );
+    let mut cfg = SessionConfig::new(CommandSpec::new("sh").args(["-c", script]));
+    cfg.size = GridSize::new(40, 5);
+    cfg.apply_theme(&t);
+    cfg.trace_replies = true;
+    let s = Session::spawn(cfg).expect("spawn");
+    let events = wait_text(&s, "ABCDEFGHI|", Duration::from_secs(10));
+    let mut replies = String::new();
+    for ev in events.iter().chain(s.events.try_iter().collect::<Vec<_>>().iter()) {
+        if let SessionEvent::Reply(b) = ev {
+            replies.push_str(&String::from_utf8_lossy(b));
+        }
+    }
+    for want in [
+        "\x1b]4;1;rgb:d0d0/3333/3333",
+        "\x1b]4;9;rgb:dcdc/4e4e/4e4e",
+        "\x1b]4;3;rgb:d0d0/8c8c/1b1b",
+        "\x1b]4;16;rgb:0000/0000/0000",
+        "\x1b]4;196;rgb:ffff/0000/0000",
+        "\x1b]4;232;rgb:0808/0808/0808",
+        "\x1b]4;255;rgb:eeee/eeee/eeee",
+        "\x1b]10;rgb:cece/cece/cece",
+        "\x1b]11;rgb:1414/1414/1414",
+        "\x1b]12;rgb:cece/cece/cece",
+    ] {
+        assert!(replies.contains(want), "no {want:?} in the replies {replies:?}");
+    }
+    let snap = s.handle.snapshot().unwrap();
+    let y = (0..snap.rows).find(|&y| snap.row_text(y).starts_with("ABCDEFGHI|")).expect("row");
+    let fg = |x: u16| snap.cell(x, y).unwrap().fg;
+    let rgb = |v: u32| Some(Rgb { r: (v >> 16) as u8, g: (v >> 8) as u8, b: v as u8 });
+    assert_eq!(fg(0), rgb(0xd03333), "SGR 31 = theme colour 1");
+    assert_eq!(fg(1), rgb(0xdc4e4e), "SGR 91 = theme colour 9");
+    assert_eq!(fg(2), rgb(0xd08c1b), "38;5;3 = theme colour 3 (brown)");
+    assert_eq!(fg(3), rgb(0x000000), "38;5;16: xterm cube");
+    assert_eq!(fg(4), rgb(0xff0000), "38;5;196: xterm cube");
+    assert_eq!(fg(5), rgb(0xffffff), "38;5;231: xterm cube");
+    assert_eq!(fg(6), rgb(0x080808), "38;5;232: xterm grey ramp");
+    assert_eq!(fg(7), rgb(0xeeeeee), "38;5;255: xterm grey ramp");
+    assert_eq!(fg(8), None, "default colour");
+    assert_eq!((snap.default_fg, snap.default_bg, snap.cursor_color), (t.foreground, t.background, t.cursor_color));
+}

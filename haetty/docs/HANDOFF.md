@@ -1206,6 +1206,35 @@ regression list, measurements), then committed, pushed and mirrored.
   the AppUserModelID call. DESIGN.md §3.4 updated; both far inside the
   12 / 10 MB budget.
 
+- **2026-11-06 Themes (infrastructure; the default stays "haetty
+  classic").** `haetty_core::theme` (Ghostty theme files, shared `key =
+  value` parser, built-ins embedded from `assets/themes/`: the two IBM 5153
+  CGA files copied byte-identical — sha256 `6e59cd9c…` / `3bc41442…`, as in
+  the source zip — and "haetty classic"), config keys `theme`, `palette`,
+  `background`, `foreground`, `cursor-color`, `cursor-text`,
+  `selection-background`, `selection-foreground`; themes folder
+  `<config dir>/themes`; `haetty-headless --theme`; palette and cursor
+  colour into the engine and over the wire (`CreateSpec`, protocol 5);
+  cursor-text and selection colours in the painter; `THIRD-PARTY-NOTICES.md`
+  (sources, MIT text) and the README. DESIGN.md §3.14. Evidence:
+  - `haetty-core` test `theme_answers_colour_queries_and_colours_cells`
+    (real `sh` in a PTY, IBM 5153 CGA): replies `OSC 4;1 rgb:d0d0/3333/3333`,
+    `4;9 dcdc/4e4e/4e4e`, `4;3 d0d0/8c8c/1b1b`, `4;16 0000/0000/0000`,
+    `4;196 ffff/0000/0000`, `4;232 0808/0808/0808`, `4;255 eeee/eeee/eeee`,
+    `10 cece/cece/cece`, `11 1414/1414/1414`, `12 cece/cece/cece`; cells
+    from SGR 31 / 91 / 38;5;3 are `#d03333` / `#dc4e4e` / `#d08c1b`,
+    38;5;16/196/231/232/255 the xterm values.
+  - Unit tests: built-in values and the `#4e4e4e` fill-in (only for the
+    built-in CGA files; the same text as a user file is used as written);
+    "haetty classic" = libghostty-vt's built-in palette + `#dcdcdc` /
+    `#1e1e1e` (from the library at run time, not typed in); Ghostty syntax
+    (hex index, colour without `#`, X11 name, 3-digit hex), bad lines with
+    their numbers, 16–255 refused; lookup order (path, user folder over
+    built-in, built-in, unknown → default + message); a `background =` line
+    before `theme =` still wins; painter selection colours.
+  - The reference frames are unchanged (the default is still "haetty
+    classic", whose colours are the old ones).
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

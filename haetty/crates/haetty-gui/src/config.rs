@@ -14,6 +14,16 @@
 //! | `notifications` | `true` / `false`: desktop notification when Claude Code waits and the window is unfocused (Linux `notify-send`) | `true` |
 //! | `restore-tabs` | `true` / `false`: reopen the previous run's tabs at start | `true` |
 //! | `scrollback-limit` | bytes of scrollback per session (as Ghostty; ~1.1 KB per 120-column row) | 12000000 |
+//! | `theme` | a built-in theme name, a theme file's name in `<config dir>/themes/`, or a path (with `/` or `\`; relative to the config directory) | [`haetty_core::theme::DEFAULT_THEME`] |
+//! | `palette` | `N=COLOR` (N 0–15; repeatable), on top of the theme | the theme's |
+//! | `background`, `foreground`, `cursor-color`, `cursor-text`, `selection-background`, `selection-foreground` | a colour (Ghostty syntax), on top of the theme | the theme's |
+//!
+//! The colour keys and theme files use Ghostty's theme file format; they are
+//! applied after the theme wherever they stand in the file.
+
+use std::path::Path;
+
+use haetty_core::theme::{self, Theme};
 
 /// Colour of the padding around the grid (Ghostty's `window-padding-color`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +63,11 @@ pub struct Config {
     /// Claude Code tabs get haetty's hooks and status line.
     pub claude_integration: bool,
     pub notifications: bool,
+    /// `theme =`: a name or a path ([`theme::find`]).
+    pub theme: String,
+    /// Colour keys (`palette`, `background`, …) in the order given, applied
+    /// after the theme.
+    pub colors: Vec<(String, String)>,
 }
 
 impl Default for Config {
@@ -66,6 +81,8 @@ impl Default for Config {
             restore_tabs: true,
             claude_integration: true,
             notifications: true,
+            theme: theme::DEFAULT_THEME.to_string(),
+            colors: vec![],
         }
     }
 }
@@ -79,6 +96,14 @@ pub const KEYS: &[&str] = &[
     "restore-tabs",
     "claude-integration",
     "notifications",
+    "theme",
+    "palette",
+    "background",
+    "foreground",
+    "cursor-color",
+    "cursor-text",
+    "selection-background",
+    "selection-foreground",
 ];
 
 impl Config {
@@ -123,28 +148,54 @@ impl Config {
                 let v: u64 = value.replace('_', "").parse().map_err(|_| bad())?;
                 self.scrollback_limit = usize::try_from(v).map_err(|_| bad())?;
             }
+            "theme" => {
+                if value.is_empty() {
+                    return Err(bad());
+                }
+                self.theme = value.to_string();
+            }
+            k if theme::KEYS.contains(&k) => {
+                // Checked now (bad lines are reported with their number),
+                // applied after the theme.
+                Theme::base().set(k, value)?;
+                self.colors.push((k.to_string(), value.to_string()));
+            }
             _ => return Err(format!("unknown setting {key:?}")),
         }
         Ok(())
     }
 
+    /// The theme `theme` names (in `config_dir/themes` or built in), then the
+    /// colour keys on top, in order. An unknown or unreadable theme falls back
+    /// to the default theme. Returns messages for what was skipped.
+    pub fn resolve_theme(&self, config_dir: &Path) -> (Theme, Vec<String>) {
+        let mut msgs = vec![];
+        let mut t = match theme::load(&self.theme, Some(config_dir), Some(&config_dir.join("themes"))) {
+            Ok((t, bad)) => {
+                msgs.extend(bad);
+                t
+            }
+            Err(e) => {
+                msgs.push(format!("{e}; using {:?}", theme::DEFAULT_THEME));
+                Theme::default()
+            }
+        };
+        for (k, v) in &self.colors {
+            if let Err(e) = t.set(k, v) {
+                msgs.push(e);
+            }
+        }
+        (t, msgs)
+    }
+
     /// Applies a config file's text; returns one message per skipped line.
     pub fn apply_file(&mut self, text: &str, keys: &mut crate::keymap::Keymap) -> Vec<String> {
         let mut bad = vec![];
-        for (n, line) in text.lines().enumerate() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let Some((k, v)) = line.split_once('=') else {
-                bad.push(format!("line {}: expected key = value", n + 1));
-                continue;
-            };
-            let (k, v) = (k.trim(), v.trim());
-            let v = v.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(v);
-            let r = if k == "keybind" { keys.apply(v) } else { self.set(k, v) };
+        // The same line syntax as theme files (haetty_core::theme::lines).
+        for (n, kv) in theme::lines(text) {
+            let r = kv.and_then(|(k, v)| if k == "keybind" { keys.apply(v) } else { self.set(k, v) });
             if let Err(e) = r {
-                bad.push(format!("line {}: {e}", n + 1));
+                bad.push(format!("line {n}: {e}"));
             }
         }
         bad
@@ -198,8 +249,53 @@ mod tests {
         assert!(keys.action(&crate::keymap::Chord::parse("ctrl+shift+n").unwrap()).is_some());
         assert_eq!(bad.len(), 3, "{bad:?}");
         assert!(bad[0].starts_with("line 6:") && bad[1].starts_with("line 7:") && bad[2].starts_with("line 8:"));
-        for k in KEYS {
+        for k in KEYS.iter().filter(|k| **k != "theme") {
             assert!(!c.clone().set(k, "?").unwrap_err().starts_with("unknown"));
         }
+    }
+
+    fn rgb(v: u32) -> haetty_core::Rgb {
+        haetty_core::Rgb { r: (v >> 16) as u8, g: (v >> 8) as u8, b: v as u8 }
+    }
+
+    #[test]
+    fn theme_keys_apply_after_the_theme_and_user_themes_win() {
+        let dir = haetty_testkit::run_dir("config-themes");
+        let themes = dir.join("themes");
+        std::fs::create_dir_all(&themes).unwrap();
+        std::fs::write(themes.join("Mine"), "background = #010203\npalette = 3=#aa0000\nbogus = 1\n").unwrap();
+        // A user file named like a built-in theme wins over it.
+        std::fs::write(themes.join("IBM 5153 CGA"), "background = #050505\n").unwrap();
+        std::fs::write(dir.join("by-path"), "foreground = #0a0b0c\n").unwrap();
+        let mut keys = crate::keymap::Keymap::default();
+        let mut c = Config::default();
+        // A colour line before `theme =` still overrides the theme.
+        let bad = c.apply_file(
+            "background = #102030\ntheme = \"IBM 5153 CGA (Black)\"\npalette = 1=#ff0000\npalette = 99=#ffffff\nforeground = nope\n",
+            &mut keys,
+        );
+        assert_eq!(bad.len(), 2, "{bad:?}");
+        let (t, msgs) = c.resolve_theme(&dir);
+        assert!(msgs.is_empty(), "{msgs:?}");
+        let black = Theme::builtin("IBM 5153 CGA (Black)").unwrap();
+        assert_eq!((t.background, t.palette[1]), (rgb(0x102030), rgb(0xff0000)));
+        assert_eq!((t.foreground, t.palette[2]), (black.foreground, black.palette[2]));
+        // A theme in <config>/themes by name; its bad line is reported.
+        c.set("theme", "Mine").unwrap();
+        let (t, msgs) = c.resolve_theme(&dir);
+        assert_eq!((t.palette[3], t.background), (rgb(0xaa0000), rgb(0x102030)), "the config's background still wins");
+        assert!(msgs.len() == 1 && msgs[0].contains("line 3"), "{msgs:?}");
+        c.colors.clear();
+        c.set("theme", "IBM 5153 CGA").unwrap();
+        assert_eq!(c.resolve_theme(&dir).0.background, rgb(0x050505), "user file over the built-in");
+        // A path, relative to the config directory.
+        c.set("theme", "./by-path").unwrap();
+        assert_eq!(c.resolve_theme(&dir).0.foreground, rgb(0x0a0b0c));
+        // Unknown: the default theme and a message.
+        c.set("theme", "No Such Theme").unwrap();
+        let (t, msgs) = c.resolve_theme(&dir);
+        assert_eq!(t, Theme::default());
+        assert!(msgs[0].contains("No Such Theme"));
+        haetty_testkit::remove_dir_all(&dir);
     }
 }

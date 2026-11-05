@@ -175,6 +175,44 @@ keybind = ctrl+shift+n=new_tab
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |
 | `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
 | `keybind` | `CHORD=ACTION` or `CHORD=unbind` (file only, may repeat) | see [Tabs and keys](#tabs-and-keys) |
+| `theme` | a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes)) | `haetty classic` |
+| `palette` | `N=COLOR`, N 0–15 (may repeat) — on top of the theme | the theme's |
+| `background`, `foreground`, `cursor-color`, `cursor-text`, `selection-background`, `selection-foreground` | a colour (`#rrggbb`, `rrggbb`, an X11 name) — on top of the theme | the theme's |
+
+### Themes
+
+Themes use Ghostty's theme file format, so Ghostty theme files work as
+they are:
+
+```text
+palette = 0=#141414
+palette = 1=#d03333
+…
+background = #141414
+foreground = #cecece
+cursor-color = #cecece
+cursor-text = #141414
+selection-background = #4e4e4e
+selection-foreground = #141414
+```
+
+- Built in: `IBM 5153 CGA`, `IBM 5153 CGA (Black)` (the IBM 5153 colour
+  monitor's CGA colours; sources and licence in
+  [Third-party components](#third-party-components)) and `haetty classic`
+  (haetty's earlier colours).
+- Your own: put the file into the themes folder — Linux
+  `~/.config/haetty/themes/` (`$XDG_CONFIG_HOME/haetty/themes/`), Windows
+  `%APPDATA%\haetty\themes\` — and use its file name: `theme = My Theme`.
+  A file there wins over a built-in theme of the same name. A value with
+  `/` or `\` is a path (relative to the config folder).
+- Colour keys in the config file apply after the theme, wherever they
+  stand: `theme = IBM 5153 CGA` plus `palette = 4=#3a3aff` changes only
+  blue. Keys a theme file leaves out keep `haetty classic`'s values.
+- Only colours 0–15 are themed; 16–255 stay xterm's colour cube and grey
+  ramp. Programs asking for the colours (OSC 4, 10, 11, 12) get the theme's
+  values.
+- A theme applies to tabs opened after haetty starts with it; tabs that
+  were still running in the daemon keep their colours.
 
 ### Tab sets
 
@@ -479,6 +517,48 @@ The daemon is started without a console and outside the window's job
 object where the job allows it; otherwise it ends with that job (logged).
 
 ## Third-party components
+
+All of them, with the licence texts that are not in the code's own
+packages: `THIRD-PARTY-NOTICES.md`.
+
+- Colour themes "IBM 5153 CGA" and "IBM 5153 CGA (Black)" (embedded,
+  `assets/themes/`): by Jesse Miller (https://jmiller.com/), after
+  int10h.org's "IBM 5153's True CGA Palette and Color Output" (June 2022,
+  https://int10h.org/blog/2022/06/ibm-5153-color-true-cga-palette/); the
+  Ghostty files of mbadolato/iTerm2-Color-Schemes
+  (https://github.com/mbadolato/iTerm2-Color-Schemes) at commit `38bd77c`,
+  copied unchanged; MIT. When haetty loads them it fills in one value: a
+  selection background missing or equal to the foreground becomes
+  `#4e4e4e` (`assets/themes/README.md`). Licence:
+
+```text
+MIT License
+
+Copyright (c) 2011 to Present Mark Badolato
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+This license covers the iTerm-Color-Schemes repository collection of themes. 
+
+The copyright/license for each individual theme belongs to the author of that theme.
+```
+
 
 - libghostty-vt (Ghostty, MIT) via `libghostty-vt` / `libghostty-vt-sys`
   (MIT OR Apache-2.0).
