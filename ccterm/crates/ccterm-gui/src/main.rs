@@ -4,7 +4,10 @@
 //! ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
 //! ```
 //! Without a program it runs the user's shell (`$SHELL`, else `/bin/sh`;
-//! Windows: `%COMSPEC%`, else `cmd.exe`).
+//! Windows: `%COMSPEC%`, else `cmd.exe`). The first word after the options is
+//! the program (`ccterm claude`), except the reserved subcommand names in
+//! [`SUBCOMMANDS`]; a program with one of those names goes after `--`
+//! (`ccterm -- status`).
 //!
 //! Environment: `CCTERM_LOG=error|warn|info|debug` (default warn),
 //! `CCTERM_LOG_FILE=path` (log there instead of stderr; on Windows the
@@ -50,10 +53,19 @@ fn default_shell() -> CommandSpec {
     CommandSpec::new(prog)
 }
 
+/// Subcommand names reserved for later milestones (`docs/DESIGN.md` §3.2,
+/// §6). As a first word they end with an error instead of running a program
+/// of that name, so adding a subcommand later does not change what an
+/// existing command line does.
+pub const SUBCOMMANDS: &[&str] =
+    &["gui", "daemon", "hook", "statusline", "run", "headless", "install-desktop", "status"];
+
 const USAGE: &str =
     "usage: ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
      settings (KEY): window-padding N, window-padding-balance true|false,\n\
-     window-padding-color background|extend|extend-always, decorations native|integrated|none";
+     window-padding-color background|extend|extend-always, decorations native|integrated|none\n\
+     reserved subcommands (not implemented yet): gui, daemon, hook, statusline, run, headless,\n\
+     install-desktop, status; to run a program with one of these names: ccterm [OPTIONS] -- NAME [ARGS...]";
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
     let mut o = Options {
@@ -97,6 +109,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
                     None => it.next().ok_or(format!("--{key} needs a value"))?,
                 };
                 o.config.set(key, &value)?;
+            }
+            s if SUBCOMMANDS.contains(&s) => {
+                return Err(format!(
+                    "ccterm: '{s}' is a subcommand that is not implemented yet; \
+                     to run a program named {s}, use: ccterm -- {s}"
+                ));
             }
             _ => {
                 program.push(a);
@@ -161,18 +179,68 @@ fn init_log() {
 }
 
 /// Report an error the user must see and exit. On Windows the release build
-/// has no console, so a message box is shown.
+/// has no console, so a message box is shown unless stderr is redirected
+/// (scripts, tests), where the log line above already went.
 pub fn fatal(msg: &str) -> ! {
     log::error!("{msg}");
     #[cfg(windows)]
     {
-        message_box(msg);
+        if !std_handle_valid(true) {
+            message_box(msg);
+        }
     }
     #[cfg(not(windows))]
     {
         eprintln!("ccterm: {msg}");
     }
     std::process::exit(1);
+}
+
+/// Print usage, version or a command-line error and exit with `code`. The
+/// Windows release build has no console of its own: the text goes to a
+/// redirected stdout/stderr, else to the console of the parent (a shell),
+/// else into a message box.
+fn exit_with(msg: &str, code: i32) -> ! {
+    #[cfg(windows)]
+    {
+        if !windows_console(code != 0) {
+            message_box(msg);
+            std::process::exit(code);
+        }
+    }
+    if code == 0 {
+        println!("{msg}");
+    } else {
+        eprintln!("{msg}");
+    }
+    std::process::exit(code);
+}
+
+/// Whether stdout (or stderr) leads somewhere: a redirected handle, or the
+/// parent's console after attaching to it.
+#[cfg(windows)]
+fn windows_console(stderr: bool) -> bool {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn AttachConsole(pid: u32) -> i32;
+    }
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    // SAFETY: plain Win32 call without pointer arguments.
+    std_handle_valid(stderr) || unsafe { AttachConsole(ATTACH_PARENT_PROCESS) != 0 }
+}
+
+/// Whether stderr (or stdout) is a real handle, e.g. redirected to a file.
+#[cfg(windows)]
+fn std_handle_valid(stderr: bool) -> bool {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetStdHandle(which: u32) -> *mut core::ffi::c_void;
+    }
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    // SAFETY: plain Win32 call without pointer arguments.
+    let h = unsafe { GetStdHandle(if stderr { STD_ERROR_HANDLE } else { STD_OUTPUT_HANDLE }) };
+    !h.is_null() && h as isize != -1
 }
 
 #[cfg(windows)]
@@ -193,10 +261,7 @@ fn main() {
     init_log();
     let opts = match parse_args(std::env::args().skip(1)) {
         Ok(o) => o,
-        Err(msg) => {
-            println!("{msg}");
-            std::process::exit(if msg.starts_with("usage") || msg.starts_with("ccterm ") { 0 } else { 2 });
-        }
+        Err(msg) => exit_with(&msg, if msg.starts_with("usage") || msg.starts_with("ccterm ") { 0 } else { 2 }),
     };
     let fonts = font::Fonts::load(opts.font.as_deref()).unwrap_or_else(|e| fatal(&e));
     let el =
@@ -238,6 +303,31 @@ mod tests {
         assert!(args(&["--decorations"]).is_err());
 
         assert!(!args(&[]).unwrap().command.program.is_empty());
+    }
+
+    #[test]
+    fn reserved_subcommands_are_errors_until_implemented() {
+        for name in SUBCOMMANDS {
+            let e = args(&[name]).err().unwrap_or_else(|| panic!("{name} must be rejected"));
+            assert!(e.contains("not implemented") && e.contains(&format!("ccterm -- {name}")), "{e}");
+            // Also after options, and with arguments.
+            assert!(args(&["--cols", "80", name, "--json"]).is_err());
+            // After `--` the word is a program again.
+            let o = args(&["--rows", "10", "--", name, "x"]).unwrap();
+            assert_eq!(o.command.program, *name);
+            assert_eq!(o.command.args, vec!["x"]);
+        }
+        // Not reserved: still a program, including near misses and reserved
+        // words as arguments of a program.
+        for prog in ["claude", "statusx", "Status", "gui2", "./run"] {
+            assert_eq!(args(&[prog]).unwrap().command.program, prog);
+        }
+        let o = args(&["claude", "status"]).unwrap();
+        assert_eq!(o.command.program, "claude");
+        assert_eq!(o.command.args, vec!["status"]);
+        // Not mistaken for usage or version output (those exit 0).
+        let e = args(&["hook"]).unwrap_err();
+        assert!(!e.starts_with("usage") && !e.starts_with("ccterm "));
     }
 
     #[test]

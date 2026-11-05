@@ -58,6 +58,16 @@ thin LTO, stripped): `ccterm` 5.6 MB on Linux, 4.2 MB on Windows.
 
 ## ccterm (the window)
 
+```text
+ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
+```
+
+- `ccterm claude` runs a program directly; without one, the user's shell.
+- Reserved subcommand names: `gui`, `daemon`, `hook`, `statusline`, `run`,
+  `headless`, `install-desktop`, `status`. As the first word they end with
+  "subcommand not implemented yet" (exit code 2) until a later milestone
+  adds them. To run a program with one of these names, put it after `--`:
+  `ccterm -- status`.
 - Paste: Ctrl+Shift+V or Shift+Insert; on Windows also Ctrl+V. Plain Ctrl+V
   reaches the application on Linux (Claude Code pastes images with it).
 - Copy: applications copy with OSC 52 — in Claude Code's fullscreen renderer
