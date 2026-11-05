@@ -164,6 +164,16 @@ impl Win {
         &self.session.handle
     }
 
+    /// Sizes of the GUI's own heap structures, for the log (`CCTERM_LOG=info`).
+    fn log_memory(&self) {
+        let empty = vec![];
+        let all = self.snap.as_ref().map_or(&empty, |s| &s.cells);
+        let cells = all.len();
+        let text: usize = all.iter().map(|c| c.text.capacity()).sum();
+        let snap_kb = (cells * std::mem::size_of::<ccterm_core::Cell>() + text) / 1024;
+        log::info!("memory: {}; snapshot {cells} cells {snap_kb} KB", self.renderer.memory());
+    }
+
     /// Grid origin in the window (same computation as the renderer's).
     fn origin(&self) -> (u32, u32) {
         self.layout.origin(self.size.width, self.size.height, self.grid.cols, self.grid.rows)
@@ -319,6 +329,7 @@ impl ApplicationHandler<UserEvent> for App {
             SessionEvent::Title(t) => win.window.set_title(if t.is_empty() { "ccterm" } else { &t }),
             SessionEvent::Exited(status) => {
                 log::info!("child exited: {status:?}");
+                win.log_memory();
                 self.exit_code = status.code.map_or(1, |c| c as i32);
                 el.exit();
             }
@@ -345,7 +356,10 @@ impl ApplicationHandler<UserEvent> for App {
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(win) = self.win.as_mut() else { return };
         match event {
-            WindowEvent::CloseRequested => el.exit(),
+            WindowEvent::CloseRequested => {
+                win.log_memory();
+                el.exit()
+            }
             WindowEvent::RedrawRequested => win.draw(),
             WindowEvent::Resized(size) => win.resized(size),
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {

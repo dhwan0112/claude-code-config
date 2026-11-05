@@ -111,10 +111,19 @@ added if profiling asks for it.
 
 | Item | Target |
 |---|---|
-| Stripped binary | ≤ 12 MB Linux, ≤ 10 MB Windows (incl. ConPTY) |
+| Binary: `ccterm`, `dist` profile (stripped) | ≤ 12 MB Linux, ≤ 10 MB Windows (incl. the embedded ConPTY) |
 | Idle CPU, Claude Code idle | ~0 % |
-| RSS per session, 10k scrollback | ≤ 25 MB |
+| Anonymous memory of the `ccterm` process with one session (120x36, 10k lines of scrollback at 120 columns), Claude Code idle | ≤ 25 MB |
+| Anonymous memory per additional session (same scrollback) | measured, reported (no budget yet) |
 | Key press → frame | ≤ 16 ms at 120x36 on a laptop CPU |
+
+Anonymous memory is Linux `RssAnon` (`/proc/PID/status`) and Windows
+private working set: heap, stacks and anonymous mappings of ccterm itself.
+Not counted: file-backed pages (shared libraries, memory-mapped fonts;
+`RssFile`), shared memory with the display server (X11 MIT-SHM, Wayland
+pool buffers; `RssShmem`) and the child process (Claude Code).
+`SessionConfig::scrollback` is libghostty-vt's `max_scrollback`, a byte
+limit; "10k lines" means a limit large enough to keep 10 000 rows.
 
 ## 4. VT engine decision (measured 2026-11-04)
 

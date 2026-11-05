@@ -76,4 +76,6 @@ pub trait Renderer {
     /// Window size in physical pixels.
     fn resize(&mut self, width: u32, height: u32);
     fn render(&mut self, scene: &Scene) -> Result<(), RenderError>;
+    /// Heap memory held by the renderer, for the log.
+    fn memory(&self) -> String;
 }

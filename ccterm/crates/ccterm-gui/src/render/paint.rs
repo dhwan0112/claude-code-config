@@ -90,6 +90,20 @@ impl Painter {
         p
     }
 
+    /// Glyph cache and font state sizes, for the log.
+    pub fn memory(&self) -> String {
+        let rasters: usize = self.glyphs.values().flatten().map(|r| r.data.capacity()).sum();
+        let table = self.glyphs.capacity() * (std::mem::size_of::<GlyphKey>() + std::mem::size_of::<Option<Raster>>());
+        format!(
+            "glyph cache {} entries, rasters {} KB + table {} KB; fits {}; {}",
+            self.glyphs.len(),
+            rasters / 1024,
+            table / 1024,
+            self.fits.len(),
+            self.fonts.memory()
+        )
+    }
+
     pub fn metrics(&self) -> Metrics {
         self.m
     }

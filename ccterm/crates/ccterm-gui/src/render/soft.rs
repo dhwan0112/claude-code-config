@@ -87,6 +87,17 @@ fn merge_bands(mut b: Bands) -> Bands {
 }
 
 impl Renderer for SoftRenderer {
+    fn memory(&self) -> String {
+        format!(
+            "canvas {}x{} {} KB, damage history {}; {}",
+            self.canvas.width,
+            self.canvas.height,
+            self.canvas.pixels.capacity() * 4 / 1024,
+            self.history.len(),
+            self.painter.memory()
+        )
+    }
+
     fn cell_metrics(&self) -> CellMetrics {
         self.painter.cell_metrics()
     }

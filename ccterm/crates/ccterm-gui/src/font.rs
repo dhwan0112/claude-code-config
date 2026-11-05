@@ -225,6 +225,21 @@ impl Fonts {
         Some(i)
     }
 
+    /// Open faces, mapped files and lookup cache, for the log. Mapped font
+    /// files count as file-backed memory, not anonymous.
+    pub fn memory(&self) -> String {
+        let mapped: usize = self.files.values().map(|m| m.len()).sum();
+        format!(
+            "{} faces open ({} of {} installed), {} files mapped ({} KB, file-backed), {} lookups cached",
+            self.faces.len(),
+            self.faces.len(),
+            self.db.len(),
+            self.files.len(),
+            mapped / 1024,
+            self.lookup.len()
+        )
+    }
+
     pub fn face(&self, i: usize) -> &Face {
         &self.faces[i]
     }
