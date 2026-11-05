@@ -454,8 +454,12 @@ would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
   without a daemon, 1.02 s (the deadline) with one. Windows (this machine):
   process start alone is ~52 ms (`hostname.exe`, `whoami.exe` medians), the
   hook 64 ms — the 50 ms target is not reachable there; the extra ~12 ms is
-  loading the GUI binary's DLLs (the same with an immediate exit). Only the
-  edit PreToolUse makes Claude Code wait for it.
+  loading the GUI binary's DLLs (the same with an immediate exit). Claude
+  Code waits only for the synchronous ones (edit PreToolUse,
+  PermissionRequest; §3.4).
+  Without a daemon the hook exits without reading stdin; Claude Code passes
+  hook input over a socket and ignores the resulting `EPIPE` (checked up to
+  4 MB input, review B7), so stdin is not drained.
 - State per session (daemon, `ccterm_cc::state`): Claude Code session id,
   name, model, attention, busy, context %, rate limits, cost, lines,
   files changed, edits, last edit, subagents, prompt cache — derived

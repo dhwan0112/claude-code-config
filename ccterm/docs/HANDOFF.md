@@ -633,6 +633,19 @@ New in the milestone 1 finishing work (2026-11-05):
 14. (M3) Windows with Claude Code using PowerShell instead of Git Bash for
     the status line, and ccterm installed in a path with spaces (the status
     line command is then double-quoted, which PowerShell does not run).
+15. (Review) With a real account: a permission prompt now waits for the
+    synchronous PermissionRequest hook — the dialog should appear without a
+    noticeable delay (Windows ~70 ms); the red `?` must be on the tab when
+    the dialog shows.
+16. (Review) A real Write of a multi-MB file by Claude Code with and
+    without a running daemon: no hook error shown (only the UserPromptSubmit
+    path was checked with large input).
+17. (Review) Reattach on a real desktop: kill or crash the window during a
+    long Claude Code turn, start ccterm from the launcher — the same
+    conversation continues in its tab, nothing restarted; the palette's
+    "Attach detached sessions" after a second window crashed.
+18. (Review) A palette "Paste" while Claude Code asks for permission is
+    refused with a hint; a Ctrl+Shift+V paste typed by you goes through.
 
 ### 6.2 Known gaps (not in milestone 1's scope)
 
@@ -972,6 +985,31 @@ regression list, measurements), then committed, pushed and mirrored.
     synchronous hook (≤ 250 ms enforced; measured Linux 4.4 ms, Windows
     69–76 ms median). D10: README — ccterm does not change Claude Code's
     permission mode; the user's settings apply unchanged.
+
+- **2026-11-05 Review B7 — large hook input without a daemon: no change
+  needed.** Real Claude Code 2.1.318 (isolated HOME, fake key) driven by
+  `ccterm-headless`; a synchronous exec-form UserPromptSubmit hook (the
+  event whose input carries the whole prompt) with pasted prompts of
+  2 bytes, 64 KB, 1 MB and 4 MB; three hooks compared: one reading all of
+  stdin, one exiting without reading, `ccterm hook` with no daemon.
+  - Claude Code passes hook input over a **socket** (not a pipe), written
+    with `MSG_DONTWAIT|MSG_NOSIGNAL`; ~214 KB fit in its buffer. From 1 MB
+    on, a hook that exits without reading makes Claude Code's write fail
+    with `EPIPE` (strace: 1 EPIPE in every 1 MB / 4 MB run of `ccterm
+    hook` and of the plain no-read hook; none for the reading hook).
+  - Claude Code ignores it: no line on the screen (also in the ctrl+o
+    detail view), `--debug-file` logs `finished with status 0` for the hook
+    and no extra error/warning line compared with the reading hook at the
+    same size, nothing in the transcript. The prompt goes through.
+  - `ccterm hook` with 4 MB of input and no daemon exits in 2.4–7.5 ms
+    (pipe, socket pair, file, slow writer: ~10 ms), exit 0.
+  - Conclusion: exiting without draining stdin causes no hook error, so the
+    "drain stdin with a time limit" fix is not made (it would only add
+    work to a hook Claude Code may wait for). Not covered: a multi-MB
+    PreToolUse (Write) payload — no model with a fake key; it goes through
+    the same hook-spawning path. Scripts and results: session notes
+    `scratchpad\b7\` (`drive2.sh`, `matrix3.sh`, `summary3.txt`,
+    `errdiff.txt`).
 
 ### ccx comparison (milestone 3)
 
