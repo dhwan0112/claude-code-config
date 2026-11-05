@@ -210,7 +210,7 @@ impl Painter {
             let on_cursor = cursor_block && cursor.is_some_and(|c| c.x == x);
             if on_cursor {
                 fg = self.look.cursor_text.unwrap_or(bg);
-            } else if !super::contrast::exempt(&cell.text) {
+            } else if !cell.flags.has(CellFlags::HAETTY_UI) && !super::contrast::exempt(&cell.text) {
                 fg = super::contrast::contrasted(fg, bg, self.look.min_contrast);
             }
             let rect = Rect::new(origin.0 + x as i32 * m.cell_w, top, m.cell_w * span, m.cell_h);
@@ -751,6 +751,73 @@ mod tests {
             }
         }
         n
+    }
+
+    /// `minimum-contrast` 4.5 with IBM 5153 CGA: the program's blue text
+    /// (1.85:1) turns white, but haetty's own cells keep their colours — the
+    /// tab bar's `?` mark (colour 9, 4.02:1 on the bar grey) and the status
+    /// row's dim labels (3.55:1).
+    #[test]
+    fn minimum_contrast_leaves_haettys_own_cells_alone() {
+        use crate::ui::{self, Compose, Greys, TabView};
+        use haetty_proto::wire::{Attention, ClaudeInfo};
+        let Some(mut p) = painter() else { return };
+        let t = haetty_core::theme::Theme::builtin("IBM 5153 CGA").unwrap();
+        let g = Greys::new(t.foreground, t.background, &t.palette);
+        let (cols, rows) = (40u16, 4u16);
+        let mut screen = Snapshot {
+            cols,
+            rows: 2,
+            cells: vec![Cell::default(); cols as usize * 2],
+            default_fg: t.foreground,
+            default_bg: t.background,
+            ..Default::default()
+        };
+        let mut row0 = vec![Cell::default(); cols as usize];
+        ui::put(&mut row0, 0, "MMMM blue text", t.palette[4], t.background, false);
+        screen.cells[..cols as usize].clone_from_slice(&row0);
+        let tabs = [
+            TabView { name: "a", exited: false, attention: Attention::None },
+            TabView { name: "b", exited: false, attention: Attention::Ask },
+        ];
+        let info = ClaudeInfo { context_pct: Some(42.0), ..Default::default() };
+        let composed = Compose {
+            screen: &screen,
+            accents: &t.palette,
+            cols,
+            rows,
+            tab_bar: Some(ui::tab_bar(&tabs, 0, cols as usize, g)),
+            status: Some(ui::status_row(Some(&info), cols as usize, g, "")),
+            panel: None,
+            diff: None,
+            palette: None,
+            hint: None,
+        }
+        .build();
+        p.set_look(Look { min_contrast: 4.5, ..Look::of(&t) });
+        let dirty = vec![true; rows as usize];
+        let cv = render(&mut p, &scene(&composed, &dirty, false, None));
+        let m = p.metrics();
+        let row = |y: i32| Rect::new(0, y * m.cell_h, cols as i32 * m.cell_w, m.cell_h);
+        let is = |c: Rgb| move |px: u32| px == crate::render::canvas::pack(c);
+        let white = Rgb { r: 255, g: 255, b: 255 };
+        // The program's blue text became white.
+        assert!(count(&cv, row(1), is(white)) > 0 && count(&cv, row(1), is(t.palette[4])) == 0);
+        // The `?` mark keeps colour 9; nothing white in the tab bar.
+        assert!(count(&cv, row(0), is(t.palette[9])) > 0, "? mark in colour 9");
+        assert_eq!(count(&cv, row(0), is(white)), 0);
+        // The status row keeps its dim labels; nothing white there either.
+        assert!(count(&cv, row(3), is(g.dim)) > 0, "dim labels");
+        assert_eq!(count(&cv, row(3), is(white)), 0);
+        // The same colours as a program's cells would change.
+        p.set_look(Look { min_contrast: 1.0, ..Look::of(&t) });
+        let cv1 = render(&mut p, &scene(&composed, &dirty, false, None));
+        assert_eq!(count(&cv1, row(1), is(white)), 0, "off at 1");
+        assert_eq!(
+            count(&cv1, row(0), is(t.palette[9])),
+            count(&cv, row(0), is(t.palette[9])),
+            "same mark at 1 and 4.5"
+        );
     }
 
     #[test]

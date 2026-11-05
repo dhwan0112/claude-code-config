@@ -495,6 +495,9 @@ impl Compose<'_> {
         let (cols, rows) = (self.cols as usize, self.rows as usize);
         let top = usize::from(self.tab_bar.is_some());
         let mut grid: Vec<Vec<Cell>> = vec![vec![Cell::default(); cols]; rows];
+        // Which cells are the program's (from the screen); every other cell
+        // is haetty's own and gets CellFlags::HAETTY_UI at the end.
+        let mut program = vec![vec![false; cols]; rows];
         if let Some(bar) = &self.tab_bar {
             for (i, c) in bar.iter().take(cols).enumerate() {
                 grid[0][i] = c.clone();
@@ -508,8 +511,9 @@ impl Compose<'_> {
         }
         for y in 0..rows.saturating_sub(top + bottom).min(s.rows as usize) {
             let src = &s.cells[y * s.cols as usize..(y + 1) * s.cols as usize];
-            for (dst, c) in grid[top + y].iter_mut().zip(src) {
+            for ((dst, c), p) in grid[top + y].iter_mut().zip(src).zip(program[top + y].iter_mut()) {
                 *dst = c.clone();
+                *p = true;
             }
         }
         let area = rows.saturating_sub(top + bottom);
@@ -518,6 +522,7 @@ impl Compose<'_> {
             for (y, prow) in p.iter().take(area).enumerate() {
                 for (x, c) in prow.iter().take(pw).enumerate() {
                     grid[top + y][cols - pw + x] = c.clone();
+                    program[top + y][cols - pw + x] = false;
                 }
             }
         }
@@ -528,16 +533,40 @@ impl Compose<'_> {
             d.draw(&mut area_grid, 0, area, g);
             for (y, r) in area_grid.into_iter().enumerate() {
                 grid[top + y][..cols - pw].clone_from_slice(&r);
+                program[top + y][..cols - pw].fill(false);
             }
             cursor = None;
         }
+        // The palette and hints draw over whatever is there: the cells they
+        // changed are theirs.
+        let overlay =
+            |grid: &mut Vec<Vec<Cell>>, program: &mut Vec<Vec<bool>>, f: &mut dyn FnMut(&mut Vec<Vec<Cell>>)| {
+                let before = grid.clone();
+                f(grid);
+                for ((row, old), prow) in grid.iter().zip(&before).zip(program.iter_mut()) {
+                    for ((c, o), p) in row.iter().zip(old).zip(prow.iter_mut()) {
+                        if c != o {
+                            *p = false;
+                        }
+                    }
+                }
+            };
         if let Some((p, keys)) = self.palette {
-            if let Some((x, y)) = p.draw(&mut grid, top, keys, g) {
-                cursor = Some(Cursor { x, y, shape: haetty_core::CursorShape::Bar, blinking: false });
-            }
+            overlay(&mut grid, &mut program, &mut |grid| {
+                if let Some((x, y)) = p.draw(grid, top, keys, g) {
+                    cursor = Some(Cursor { x, y, shape: haetty_core::CursorShape::Bar, blinking: false });
+                }
+            });
         }
         if let Some(h) = self.hint {
-            hint(&mut grid, h, g);
+            overlay(&mut grid, &mut program, &mut |grid| hint(grid, h, g));
+        }
+        for (row, prow) in grid.iter_mut().zip(&program) {
+            for (c, &p) in row.iter_mut().zip(prow) {
+                if !p {
+                    c.flags.0 |= CellFlags::HAETTY_UI;
+                }
+            }
         }
         Snapshot {
             cols: self.cols,
@@ -675,6 +704,11 @@ mod tests {
         }
         .build();
         assert_eq!((with.cells[0].text.as_str(), with.cells[8].text.as_str()), ("x", "S"));
+        // haetty's own cells are marked, the program's are not.
+        let ui = |c: &Cell| c.flags.has(CellFlags::HAETTY_UI);
+        assert!(!ui(&with.cells[0]) && ui(&with.cells[8]), "screen vs status row");
+        assert!(out.cells[..4].iter().all(ui) && !out.cells[4..].iter().any(ui), "tab bar vs screen");
+        assert!(plain.cells[5..].iter().filter(|c| ui(c)).count() >= 2 && !ui(&plain.cells[0]), "hint");
     }
 
     fn text(row: &[Cell]) -> String {

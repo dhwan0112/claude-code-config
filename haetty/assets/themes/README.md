@@ -48,7 +48,8 @@ makes of it. haetty's default is `minimum-contrast = 1`: the colours stay as
 the monitor showed them. As in Ghostty, text below the minimum becomes
 white (on a dark background) or black (on a light one) — the whole colour,
 not a lighter shade of it; box drawing, block elements and Powerline glyphs
-are left alone.
+are left alone, and so are haetty's own rows (tab bar, status row, panel,
+palette, hints).
 
 | # | name | colour | contrast on #141414 | at minimum-contrast 3 | at 4.5 |
 |---:|---|---|---:|---|---|

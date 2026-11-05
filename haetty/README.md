@@ -221,9 +221,9 @@ selection-foreground = #141414
 - `minimum-contrast = 3` (or 4.5) keeps dim colours readable: with IBM
   5153 CGA, blue (1.85:1 on its background) and bright black (2.21:1) are
   hard to read; at 3 they — and colour 0 — turn white, at 4.5 also red,
-  magenta and bright blue. It applies to haetty's own rows too: at 4.5
-  the red `?` mark (4.0:1 on the tab bar) and the dim labels (3.6:1) turn
-  white as well. The table and frame dumps are in
+  magenta and bright blue. It changes only what programs draw; haetty's
+  own rows (tab bar, status row, panel, palette, hints) keep their
+  colours. The table and frame dumps are in
   `assets/themes/README.md` and `docs/theme/`.
 - **Claude Code in the theme's colours:** Claude Code's own themes use
   fixed 24-bit colours, which no terminal theme changes. To have Claude

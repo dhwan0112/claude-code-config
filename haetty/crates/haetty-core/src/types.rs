@@ -56,6 +56,11 @@ impl CellFlags {
     pub const BLINK: u16 = 1 << 7;
     pub const OVERLINE: u16 = 1 << 8;
     pub const SELECTED: u16 = 1 << 9;
+    /// Drawn by haetty itself (tab bar, status row, panels, palette, hints),
+    /// not by the program: set by the GUI when it composes the window, never
+    /// by the engine. The renderer leaves these colours as they are
+    /// (`minimum-contrast` applies to the program's cells only).
+    pub const HAETTY_UI: u16 = 1 << 10;
     pub fn has(self, bit: u16) -> bool {
         self.0 & bit != 0
     }

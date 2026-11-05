@@ -1358,6 +1358,18 @@ regression list, measurements), then committed, pushed and mirrored.
   run only the addressed one stops. The session harness (`reg.sh`,
   `e2e*.sh`, `coexist.sh`, …) no longer uses `pkill -f`.
 
+- **2026-11-06 `minimum-contrast` only on the program's cells.** New
+  renderer-only `CellFlags::HAETTY_UI` (bit 10, set by `ui::Compose` on
+  every cell not taken from the screen: tab bar, status row, panel, diff
+  view, palette, hints — the latter two by comparing the grid before and
+  after they draw); the painter skips `minimum-contrast` for them. Tests:
+  `compose_puts_screen_below_the_tab_bar_and_moves_the_cursor` (tab bar,
+  status row, hint cells marked; screen cells not);
+  `minimum_contrast_leaves_haettys_own_cells_alone` (real painter, IBM 5153
+  CGA, 4.5: the program's blue text turns white; the tab bar's `?` keeps
+  colour 9 and the status row its dim grey, no white pixel in either row;
+  at 1 the program's text is unchanged). Reference frames unchanged.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |
