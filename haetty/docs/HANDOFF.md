@@ -1408,6 +1408,13 @@ regression list, measurements), then committed, pushed and mirrored.
     CGA Black (`#000000`, DarkRed `#c40000`), window stopped by PID,
     config → classic, a new window reattaches it → `#1e1e1e` / `#cc6666`.
 
+- **2026-11-06 Size after the theme review** (`dist`, stripped): Linux
+  6 422 992 → 6 435 840 (+12 848 B), Windows 5 001 216 → 5 012 992
+  (+11 776 B) for `minimum-contrast` on the program's cells only, the
+  selection-text rule and `SetTheme` / config reload; no new dependency.
+  Regression `reg.sh` 27/27 and §2.3 `e2e3.sh` 5/5 with the harness
+  stopping dev daemons only through `haetty_stop_daemon`.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |
