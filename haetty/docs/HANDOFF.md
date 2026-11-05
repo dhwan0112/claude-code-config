@@ -1461,6 +1461,19 @@ regression list, measurements), then committed, pushed and mirrored.
     real `APPDATA`, `~/.local/share`, `~/.claude` → refused, also from a
     nested script started with the fake values.
 
+- **2026-11-06 First stable candidate: `4d75fcd`** (not tagged; the user
+  decides). Checks on that commit's own build (`haetty --version` →
+  `commit 4d75fcdedbe1`): gate (both targets, clippy 0 on both, all tests);
+  regression `reg.sh` 27/27 (Linux, Xvfb); DESIGN §2.3 `e2e3.sh` 5/5; theme
+  change while running `themerun.sh` 8/8; installer self-tests installing
+  it (`d414c4b` → `4d75fcd`, rollback and back) Linux 18/18, Windows 17/17;
+  Windows natively: GUI unit tests 70/70 (reference frames identical),
+  `windows-smoke.ps1` 0 failures (cmd, PowerShell, resize, Claude Code
+  fullscreen modes and multi-line input). Size (`dist`): Linux 6 437 584,
+  Windows 5 014 016 (+1 744 / +1 024 B for `--version`). Not covered: the
+  manual checks of §6.1 (real keyboards and IMEs, a logged-in Claude
+  Code, HiDPI, a machine without Git Bash).
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |
