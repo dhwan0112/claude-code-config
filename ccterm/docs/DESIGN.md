@@ -405,6 +405,42 @@ would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
 - JSON: an own parser/writer (`ccterm_cc::json`, ~350 lines): standalone
   +54 KB Linux / +51 KB Windows against serde_json's +71 / +64 KB.
 - The event log gets `attention` lines (event name and result) only.
+- In the window (all hidden or quiet by default, nothing opens by itself):
+  - Tab bar marks on *other* tabs: amber `●` = Wait, red `?` = Ask (the
+    only accent colours besides usage near a limit). Selecting a tab, or
+    focusing the window on it, clears Wait (the GUI sends
+    `ClearAttention`); Ask stays until Claude Code moves on.
+  - Unfocused window and Wait/Ask: `request_user_attention` (taskbar
+    flash on Windows, urgency hint on X11) and, on Linux, `notify-send`
+    when installed (`notifications = false` turns it off). The text names
+    the tab and says "waiting"/"asks you"; never session content. Windows
+    toast notifications are not done (they need WinRT registration).
+  - Status row (bottom row of Claude Code tabs, reserved from creation so
+    Claude Code is not reflowed when the first report arrives):
+    `ctx  42%  5h  12%  7d  30%  $  1.23  3 files changed · Ctrl+Shift+D`,
+    percentages and cost in fixed widths, greys; amber ≥ 80 %, red ≥ 95 %;
+    "esc to interrupt" at the right while Claude Code works.
+  - Status panel (Ctrl+Shift+S, a right column, hidden by default; the
+    program is resized when it opens, and it is not shown below 40 program
+    columns): only what Claude Code's own screen lacks — session id and
+    name, context of size, limits with reset times (UTC: local time would
+    need a time-zone dependency), cost ("API estimate" with subscription
+    limits), lines, prompt cache, files and edits, last edit, subagents
+    with durations, last update. Width (palette: wider/narrower, 24–80) and
+    open state are kept in `<state dir>/ui`. Model and effort are left out
+    (Claude Code shows them).
+  - Diff view (Ctrl+Shift+D): the last edit of the active tab over its
+    screen area (the program is not resized and keeps running), side by
+    side from 110 columns, unified below; header `[last edit] path · +A -R
+    · by agent`; keys j/k, Space/b, g/G, Esc/q, wheel. Decision: an
+    overlay rather than a split, so Claude Code is never reflowed by
+    looking at a diff and the full width is available for side by side.
+  - Resume: tab sets store the Claude Code session id; a restored
+    Claude Code tab gets `--resume ID` when Claude Code still has the
+    transcript (`<CLAUDE_CONFIG_DIR or ~/.claude>/projects/<folder with
+    non-alphanumerics as ->/ID.jsonl`, existence only), with earlier
+    `--resume`/`--continue` arguments removed; a conversation already open
+    in a tab is not opened again.
 
 ## 4. VT engine decision (measured 2026-11-04)
 

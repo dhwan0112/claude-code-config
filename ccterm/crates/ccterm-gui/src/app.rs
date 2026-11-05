@@ -6,13 +6,14 @@
 
 use std::collections::HashSet;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ccterm_core::{
     GridSize, Key, KeyInput, MouseAction, MouseButton, MouseInput, SessionConfig, SessionEvent, Snapshot,
 };
 use ccterm_proto::paths::Endpoint;
-use ccterm_proto::wire::{rgb, CreateSpec};
+use ccterm_proto::wire::{rgb, Attention, ClaudeInfo, CreateSpec};
 use ccterm_proto::{Client, RemoteHandle, RemoteSession, Role};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
@@ -26,6 +27,7 @@ use crate::chrome::{self, Chrome};
 use crate::clipboard::Clipboard;
 use crate::config::Decorations;
 use crate::damage;
+use crate::diffview::DiffView;
 use crate::font::Fonts;
 use crate::geom::Layout;
 use crate::input::{self, RawKey, Wheel};
@@ -75,12 +77,26 @@ struct Tab {
     exited: Option<Option<u32>>,
     /// Size last sent to the daemon.
     size: GridSize,
+    /// Claude Code with ccterm's integration: a status row is reserved.
+    integrated: bool,
+    claude: Option<Arc<ClaudeInfo>>,
 }
 
 impl Tab {
+    fn attention(&self) -> Attention {
+        self.claude.as_ref().map_or(Attention::None, |c| c.attention)
+    }
+
     fn name(&self) -> String {
         let title = self.snap.as_ref().map_or("", |s| s.title.as_str());
+        // Claude Code's session name (`--name`, /rename or its own title) first.
+        let session_name: String = self
+            .claude
+            .as_ref()
+            .map(|c| c.name.chars().filter(|c| !c.is_control()).collect::<String>().trim().to_string())
+            .unwrap_or_default();
         let name = match (&self.spec.name, title.trim().is_empty()) {
+            _ if !session_name.is_empty() => session_name,
             (Some(n), true) => n.clone(),
             _ => ui::tab_name(title, &self.program),
         };
@@ -133,6 +149,13 @@ struct Win {
     defaults: (ccterm_core::Rgb, ccterm_core::Rgb),
     scrollback_limit: usize,
     claude_integration: bool,
+    /// OS notification (Linux `notify-send`) besides the taskbar/urgency
+    /// hint when Claude Code waits and the window is unfocused.
+    notifications: bool,
+    /// Status panel: open, width in columns (persisted in the state dir).
+    panel_open: bool,
+    panel_width: u16,
+    diff: Option<DiffView>,
     /// Set when the last tab is gone: the window closes.
     quit: Option<i32>,
     /// The window is closing: closing its tabs must not shrink `last`.
@@ -204,6 +227,7 @@ impl App {
             cmd.args.iter().map(|a| a.to_string_lossy().into_owned()).collect(),
         );
         let clipboard = Clipboard::new(&window);
+        let ui_state = load_ui_state();
         let mut win = Win {
             window,
             renderer,
@@ -236,6 +260,10 @@ impl App {
             defaults: (cfg.default_fg, cfg.default_bg),
             scrollback_limit: self.opts.config.scrollback_limit,
             claude_integration: self.opts.config.claude_integration,
+            notifications: self.opts.config.notifications,
+            panel_open: ui_state.0,
+            panel_width: ui_state.1,
+            diff: None,
             quit: None,
             shutting_down: false,
         };
@@ -262,10 +290,24 @@ impl Win {
         u16::from(self.tabs.len() >= 2)
     }
 
-    /// The grid a tab's program gets.
-    fn term_grid(&self) -> GridSize {
+    /// Columns of the status panel (with its separator), when shown: the
+    /// window must keep at least 40 columns for the program.
+    fn panel_cols(&self) -> u16 {
+        let w = self.panel_width + 1;
+        if self.panel_open && self.grid.cols >= w + 40 {
+            w
+        } else {
+            0
+        }
+    }
+
+    /// The grid a tab's program gets: the window minus the tab bar, the
+    /// status row of a Claude Code tab and the status panel.
+    fn term_grid_for(&self, integrated: bool, tabs: usize) -> GridSize {
         let mut g = self.grid;
-        g.rows = g.rows.saturating_sub(self.top()).max(1);
+        let top = u16::from(tabs >= 2);
+        g.rows = g.rows.saturating_sub(top + u16::from(integrated)).max(1);
+        g.cols = g.cols.saturating_sub(self.panel_cols()).max(1);
         g
     }
 
@@ -284,6 +326,10 @@ impl Win {
         self.open_spec(spec)
     }
 
+    fn is_integrated(&self, program: &str) -> bool {
+        self.claude_integration && ccterm_cc::settings::is_claude(program)
+    }
+
     /// Opens the tabs of a set after the current ones; tabs whose folder is
     /// gone are skipped. Returns how many opened.
     fn open_saved(&mut self, set: &[SavedTab]) -> usize {
@@ -293,9 +339,22 @@ impl Win {
                 log::warn!("tab set: folder {:?} is gone; tab {:?} skipped", t.cwd, t.name);
                 continue;
             }
+            let mut args = t.args.clone();
+            if ccterm_cc::settings::is_claude(&t.program) && !t.claude_session.is_empty() {
+                // The conversation is already open in a tab: do not open it twice.
+                if self.tabs.iter().any(|x| x.claude.as_ref().is_some_and(|c| c.claude_session == t.claude_session)) {
+                    log::info!("tab set: conversation of {:?} is already open; skipped", t.name);
+                    continue;
+                }
+                if ccterm_cc::resume::transcript_exists(&t.cwd, &t.claude_session) {
+                    args = ccterm_cc::resume::resume_args(&args, &t.claude_session);
+                } else {
+                    log::info!("tab set: no transcript for {:?}; starting a new conversation", t.name);
+                }
+            }
             let spec = TabSpec {
                 program: t.program.clone(),
-                args: t.args.clone(),
+                args,
                 cwd: (!t.cwd.is_empty()).then(|| t.cwd.clone()),
                 name: (!t.name.is_empty()).then(|| t.name.clone()),
             };
@@ -319,8 +378,9 @@ impl Win {
                     name: t.name(),
                     cwd: pwd.or_else(|| t.spec.cwd.clone()).unwrap_or_default(),
                     program: t.spec.program.clone(),
-                    args: t.spec.args.clone(),
-                    claude_session: String::new(),
+                    // Without an earlier --resume: the session id below says which.
+                    args: strip_resume(&t.spec.args),
+                    claude_session: t.claude.as_ref().map(|c| c.claude_session.clone()).unwrap_or_default(),
                     active: i == self.active,
                 }
             })
@@ -342,9 +402,9 @@ impl Win {
             self.tabs.get(self.active).and_then(|t| t.snap.as_ref()).map(|s| s.pwd.clone()).filter(|p| !p.is_empty())
         });
         let cwd = cwd.or_else(|| self.start_cwd.clone()).map(|p| osc7_path(&p));
-        // The new tab may bring the tab bar: size it for the grid it will have.
-        let mut size = self.grid;
-        size.rows = size.rows.saturating_sub(u16::from(!self.tabs.is_empty())).max(1);
+        // Size it for the grid it will have (the tab bar may appear with it).
+        let integrated = self.is_integrated(&spec.program);
+        let size = self.term_grid_for(integrated, self.tabs.len() + 1);
         let create = CreateSpec {
             program: spec.program.clone(),
             args: spec.args.clone(),
@@ -387,7 +447,7 @@ impl Win {
         }
         let program = spec.program.clone();
         let spec = TabSpec { cwd, ..spec };
-        self.tabs.push(Tab { session, snap: None, spec, program, exited: None, size });
+        self.tabs.push(Tab { session, snap: None, spec, program, exited: None, size, integrated, claude: None });
         self.active = self.tabs.len() - 1;
         if self.focused {
             self.handle().focus(true);
@@ -400,8 +460,9 @@ impl Win {
     /// Sends every tab the terminal grid (it changes with the window size
     /// and when the tab bar appears or goes) and redraws everything.
     fn relayout(&mut self) {
-        let g = self.term_grid();
-        for t in &mut self.tabs {
+        let n = self.tabs.len();
+        let grids: Vec<GridSize> = self.tabs.iter().map(|t| self.term_grid_for(t.integrated, n)).collect();
+        for (t, g) in self.tabs.iter_mut().zip(grids) {
             if t.size != g && t.exited.is_none() {
                 t.session.handle.resize(g);
                 t.size = g;
@@ -420,7 +481,9 @@ impl Win {
         self.active = i;
         if self.focused {
             self.handle().focus(true);
+            self.seen();
         }
+        self.diff = None;
         self.preedit = None;
         self.full = true;
         self.ime_at = None;
@@ -497,6 +560,35 @@ impl Win {
                     }
                 }
             }
+            Action::DiffView => {
+                if self.diff.take().is_none() {
+                    if !self.tab().integrated {
+                        self.show_hint("the diff view is for Claude Code tabs".into());
+                    } else {
+                        match self.client.get_edit(&self.tab().session.id) {
+                            Ok(e) => self.diff = Some(DiffView::new(e.as_deref())),
+                            Err(e) => self.show_hint(format!("diff: {e}")),
+                        }
+                    }
+                }
+                self.full = true;
+                self.recompose();
+            }
+            Action::StatusPanel => {
+                self.panel_open = !self.panel_open;
+                save_ui_state(self.panel_open, self.panel_width);
+                if self.panel_open && self.panel_cols() == 0 {
+                    self.show_hint("the window is too narrow for the status panel".into());
+                }
+                self.relayout();
+            }
+            Action::StatusPanelWider | Action::StatusPanelNarrower => {
+                let d: i32 = if a == Action::StatusPanelWider { 4 } else { -4 };
+                self.panel_width = (self.panel_width as i32 + d).clamp(24, 80) as u16;
+                self.panel_open = true;
+                save_ui_state(self.panel_open, self.panel_width);
+                self.relayout();
+            }
             Action::SaveTabs => {
                 let tabs = self.saved_tabs();
                 match tabsets::save(&tabsets::dir(), "saved", &tabs) {
@@ -544,6 +636,26 @@ impl Win {
         let Some(next) = self.tabs[i].session.handle.snapshot() else { return };
         let title_changed = self.tabs[i].snap.as_ref().is_none_or(|s| s.title != next.title);
         self.tabs[i].snap = Some(next);
+        let claude = self.tabs[i].session.handle.claude();
+        let claude_changed = match (&claude, &self.tabs[i].claude) {
+            (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
+            (a, b) => a.is_some() != b.is_some(),
+        };
+        if claude_changed {
+            let (before, before_sid) = (
+                self.tabs[i].attention(),
+                self.tabs[i].claude.as_ref().map(|c| c.claude_session.clone()).unwrap_or_default(),
+            );
+            self.tabs[i].claude = claude;
+            self.attention_changed(i, before);
+            let sid_changed = self.tabs[i].claude.as_ref().is_some_and(|c| c.claude_session != before_sid);
+            if i != self.active {
+                self.recompose(); // tab bar: mark, name
+            }
+            if sid_changed {
+                self.save_last(); // the conversation to resume
+            }
+        }
         if i == self.active {
             if title_changed {
                 self.update_title();
@@ -557,6 +669,52 @@ impl Win {
         }
     }
 
+    /// Claude Code's attention of tab `i` changed from `before`.
+    fn attention_changed(&mut self, i: usize, before: Attention) {
+        let now = self.tabs[i].attention();
+        if now != before {
+            log::debug!(
+                "tab {} attention {before:?} -> {now:?} (active {}, focused {})",
+                i + 1,
+                self.active + 1,
+                self.focused
+            );
+        }
+        if now == before || now == Attention::None {
+            return;
+        }
+        if i == self.active && self.focused {
+            self.seen(); // the user is looking at it
+            if now == Attention::Wait {
+                return;
+            }
+        }
+        if !self.focused {
+            let kind = if now == Attention::Ask {
+                winit::window::UserAttentionType::Critical
+            } else {
+                winit::window::UserAttentionType::Informational
+            };
+            self.window.request_user_attention(Some(kind));
+            if self.notifications {
+                let body = if now == Attention::Ask {
+                    "Claude Code asks you something"
+                } else {
+                    "Claude Code is waiting for you"
+                };
+                notify(&self.tabs[i].name(), body);
+            }
+        }
+    }
+
+    /// The active tab was looked at: a "waiting" mark goes.
+    fn seen(&self) {
+        let t = self.tab();
+        if t.attention() == Attention::Wait {
+            let _ = self.client.clear_attention(&t.session.id);
+        }
+    }
+
     /// Rebuilds the window grid from the active tab and ccterm's cells.
     fn recompose(&mut self) {
         let (fg, bg) = self.defaults;
@@ -565,15 +723,28 @@ impl Win {
         let g = ui::Greys::from(screen.default_fg, screen.default_bg);
         let names: Vec<String> = self.tabs.iter().map(Tab::name).collect();
         let bar = (self.tabs.len() >= 2).then(|| {
-            let views: Vec<TabView> =
-                names.iter().zip(&self.tabs).map(|(n, t)| TabView { name: n, exited: t.exited.is_some() }).collect();
+            let views: Vec<TabView> = names
+                .iter()
+                .zip(&self.tabs)
+                .map(|(n, t)| TabView { name: n, exited: t.exited.is_some(), attention: t.attention() })
+                .collect();
             ui::tab_bar(&views, self.active, self.grid.cols as usize, g)
         });
+        let tab = self.tab();
+        let diff_key = self.keys.chord_for(Action::DiffView).map(|c| c.to_string()).unwrap_or_default();
+        let status =
+            tab.integrated.then(|| ui::status_row(tab.claude.as_deref(), self.grid.cols as usize, g, &diff_key));
+        let pc = self.panel_cols() as usize;
+        let area = (self.grid.rows as usize).saturating_sub(self.top() as usize + usize::from(status.is_some()));
+        let panel = (pc > 0).then(|| ui::panel(tab.claude.as_deref(), pc, area, g, now_ms()));
         let next = Compose {
             screen,
             cols: self.grid.cols,
             rows: self.grid.rows,
             tab_bar: bar,
+            status,
+            panel,
+            diff: self.diff.as_ref(),
             palette: self.palette.as_ref().map(|p| (p, &self.keys)),
             hint: self.hint.as_ref().map(|(h, _)| h.as_str()),
         }
@@ -669,6 +840,24 @@ impl Win {
                 return;
             }
         }
+        if self.diff.is_some() {
+            if ev.state == ElementState::Pressed {
+                if let Some(chord) = chord_of(ev, self.mods) {
+                    let area = self.grid.rows.saturating_sub(self.top() + u16::from(self.tab().integrated)) as usize;
+                    let cols = (self.grid.cols - self.panel_cols()) as usize;
+                    let close = self.diff.as_mut().is_some_and(|d| d.key(&chord.key, chord.shift, area, cols));
+                    if close {
+                        self.diff = None;
+                        self.full = true;
+                    }
+                    if let Some(c) = code {
+                        self.swallowed.insert(c);
+                    }
+                    self.recompose();
+                }
+            }
+            return;
+        }
         if self.palette.is_some() || self.tab().exited.is_some() {
             return;
         }
@@ -734,6 +923,8 @@ impl Win {
                     p.query.push_str(&text);
                     p.selected = 0;
                     self.recompose();
+                } else if self.diff.is_some() {
+                    // Not for the program while the diff view is open.
                 } else if !text.is_empty() && self.tab().exited.is_none() {
                     self.handle().key(KeyInput::press(Key::Unidentified).with_text(text));
                 }
@@ -797,6 +988,69 @@ impl Win {
             self.recompose();
         }
         self.hint.as_ref().map(|(_, t)| *t + CONFIRM)
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// Claude Code arguments without a resume request (saved tabs resume by
+/// their session id instead).
+fn strip_resume(args: &[String]) -> Vec<String> {
+    let mut a = ccterm_cc::resume::resume_args(args, "x");
+    a.truncate(a.len() - 2);
+    a
+}
+
+/// A desktop notification without content from the session (Linux:
+/// `notify-send` when installed; elsewhere the taskbar hint is all).
+fn notify(tab: &str, body: &str) {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let r = std::process::Command::new("notify-send")
+            .args(["--app-name", ccterm_proto::product::DISPLAY_NAME, "--expire-time", "8000"])
+            .arg(format!("{} — {tab}", ccterm_proto::product::DISPLAY_NAME))
+            .arg(body)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        match r {
+            Ok(mut c) => {
+                // Reap it without blocking the event loop.
+                std::thread::spawn(move || c.wait());
+            }
+            Err(e) => log::debug!("notify-send: {e}"),
+        }
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    let _ = (tab, body);
+}
+
+/// Status panel state (`ui` in the state directory, `key = value`).
+fn load_ui_state() -> (bool, u16) {
+    let text = std::fs::read_to_string(ccterm_proto::paths::state_dir().join("ui")).unwrap_or_default();
+    let mut st = (false, 36u16);
+    for line in text.lines() {
+        match line.split_once('=').map(|(k, v)| (k.trim(), v.trim())) {
+            Some(("status-panel", v)) => st.0 = v == "open",
+            Some(("status-panel-width", v)) => st.1 = v.parse().unwrap_or(36u16).clamp(24, 80),
+            _ => {}
+        }
+    }
+    st
+}
+
+fn save_ui_state(open: bool, width: u16) {
+    let dir = ccterm_proto::paths::state_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let text = format!(
+        "# ccterm window state\nstatus-panel = {}\nstatus-panel-width = {width}\n",
+        if open { "open" } else { "closed" }
+    );
+    if let Err(e) = std::fs::write(dir.join("ui"), text) {
+        log::warn!("ui state: {e}");
     }
 }
 
@@ -960,6 +1214,18 @@ impl ApplicationHandler<UserEvent> for App {
                 if n != 0 {
                     let (col, row) = win.layout.cell_at(win.origin(), win.mouse.x, win.mouse.y, win.grid);
                     let Some(row) = row.checked_sub(win.top()) else { return };
+                    if win.diff.is_some() {
+                        let page = win.grid.rows as usize;
+                        let cols = (win.grid.cols - win.panel_cols()) as usize;
+                        if let Some(d) = win.diff.as_mut() {
+                            let k = if n > 0 { "k" } else { "j" };
+                            for _ in 0..(n.unsigned_abs() * 3) {
+                                d.key(k, false, page, cols);
+                            }
+                        }
+                        win.recompose();
+                        return;
+                    }
                     let lines = input::wheel_lines(n, win.mouse_tracking());
                     log::debug!("wheel {delta:?} -> {n} notches, {lines} lines at {col},{row}");
                     win.handle().wheel(lines, col, row, input::mods(win.mods));
@@ -969,6 +1235,9 @@ impl ApplicationHandler<UserEvent> for App {
                 log::debug!("focused {f}");
                 win.focused = f;
                 win.handle().focus(f);
+                if f {
+                    win.seen();
+                }
                 win.mark_cursor_row();
                 win.window.request_redraw();
             }

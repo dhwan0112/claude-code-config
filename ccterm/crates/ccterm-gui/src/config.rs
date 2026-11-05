@@ -11,6 +11,7 @@
 //! | `window-padding-color` | `background` / `extend` / `extend-always` | `extend` |
 //! | `decorations` | `native` / `integrated` / `none` | `native` |
 //! | `claude-integration` | `true` / `false`: hooks and status line in Claude Code tabs | `true` |
+//! | `notifications` | `true` / `false`: desktop notification when Claude Code waits and the window is unfocused (Linux `notify-send`) | `true` |
 //! | `restore-tabs` | `true` / `false`: reopen the previous run's tabs at start | `true` |
 //! | `scrollback-limit` | bytes of scrollback per session (as Ghostty; ~1.1 KB per 120-column row) | 12000000 |
 
@@ -51,6 +52,7 @@ pub struct Config {
     pub restore_tabs: bool,
     /// Claude Code tabs get ccterm's hooks and status line.
     pub claude_integration: bool,
+    pub notifications: bool,
 }
 
 impl Default for Config {
@@ -63,6 +65,7 @@ impl Default for Config {
             scrollback_limit: ccterm_core::DEFAULT_SCROLLBACK_LIMIT,
             restore_tabs: true,
             claude_integration: true,
+            notifications: true,
         }
     }
 }
@@ -75,6 +78,7 @@ pub const KEYS: &[&str] = &[
     "scrollback-limit",
     "restore-tabs",
     "claude-integration",
+    "notifications",
 ];
 
 impl Config {
@@ -90,6 +94,7 @@ impl Config {
             }
             "restore-tabs" => self.restore_tabs = parse_bool(value).ok_or_else(bad)?,
             "claude-integration" => self.claude_integration = parse_bool(value).ok_or_else(bad)?,
+            "notifications" => self.notifications = parse_bool(value).ok_or_else(bad)?,
             "window-padding-balance" => {
                 self.padding_balance = match value {
                     "true" | "yes" | "1" => true,

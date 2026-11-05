@@ -621,6 +621,17 @@ New in the milestone 1 finishing work (2026-11-05):
 11. (M2) After `ccterm install-desktop` on a GNOME/KDE desktop: the
     launcher entry, the dock icon matched to the running window (Wayland
     and X11); on Windows the taskbar, Alt+Tab and Explorer icons.
+12. (M3) With a real Claude Code account: a permission prompt in a
+    background tab shows the red `?`; Stop shows amber; answering clears
+    them; the status row shows context, limits and cost; an Edit/Write by
+    Claude Code shows "N files changed" and Ctrl+Shift+D shows exactly that
+    edit; subagents appear in the panel. (Only fake hook JSON and a fake
+    key were used so far.)
+13. (M3) Unfocused window when Claude Code finishes: taskbar flash on
+    Windows, urgency + notification on GNOME/KDE (`notify-send`).
+14. (M3) Windows with Claude Code using PowerShell instead of Git Bash for
+    the status line, and ccterm installed in a path with spaces (the status
+    line command is then double-quoted, which PowerShell does not run).
 
 ### 6.2 Known gaps (not in milestone 1's scope)
 
@@ -805,6 +816,58 @@ regression list, measurements), then committed, pushed and mirrored.
   - Size (`dist`): Linux 5 984 152 → 6 214 224 (+230 KB, of which
     `similar` 87 KB), Windows 4 673 536 → 4 877 824 (+204 KB). New
     dependency: `similar` 2 (text feature only).
+- **2026-11-05 P4b — attention, status row, status panel, diff view,
+  resume.** `app.rs` (per-tab Claude Code state from `Claude` messages,
+  attention handling, notifications, layout with status row and panel),
+  `ui.rs` (tab marks, `status_row`, `panel`), `diffview.rs`; keys
+  Ctrl+Shift+D / Ctrl+Shift+S (+ palette: panel wider/narrower); config
+  `notifications`; DESIGN.md §3.13. Evidence:
+  - Unit tests (gui 63): marks only on other tabs, amber/red; status row
+    fixed-width numbers (a column does not move from 7 % to 42 %), greys
+    below 80 %, "esc to interrupt" while busy; panel rows and UTC reset
+    time; diff unified and side by side, tabs expanded, scrolling bounds;
+    Ctrl+Shift+D bound, Ctrl+D/Ctrl+S left to Claude Code.
+  - `e2e2.sh` (Linux, Xvfb, two real Claude Code tabs, fake key): a prompt
+    in tab 2 then Alt+1 → log `tab 2 attention None -> Wait (active 1)`,
+    amber `●` on tab 2 in the frame; Alt+2 → `Wait -> None`. Fake
+    PreToolUse/PostToolUse JSON for an Edit through the real `ccterm hook`
+    (the synchronous one with its file copy took 5 ms) → status row
+    "1 file changed · Ctrl+Shift+D", Ctrl+Shift+D shows `- two` / `+ TWO`
+    / `+ and a half` with the header `+2 -1 · by main`; Ctrl+Shift+S panel
+    (id, cost, files, last edit, updated). Tab set `last` has both Claude
+    Code session ids; after a restart the tab whose transcript exists runs
+    `claude --resume bd6a5564-… --settings …`, the other (no prompt sent,
+    no transcript) starts a new conversation. Frames:
+    `ccterm-win\reg\e2e2\*.png`.
+  - Windows 11 (`p4win.ps1` with a frame dump): status row under Claude
+    Code (`ctx – $ 0.00`), settings file removed on close.
+  - Idle 30 s, Claude Code idle with the integration (status line every
+    3 s): GUI 0 ticks, RssAnon 5.9 MB; daemon 1 tick, 5.1 MB, 8 threads —
+    an unchanged status line wakes nothing. Key → frame median 1.95 ms.
+  - Regression `reg.sh p4b` 21/21 (the frame-dump helper now passes
+    `--restore-tabs false`; it had reopened the regression's tab set).
+  - Size (`dist`): Linux 6 214 224 → 6 271 928 (+58 KB), Windows
+    4 877 824 → 4 926 976 (+49 KB); no new dependency (`similar` comes
+    through `ccterm-cc`).
+
+### ccx comparison (milestone 3)
+
+| ccx | ccterm | |
+|---|---|---|
+| `--settings` with hooks + statusLine; user settings merged (hooks appended, statusLine dropped with warning) | same, a per-session file; exec-form hooks | ported |
+| permissions.ask (39 git/gh rules), bypassPermissions default, `--safe` tab, tui fullscreen, autoCompactWindow, NO_FLICKER/TRUECOLOR env | — | intentionally dropped (a terminal does not change Claude Code's behaviour) |
+| attention: amber on Stop/idle, red `?` on permission/elicitation/agent input, cleared by selecting (amber) or prompt/tool (red) | same marks; Ask cleared only by later-started events, not by PreToolUse; PermissionRequest also sets Ask | ported with changes |
+| terminal silent | taskbar/urgency hint + Linux `notify-send` when unfocused | new |
+| statusline-tee (prints nothing) | `ccterm statusline` (prints nothing) | ported |
+| panel: context bar, limits with reset, cost, cache, lines, workers, updated, model·effort, key rows | panel without bar graph, model·effort and key rows (Claude Code / palette show those) | ported with changes |
+| status row in Claude's status line | ccterm's own bottom row incl. "esc to interrupt" | ported with changes |
+| pre/post snapshots, apply_edit, 2 MiB, 20 newest | same in Rust; the copy is taken in the synchronous hook; credential-like paths never read | ported with changes |
+| diff views: last edit / vs HEAD / git diff tree; keys j/k space/b g/G r m Tab | last edit only, same scroll keys | ported (edit view); HEAD and tree views deferred |
+| orchestration hooks (Agent pre/post, STATUS: verified/blocked/needs_review) | SubagentStart/Stop durations only | deferred to M4 (orchestrator) |
+| tab sets per server socket, last/previous, auto restore, `CCX_RESTORE=0`, closed.tsv (20) | last/previous/saved, `restore-tabs = false`; skip missing folders and open conversations; `--resume` when the transcript exists | ported; closed-tabs list deferred |
+| tab name: git top-level:branch, then session_name | session_name, else title without Claude's state glyph, else program | ported with changes (branch naming deferred) |
+| tmux prefix keys (c, C, S, n/p, arrows, hjkl, d, w, W, `,`, D) | Ctrl+Shift shortcuts + palette (P2); panel width actions; automatic size/state persistence | replaced; rename (`,`) and detach (D) deferred |
+| tab bar drag, `+` and safe buttons | click to select | deferred |
 
 ## 7. Long-term direction (constrains current work)
 

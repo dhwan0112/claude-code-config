@@ -11,4 +11,5 @@ pub mod settings;
 pub mod state;
 
 pub use json::Json;
+pub use similar;
 pub use state::Claude;

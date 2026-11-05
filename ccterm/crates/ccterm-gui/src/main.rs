@@ -30,6 +30,7 @@ mod cli;
 mod clipboard;
 mod config;
 mod damage;
+mod diffview;
 mod emoji;
 mod font;
 mod geom;

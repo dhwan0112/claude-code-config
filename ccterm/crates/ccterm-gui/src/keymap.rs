@@ -22,6 +22,12 @@ pub enum Action {
     OpenSavedTabs,
     /// Open the tabs of the previous run (set "previous").
     OpenPreviousTabs,
+    /// Claude Code tabs: the last edit's diff over the screen.
+    DiffView,
+    /// Claude Code tabs: the status panel on the right.
+    StatusPanel,
+    StatusPanelWider,
+    StatusPanelNarrower,
 }
 
 impl Action {
@@ -38,6 +44,10 @@ impl Action {
             Action::SaveTabs => "save_tabs".into(),
             Action::OpenSavedTabs => "open_saved_tabs".into(),
             Action::OpenPreviousTabs => "open_previous_tabs".into(),
+            Action::DiffView => "diff_view".into(),
+            Action::StatusPanel => "status_panel".into(),
+            Action::StatusPanelWider => "status_panel_wider".into(),
+            Action::StatusPanelNarrower => "status_panel_narrower".into(),
         }
     }
 
@@ -54,6 +64,10 @@ impl Action {
             Action::SaveTabs => "Save tabs (set \"saved\")".into(),
             Action::OpenSavedTabs => "Open saved tabs".into(),
             Action::OpenPreviousTabs => "Open the previous run's tabs".into(),
+            Action::DiffView => "Diff of the last edit (Claude Code)".into(),
+            Action::StatusPanel => "Status panel (Claude Code)".into(),
+            Action::StatusPanelWider => "Status panel wider".into(),
+            Action::StatusPanelNarrower => "Status panel narrower".into(),
         }
     }
 
@@ -68,6 +82,10 @@ impl Action {
             "save_tabs" => Action::SaveTabs,
             "open_saved_tabs" => Action::OpenSavedTabs,
             "open_previous_tabs" => Action::OpenPreviousTabs,
+            "diff_view" => Action::DiffView,
+            "status_panel" => Action::StatusPanel,
+            "status_panel_wider" => Action::StatusPanelWider,
+            "status_panel_narrower" => Action::StatusPanelNarrower,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -83,6 +101,10 @@ impl Action {
         let mut v = vec![Action::NewTab, Action::CloseTab, Action::NextTab, Action::PreviousTab];
         v.extend((1..=9).map(Action::GotoTab));
         v.extend([
+            Action::DiffView,
+            Action::StatusPanel,
+            Action::StatusPanelWider,
+            Action::StatusPanelNarrower,
             Action::SaveTabs,
             Action::OpenSavedTabs,
             Action::OpenPreviousTabs,
@@ -170,6 +192,9 @@ impl Default for Keymap {
             b(&format!("alt+{n}"), Action::GotoTab(n));
         }
         b("ctrl+shift+p", Action::CommandPalette);
+        // Claude Code binds Ctrl+D (exit) and Ctrl+S (stash), not these.
+        b("ctrl+shift+d", Action::DiffView);
+        b("ctrl+shift+s", Action::StatusPanel);
         b("ctrl+shift+v", Action::Paste);
         b("shift+insert", Action::Paste);
         b("paste", Action::Paste); // a keyboard's Paste key
@@ -219,7 +244,10 @@ mod tests {
         assert_eq!(k.action(&ch("alt+3")), Some(Action::GotoTab(3)));
         assert_eq!(k.action(&ch("ctrl+shift+tab")), Some(Action::PreviousTab));
         // Claude Code's own keys stay free.
-        for s in ["ctrl+c", "ctrl+d", "ctrl+t", "ctrl+r", "alt+p", "alt+m", "alt+t", "shift+tab", "tab", "escape"] {
+        assert_eq!(k.action(&ch("ctrl+shift+d")), Some(Action::DiffView));
+        for s in
+            ["ctrl+c", "ctrl+d", "ctrl+s", "ctrl+t", "ctrl+r", "alt+p", "alt+m", "alt+t", "shift+tab", "tab", "escape"]
+        {
             assert_eq!(k.action(&ch(s)), None, "{s} must reach the application");
         }
         assert_eq!(k.action(&ch("ctrl+v")).is_some(), cfg!(windows));
