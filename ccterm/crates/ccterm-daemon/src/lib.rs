@@ -435,7 +435,23 @@ impl Daemon {
         match m {
             ClientMsg::Hello { .. } => {}
             ClientMsg::ListSessions => {
-                let mut v: Vec<SessionInfo> = self.sessions.values().map(|s| s.info.clone()).collect();
+                let mut v: Vec<SessionInfo> = self
+                    .sessions
+                    .iter()
+                    .map(|(id, s)| {
+                        let mut i = s.info.clone();
+                        i.attached = self
+                            .clients
+                            .values()
+                            .filter(|c| c.role == Role::Control && c.subs.contains_key(id))
+                            .count() as u32;
+                        if let Some(cl) = &s.claude {
+                            i.claude_session.clone_from(&cl.info.claude_session);
+                            i.attention = cl.info.attention;
+                        }
+                        i
+                    })
+                    .collect();
                 v.sort_by(|a, b| a.created_ms.cmp(&b.created_ms).then(a.id.cmp(&b.id)));
                 self.reply(c, DaemonMsg::Sessions(v));
             }
@@ -680,6 +696,10 @@ impl Daemon {
                     pid: session.handle.pid(),
                     cols: spec.size.cols,
                     rows: spec.size.rows,
+                    args: spec.args.clone(),
+                    attached: 0,
+                    claude_session: String::new(),
+                    attention: Attention::None,
                 };
                 let events = session.events.clone();
                 let tx = self.tx.clone();

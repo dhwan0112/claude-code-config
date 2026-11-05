@@ -17,7 +17,7 @@ use ccterm_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -138,6 +138,14 @@ pub struct SessionInfo {
     pub pid: Option<u32>,
     pub cols: u16,
     pub rows: u16,
+    /// The program's arguments as the client gave them (without what the
+    /// daemon adds, e.g. Claude Code's `--settings`).
+    pub args: Vec<String>,
+    /// Control clients attached right now (0 = detached: its window is gone).
+    pub attached: u32,
+    /// Claude Code's session id, once a hook or the status line said it.
+    pub claude_session: String,
+    pub attention: Attention,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

@@ -171,6 +171,10 @@ mod tests {
             pid: Some(42),
             cols: 120,
             rows: 36,
+            args: vec![],
+            attached: 0,
+            claude_session: String::new(),
+            attention: Default::default(),
         };
         let j = status_json(7, &[s]);
         assert!(j.starts_with(r#"{"daemon_pid":7,"sessions":[{"id":"x-1","title":"✳ Claude Code","cwd":"/tmp/p","state":"exited","exit_code":3,"#), "{j}");

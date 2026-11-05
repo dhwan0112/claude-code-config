@@ -411,9 +411,11 @@ would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
   their parent process is `claude`/`claude.exe`). Events: SessionStart,
   UserPromptSubmit, PreToolUse (synchronous with matcher
   `Write|Edit|MultiEdit|NotebookEdit`, and asynchronous for all tools as
-  `PreToolUseAll`), PermissionRequest, PermissionDenied, PostToolUse,
+  `PreToolUseAll`), PermissionRequest (synchronous: the question is in the
+  daemon before Claude Code shows its dialog; no output, so the normal
+  permission flow decides), PermissionDenied, PostToolUse,
   PostToolUseFailure, Notification, Stop, StopFailure, SubagentStart/Stop,
-  SessionEnd; all asynchronous except the edit PreToolUse; timeout 5 s.
+  SessionEnd; all asynchronous except those two; timeout 5 s.
   `statusLine` has no exec form: `ccterm statusline` through Claude Code's
   shell (`sh -c`; Windows Git Bash, else PowerShell), path bare when it has
   no shell characters (every one of those shells runs it), else
@@ -430,7 +432,9 @@ would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
   `.env*`, `*.pem`, `*.key`, `*token*`, `*secret*`, `.credentials.json`, …),
   send it as a `Report` client, wait for `Synced`, exit 0. Never stdout or
   stderr (UserPromptSubmit's stdout would reach the model), silent panic
-  hook, a 1 s deadline for the whole process. Measured: Linux median
+  hook. Deadline for the whole process: 250 ms for the synchronous hooks
+  (of which at most 150 ms for the file copy — past that the event is
+  reported without it and the edit has no diff), 1 s for the others. Measured: Linux median
   2.7–3.3 ms with and without a daemon, max 4.3 ms; stdin left open: 8 ms
   without a daemon, 1.02 s (the deadline) with one. Windows (this machine):
   process start alone is ~52 ms (`hostname.exe`, `whoami.exe` medians), the

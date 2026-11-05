@@ -25,7 +25,9 @@ pub const EVENTS: &[(&str, Option<&str>, bool, &str)] = &[
     ("UserPromptSubmit", None, true, "UserPromptSubmit"),
     ("PreToolUse", Some(EDIT_MATCHER), false, "PreToolUse"),
     ("PreToolUse", None, true, PRE_ALL),
-    ("PermissionRequest", None, true, "PermissionRequest"),
+    // Synchronous: the question is in the daemon before Claude Code shows
+    // its dialog (no output: the normal permission flow decides).
+    ("PermissionRequest", None, false, "PermissionRequest"),
     ("PermissionDenied", None, true, "PermissionDenied"),
     ("PostToolUse", None, true, "PostToolUse"),
     ("PostToolUseFailure", None, true, "PostToolUseFailure"),
@@ -200,6 +202,14 @@ mod tests {
         let stop =
             &v.at(&["hooks", "Stop"]).and_then(Json::arr).unwrap()[0].get("hooks").and_then(Json::arr).unwrap()[0];
         assert_eq!(stop.get("async"), Some(&Json::Bool(true)));
+        let pr = &v.at(&["hooks", "PermissionRequest"]).and_then(Json::arr).unwrap()[0]
+            .get("hooks")
+            .and_then(Json::arr)
+            .unwrap()[0];
+        assert_eq!(pr.get("async"), None, "PermissionRequest is synchronous");
+        for (ev, _, asynchronous, name) in EVENTS {
+            assert_eq!(!asynchronous, crate::report::is_synchronous(name), "{ev}/{name}: settings and reporter agree");
+        }
         assert_eq!(
             v.at(&["statusLine", "command"]).and_then(Json::str),
             Some(r#""C:/Program Files/ccterm/ccterm.exe" statusline"#)

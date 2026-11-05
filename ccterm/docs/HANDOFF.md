@@ -929,6 +929,26 @@ regression list, measurements), then committed, pushed and mirrored.
     user's processes, not a security boundary; remote adapters only on a
     client type that cannot send Control messages.
 
+- **2026-11-05 Review A3 + B6 (protected area, approved) — synchronous
+  PermissionRequest, 250 ms for synchronous hooks.**
+  - PermissionRequest is a synchronous hook (no output, exit 0). Test
+    `crates/ccterm-gui/tests/permission.rs` runs the real `ccterm hook` in
+    Claude Code's order with fake JSON (PreToolUseAll → PermissionRequest →
+    [dialog] → late PreToolUseAll → PostToolUse) against a daemon and reads
+    the daemon state right after each hook process ends: `Ask` is there as
+    soon as the PermissionRequest process has exited (before Claude Code
+    could show the dialog); the late report does not clear it; PostToolUse
+    does. `SessionInfo` now carries `attention`, the Claude Code session id,
+    the client's arguments and the number of attached Control clients
+    (protocol version 4).
+  - Synchronous hooks end within 250 ms (`SYNC_DEADLINE`); the edit
+    PreToolUse copies the file within 150 ms or reports without the copy.
+    Asynchronous hooks keep 1 s.
+  - Synchronous hook process time with a daemon: Linux median 4.4 ms, max
+    5.1 ms (n=10, in the test); Windows 11 PermissionRequest median 69.4 ms,
+    p90 88.0, max 92.3; PreToolUse median 76.1 ms (n=30) against
+    `hostname.exe` 56.7 ms on the same run (`synctime.ps1`).
+
 ### ccx comparison (milestone 3)
 
 | ccx | ccterm | |
