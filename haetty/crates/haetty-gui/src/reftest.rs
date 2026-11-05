@@ -17,27 +17,24 @@
 
 use std::path::{Path, PathBuf};
 
+use haetty_core::theme::Theme;
 use haetty_core::{Cell, Cursor, CursorShape, Rgb, Snapshot};
 use haetty_proto::wire::{Attention, ClaudeInfo, EditMeta, Limit, Worker};
 
 use crate::font::Fonts;
 use crate::geom::Layout;
 use crate::render::canvas::{pack, unpack, Canvas};
-use crate::render::paint::Painter;
+use crate::render::paint::{Look, Painter};
 use crate::render::{PaddingStyle, Preedit, Scene};
 use crate::ui::{self, Compose, Greys, TabView};
 
+/// Colours of the synthetic comparison test (not the scenes).
 const FG: Rgb = Rgb { r: 220, g: 220, b: 220 };
 const BG: Rgb = Rgb { r: 30, g: 30, b: 30 };
 
-/// The scenes' state colours: the colours the references were made with
-/// (amber and red as they were before themes), so that they stay valid
-/// until the reference frames are made with the default theme.
-fn accents() -> [Rgb; 16] {
-    let mut p = haetty_core::theme::Theme::base().palette;
-    p[3] = Rgb { r: 222, g: 165, b: 50 };
-    p[9] = Rgb { r: 226, g: 80, b: 70 };
-    p
+/// The scenes are drawn in the default theme (DESIGN.md §2.2).
+fn theme() -> Theme {
+    Theme::default()
 }
 const PROMPT: Rgb = Rgb { r: 120, g: 190, b: 120 };
 const COLS: u16 = 60;
@@ -171,21 +168,24 @@ fn diff_image(actual: &[u32], mask: &[bool]) -> Vec<u32> {
 /// A `cols` × `rows` screen with `lines` from the top (a leading `$ ` in
 /// the prompt colour) and the cursor.
 fn screen(cols: u16, rows: u16, lines: &[&str], cursor: Option<(u16, u16)>) -> Snapshot {
+    let t = theme();
+    let (fg, bg) = (t.foreground, t.background);
     let mut grid = vec![vec![Cell::default(); cols as usize]; rows as usize];
     for (row, line) in grid.iter_mut().zip(lines) {
         let (x, rest) = match line.strip_prefix("$ ") {
-            Some(rest) => (ui::put(row, 0, "$ ", PROMPT, BG, true), rest),
+            Some(rest) => (ui::put(row, 0, "$ ", PROMPT, bg, true), rest),
             None => (0, *line),
         };
-        ui::put(row, x, rest, FG, BG, false);
+        ui::put(row, x, rest, fg, bg, false);
     }
     Snapshot {
         cols,
         rows,
         cells: grid.into_iter().flatten().collect(),
         cursor: cursor.map(|(x, y)| Cursor { x, y, shape: CursorShape::Block, blinking: false }),
-        default_fg: FG,
-        default_bg: BG,
+        default_fg: fg,
+        default_bg: bg,
+        cursor_color: t.cursor_color,
         ..Default::default()
     }
 }
@@ -239,8 +239,9 @@ fn claude_info() -> ClaudeInfo {
 
 /// The window states: name, composed grid, IME preedit.
 fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
-    let acc = accents();
-    let g = Greys::new(FG, BG, &acc);
+    let t = theme();
+    let acc = t.palette;
+    let g = Greys::new(t.foreground, t.background, &acc);
     let compose = |s| compose(s, &acc);
     let mut out = vec![];
 
@@ -384,6 +385,7 @@ fn reference_frames() {
     }
 
     let mut painter = Painter::new(fonts, PX);
+    painter.set_look(Look::of(&theme()));
     let mut failures = vec![];
     for (name, snap, preedit) in scenes() {
         let cv = render(&mut painter, &snap, preedit.as_ref());

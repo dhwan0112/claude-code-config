@@ -1253,6 +1253,16 @@ regression list, measurements), then committed, pushed and mirrored.
     with the colours they were made with (`#dcdcdc` on `#1e1e1e`, amber
     and red) until the next commit makes them with the default theme.
 
+- **2026-11-06 Reference frames in the default theme (DESIGN §2 protected
+  area, approved; commit of its own).** The scenes use `Theme::default()`
+  (and the painter its cursor/selection colours); frames remade on Linux
+  and natively on Windows 11, rerun identical on both. Old vs new (8
+  frames): same size; background masks identical (0 pixels differ); every
+  old colour maps to new colours at most 2 levels apart (rounding of one
+  edge blend over another background — a 1 px glyph move would map one
+  colour to colours ~180 apart); largest channel change 14 (greys), 25 (the
+  waiting mark). Script: session notes `refdiff.py`.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |
