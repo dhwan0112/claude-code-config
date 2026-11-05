@@ -1343,6 +1343,21 @@ regression list, measurements), then committed, pushed and mirrored.
     (+19 456 B); no new dependency (the theme parser, contrast code, ~1.2
     KB of embedded theme files and libghostty-vt's colour parser).
 
+- **2026-11-06 Self-hosting rules for parallel work (CLAUDE.md).** The
+  stable instance and its daemon are never signalled, stopped or
+  restarted; dev builds and test processes are managed only by PID or by
+  their own socket, never by name; parallel Claude Code sessions each use
+  their own worktree and branch and merge into `main` one at a time after
+  the gate; protected areas need the same review in every session; only
+  the user installs or replaces the stable binary. New helpers
+  `haetty_stop_daemon BIN [SIGNAL]` (`test-guard.sh`) and
+  `Stop-HaettyDaemon EXE` (`test-guard.ps1`): stop the daemon of the run's
+  own socket by the PID from `status --json`, refuse any socket outside
+  the run. Checked: a socket outside the run or the user's runtime
+  directory → refused (exit 3); with two dev daemons on two sockets of the
+  run only the addressed one stops. The session harness (`reg.sh`,
+  `e2e*.sh`, `coexist.sh`, …) no longer uses `pkill -f`.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

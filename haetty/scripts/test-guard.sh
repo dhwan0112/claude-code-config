@@ -11,7 +11,9 @@
 # %APPDATA% or %LOCALAPPDATA% (Git Bash). It creates the run directory
 # $HAETTY_RUN (base/haetty-run.XXXXXX) and exports it (a $HAETTY_RUN already
 # inside the base is reused: nested scripts). haetty_guard refuses
-# every path outside $HAETTY_RUN. The real home is the one at the time the
+# every path outside $HAETTY_RUN. haetty_stop_daemon BIN [SIGNAL] stops the
+# daemon of this run's own socket, by the PID `BIN status --json` reports —
+# never by process name (CLAUDE.md: the stable instance is never signalled). The real home is the one at the time the
 # file is sourced (HAETTY_REAL_HOME, if set, wins), so source it before a
 # script points HOME at a test home. Same rules: crates/haetty-testkit,
 # scripts/test-guard.ps1.
@@ -89,3 +91,19 @@ haetty_guard() {
   done < <(_haetty_protected)
   _haetty_inside "$1" "$HAETTY_RUN" || _haetty_refuse "$1 is outside this run's directory $HAETTY_RUN"
 }
+
+# Stops the daemon this run started: the PID that `BIN status --json` reports
+# for this run's own socket (HAETTY_SOCKET, CCTERM_SOCKET or XDG_RUNTIME_DIR
+# inside $HAETTY_RUN; anything else is refused — it could be the stable
+# instance's). Never by name: no pkill/killall.
+haetty_stop_daemon() { # BIN [SIGNAL]
+  local bin=$1 sig=${2:-TERM} sock pid
+  [ -n "$HAETTY_RUN" ] || _haetty_refuse "haetty_guard_init was not called"
+  sock=${HAETTY_SOCKET:-${CCTERM_SOCKET:-${XDG_RUNTIME_DIR:-}}}
+  [ -n "$sock" ] && _haetty_inside "$sock" "$HAETTY_RUN" \
+    || _haetty_refuse "haetty_stop_daemon: the socket ($sock) is not this run's — set HAETTY_SOCKET inside $HAETTY_RUN"
+  pid=$(HAETTY_LOG=warn CCTERM_LOG=warn "$bin" status --json 2>/dev/null | sed -n 's/.*"daemon_pid":\([0-9][0-9]*\).*/\1/p')
+  [ -n "$pid" ] || return 0
+  kill -s "$sig" "$pid" 2>/dev/null
+}
+

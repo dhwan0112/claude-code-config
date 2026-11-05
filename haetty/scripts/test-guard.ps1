@@ -55,3 +55,19 @@ function Assert-HaettyPath([string]$Path) {
     }
     if (-not (Test-HaettyInside $Path $env:HAETTY_RUN)) { throw "test-guard: refusing: $Path is outside this run's directory $env:HAETTY_RUN" }
 }
+
+# Stops the daemon this run started: the PID `<exe> status --json` reports for
+# this run's own pipe ($env:HAETTY_SOCKET must be set and name a pipe with
+# "-test" or the run's id in it, so the stable instance's pipe is never used).
+# Never by process name.
+function Stop-HaettyDaemon([string]$Exe) {
+    if (-not $env:HAETTY_RUN) { throw "test-guard: refusing: Initialize-HaettyGuard was not called" }
+    $sock = $env:HAETTY_SOCKET
+    if (-not $sock -or -not ($sock -match '-test' -or $sock -match [regex]::Escape((Split-Path $env:HAETTY_RUN -Leaf)))) {
+        throw "test-guard: refusing: Stop-HaettyDaemon needs `$env:HAETTY_SOCKET set to this run's own pipe (contains '-test' or the run id)"
+    }
+    $env:HAETTY_LOG = "warn"
+    $j = & $Exe status --json 2>$null | ConvertFrom-Json
+    if ($j.daemon_pid) { Stop-Process -Id $j.daemon_pid -Force -ErrorAction SilentlyContinue }
+}
+

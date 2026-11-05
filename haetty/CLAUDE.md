@@ -39,6 +39,23 @@ the start of a session.
   separate instance (`HAETTY_INSTANCE=dev`: own daemon, socket, state and
   config directories, app id, window title prefix). Never replace the
   stable binary yourself; promotion to stable needs the user's approval.
+  - Never signal, stop or restart the stable instance or its daemon (it
+    hosts this very session).
+  - Manage processes of dev builds and tests only by PID or by their own
+    socket — never by name: no `pkill haetty`, `killall haetty`,
+    `taskkill /IM haetty.exe`, `Stop-Process -Name haetty`, and no
+    `pkill -f` patterns. Scripts: `haetty_stop_daemon BIN` /
+    `Stop-HaettyDaemon EXE` (`scripts/test-guard.*`) stop the daemon of the
+    run's own socket by the PID `status --json` reports; children you start
+    are stopped by their `$!` / `Start-Process -PassThru` PID.
+  - Installing or replacing the stable binary is the user's job only.
+- Several Claude Code sessions at once: each works in its own `git
+  worktree` on its own branch (never two sessions in one checkout); a
+  branch is merged into `main` only after it passed the full gate (both
+  targets, clippy 0 on both, all tests), one session at a time — the next
+  session rebases on the new `main` and passes the gate again before its
+  merge. Protected-area changes follow the same review rule in every
+  session.
 - Protected areas — changes need the user's review before commit:
   `docs/DESIGN.md` §2 (outer design) and any change that alters reference
   frames (`crates/haetty-gui/tests/reference/`); hook output rules
