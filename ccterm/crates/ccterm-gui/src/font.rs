@@ -1,6 +1,8 @@
 //! Font discovery and per-character face resolution.
 //!
-//! Faces are found with `fontdb` (no fontconfig) and memory-mapped, so a large
+//! Faces are found with `fontdb` (no fontconfig, `memmap` feature: the
+//! start-up scan maps each file instead of reading it into the heap) and
+//! memory-mapped once per file when used (`make_shared_face_data`), so a large
 //! CJK collection only costs the pages that are actually read. A character is
 //! looked up in the primary face for its style, then the primary regular face
 //! (with synthetic bold/italic), then the fallback list, then — once per
@@ -8,13 +10,10 @@
 //! over for text presentation unless nothing else has the glyph, and
 //! preferred for emoji presentation ([`pick`]).
 
-use std::collections::HashMap;
-use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use fontdb::{Database, Family, Query, Source, Stretch, Style as FdStyle, Weight};
-use memmap2::Mmap;
+use fontdb::{Database, Family, Query, Stretch, Style as FdStyle, Weight};
 use swash::{CacheKey, FontRef};
 
 pub use crate::emoji::Presentation;
@@ -56,9 +55,12 @@ impl Style {
     }
 }
 
+/// Font file contents shared by all faces of the file (a memory map).
+type FontData = Arc<dyn AsRef<[u8]> + Send + Sync>;
+
 /// A face ready for swash: mapped file data plus the table offset.
 pub struct Face {
-    data: Arc<Mmap>,
+    data: FontData,
     offset: u32,
     key: CacheKey,
     pub name: String,
@@ -68,7 +70,7 @@ pub struct Face {
 
 impl Face {
     pub fn font(&self) -> FontRef<'_> {
-        FontRef { data: &self.data[..], offset: self.offset, key: self.key }
+        FontRef { data: (*self.data).as_ref(), offset: self.offset, key: self.key }
     }
 }
 
@@ -83,7 +85,6 @@ pub struct Resolved {
 
 pub struct Fonts {
     db: Database,
-    files: HashMap<PathBuf, Arc<Mmap>>,
     faces: Vec<Face>,
     by_id: HashMap<fontdb::ID, usize>,
     /// Faces for regular, bold, italic, bold italic (index = `Style::index`).
@@ -109,7 +110,6 @@ impl Fonts {
     pub fn from_db(db: Database, family: Option<&str>) -> Result<Fonts, String> {
         let mut f = Fonts {
             db,
-            files: HashMap::new(),
             faces: vec![],
             by_id: HashMap::new(),
             primary: [None; 4],
@@ -192,33 +192,22 @@ impl Fonts {
         Some(id)
     }
 
-    fn map_file(&mut self, path: &Path) -> Option<Arc<Mmap>> {
-        if let Some(m) = self.files.get(path) {
-            return Some(m.clone());
-        }
-        let file = File::open(path).ok()?;
-        // SAFETY: font files are not expected to change while mapped; this is
-        // the same assumption fontdb's own memmap feature makes.
-        let map = Arc::new(unsafe { Mmap::map(&file) }.ok()?);
-        self.files.insert(path.to_owned(), map.clone());
-        Some(map)
-    }
-
     fn open(&mut self, id: fontdb::ID) -> Option<usize> {
         if let Some(&i) = self.by_id.get(&id) {
             return Some(i);
         }
         let info = self.db.face(id)?;
-        let index = info.index;
         let name = info.families.first().map(|(n, _)| n.clone()).unwrap_or_else(|| info.post_script_name.clone());
-        let path = match &info.source {
-            Source::File(p) => p.clone(),
-            _ => return None,
+        // SAFETY: font files are not expected to change while mapped (the
+        // assumption fontdb's memmap feature makes); one map per file, shared
+        // by all faces of a collection.
+        let (data, index) = unsafe { self.db.make_shared_face_data(id) }?;
+        let (offset, key, color) = {
+            let font = FontRef::from_index((*data).as_ref(), index as usize)?;
+            let color =
+                [b"CBDT", b"sbix", b"COLR", b"SVG "].iter().any(|t| font.table(swash::tag_from_bytes(t)).is_some());
+            (font.offset, font.key, color)
         };
-        let data = self.map_file(&path)?;
-        let font = FontRef::from_index(&data[..], index as usize)?;
-        let (offset, key) = (font.offset, font.key);
-        let color = [b"CBDT", b"sbix", b"COLR", b"SVG "].iter().any(|t| font.table(swash::tag_from_bytes(t)).is_some());
         self.faces.push(Face { data, offset, key, name, color });
         let i = self.faces.len() - 1;
         self.by_id.insert(id, i);
@@ -228,13 +217,19 @@ impl Fonts {
     /// Open faces, mapped files and lookup cache, for the log. Mapped font
     /// files count as file-backed memory, not anonymous.
     pub fn memory(&self) -> String {
-        let mapped: usize = self.files.values().map(|m| m.len()).sum();
+        let mut files = HashSet::new();
+        let mut mapped = 0;
+        for f in &self.faces {
+            if files.insert(Arc::as_ptr(&f.data) as *const () as usize) {
+                mapped += (*f.data).as_ref().len();
+            }
+        }
         format!(
             "{} faces open ({} of {} installed), {} files mapped ({} KB, file-backed), {} lookups cached",
             self.faces.len(),
             self.faces.len(),
             self.db.len(),
-            self.files.len(),
+            files.len(),
             mapped / 1024,
             self.lookup.len()
         )

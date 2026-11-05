@@ -31,8 +31,7 @@ softbuffer = { version = "0.4.8", default-features = false, features = [
 ] }
 swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
 # Font discovery without fontconfig; files are memory-mapped by us.
-fontdb = { version = "0.24.0", default-features = false, features = ["std", "fs"] }
-memmap2 = "0.9"
+fontdb = { version = "0.24.0", default-features = false, features = ["std", "fs", "memmap"] }
 unicode-width = { version = "0.2", default-features = false }
 # Clipboard: Win32; X11 via x11rb (pure Rust); Wayland via smithay-clipboard
 # (shares smithay-client-toolkit with winit), libwayland-client dlopen'ed.
