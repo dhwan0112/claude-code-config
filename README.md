@@ -4,7 +4,7 @@ Claude Code worker baseline shared between kramers and pauli: `cc-panel/` + `bin
 `agents/`, `skills/`, `templates/`, `statusline.sh`, `ccterm/` (Rust terminal for Claude Code, successor of ccx; `ccterm/docs/HANDOFF.md`), and `MANIFEST.md` (change log with md5 lines). `hosts/<host>.md` are the
 per-host logs. See `cc-panel/README.md` for ccx itself.
 
-**Versioning.** Since 2026-11-04 this git repository is the baseline (private remote `github.com/dhwan0112/claude-code-config`).
+**Versioning.** Since 2026-11-04 this git repository is the baseline (public remote `github.com/dhwan0112/claude-code-config`).
 The Dropbox folder `~/Dropbox/claude-code-config` is kept as a mirror for a host that has not switched yet:
 `tools/mirror-dropbox.sh` copies the repository into `current/` and `hosts/` there. The earlier Dropbox `history/<date>-<Host>-N`
 snapshots were imported as the first commits and are available as tags of the same name (`git tag`).
