@@ -154,7 +154,14 @@ cores, three runs; max RSS includes the 16.9 MB input held in memory):
 | libghostty-vt 0.2.2 | 11 000 000 bytes (≈10 200 rows of 120 columns) | 31.5–31.6 MB | 32.5–37.1 MB/s |
 | alacritty_terminal 0.26 | 10 000 lines | 47.6 MB | 110–120 MB/s |
 
-(The old condition, libghostty-vt with 10 000 bytes: 20.6 MB.) The final
+Both max RSS figures include the same 16.9 MB input file held in memory;
+without it they are roughly 31.6 − 16.9 ≈ 15 MB (libghostty-vt) and
+47.6 − 16.9 ≈ 31 MB (alacritty_terminal): with about the same history
+libghostty-vt uses about half the memory. This is an approximation — the
+subtraction assumes the input buffer is fully resident in both and ignores
+other differences (binary size 2.0 vs 0.6 MB, allocator behaviour, ~2 %
+more rows kept by libghostty-vt). (The old condition, libghostty-vt with
+10 000 bytes: 20.6 MB.) The final
 screens of the two replays differ only in which 36 rows the harnesses
 print (one row offset); the rows themselves match.
 
