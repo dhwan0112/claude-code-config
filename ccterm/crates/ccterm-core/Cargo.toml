@@ -1,0 +1,13 @@
+[package]
+name = "ccterm-core"
+description = "Terminal backend for ccterm: PTY + libghostty-vt engine on its own thread, with a Send-able snapshot API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ccterm-pty.workspace = true
+libghostty-vt.workspace = true
+crossbeam-channel.workspace = true
+log.workspace = true

@@ -1,0 +1,32 @@
+[package]
+name = "ccterm-pty"
+description = "Pseudo-terminal layer for ccterm: Unix PTYs and Windows ConPTY with passthrough mode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+log.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+portable-pty.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Console",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
+  "Win32_System_IO",
+] }
+conpty-bin-vendored = { version = "=1.25.2609300030", optional = true }
+
+[features]
+default = ["embedded-conpty"]
+# Windows: ship Microsoft's out-of-band conpty.dll + OpenConsole.exe inside the
+# binary and use them instead of the in-box console host.
+embedded-conpty = ["dep:conpty-bin-vendored"]
