@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/haetty-pty",
+  "crates/haetty-core",
+  "crates/haetty-proto",
+  "crates/haetty-cc",
+  "crates/haetty-daemon",
+  "crates/haetty-headless",
+  "crates/haetty-gui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/dhwan0112/claude-code-config"
+rust-version = "1.90"
+
+[workspace.dependencies]
+haetty-pty = { path = "crates/haetty-pty" }
+haetty-core = { path = "crates/haetty-core" }
+haetty-proto = { path = "crates/haetty-proto" }
+haetty-daemon = { path = "crates/haetty-daemon" }
+haetty-cc = { path = "crates/haetty-cc" }
+libghostty-vt = "=0.2.2"
+portable-pty = "0.9.0"
+crossbeam-channel = "0.5"
+log = "0.4"
+
+[profile.release]
+debug = 1
+
+# Size-optimised build for shipping: `cargo build --profile dist [--target ...]`.
+# `release` keeps debug info for profiling and size analysis (cargo bloat).
+[profile.dist]
+inherits = "release"
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+debug = 0
+strip = true

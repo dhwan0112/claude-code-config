@@ -1,7 +1,7 @@
 # claude-code-config
 
 Claude Code worker baseline shared between kramers and pauli: `cc-panel/` + `bin/ccx` (Claude Code workspace in tmux),
-`agents/`, `skills/`, `templates/`, `statusline.sh`, `ccterm/` (Rust terminal for Claude Code, successor of ccx; `ccterm/docs/HANDOFF.md`), and `MANIFEST.md` (change log with md5 lines). `hosts/<host>.md` are the
+`agents/`, `skills/`, `templates/`, `statusline.sh`, `haetty/` (Rust terminal for Claude Code, successor of ccx, formerly `ccterm/`; `haetty/docs/HANDOFF.md`), and `MANIFEST.md` (change log with md5 lines). `hosts/<host>.md` are the
 per-host logs. See `cc-panel/README.md` for ccx itself.
 
 **Versioning.** Since 2026-11-04 this git repository is the baseline (public remote `github.com/dhwan0112/claude-code-config`).
