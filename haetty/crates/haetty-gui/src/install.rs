@@ -15,7 +15,7 @@ pub fn install_desktop() -> Result<String, String> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
         .ok_or("neither XDG_DATA_HOME nor HOME is set")?;
-    let exe = product::exe_path();
+    let exe = launcher_path();
     let id = product::app_id();
     let mut written = vec![];
     let mut write = |rel: String, bytes: &[u8]| -> Result<(), String> {
@@ -42,6 +42,21 @@ pub fn install_desktop() -> Result<String, String> {
         "{}: nothing to install on Windows — the executable carries its icon; pin it to Start or the taskbar",
         product::EXE
     ))
+}
+
+/// The path haetty was started by, when that is an absolute path to this
+/// very executable — such as the `~/.local/bin/haetty` link of a stable
+/// install, so the desktop entry keeps following the link after an update
+/// or a rollback; otherwise the executable's own path.
+#[cfg_attr(windows, allow(dead_code))]
+fn launcher_path() -> std::path::PathBuf {
+    let exe = product::exe_path();
+    if let Some(a0) = std::env::args_os().next().map(std::path::PathBuf::from) {
+        if a0.is_absolute() && std::fs::canonicalize(&a0).ok() == std::fs::canonicalize(&exe).ok() {
+            return a0;
+        }
+    }
+    exe
 }
 
 /// The `.desktop` file for `exe` (quoted for the Exec key).

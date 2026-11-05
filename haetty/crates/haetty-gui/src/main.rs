@@ -165,7 +165,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
             "--cols" => o.cols = val("--cols")?.parse().map_err(|_| "bad --cols")?,
             "--rows" => o.rows = val("--rows")?.parse().map_err(|_| "bad --rows")?,
             "-h" | "--help" => return Err(USAGE.into()),
-            "--version" => return Err(format!("haetty {}", env!("CARGO_PKG_VERSION"))),
+            "--version" | "-V" => return Err(version_line()),
             "--" => {
                 program.extend(it.by_ref());
                 break;
@@ -226,6 +226,19 @@ fn load_config_file(o: &mut Options) {
     }
     log::info!("config: {}", path.display());
     o.config = c;
+}
+
+/// `haetty --version`: version, commit, build date (UTC) and the instance
+/// this process would run as (`HAETTY_INSTANCE`; none = "stable").
+pub fn version_line() -> String {
+    let inst = haetty_proto::product::instance();
+    format!(
+        "haetty {} (commit {}, built {}, instance {})",
+        env!("CARGO_PKG_VERSION"),
+        env!("HAETTY_BUILD_COMMIT"),
+        env!("HAETTY_BUILD_DATE"),
+        if inst.is_empty() { "stable" } else { inst.as_str() }
+    )
 }
 
 /// Display width of a character in cells (0, 1 or 2).
@@ -499,6 +512,17 @@ mod tests {
     fn implemented_subcommands_come_first() {
         assert!(matches!(parse_command(vec!["daemon".into()]), Ok(Command::Daemon)));
         assert!(matches!(parse_command(vec!["status".into()]), Ok(Command::Status { json: false })));
+        // --version: printed on stdout with exit 0 (the "haetty " prefix).
+        let v = parse_command(vec!["--version".into()]).unwrap_err();
+        assert!(
+            v.starts_with("haetty 0.")
+                && v.contains("(commit ")
+                && v.contains(", built 20")
+                && v.contains(", instance "),
+            "{v}"
+        );
+        let c = env!("HAETTY_BUILD_COMMIT");
+        assert!(c == "unknown" || (c.len() == 12 && c.chars().all(|x| x.is_ascii_hexdigit())), "{c}");
         assert!(matches!(parse_command(vec!["status".into(), "--json".into()]), Ok(Command::Status { json: true })));
         assert!(parse_command(vec!["status".into(), "--xml".into()]).is_err());
         assert!(parse_command(vec!["daemon".into(), "x".into()]).is_err());
