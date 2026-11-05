@@ -136,6 +136,9 @@ one vCPU: libghostty-vt ~31–34 MB/s, max RSS ~20 MB; alacritty_terminal
 ~50–73 MB/s, max RSS ~47 MB; identical final screens. Building libghostty-vt
 for `x86_64_v3` instead of `baseline` did not change throughput measurably.
 Minimal stripped binaries (engine + replay): 2.0 MB vs 0.6 MB.
+Caveat found later: libghostty-vt's `max_scrollback` is a byte limit, and
+the benchmark passed `10000` (about 680 rows of history) to it but 10 000
+lines to alacritty_terminal, so the RSS comparison is not like for like.
 
 Claude Code's fullscreen renderer emits kilobytes per interaction, so
 throughput is not the constraint for this workload; memory, correctness of

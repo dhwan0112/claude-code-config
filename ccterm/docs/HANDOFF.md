@@ -248,7 +248,7 @@ outside the repository on the dev machine
 - **Ctrl+C twice** (Claude Code idle, press, gap, press; "exited" = the
   window process ended with code 0 within 4 s):
 
-  | Condition | Linux GUI (XTest) | Windows GUI (SendInput) | Linux headless |
+  | Condition | Linux GUI (XTest) | Windows GUI (SendInput) | Linux headless¹ |
   |---|---|---|---|
   | 30 ms, 1.5 s after the title | 20/20 | 20/20 | – |
   | 300 ms, 1.5 s after the title | 19/20, then 20/20 | 20/20 | 20/20 |
@@ -258,14 +258,21 @@ outside the repository on the dev machine
   | 300 ms, ibus over XIM active | 20/20 | – | – |
   | ibus-hangul composing 한, then 300 ms | 5/5 (before and after the fix) | – | – |
 
+  ¹ headless waited for the footer text (`manual mode on`), drawn after the
+  title, then 1.5 s — so it pressed somewhat later than the GUI runs; it is
+  not an exact control for the start-up timing. Windows used the build
+  before the IME fix and took the foreground with `AttachThreadInput`
+  while the desktop was idle.
+
   In every failing run the log has both presses with the same bytes as in
   passing runs (`key C Press mods=Mods(CTRL) -> [1b 5b 39 39 3b 35 75]`),
-  focus was gained, no release or repeat in between; Claude Code's screen
+  focus was gained, and the key event sequence (Ctrl press, C press, Ctrl
+  release, C release) is the same as in passing runs; Claude Code's screen
   showed its 401 "remote managed settings" notice. Not reproduced when
-  pressed 6 s after start, nor headless, nor on Windows. Conclusion: the
-  bytes leave ccterm every time; the rare misses right after start are on
-  Claude Code's side (most likely its start-up work, e.g. that notice,
-  around the first press) and were not pinned down further. One way ccterm
+  pressed 6 s after start, nor on Windows. So the bytes left ccterm every
+  time; the rare misses within the first seconds after start look like
+  Claude Code's side (start-up work such as that notice around the first
+  press) but the cause is not proven. One way ccterm
   itself could lose a press was found and fixed: Ctrl+C was held back
   while an IME composition was shown (`input::ime_owns_key`, unit test
   `shortcuts_pass_while_composing`); ibus-hangul commits before it forwards
@@ -273,7 +280,7 @@ outside the repository on the dev machine
   would have.
 - **Memory** (Claude Code idle, 120x36, 11 pt): Linux `ccterm` RssAnon
   24.8 MB (`[heap]` 19.9 MB; anonymous mappings of 1.6, 1.2, 0.8, 0.4 MB =
-  libghostty-vt pages), RssFile 26.0 MB, RssShmem 2.5 MB (the MIT-SHM
+  see below), RssFile 26.0 MB, RssShmem 2.5 MB (the MIT-SHM
   image), 6 threads; Windows private working set 12.5 MB (private bytes
   14.4 MB, working set 34.9 MB, 12 threads). Exit log line: canvas 1088×620
   2.6 MB, glyph cache 59 entries (4 KB of rasters, 7 KB table), snapshot
@@ -281,9 +288,12 @@ outside the repository on the dev machine
   last-resort scan opened all 99 faces). The rest of the Linux heap is
   freed memory glibc kept: with
   `GLIBC_TUNABLES=glibc.malloc.mmap_threshold=131072` the same run has
-  RssAnon 6.6 MB and `[heap]` 0.7 MB — the large temporary buffers of the
-  start-up font scan raise glibc's dynamic mmap threshold and are then
-  freed into the heap. Per session (`examples/mem.rs`, 120x36, no
+  RssAnon 6.6 MB and `[heap]` 0.7 MB, and with the CJK collections in
+  `/usr/share/fonts/opentype/noto` hidden RssAnon 6.8 MB and `[heap]`
+  3.8 MB — the start-up font scan reads those ~20 MB files into temporary
+  buffers, which raises glibc's dynamic mmap threshold, and the freed
+  memory stays in the heap. The 1.6/1.2/0.8/0.4 MB anonymous mappings are
+  probably libghostty-vt pages (an empty session adds 2.2 MB, below). Per session (`examples/mem.rs`, 120x36, no
   window): empty +2.2 MB; 10 000 lines kept +11.6 MB; the default limit
   keeps 678 lines, +2.9 MB.
 - **Subcommands**: unit test `reserved_subcommands_are_errors_until_implemented`;
@@ -429,7 +439,10 @@ New in the milestone 1 finishing work (2026-11-05):
 - **`SessionConfig::scrollback` is bytes, not lines.** It becomes
   libghostty-vt's `max_scrollback`, documented in `src/terminal/Screen.zig`
   as "the amount of scrollback to keep in bytes" (rounded to whole pages).
-  The default `10_000` keeps 678 rows of history at 120 columns
+  The default `10_000` keeps 678 rows of history at 120 columns (the
+  engine comparison in DESIGN.md §4 passed the same `10000` to
+  libghostty-vt and 10 000 lines to alacritty_terminal, so its RSS figures
+  are not like for like)
   (`cargo run --release -p ccterm-core --example mem -- 3 10000 10000`);
   a 64 MB limit kept all 10 000 rows of 120 columns, for 11.6 MB of
   anonymous memory. Not changed yet (§6.2).
