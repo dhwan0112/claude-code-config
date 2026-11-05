@@ -133,7 +133,7 @@ mode runs locally without the API — useful for scrollable content.
   AltGr text, Ctrl+V paste) and the pixel tests with Windows fonts
   (Malgun Gothic for the wide-character test).
 - `ccterm-headless.exe` + native Claude Code 2.1.318
-  (`C:\Users\...\.local\bin\claude.exe`): fullscreen renderer through the
+  (`%USERPROFILE%\.local\bin\claude.exe`): fullscreen renderer through the
   embedded ConPTY — `alt_screen, mouse_tracking, sgr_mouse,
   bracketed_paste, focus_events: true, kitty_keyboard: 5`; `안녕 hello` +
   Shift+Enter + `second line` shown as two input lines; Ctrl+C twice exits 0.
@@ -463,8 +463,9 @@ integration (Rakazo) in its §6.
   headless runs started from Git Bash removed only three of them, so the
   test child inherited the host session's `CLAUDE_CODE_SESSION_ID` and
   `CLAUDE_CODE_MESSAGING_TOKEN` (not Claude credentials; nothing logged or
-  stored them). The scripts in `C:\Users\denny\ccterm-win\scripts` strip
-  them all (`cchome.sh`, the `.ps1` files).
+  stored them). The test scripts kept outside the repository
+  (`%USERPROFILE%\ccterm-win\scripts` on the dev machine) strip them all
+  (`cchome.sh`, the `.ps1` files).
 - **Hooks / adapter / orchestrator / CLI JSON / MCP:** not started; nothing
   conflicts. The binary is still the GUI (`ccterm`); the first non-option
   word is taken as the program today, so subcommand names (`gui`, `daemon`,
