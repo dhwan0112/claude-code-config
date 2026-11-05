@@ -1189,6 +1189,13 @@ regression list, measurements), then committed, pushed and mirrored.
   is not scriptable: manual check 18. (The button says "haetty.exe": the
   executable has no version resource with a file description.)
 
+- **2026-11-06 Size after the renames** (`dist`, stripped): Linux
+  6 402 872 B, Windows 4 981 760 B. Against the icon commit (6 402 544 /
+  4 974 592): +328 B / +7 168 B — the crate and directory rename changed
+  nothing; the Windows growth is the status-line short-path/copy code and
+  the AppUserModelID call. DESIGN.md §3.4 updated; both far inside the
+  12 / 10 MB budget.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

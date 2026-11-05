@@ -160,7 +160,7 @@ line every 3 s):
 
 | Item | Target | Measured |
 |---|---|---|
-| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6.3 MB, Windows 4.9 MB (see HANDOFF.md §6.4 for each phase) |
+| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6 402 872 B (6.4 MB), Windows 4 981 760 B (5.0 MB), re-measured 2026-11-06 after the rename to haetty, the crate rename, the final icon, the status-line path fix and the AppUserModelID (see HANDOFF.md §6.4 for each step) |
 | Idle CPU, Claude Code idle, 30 s | ~0 % | GUI 0 ticks, daemon 1 tick (10 ms) |
 | GUI + daemon, one session, default scrollback filled at 120 columns | ≤ 25 MB | 6.3 + 14.3 = 20.5 MB |
 | Per additional session, scrollback filled | ≤ 16 MB | +14.0 MB (2nd: daemon +13.1, GUI +0.9), +13.4 MB (3rd) |
