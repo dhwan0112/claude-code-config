@@ -269,8 +269,8 @@ outside the repository on the dev machine
   focus was gained, and the key event sequence (Ctrl press, C press, Ctrl
   release, C release) is the same as in passing runs; Claude Code's screen
   showed its 401 "remote managed settings" notice. Not reproduced when
-  pressed 6 s after start, nor on Windows. Settled by the headless control
-  below: the miss also happens without a window. One way ccterm
+  pressed 6 s after start (GUI 40/40), nor on Windows (60/60). See the
+  headless control in "Before milestone 2" for the conclusion. One way ccterm
   itself could lose a press was found and fixed: Ctrl+C was held back
   while an IME composition was shown (`input::ime_owns_key`, unit test
   `shortcuts_pass_while_composing`); ibus-hangul commits before it forwards
@@ -325,10 +325,18 @@ outside the repository on the dev machine
   | headless, no focus report | 20/20, 40/40 | 20/20 | 0/80 |
   | headless, focus out/in report 0.3 s before | 19/20, 40/40 | 20/20 | 1/80 |
 
-  The miss happens without a window (headless with the focus report the
-  GUI also sends), with identical bytes from ccterm, so it is Claude Code's
-  start-up state, not ccterm's GUI input path. Whether focus reports make
-  it likelier is not established (1/80 vs 0/80).
+  None of the differences is significant (Fisher's exact test: GUI vs
+  headless without focus reports p ≈ 0.09, GUI vs headless with them
+  p ≈ 0.26). Decisive run, headless, alternating, 1.5 s after the title,
+  presses 300 ms apart: with a focus out/in report *between* the two
+  presses 20/20 exited, without it 20/20 (Claude Code had focus reporting
+  on — `focus_events: true` at the title — so the reports reached it).
+  Conclusion, item closed: there is no evidence that a GUI-only path in
+  ccterm causes the miss (ccterm sent identical bytes in every failing
+  run); Claude Code's state right after start is the likely cause; focus
+  reports showed no effect. At the title Claude Code had not yet switched
+  to the alternate screen or kitty keyboard (`alt_screen: false,
+  kitty_keyboard: 0`), so it is still starting up in that window.
 - **VS16 emoji in a narrow cell** (mode 2027 off): `⏸️`, `⚠️` from Noto
   Color Emoji are scaled to the cell width and clipped to it; colour pixels
   at x 0..10 and 1..10 of an 11 px cell, none in the neighbouring cells
@@ -497,9 +505,10 @@ New in the milestone 1 finishing work (2026-11-05):
   the test setup's dummy API key Claude Code also shows "Remote managed
   settings failed to load (authentication rejected (401))" a moment after
   start. A second Ctrl+C is occasionally ignored within the first seconds
-  after start — also headless (§3, "Before milestone 2"): Claude Code's
-  start-up state, not ccterm. Tests that need a reliable exit wait a few
-  seconds (6 s: 40/40).
+  after start (GUI 4/100 at 1.5 s after the title, headless 1/80 and 0/80,
+  differences not significant; §3 "Before milestone 2"): most likely
+  Claude Code's start-up state; no evidence for a ccterm cause. Tests
+  that need a reliable exit wait a few seconds (GUI at 6 s: 40/40).
 - **Xvfb without sudo** (WSL, `/tmp/.X11-unix` is WSLg's read-only mount,
   Xvfb runs `/usr/bin/xkbcomp` by absolute path): `apt-get download` +
   `dpkg -x` xvfb, libxfont2, x11-xkb-utils, xfonts-base, xserver-common
