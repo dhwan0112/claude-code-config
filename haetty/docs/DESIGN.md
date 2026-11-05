@@ -648,6 +648,31 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   when it starts, so a running Claude Code keeps it; with its "Dark mode
   (ANSI colors only)" its palette-number colours follow at once.
 
+### 3.15 Stable installs
+
+- `tools/install-stable.sh` / `.ps1` build a commit or tag in a temporary
+  `git worktree` with the `dist` profile (`HAETTY_BUILD_COMMIT` = that
+  commit) and install it into a versioned folder that is never changed
+  again (Linux `~/.local/opt/haetty/<version>/`, 0555; Windows
+  `%LOCALAPPDATA%\Programs\haetty\<version>\`, read-only attribute).
+  `<version>` = `<crate version>-<12-digit commit>`.
+- One fixed path names the active version: Linux the symbolic link
+  `~/.local/bin/haetty` (switched atomically), Windows the directory
+  junction `…\haetty\current` (on the user `PATH`, behind the Start menu
+  shortcut and taskbar pins). Rollback re-points it; old versions stay.
+  Decision for Windows: a junction rather than a shortcut or a launcher
+  executable — one path for the shell, the shortcut and pins, no second
+  program to keep in step, no administrator rights.
+- The installers stop nothing (CLAUDE.md: the stable instance is never
+  signalled); a running stable daemon keeps its version until its windows
+  are gone. `install-desktop` writes `Exec=` with the launching link
+  (`install.rs::launcher_path`), so the menu entry follows the link.
+- `haetty --version`: crate version, commit (`build.rs`: the installer's
+  `HAETTY_BUILD_COMMIT`, else `git rev-parse`), UTC build date
+  (`SOURCE_DATE_EPOCH` respected), instance.
+- With `HAETTY_TEST_TMP`/`HAETTY_RUN` set (their self-tests) the installers
+  refuse every path outside the test run directory before building.
+
 ## 4. VT engine decision (measured 2026-11-04)
 
 Replay of a real Claude Code 2.1.318 session (startup, Hangul typing,

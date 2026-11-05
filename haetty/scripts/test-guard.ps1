@@ -12,7 +12,13 @@
 # (base\haetty-run.<random>). Assert-HaettyPath throws for every path
 # outside it. Same rules: crates/haetty-testkit, scripts/test-guard.sh.
 
+# The real directories, taken once — before a test points USERPROFILE, HOME,
+# APPDATA or LOCALAPPDATA into its run directory — and exported, so that
+# nested scripts (child processes) protect the same real ones.
 if (-not $env:HAETTY_REAL_HOME) { $env:HAETTY_REAL_HOME = $env:USERPROFILE }
+if ($null -eq $env:HAETTY_REAL_APPDATA) { $env:HAETTY_REAL_APPDATA = "$env:APPDATA" }
+if ($null -eq $env:HAETTY_REAL_LOCALAPPDATA) { $env:HAETTY_REAL_LOCALAPPDATA = "$env:LOCALAPPDATA" }
+if ($null -eq $env:HAETTY_REAL_HOMEVAR) { $env:HAETTY_REAL_HOMEVAR = "$env:HOME" }
 
 function Get-HaettyNormPath([string]$p) {
     if (-not $p) { return "" }
@@ -21,7 +27,7 @@ function Get-HaettyNormPath([string]$p) {
 
 function Get-HaettyProtected {
     $h = $env:HAETTY_REAL_HOME
-    @($h, "$h\.config", "$h\.local", "$h\.claude", $env:APPDATA, $env:LOCALAPPDATA, $env:HOME) |
+    @($h, "$h\.config", "$h\.local", "$h\.claude", $env:HAETTY_REAL_APPDATA, $env:HAETTY_REAL_LOCALAPPDATA, $env:HAETTY_REAL_HOMEVAR) |
         Where-Object { $_ } | ForEach-Object { Get-HaettyNormPath $_ }
 }
 

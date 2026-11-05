@@ -1415,6 +1415,52 @@ regression list, measurements), then committed, pushed and mirrored.
   Regression `reg.sh` 27/27 and §2.3 `e2e3.sh` 5/5 with the harness
   stopping dev daemons only through `haetty_stop_daemon`.
 
+- **2026-11-06 Stable installers and `--version`.** `haetty --version`
+  prints version, commit, UTC build date and instance (`d414c4b`);
+  `install-desktop` writes `Exec=` with the launching link.
+  `tools/install-stable.sh` / `.ps1` (DESIGN.md §3.15, README "Installing a
+  stable haetty"): build a commit or tag in a temporary worktree (`dist`),
+  install read-only into a versioned folder, activate through the link
+  (Linux) or junction (Windows), `--list`/`-List`, `--activate`/`-Activate`
+  for rollback, `install-desktop`, `--version` check, and print (only) a
+  `permissions.deny` / `blockWritesOutsideWorkingDirectories` suggestion
+  with the machine's real paths. The Windows script builds in WSL (native
+  Windows has no Zig) through `install-stable.sh --build-only`. Self-tests
+  `tools/test-install-stable.sh` / `.ps1` (test run directory only; real
+  prefix refused before building). Found on the way: `test-guard.sh` under
+  `set -u` (the installer's) stopped listing the protected directories at
+  the first unset XDG variable — fixed (`${VAR:-}`), checked refusing the
+  real home and `~/.local` under `set -euo pipefail` with no XDG variables.
+  Also corrected a stale README limit (the status-line path with spaces on
+  Windows was fixed earlier). Evidence: see the next entries.
+
+- **2026-11-06 Installer self-tests and a guard fix.**
+  - `tools/test-install-stable.sh d414c4b 00c6eee` (Linux, prefix in the
+    test run): 18/18 — real prefix refused (exit 3) before building,
+    nothing written; version folder and files 0555, no file can be created
+    in it; link → the version; `--version` of the link `commit
+    d414c4bb61e9 … instance stable`; desktop `Exec="<prefix>/.local/bin/haetty"`;
+    deny/blockWrites suggestion with the prefix's paths; second version:
+    link moves, first kept, "previous: …" printed; `--list` marks the
+    active one; `--activate` rolls back (and `--version` follows); unknown
+    version refused; reinstall only activates (no build); no worktree left;
+    the real `~/.local/opt/haetty`, `~/.local/bin/haetty`, desktop entry
+    unchanged. (`00c6eee` predates the build info: the installer says so
+    instead of "check: OK".)
+  - `tools/test-install-stable.ps1 d414c4b 00c6eee` (Windows, build in WSL,
+    prefix and APPDATA in the test run): 17/17 — the same checks with the
+    read-only attribute, the `current` junction, the Start menu shortcut →
+    `current\haetty.exe`, user `PATH` and the real
+    `%LOCALAPPDATA%\Programs\haetty` untouched.
+  - Guard fix found by the Windows test: both guards read `APPDATA`,
+    `LOCALAPPDATA`, `HOME`, `XDG_*` live, so a test that points them into
+    its run directory made its own run directory "protected" (and a nested
+    script would no longer protect the real ones). Now the real values are
+    taken when the guard first loads and exported (`HAETTY_REAL_*`).
+    Checked: fake `APPDATA` / `XDG_DATA_HOME` in the run → writable; the
+    real `APPDATA`, `~/.local/share`, `~/.claude` → refused, also from a
+    nested script started with the fake values.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

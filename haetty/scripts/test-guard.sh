@@ -18,7 +18,18 @@
 # script points HOME at a test home. Same rules: crates/haetty-testkit,
 # scripts/test-guard.ps1.
 
+# The real directories, taken once — before a test points HOME, XDG_* or
+# APPDATA into its run directory — and exported, so that nested scripts
+# protect the same real ones.
 HAETTY_REAL_HOME=${HAETTY_REAL_HOME:-$HOME}
+HAETTY_REAL_XDG_CONFIG_HOME=${HAETTY_REAL_XDG_CONFIG_HOME-${XDG_CONFIG_HOME:-}}
+HAETTY_REAL_XDG_DATA_HOME=${HAETTY_REAL_XDG_DATA_HOME-${XDG_DATA_HOME:-}}
+HAETTY_REAL_XDG_STATE_HOME=${HAETTY_REAL_XDG_STATE_HOME-${XDG_STATE_HOME:-}}
+HAETTY_REAL_APPDATA=${HAETTY_REAL_APPDATA-${APPDATA:-}}
+HAETTY_REAL_LOCALAPPDATA=${HAETTY_REAL_LOCALAPPDATA-${LOCALAPPDATA:-}}
+HAETTY_REAL_USERPROFILE=${HAETTY_REAL_USERPROFILE-${USERPROFILE:-}}
+export HAETTY_REAL_HOME HAETTY_REAL_XDG_CONFIG_HOME HAETTY_REAL_XDG_DATA_HOME HAETTY_REAL_XDG_STATE_HOME \
+  HAETTY_REAL_APPDATA HAETTY_REAL_LOCALAPPDATA HAETTY_REAL_USERPROFILE
 # WSL: the Windows profile is a real home too.
 if [ -n "${WSL_DISTRO_NAME:-}" ] && [ -z "${HAETTY_REAL_WINHOME:-}" ] && command -v cmd.exe >/dev/null; then
   HAETTY_REAL_WINHOME=$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')
@@ -46,7 +57,7 @@ _haetty_norm() { # absolute, normalised, no trailing slash (the path need not ex
 
 _haetty_protected() {
   local h=$HAETTY_REAL_HOME d
-  for d in "$h" "$h/.config" "$h/.local" "$h/.claude" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$APPDATA" "$LOCALAPPDATA" "$USERPROFILE" "${HAETTY_REAL_WINHOME:-}"; do
+  for d in "$h" "$h/.config" "$h/.local" "$h/.claude" "$HAETTY_REAL_XDG_CONFIG_HOME" "$HAETTY_REAL_XDG_DATA_HOME" "$HAETTY_REAL_XDG_STATE_HOME" "$HAETTY_REAL_APPDATA" "$HAETTY_REAL_LOCALAPPDATA" "$HAETTY_REAL_USERPROFILE" "${HAETTY_REAL_WINHOME:-}"; do
     [ -n "$d" ] && _haetty_norm "$d" && echo
   done
 }
@@ -60,7 +71,7 @@ _haetty_refuse() { echo "test-guard: refusing: $*" >&2; exit 3; }
 
 haetty_guard_init() {
   local name=$1 base
-  base=${!name}
+  base=${!name:-}
   [ -n "$base" ] || _haetty_refuse "\$$name is unset or empty"
   case "$base" in
     /*) ;;
@@ -83,8 +94,8 @@ haetty_guard_init() {
 }
 
 haetty_guard() {
-  [ -n "$1" ] || _haetty_refuse "empty path"
-  [ -n "$HAETTY_RUN" ] || _haetty_refuse "haetty_guard_init was not called"
+  [ -n "${1:-}" ] || _haetty_refuse "empty path"
+  [ -n "${HAETTY_RUN:-}" ] || _haetty_refuse "haetty_guard_init was not called"
   local d
   while read -r d; do
     [ -n "$d" ] && _haetty_inside "$1" "$d" && _haetty_refuse "$1 is (inside) the real $d"
@@ -98,7 +109,7 @@ haetty_guard() {
 # instance's). Never by name: no pkill/killall.
 haetty_stop_daemon() { # BIN [SIGNAL]
   local bin=$1 sig=${2:-TERM} sock pid
-  [ -n "$HAETTY_RUN" ] || _haetty_refuse "haetty_guard_init was not called"
+  [ -n "${HAETTY_RUN:-}" ] || _haetty_refuse "haetty_guard_init was not called"
   sock=${HAETTY_SOCKET:-${CCTERM_SOCKET:-${XDG_RUNTIME_DIR:-}}}
   [ -n "$sock" ] && _haetty_inside "$sock" "$HAETTY_RUN" \
     || _haetty_refuse "haetty_stop_daemon: the socket ($sock) is not this run's — set HAETTY_SOCKET inside $HAETTY_RUN"

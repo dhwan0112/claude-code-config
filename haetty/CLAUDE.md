@@ -103,6 +103,12 @@ cargo fmt                                    # rustfmt.toml: max_width 120
 cargo run --release -p haetty-core --example mem -- 3 67108864 10000   # anon memory per session (Linux)
 ```
 
+Stable installs (the user runs them; `docs/DESIGN.md` §3.15, README):
+`tools/install-stable.sh REF` / `tools/install-stable.ps1 REF`, rollback
+with `--activate` / `-Activate`; self-tests `tools/test-install-stable.sh
+REF1 REF2` / `.ps1` (test run directory only). `haetty --version` names the
+commit, build date and instance.
+
 `haetty-headless` drives any program without a window (see README), e.g.
 `haetty-headless --trace -e "wait-idle 3000 60000" -e modes -- claude`.
 Use it to check behaviour against a real Claude Code before and after a change.

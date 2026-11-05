@@ -403,9 +403,10 @@ right daemon and tab.
   start alone is about 52 ms), so the 50 ms target is not met there. Only
   the edit hook (PreToolUse for Write/Edit/MultiEdit/NotebookEdit) makes
   Claude Code wait for it.
-- Windows: if Claude Code runs its status line through PowerShell (no Git
-  Bash) and haetty is installed in a path with spaces, the double-quoted
-  status-line command does not run in PowerShell.
+- Windows: Claude Code runs the status line through PowerShell when Git
+  Bash is missing; haetty then passes a path without spaces (8.3 short path
+  or a copy, DESIGN.md §3.13). A machine without Git Bash was not
+  available for testing (HANDOFF.md §6.1, check 23).
 - Windows: no toast notifications; only the taskbar flash.
 - Status panel reset times are in UTC.
 - `scrollback-limit` takes plain bytes; suffixes such as `10MB` are not
@@ -485,6 +486,108 @@ at run time.
 For shipping, `cargo build --profile dist [--target ...]` (opt-level "s",
 thin LTO, stripped): `haetty` about 6.3 MB on Linux and 4.9 MB on Windows
 (milestone 3).
+
+## Installing a stable haetty
+
+A stable haetty is installed from a commit or tag of this repository with
+`tools/install-stable.sh` (Linux) or `tools/install-stable.ps1` (Windows).
+Each builds the given revision in its own temporary `git worktree` with the
+`dist` profile (your checkout is not touched), installs it into a folder of
+its own that is never changed afterwards, and points one fixed path at it.
+Earlier versions stay installed, so going back is a matter of re-pointing.
+Nothing running is stopped: windows of the previous version keep running
+on it; the new version starts once all haetty windows are closed and the
+old daemon has exited (about 10 s later).
+
+`haetty --version` tells which build runs:
+
+```text
+haetty 0.1.0 (commit 0a1b2c3d4e5f, built 2026-11-06, instance stable)
+```
+
+(`HAETTY_INSTANCE=dev haetty --version` says `instance dev`; the date is
+UTC.)
+
+### Linux
+
+```sh
+cd ~/projects/claude-code-config/haetty
+tools/install-stable.sh v0.1.0          # a tag or a commit
+tools/install-stable.sh --list          # installed versions, * = active
+tools/install-stable.sh --activate 0.1.0-0a1b2c3d4e5f   # roll back / forward
+```
+
+- Installs into `~/.local/opt/haetty/<version>/` (`<version>` =
+  `<crate version>-<12-digit commit>`): `haetty`, licence files and an
+  `INSTALLED` record, directory and files read-only (0555).
+- `~/.local/bin/haetty` is a symbolic link to the active version
+  (`~/.local/bin` must be on `PATH`); the switch is atomic.
+- Runs `haetty install-desktop` through that link, so the menu entry's
+  `Exec=` is `~/.local/bin/haetty` and follows updates and rollbacks.
+- Prints `haetty --version` of the installed build and checks the commit.
+- Needs the build tools of [Building](#building) (Rust, Zig 0.15.2); the
+  cargo cache is `haetty/target/stable-install` (kept between installs, so
+  the next install builds only what changed).
+- Rolling back by hand: `ln -sfn ~/.local/opt/haetty/<version>/haetty
+  ~/.local/bin/haetty`.
+- Removing an old version: `chmod -R u+w ~/.local/opt/haetty/<version> &&
+  rm -r ~/.local/opt/haetty/<version>` (never the active one).
+
+### Windows
+
+Run from PowerShell; the script lives in the repository inside WSL and
+builds there (cross-build for `x86_64-pc-windows-gnu`, as in
+[Building](#building) — native Windows has no Zig):
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File \\wsl.localhost\Ubuntu\home\<you>\projects\claude-code-config\haetty\tools\install-stable.ps1 v0.1.0
+... install-stable.ps1 -List
+... install-stable.ps1 -Activate 0.1.0-0a1b2c3d4e5f     # roll back / forward
+```
+
+- Installs into `%LOCALAPPDATA%\Programs\haetty\<version>\`, every file
+  with the read-only attribute.
+- `%LOCALAPPDATA%\Programs\haetty\current` is a directory junction to the
+  active version — the one fixed path: the installer adds it to the user
+  `PATH` (`-NoPath` to skip) and creates the Start menu shortcut "haetty" →
+  `current\haetty.exe` (`-NoShortcut` to skip). Pin haetty from the Start
+  menu or from a running window: the pin keeps `current\haetty.exe`, so it
+  follows updates and rollbacks (the AppUserModelID is the same in every
+  version).
+- Rolling back: `-Activate <version>` re-points the junction (by hand:
+  `cmd /c rmdir %LOCALAPPDATA%\Programs\haetty\current` then
+  `New-Item -ItemType Junction -Path …\current -Target …\<version>`;
+  `rmdir` removes the junction only, never the version folder).
+- Removing an old version: clear the read-only attribute
+  (`attrib -R …\<version>\*`) and delete the folder.
+- The read-only attribute keeps editors and casual overwrites off; a
+  process of yours can still clear it. Note: after an update, open tabs of
+  the old version keep their hooks on the old executable path only on
+  Linux; on Windows they are expected to run `current\haetty.exe` (the new
+  version; not verified),
+  which an old daemon of another protocol version refuses — the status row
+  of those old tabs stops updating until haetty is restarted.
+
+### Protecting the stable build from Claude Code
+
+At the end both scripts print (and change nothing) a suggestion for your
+Claude Code settings with this machine's real paths: `permissions.deny`
+rules against killing haetty by name and against Claude's file tools
+writing into the install folders, and
+`permissions.blockWritesOutsideWorkingDirectories`. Deny rules hold in every
+permission mode, `bypassPermissions` included; they match command text only,
+and `blockWritesOutsideWorkingDirectories` also removes Claude Code's
+`EnterWorktree` tool. Copy what you want into `~/.claude/settings.json`
+yourself.
+
+### Testing the installers
+
+`tools/test-install-stable.sh REF1 REF2` and `tools/test-install-stable.ps1
+REF1 REF2` install two revisions into a prefix inside a test run directory
+(`HAETTY_TEST_TMP`, as every test) and check layout, read-only files, the
+link or junction, `--version`, the desktop entry or shortcut, rollback and
+reinstall; with `HAETTY_TEST_TMP` set, the installers refuse any real
+prefix before building.
 
 ## haetty-headless
 
