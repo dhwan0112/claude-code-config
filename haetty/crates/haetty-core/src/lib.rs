@@ -43,6 +43,30 @@ pub enum ColorSchemePref {
     Unknown,
 }
 
+/// The colours a theme gives the terminal itself (default foreground and
+/// background, colours 0–15, cursor); the rest of a theme (cursor text,
+/// selection) is the renderer's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TermColors {
+    pub default_fg: Rgb,
+    pub default_bg: Rgb,
+    /// `None`: libghostty-vt's built-in colours 0–15.
+    pub palette: Option<[Rgb; 16]>,
+    /// `None`: no cursor colour set (the renderer uses the foreground).
+    pub cursor_color: Option<Rgb>,
+}
+
+impl TermColors {
+    pub fn of(t: &theme::Theme) -> TermColors {
+        TermColors {
+            default_fg: t.foreground,
+            default_bg: t.background,
+            palette: Some(t.palette),
+            cursor_color: t.cursor_color,
+        }
+    }
+}
+
 /// Default [`SessionConfig::scrollback_limit`]: 12 MB keeps about 11 000
 /// rows of history at 120 columns (measured with `examples/mem.rs`; about
 /// 1.1 KB per 120-column row), about 12.9 MB of anonymous memory per session.
@@ -288,6 +312,14 @@ impl SessionHandle {
     }
     pub fn set_color_scheme(&self, s: ColorSchemePref) {
         self.send(Cmd::SetColorScheme(s));
+    }
+
+    /// New default colours, colours 0–15 and cursor colour while the session
+    /// runs (a theme change): queries (OSC 4/10/11/12) answer with them and
+    /// everything drawn in default or palette colours takes them at once;
+    /// colours a program set itself (OSC 4/10/11/12, 24-bit SGR) stay.
+    pub fn set_colors(&self, c: TermColors) {
+        self.send(Cmd::SetColors(c));
     }
     /// Current viewport. Blocks until the engine has processed everything
     /// queued before this call.

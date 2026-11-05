@@ -426,6 +426,7 @@ impl Daemon {
                 _,
             ) => true,
             (_, Role::Observe) => false,
+            // Everything else, SetTheme included, is Control's alone.
             (_, Role::Control) => true,
         };
         if !allowed {
@@ -541,7 +542,8 @@ impl Daemon {
             ClientMsg::Focus { session, .. }
             | ClientMsg::Resize { session, .. }
             | ClientMsg::Scroll { session, .. }
-            | ClientMsg::SetColorScheme { session, .. } => (session.clone(), None),
+            | ClientMsg::SetColorScheme { session, .. }
+            | ClientMsg::SetTheme { session, .. } => (session.clone(), None),
             _ => return,
         };
         let Some(s) = self.sessions.get_mut(&session) else {
@@ -585,6 +587,7 @@ impl Daemon {
                 1 => ColorSchemePref::Light,
                 _ => ColorSchemePref::Unknown,
             }),
+            ClientMsg::SetTheme { colors, .. } => h.set_colors(colors.into()),
             _ => {}
         }
     }
@@ -757,6 +760,7 @@ fn msg_name(m: &ClientMsg) -> &'static str {
         ClientMsg::Resize { .. } => "Resize",
         ClientMsg::Scroll { .. } => "Scroll",
         ClientMsg::SetColorScheme { .. } => "SetColorScheme",
+        ClientMsg::SetTheme { .. } => "SetTheme",
         ClientMsg::Close { .. } => "Close",
         ClientMsg::Hook { .. } => "Hook",
         ClientMsg::StatusLine { .. } => "StatusLine",

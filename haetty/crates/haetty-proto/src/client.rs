@@ -384,6 +384,10 @@ impl RemoteHandle {
         };
         self.send(ClientMsg::SetColorScheme { session: self.id.clone(), scheme });
     }
+    /// New theme colours for this running session (Control clients only).
+    pub fn set_colors(&self, c: haetty_core::TermColors) {
+        self.send(ClientMsg::SetTheme { session: self.id.clone(), colors: c.into() });
+    }
     /// The Claude Code state of the session, if it runs Claude Code with
     /// the integration (a change comes as a `Wakeup`, like a frame).
     pub fn claude(&self) -> Option<Arc<ClaudeInfo>> {

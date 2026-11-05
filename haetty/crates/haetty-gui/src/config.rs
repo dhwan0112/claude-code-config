@@ -215,6 +215,30 @@ impl Config {
     }
 }
 
+/// The config file's path (`config_dir()/config`).
+pub fn file_path() -> std::path::PathBuf {
+    haetty_proto::paths::config_dir().join("config")
+}
+
+/// The config file's modification time (`None`: no file).
+pub fn file_mtime() -> Option<std::time::SystemTime> {
+    std::fs::metadata(file_path()).and_then(|m| m.modified()).ok()
+}
+
+/// The config file read again, with the command line's `settings` on top
+/// (key bindings are not re-read); messages for skipped lines.
+pub fn reread(settings: &[(String, String)]) -> (Config, Vec<String>) {
+    let mut c = Config::default();
+    let mut bad = vec![];
+    if let Ok(text) = std::fs::read_to_string(file_path()) {
+        bad = c.apply_file(&text, &mut crate::keymap::Keymap::default());
+    }
+    for (k, v) in settings {
+        let _ = c.set(k, v);
+    }
+    (c, bad)
+}
+
 fn parse_bool(v: &str) -> Option<bool> {
     match v {
         "true" | "yes" | "1" => Some(true),

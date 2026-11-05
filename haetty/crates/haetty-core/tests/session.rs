@@ -299,3 +299,49 @@ fn theme_answers_colour_queries_and_colours_cells() {
     assert_eq!(fg(8), None, "default colour");
     assert_eq!((snap.default_fg, snap.default_bg, snap.cursor_color), (t.foreground, t.background, t.cursor_color));
 }
+
+/// A theme change while the session runs: text already on the screen in
+/// palette colours takes the new colours, the default colours change, and
+/// queries after the change answer with the new values.
+#[test]
+fn theme_change_while_running() {
+    let classic = theme::Theme::builtin("haetty classic").unwrap();
+    let cga = theme::Theme::builtin("IBM 5153 CGA").unwrap();
+    let script = concat!(
+        r"stty -echo; printf '\033[31mRED\033[0m|\n'; read x; ",
+        r"printf '\033]4;1;?\033\\\033]11;?\033\\'; printf 'ASKED\n'; sleep 1"
+    );
+    let mut cfg = SessionConfig::new(CommandSpec::new("sh").args(["-c", script]));
+    cfg.size = GridSize::new(30, 4);
+    cfg.apply_theme(&classic);
+    cfg.trace_replies = true;
+    let s = Session::spawn(cfg).expect("spawn");
+    wait_text(&s, "RED|", Duration::from_secs(10));
+    let snap = s.handle.snapshot().unwrap();
+    assert_eq!(snap.cell(0, 0).unwrap().fg, Some(classic.palette[1]));
+    assert_eq!(snap.default_bg, classic.background);
+    s.handle.set_colors(TermColors::of(&cga));
+    let end = Instant::now() + Duration::from_secs(5);
+    loop {
+        let snap = s.handle.snapshot().unwrap();
+        if snap.cell(0, 0).unwrap().fg == Some(cga.palette[1]) {
+            assert_eq!(
+                (snap.default_fg, snap.default_bg, snap.cursor_color),
+                (cga.foreground, cga.background, cga.cursor_color)
+            );
+            break;
+        }
+        assert!(Instant::now() < end, "text on the screen kept its old colour: {:?}", snap.cell(0, 0).unwrap().fg);
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    s.handle.write(b"\n".to_vec());
+    let events = wait_text(&s, "ASKED", Duration::from_secs(10));
+    let mut replies = String::new();
+    for ev in events.iter().chain(s.events.try_iter().collect::<Vec<_>>().iter()) {
+        if let SessionEvent::Reply(b) = ev {
+            replies.push_str(&String::from_utf8_lossy(b));
+        }
+    }
+    assert!(replies.contains("\x1b]4;1;rgb:d0d0/3333/3333"), "{replies:?}");
+    assert!(replies.contains("\x1b]11;rgb:1414/1414/1414"), "{replies:?}");
+}

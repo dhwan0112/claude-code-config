@@ -30,6 +30,9 @@ pub enum Action {
     StatusPanelNarrower,
     /// Attach the daemon's sessions that no window shows (a crashed GUI).
     AttachDetached,
+    /// Read the config file again and apply its theme and colours to every
+    /// tab (also done when the window gets focus and the file changed).
+    ReloadConfig,
 }
 
 impl Action {
@@ -51,6 +54,7 @@ impl Action {
             Action::StatusPanelWider => "status_panel_wider".into(),
             Action::StatusPanelNarrower => "status_panel_narrower".into(),
             Action::AttachDetached => "attach_detached".into(),
+            Action::ReloadConfig => "reload_config".into(),
         }
     }
 
@@ -72,6 +76,7 @@ impl Action {
             Action::StatusPanelWider => "Status panel wider".into(),
             Action::StatusPanelNarrower => "Status panel narrower".into(),
             Action::AttachDetached => "Attach detached sessions".into(),
+            Action::ReloadConfig => "Reload config (theme and colours)".into(),
         }
     }
 
@@ -91,6 +96,7 @@ impl Action {
             "status_panel_wider" => Action::StatusPanelWider,
             "status_panel_narrower" => Action::StatusPanelNarrower,
             "attach_detached" => Action::AttachDetached,
+            "reload_config" => Action::ReloadConfig,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -111,6 +117,7 @@ impl Action {
             Action::StatusPanelWider,
             Action::StatusPanelNarrower,
             Action::AttachDetached,
+            Action::ReloadConfig,
             Action::SaveTabs,
             Action::OpenSavedTabs,
             Action::OpenPreviousTabs,

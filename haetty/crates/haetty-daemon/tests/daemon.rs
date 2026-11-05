@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use haetty_core::KeyInput;
 use haetty_daemon::Config;
 use haetty_proto::paths::Endpoint;
-use haetty_proto::wire::{Attention, ClientMsg, CreateSpec, DaemonMsg, Grid, Origin, Secret, WireKey};
+use haetty_proto::wire::{Attention, ClientMsg, CreateSpec, DaemonMsg, Grid, Origin, Secret, WireColors, WireKey};
 use haetty_proto::{Client, RemoteSession, Role};
 
 fn tmp(name: &str) -> PathBuf {
@@ -327,5 +327,61 @@ fn friction_reaches_the_event_log() {
     assert!(lat.contains("\tn=1\t") && lat.contains("over_16ms=1"), "{lat}");
     assert!(line("gui_slow_draw").contains("ms=21.5"));
     assert!(!log.contains("secret-typed-text"), "typed text must never reach the log");
+    haetty_testkit::remove_dir_all(&dir);
+}
+
+/// A theme change for running sessions (`SetTheme`): the attached client
+/// sees the program's palette text and the default colours change; a client
+/// that attaches afterwards (a restarted GUI reattaching) gets the new
+/// colours; Observe and Report clients are refused and change nothing.
+#[test]
+fn set_theme_recolours_running_sessions_control_only() {
+    use haetty_core::theme::Theme;
+    use haetty_core::TermColors;
+    let dir = tmp("theme");
+    let (ep, _daemon) = start(&dir, Duration::from_secs(60));
+    let classic = Theme::builtin("haetty classic").unwrap();
+    let cga = Theme::builtin("IBM 5153 CGA").unwrap();
+    let black = Theme::builtin("IBM 5153 CGA (Black)").unwrap();
+    let ctl = Client::connect(&ep, Role::Control, "gui").unwrap();
+    let mut sp = spec("printf '\\033[31mRED\\033[0m\\n'; sleep 30");
+    let c0: WireColors = TermColors::of(&classic).into();
+    (sp.default_fg, sp.default_bg, sp.palette, sp.cursor_color) =
+        (c0.default_fg, c0.default_bg, c0.palette, c0.cursor_color);
+    let id = ctl.create(sp).unwrap();
+    let s = ctl.attach(&id, None).unwrap();
+    let red = |sn: &haetty_core::Snapshot| sn.cell(0, 0).and_then(|c| c.fg);
+    wait_screen(&s, "red text in classic", |sn| red(sn) == Some(classic.palette[1]));
+    // Observe and Report may not change it.
+    let obs = Client::connect(&ep, Role::Observe, "status").unwrap();
+    let rep = Client::connect(&ep, Role::Report, "hook").unwrap();
+    for (cl, name) in [(&obs, "Observe"), (&rep, "Report")] {
+        cl.send(&ClientMsg::SetTheme { session: id.clone(), colors: TermColors::of(&black).into() }).unwrap();
+        match cl.next_reply(Duration::from_secs(3)) {
+            Some(DaemonMsg::Denied { what }) => assert!(what.starts_with("SetTheme"), "{name}: {what}"),
+            other => panic!("{name}: expected Denied, got {other:?}"),
+        }
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    let snap = s.handle.snapshot().unwrap();
+    assert_eq!((red(&snap), snap.default_bg), (Some(classic.palette[1]), classic.background), "unchanged");
+    // Control: the open tab takes the new colours.
+    s.handle.set_colors(TermColors::of(&cga));
+    let snap = wait_screen(&s, "red text in CGA", |sn| red(sn) == Some(cga.palette[1]));
+    assert_eq!((snap.default_fg, snap.default_bg), (cga.foreground, cga.background));
+    // A GUI that comes back (new connection) attaches and sees them too.
+    drop(s);
+    ctl.disconnect();
+    drop(ctl);
+    let ctl2 = Client::connect(&ep, Role::Control, "gui-2").unwrap();
+    let s2 = ctl2.attach(&id, None).unwrap();
+    let snap = wait_screen(&s2, "reattached frame", |sn| sn.rows == 8);
+    assert_eq!((red(&snap), snap.default_bg), (Some(cga.palette[1]), cga.background));
+    // ... and can change them again.
+    s2.handle.set_colors(TermColors::of(&black));
+    wait_screen(&s2, "red text in CGA Black", |sn| {
+        red(sn) == Some(black.palette[1]) && sn.default_bg == black.background
+    });
+    ctl2.close(&id).unwrap();
     haetty_testkit::remove_dir_all(&dir);
 }

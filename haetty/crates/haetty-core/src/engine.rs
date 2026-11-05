@@ -44,6 +44,7 @@ pub(crate) enum Cmd {
     Snapshot(Sender<Snapshot>),
     Dump(DumpFormat, Sender<String>),
     SetColorScheme(ColorSchemePref),
+    SetColors(crate::TermColors),
     Shutdown,
 }
 
@@ -100,21 +101,15 @@ pub(crate) fn run(
         let _ = events.send(SessionEvent::Error(format!("terminal callbacks: {e}")));
         return;
     }
-    let rgb = |c: Rgb| libghostty_vt::style::RgbColor { r: c.r, g: c.g, b: c.b };
-    let _ = term.set_default_fg_color(Some(rgb(cfg.default_fg)));
-    let _ = term.set_default_bg_color(Some(rgb(cfg.default_bg)));
-    // Colours 0–15 from the theme; 16–255 keep libghostty-vt's (xterm's cube
-    // and grey ramp).
-    if let Some(p16) = cfg.palette {
-        let mut p = term.default_color_palette().unwrap_or_default();
-        for (slot, c) in p.0.iter_mut().zip(p16) {
-            *slot = rgb(c);
-        }
-        let _ = term.set_default_color_palette(Some(p));
-    }
-    if let Some(c) = cfg.cursor_color {
-        let _ = term.set_default_cursor_color(Some(rgb(c)));
-    }
+    set_colors(
+        &mut term,
+        &crate::TermColors {
+            default_fg: cfg.default_fg,
+            default_bg: cfg.default_bg,
+            palette: cfg.palette,
+            cursor_color: cfg.cursor_color,
+        },
+    );
     let _ = term.resize(
         cfg.size.cols.max(1),
         cfg.size.rows.max(1),
@@ -287,6 +282,11 @@ pub(crate) fn run(
                 Cmd::Dump(fmt, reply) => {
                     let _ = reply.send(dump(&term, fmt));
                 }
+                Cmd::SetColors(c) => {
+                    set_colors(&mut term, &c);
+                    // Everything is drawn anew in the new colours.
+                    st.dirty = true;
+                }
                 Cmd::SetColorScheme(s) => {
                     scheme.set(s);
                     cfg.color_scheme = s;
@@ -356,6 +356,22 @@ struct State<'a> {
     dirty: bool,
     sync_since: Option<Instant>,
     out_buf: Vec<u8>,
+}
+
+/// Default fg/bg, colours 0–15 (16–255 stay libghostty-vt's: xterm's cube
+/// and grey ramp; `None` = its built-in 0–15 too) and the cursor colour.
+fn set_colors(term: &mut Terminal<'static, 'static>, c: &crate::TermColors) {
+    let rgb = |c: Rgb| libghostty_vt::style::RgbColor { r: c.r, g: c.g, b: c.b };
+    let _ = term.set_default_fg_color(Some(rgb(c.default_fg)));
+    let _ = term.set_default_bg_color(Some(rgb(c.default_bg)));
+    let mut p = libghostty_vt::style::Palette::default();
+    if let Some(p16) = c.palette {
+        for (slot, c) in p.0.iter_mut().zip(p16) {
+            *slot = rgb(c);
+        }
+    }
+    let _ = term.set_default_color_palette(Some(p));
+    let _ = term.set_default_cursor_color(c.cursor_color.map(rgb));
 }
 
 fn to_scheme(p: ColorSchemePref) -> Option<ColorScheme> {

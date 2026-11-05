@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 5;
+pub const VERSION: u32 = 6;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -257,6 +257,43 @@ pub enum ClientMsg {
         kind: String,
         fields: Vec<(String, String)>,
     },
+    /// New theme colours for a running session (Control only; version 6).
+    SetTheme {
+        session: SessionId,
+        colors: WireColors,
+    },
+}
+
+/// [`haetty_core::TermColors`] on the wire.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct WireColors {
+    pub default_fg: [u8; 3],
+    pub default_bg: [u8; 3],
+    /// Colours 0–15; empty: libghostty-vt's built-in ones.
+    pub palette: Vec<[u8; 3]>,
+    pub cursor_color: Option<[u8; 3]>,
+}
+
+impl From<haetty_core::TermColors> for WireColors {
+    fn from(c: haetty_core::TermColors) -> Self {
+        WireColors {
+            default_fg: rgb(c.default_fg),
+            default_bg: rgb(c.default_bg),
+            palette: c.palette.map(|p| p.iter().map(|c| rgb(*c)).collect()).unwrap_or_default(),
+            cursor_color: c.cursor_color.map(rgb),
+        }
+    }
+}
+
+impl From<WireColors> for haetty_core::TermColors {
+    fn from(c: WireColors) -> Self {
+        haetty_core::TermColors {
+            default_fg: from_rgb(c.default_fg),
+            default_bg: from_rgb(c.default_bg),
+            palette: <[[u8; 3]; 16]>::try_from(c.palette.as_slice()).ok().map(|p| p.map(from_rgb)),
+            cursor_color: c.cursor_color.map(from_rgb),
+        }
+    }
 }
 
 /// A file as the hook found it before an edit tool ran.

@@ -631,10 +631,22 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   user's settings) uses palette numbers only, so it follows the theme.
   haetty does not set Claude Code's theme (§3.13: nothing but hooks and the
   status line is injected); the README tells the user.
-- A theme takes effect for sessions created after the GUI started with
-  it; sessions already running in the daemon (reattached) keep their
-  colours. Recolouring them would need a new client message (and a role
-  rule for it, `Daemon::message`): not done.
+- Changing the theme while haetty runs: the GUI reads the config file
+  again when its window gets focus and the file's modification time
+  changed, or on the palette action "Reload config"; a changed theme,
+  colour key or `minimum-contrast` is applied at once — to haetty's own
+  cells, the renderer (`Renderer::set_look`) and every open tab
+  (`ClientMsg::SetTheme`, protocol version 6 → `SessionHandle::set_colors`:
+  default colours, palette 0–15, cursor colour; colours a program set
+  itself stay). A tab the GUI reattaches (crashed window, "Attach
+  detached sessions") gets the current theme the same way, whatever it
+  was started with. `SetTheme` is Control's only (role table in
+  `Daemon::message`: Observe and Report are refused). Other settings
+  still take effect at the next start.
+- Programs see the new colours through queries made after the change;
+  nothing is pushed to them. Claude Code picks its own light/dark look
+  when it starts, so a running Claude Code keeps it; with its "Dark mode
+  (ANSI colors only)" its palette-number colours follow at once.
 
 ## 4. VT engine decision (measured 2026-11-04)
 

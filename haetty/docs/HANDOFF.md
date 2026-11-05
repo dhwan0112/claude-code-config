@@ -1379,6 +1379,35 @@ regression list, measurements), then committed, pushed and mirrored.
   blue (1.19) and colour 8 (1.00) take `#141414`. Rule, formula and the
   16-colour table in `assets/themes/README.md`.
 
+- **2026-11-06 Theme change while running (protected area, approved: a
+  Control-only IPC message).** `ClientMsg::SetTheme { session, colors }`
+  (protocol version 6) → `SessionHandle::set_colors` (default fg/bg,
+  palette 0–15, cursor colour; the engine redraws). The GUI rereads the
+  config file when the window gets focus and the file changed, or on the
+  new palette action "Reload config"; it applies a changed theme, colour
+  key or `minimum-contrast` to its renderer and sends `SetTheme` to every
+  tab; reattached tabs get it too. DESIGN.md §3.14, README (incl. Claude
+  Code keeping its own light/dark look). Evidence:
+  - Core `theme_change_while_running`: text drawn in colour 1 before the
+    change turns from classic `#cc6666` to CGA `#d03333`; default colours
+    and cursor change; OSC 4;1 and 11 asked afterwards answer with the
+    CGA values.
+  - Daemon `set_theme_recolours_running_sessions_control_only`: Observe
+    and Report sending `SetTheme` → `Denied` ("SetTheme as …"), nothing
+    changed; Control → the attached client's frame has the new colours; a
+    new Control connection attaching afterwards (a GUI coming back) sees
+    them and can change them again.
+  - Real GUI, Linux/Xvfb (`themerun.sh`, dev instance, own socket and
+    config; 2 tabs, red text = colour 1): start classic (`#1e1e1e`,
+    `#cc6666`) → config CGA + palette "Reload config" → both tabs
+    `#141414` / `#d03333` → config CGA Black + focus away and back → both
+    `#000000` / `#c40000` → window killed (`kill -9` by PID), config
+    classic, new window reattaches 2 sessions → all `#1e1e1e` / `#cc6666`.
+    8/8 checks.
+  - Windows 11 (`winretheme.ps1`, named pipe): a PowerShell tab started in
+    CGA Black (`#000000`, DarkRed `#c40000`), window stopped by PID,
+    config → classic, a new window reattaches it → `#1e1e1e` / `#cc6666`.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

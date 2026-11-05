@@ -87,6 +87,11 @@ fn merge_bands(mut b: Bands) -> Bands {
 }
 
 impl Renderer for SoftRenderer {
+    fn set_look(&mut self, look: super::paint::Look) {
+        self.painter.set_look(look);
+        self.stale = true;
+    }
+
     fn memory(&self) -> String {
         format!(
             "canvas {}x{} {} KB, damage history {}; {}",

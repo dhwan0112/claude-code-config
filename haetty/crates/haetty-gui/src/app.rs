@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use haetty_core::theme::Theme;
+use haetty_core::TermColors;
 use haetty_core::{GridSize, Key, KeyInput, MouseAction, MouseButton, MouseInput, SessionEvent, Snapshot};
 use haetty_proto::paths::Endpoint;
 use haetty_proto::wire::{rgb, Attention, ClaudeInfo, CreateSpec, SessionInfo, SessionState};
@@ -147,6 +148,12 @@ struct Win {
     start_cwd: Option<String>,
     /// Colours for new sessions and haetty's own cells.
     theme: Theme,
+    /// The renderer's colours and `minimum-contrast` now in use.
+    look: Look,
+    /// Command-line settings (applied over the config file on a reload).
+    settings: Vec<(String, String)>,
+    /// The config file's modification time at the last (re)load.
+    config_mtime: Option<SystemTime>,
     scrollback_limit: usize,
     claude_integration: bool,
     /// OS notification (Linux `notify-send`) besides the taskbar/urgency
@@ -184,7 +191,8 @@ impl App {
         let fonts = self.fonts.take().ok_or("fonts already used")?;
         let mut painter = Painter::new(fonts, self.font_px(scale0));
         let theme = self.opts.theme.clone();
-        painter.set_look(Look { min_contrast: self.opts.config.minimum_contrast, ..Look::of(&theme) });
+        let look = Look { min_contrast: self.opts.config.minimum_contrast, ..Look::of(&theme) };
+        painter.set_look(look);
         let pad0 = self.padding(scale0);
         let (w, h) = Layout { cell: painter.cell_metrics(), padding: pad0.min, balance: pad0.balance }
             .window_size(self.opts.cols, self.opts.rows);
@@ -265,6 +273,9 @@ impl App {
             command,
             start_cwd: std::env::current_dir().ok().map(|d| d.to_string_lossy().into_owned()),
             theme,
+            look,
+            settings: self.opts.settings.clone(),
+            config_mtime: crate::config::file_mtime(),
             scrollback_limit: self.opts.config.scrollback_limit,
             claude_integration: self.opts.config.claude_integration,
             notifications: self.opts.config.notifications,
@@ -375,7 +386,49 @@ impl Win {
         let integrated = self.is_integrated(&s.program);
         let size = self.term_grid_for(integrated, self.tabs.len() + 1);
         log::info!("reattaching session {} ({})", s.id, s.program);
-        self.add_tab(s.id.clone(), spec, size, integrated)
+        self.add_tab(s.id.clone(), spec, size, integrated)?;
+        // It may have been started with other colours (a theme changed while
+        // no window showed it): give it the current ones.
+        if let Some(t) = self.tabs.iter().find(|t| t.session.id == s.id) {
+            t.session.handle.set_colors(TermColors::of(&self.theme));
+        }
+        Ok(())
+    }
+
+    /// Reads the config file again (`force`, or when it changed since the
+    /// last read) and applies a changed theme, colour keys or
+    /// `minimum-contrast` to haetty and to every open tab. Other settings
+    /// take effect at the next start.
+    fn reload_config(&mut self, force: bool) -> bool {
+        let mtime = crate::config::file_mtime();
+        if !force && mtime == self.config_mtime {
+            return false;
+        }
+        self.config_mtime = mtime;
+        let (cfg, bad) = crate::config::reread(&self.settings);
+        for b in bad {
+            log::warn!("{}: {b} (ignored)", crate::config::file_path().display());
+        }
+        let (theme, msgs) = cfg.resolve_theme(&haetty_proto::paths::config_dir());
+        for m in msgs {
+            log::warn!("{m} (ignored)");
+        }
+        let look = Look { min_contrast: cfg.minimum_contrast, ..Look::of(&theme) };
+        if theme == self.theme && look == self.look {
+            return false;
+        }
+        log::info!("theme: {} (reloaded; {} tab(s))", cfg.theme, self.tabs.len());
+        if theme != self.theme {
+            for t in &self.tabs {
+                t.session.handle.set_colors(TermColors::of(&theme));
+            }
+        }
+        self.theme = theme;
+        self.look = look;
+        self.renderer.set_look(look);
+        self.full = true;
+        self.recompose();
+        true
     }
 
     /// Attaches every detached running session that is not a tab yet.
@@ -670,6 +723,14 @@ impl Win {
                 self.panel_open = true;
                 save_ui_state(self.panel_open, self.panel_width);
                 self.relayout();
+            }
+            Action::ReloadConfig => {
+                let changed = self.reload_config(true);
+                self.show_hint(if changed {
+                    "config reloaded: theme and colours applied".into()
+                } else {
+                    "config reloaded: no colour change".into()
+                });
             }
             Action::AttachDetached => {
                 let n = self.attach_detached();
@@ -1352,6 +1413,8 @@ impl ApplicationHandler<UserEvent> for App {
                 win.handle().focus(f);
                 if f {
                     win.seen();
+                    // Edited the config in another window: apply its colours.
+                    win.reload_config(false);
                 }
                 win.mark_cursor_row();
                 win.window.request_redraw();

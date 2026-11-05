@@ -238,8 +238,19 @@ selection-foreground = #141414
   times, no palette numbers); with "Dark mode (ANSI colors only)" the same
   screens use only palette numbers (`37`, `91`–`96`, `40`; 40 times) and no
   24-bit colour — so IBM 5153 CGA's colours appear in Claude Code itself.
-- A theme applies to tabs opened after haetty starts with it; tabs that
-  were still running in the daemon keep their colours.
+- Changing the theme while haetty runs: edit the config file (`theme =`,
+  colour keys, `minimum-contrast`) and switch back to the haetty window —
+  it rereads the file when it gets focus and the file changed — or choose
+  "Reload config" in the palette (Ctrl+Shift+P). Every open tab, and any
+  tab haetty reattaches later, takes the new colours at once; other
+  settings still need a restart.
+- **Claude Code keeps its own look until it restarts.** It decides on its
+  light or dark appearance when it starts (from the terminal background
+  with its "Auto" theme, else from its `/theme` setting), so changing the
+  haetty theme under a running Claude Code does not switch Claude Code's
+  own theme — after going from a dark to a light theme (or back), restart
+  Claude Code or pick its theme again. With "Dark mode (ANSI colors
+  only)" its colours are palette numbers and follow the change at once.
 
 ### Tab sets
 
