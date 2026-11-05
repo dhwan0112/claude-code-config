@@ -212,8 +212,10 @@ impl Win {
 
     fn keyboard(&mut self, ev: &KeyEvent) {
         // While a composition is shown, text keys belong to the IME; the
-        // result arrives as Ime::Commit.
-        if self.preedit.is_some() && ev.state == ElementState::Pressed && ev.text.is_some() {
+        // result arrives as Ime::Commit. Ctrl/Super shortcuts still go out.
+        if input::ime_owns_key(self.preedit.is_some(), ev.state == ElementState::Pressed, ev.text.is_some(), self.mods)
+        {
+            log::debug!("key held back for the IME composition");
             return;
         }
         let code = match ev.physical_key {
@@ -392,6 +394,7 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             WindowEvent::Focused(f) => {
+                log::debug!("focused {f}");
                 win.focused = f;
                 win.handle().focus(f);
                 win.mark_cursor_row();

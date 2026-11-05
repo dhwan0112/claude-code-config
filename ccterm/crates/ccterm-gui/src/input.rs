@@ -252,6 +252,16 @@ pub fn mouse_button(b: WButton) -> Option<MouseButton> {
     }
 }
 
+/// Whether a key press belongs to the IME while a composition (preedit) is
+/// shown, and is therefore not sent: keys that type text, whose result
+/// arrives as `Ime::Commit`. Ctrl and Super combinations are shortcuts for
+/// the application even then — an IME (ibus-hangul over XIM) may deliver
+/// Ctrl+C before it commits the syllable, and dropping it lost the first of
+/// Claude Code's two exit presses.
+pub fn ime_owns_key(composing: bool, pressed: bool, has_text: bool, m: ModifiersState) -> bool {
+    composing && pressed && has_text && !m.control_key() && !m.super_key()
+}
+
 /// The paste shortcut. Linux: Ctrl+Shift+V (plain Ctrl+V reaches the
 /// application, Claude Code uses it to paste images). Windows: Ctrl+V as
 /// well, as in Windows Terminal. Both: Shift+Insert.
@@ -337,6 +347,21 @@ mod tests {
         } else {
             assert_eq!(k.text, None);
         }
+    }
+
+    #[test]
+    fn shortcuts_pass_while_composing() {
+        let none = ModifiersState::empty();
+        // Ctrl+C with or without the "\x03" text winit attaches: sent.
+        assert!(!ime_owns_key(true, true, true, ModifiersState::CONTROL));
+        assert!(!ime_owns_key(true, true, false, ModifiersState::CONTROL));
+        assert!(!ime_owns_key(true, true, true, ModifiersState::SUPER));
+        // Text keys and Enter while composing belong to the IME (unchanged).
+        assert!(ime_owns_key(true, true, true, none));
+        assert!(ime_owns_key(true, true, true, ModifiersState::SHIFT));
+        // Not composing, or a release: never held back.
+        assert!(!ime_owns_key(false, true, true, none));
+        assert!(!ime_owns_key(true, false, true, none));
     }
 
     #[test]

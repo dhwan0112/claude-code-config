@@ -183,6 +183,7 @@ pub(crate) fn run(
                     st.out_buf.clear();
                     if encode_key(&mut st, &term, &k).is_ok() {
                         let buf = std::mem::take(&mut st.out_buf);
+                        log_key_bytes(&k, &buf);
                         write_all(&mut writer, &buf, &events);
                         st.out_buf = buf;
                     }
@@ -454,6 +455,23 @@ fn write_all(writer: &mut Box<dyn Write + Send>, bytes: &[u8], events: &Sender<S
     if let Err(e) = writer.write_all(bytes).and_then(|_| writer.flush()) {
         let _ = events.send(SessionEvent::Error(format!("pty write: {e}")));
     }
+}
+
+/// Debug log of what a key sent to the PTY — only for keys that do not type
+/// text (no text, or with Ctrl/Alt/Super), so typed text never reaches a log.
+fn log_key_bytes(k: &KeyInput, bytes: &[u8]) {
+    if !log::log_enabled!(log::Level::Debug) || !is_shortcut_or_special(k) {
+        return;
+    }
+    let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    log::debug!("key {:?} {:?} mods={:?} -> [{}]", k.key, k.action, k.mods, hex.join(" "));
+}
+
+/// A key whose encoding does not carry typed text: no text and no
+/// unshifted character (Enter, arrows, F-keys…), or a Ctrl/Alt/Super
+/// combination.
+pub(crate) fn is_shortcut_or_special(k: &KeyInput) -> bool {
+    k.mods.intersects(Mods::CTRL | Mods::ALT | Mods::SUPER) || (k.text.is_none() && k.unshifted.is_none())
 }
 
 fn encode_key(
