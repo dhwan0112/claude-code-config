@@ -605,6 +605,14 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   and selection colours are the painter's (`paint::Look`). The window's
   first frame and the Windows 11 title bar use the theme's background
   before a snapshot exists.
+- `minimum-contrast` (1–21, default 1 = off; Ghostty's meaning and
+  behaviour, `render::contrast`): a cell's text whose WCAG contrast with
+  its background is below the value is drawn white or black, whichever
+  contrasts more with that background; not for the text under a block
+  cursor (cursor-text decides) nor box drawing, block elements, legacy
+  computing and Powerline glyphs (Ghostty's `noMinContrast`). The default
+  keeps the theme's colours as they are (IBM 5153 CGA: blue 1.85:1, bright
+  black 2.21:1 on `#141414`; table in `assets/themes/README.md`).
 - A theme takes effect for sessions created after the GUI started with
   it; sessions already running in the daemon (reattached) keep their
   colours. Recolouring them would need a new client message (and a role

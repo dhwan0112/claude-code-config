@@ -177,6 +177,7 @@ keybind = ctrl+shift+n=new_tab
 | `keybind` | `CHORD=ACTION` or `CHORD=unbind` (file only, may repeat) | see [Tabs and keys](#tabs-and-keys) |
 | `theme` | a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes)) | `IBM 5153 CGA` |
 | `palette` | `N=COLOR`, N 0–15 (may repeat) — on top of the theme | the theme's |
+| `minimum-contrast` | 1–21, as in Ghostty: text whose WCAG contrast with its background is lower turns white (dark background) or black (light) | `1` (off) |
 | `background`, `foreground`, `cursor-color`, `cursor-text`, `selection-background`, `selection-foreground` | a colour (`#rrggbb`, `rrggbb`, an X11 name) — on top of the theme | the theme's |
 
 ### Themes
@@ -215,6 +216,11 @@ selection-foreground = #141414
 - Only colours 0–15 are themed; 16–255 stay xterm's colour cube and grey
   ramp. Programs asking for the colours (OSC 4, 10, 11, 12) get the theme's
   values.
+- `minimum-contrast = 3` (or 4.5) keeps dim colours readable: with IBM
+  5153 CGA, blue (1.85:1 on its background) and bright black (2.21:1) are
+  hard to read; at 3 they — and colour 0 — turn white, at 4.5 also red,
+  magenta and bright blue. The table and frame dumps are in
+  `assets/themes/README.md` and `docs/theme/`.
 - A theme applies to tabs opened after haetty starts with it; tabs that
   were still running in the daemon keep their colours.
 

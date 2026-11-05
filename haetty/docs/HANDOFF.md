@@ -1263,6 +1263,22 @@ regression list, measurements), then committed, pushed and mirrored.
   colour to colours ~180 apart); largest channel change 14 (greys), 25 (the
   waiting mark). Script: session notes `refdiff.py`.
 
+- **2026-11-06 `minimum-contrast`.** Config/CLI key, 1–21 (clamped, as
+  Ghostty), default 1 = off. Implemented as Ghostty's shader
+  (`contrasted_color`): below the minimum the text becomes white or black,
+  whichever contrasts more with the cell's background; exempt: the text
+  under a block cursor, box drawing / block elements / legacy computing /
+  Powerline (Ghostty `noMinContrast`). DESIGN.md §3.14. Evidence:
+  - Unit tests: WCAG luminance on linearised sRGB; IBM 5153 CGA on
+    `#141414`: Blue 1.85, Bright Black 2.21 (asserted), colour 0 1.00;
+    selection `#141414` on `#4e4e4e` 2.21, `#cecece` on it 5.29; off at 1,
+    white on dark / black on light, graphics exempt; config clamping.
+    Table in `assets/themes/README.md` (the test's output).
+  - Frame dumps of the real GUI (Linux, Xvfb, dev instance, isolated
+    socket/state): `docs/theme/minimum-contrast-{1,3,4.5}.png` — at 3,
+    colours 0, 4, 8 are white; at 4.5 also 1, 5, 12 and the faint text;
+    the others unchanged; box drawing unchanged.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

@@ -16,6 +16,7 @@
 //! | `scrollback-limit` | bytes of scrollback per session (as Ghostty; ~1.1 KB per 120-column row) | 12000000 |
 //! | `theme` | a built-in theme name, a theme file's name in `<config dir>/themes/`, or a path (with `/` or `\`; relative to the config directory) | [`haetty_core::theme::DEFAULT_THEME`] |
 //! | `palette` | `N=COLOR` (N 0–15; repeatable), on top of the theme | the theme's |
+//! | `minimum-contrast` | 1–21, as Ghostty: text below this WCAG contrast with its background turns white or black | 1 (off) |
 //! | `background`, `foreground`, `cursor-color`, `cursor-text`, `selection-background`, `selection-foreground` | a colour (Ghostty syntax), on top of the theme | the theme's |
 //!
 //! The colour keys and theme files use Ghostty's theme file format; they are
@@ -68,6 +69,8 @@ pub struct Config {
     /// Colour keys (`palette`, `background`, …) in the order given, applied
     /// after the theme.
     pub colors: Vec<(String, String)>,
+    /// 1–21 (Ghostty's `minimum-contrast`; 1 = off).
+    pub minimum_contrast: f32,
 }
 
 impl Default for Config {
@@ -83,6 +86,7 @@ impl Default for Config {
             notifications: true,
             theme: theme::DEFAULT_THEME.to_string(),
             colors: vec![],
+            minimum_contrast: 1.0,
         }
     }
 }
@@ -104,6 +108,7 @@ pub const KEYS: &[&str] = &[
     "cursor-text",
     "selection-background",
     "selection-foreground",
+    "minimum-contrast",
 ];
 
 impl Config {
@@ -147,6 +152,14 @@ impl Config {
                 // Plain bytes; `_` separators allowed (12_000_000).
                 let v: u64 = value.replace('_', "").parse().map_err(|_| bad())?;
                 self.scrollback_limit = usize::try_from(v).map_err(|_| bad())?;
+            }
+            "minimum-contrast" => {
+                // As Ghostty: clamped to 1–21.
+                let v: f32 = value.parse().map_err(|_| bad())?;
+                if !v.is_finite() {
+                    return Err(bad());
+                }
+                self.minimum_contrast = v.clamp(1.0, 21.0);
             }
             "theme" => {
                 if value.is_empty() {
@@ -238,6 +251,13 @@ mod tests {
         assert_eq!(c.scrollback_limit, 0);
         assert!(c.set("scrollback-limit", "10MB").is_err());
         assert!(c.set("scrollback-limit", "-1").is_err());
+        c.set("minimum-contrast", "4.5").unwrap();
+        assert_eq!(c.minimum_contrast, 4.5);
+        c.set("minimum-contrast", "40").unwrap();
+        assert_eq!(c.minimum_contrast, 21.0, "clamped like Ghostty");
+        c.set("minimum-contrast", "0").unwrap();
+        assert_eq!(c.minimum_contrast, 1.0);
+        assert!(c.set("minimum-contrast", "high").is_err() && c.set("minimum-contrast", "NaN").is_err());
         // Config file: comments, quotes, keybind, bad lines reported.
         let mut keys = crate::keymap::Keymap::default();
         let mut c = Config::default();

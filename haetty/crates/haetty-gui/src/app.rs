@@ -184,7 +184,7 @@ impl App {
         let fonts = self.fonts.take().ok_or("fonts already used")?;
         let mut painter = Painter::new(fonts, self.font_px(scale0));
         let theme = self.opts.theme.clone();
-        painter.set_look(Look::of(&theme));
+        painter.set_look(Look { min_contrast: self.opts.config.minimum_contrast, ..Look::of(&theme) });
         let pad0 = self.padding(scale0);
         let (w, h) = Layout { cell: painter.cell_metrics(), padding: pad0.min, balance: pad0.balance }
             .window_size(self.opts.cols, self.opts.rows);

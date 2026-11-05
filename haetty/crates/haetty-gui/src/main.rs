@@ -131,7 +131,7 @@ const USAGE: &str =
      scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row),\n\
      restore-tabs true|false, claude-integration true|false, notifications true|false (default true),\n\
      theme NAME|FILE (Ghostty theme format), palette N=COLOR, background/foreground/cursor-color/cursor-text/\n\
-     selection-background/selection-foreground COLOR\n\
+     selection-background/selection-foreground COLOR, minimum-contrast 1-21 (default 1 = off)\n\
      subcommands: haetty gui [OPTIONS] [PROGRAM...], haetty daemon, haetty status [--json | --screen ID],\n\
      haetty install-desktop; run by Claude Code: hook EVENT, statusline; reserved: run, headless;\n\
      to run a program with a subcommand's name: haetty [OPTIONS] -- NAME [ARGS...]";

@@ -66,18 +66,25 @@ struct Ink {
 }
 
 /// The theme's colours that belong to the renderer, not the terminal.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Look {
     /// Text under a block cursor; `None`: the cell's background.
     pub cursor_text: Option<Rgb>,
     /// Selected cells; both `None`: the cell's colours swapped.
     pub selection_bg: Option<Rgb>,
     pub selection_fg: Option<Rgb>,
+    /// `minimum-contrast` (1–21; ≤ 1: off), [`super::contrast`].
+    pub min_contrast: f32,
 }
 
 impl Look {
     pub fn of(t: &haetty_core::theme::Theme) -> Look {
-        Look { cursor_text: t.cursor_text, selection_bg: t.selection_background, selection_fg: t.selection_foreground }
+        Look {
+            cursor_text: t.cursor_text,
+            selection_bg: t.selection_background,
+            selection_fg: t.selection_foreground,
+            min_contrast: 1.0,
+        }
     }
 }
 
@@ -203,6 +210,8 @@ impl Painter {
             let on_cursor = cursor_block && cursor.is_some_and(|c| c.x == x);
             if on_cursor {
                 fg = self.look.cursor_text.unwrap_or(bg);
+            } else if !super::contrast::exempt(&cell.text) {
+                fg = super::contrast::contrasted(fg, bg, self.look.min_contrast);
             }
             let rect = Rect::new(origin.0 + x as i32 * m.cell_w, top, m.cell_w * span, m.cell_h);
             let f = cell.flags;

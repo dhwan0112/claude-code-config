@@ -5,6 +5,7 @@
 
 pub mod boxdraw;
 pub mod canvas;
+pub mod contrast;
 pub mod paint;
 pub mod soft;
 
