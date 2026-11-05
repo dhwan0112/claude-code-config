@@ -51,7 +51,7 @@ while the application holds synchronized output (DEC 2026), up to
 | `input.rs` | `KeyCode` → libghostty `Key`; text/consumed-mods rules; which keys the IME owns during a composition (`ime_owns_key`: not Ctrl/Super shortcuts); mouse buttons; wheel notch accumulator; paste shortcut. Unit-tested without winit events. |
 | `geom.rs` | Window pixels ↔ grid; `Layout::origin` (padding, balance) shared by renderer and input mapping. |
 | `damage.rs` | Per-row dirty flags from two snapshots (no core API change was needed). |
-| `font.rs` | fontdb (no fontconfig) + memory-mapped faces; primary/bold/italic, fallback lists, once-per-character scan of all faces; colour faces (CBDT/sbix/COLR/SVG) only when no monochrome face has a text-presentation character, first for emoji presentation (`pick`). |
+| `font.rs` | fontdb (no fontconfig; `memmap` feature: the start-up scan and the faces map files, one map per file via `make_shared_face_data`, nothing read into the heap); primary/bold/italic, fallback lists, once-per-character scan of all faces; colour faces (CBDT/sbix/COLR/SVG) only when no monochrome face has a text-presentation character, first for emoji presentation (`pick`). |
 | `emoji.rs` | `Presentation::of(cell text)`: VS16/VS15, else `Emoji_Presentation` (Unicode 16.0 table, 80 ranges). |
 | `render/mod.rs` | `Renderer` trait (`cell_metrics`, `set_font_px`, `set_padding`, `resize`, `render(&Scene)`, `memory()` for the exit log line), `Scene`, `Preedit`. |
 | `render/paint.rs` | Window-independent painter: rows → pixels; colours, attributes, wide cells, cursor shapes, preedit; glyph cache keyed by (face, glyph, size, synthetic bold/italic); glyphs wider than their cells scaled to fit; fallback CJK faces scaled to fill wide cells (§5). Pixel tests. |
@@ -269,10 +269,8 @@ outside the repository on the dev machine
   focus was gained, and the key event sequence (Ctrl press, C press, Ctrl
   release, C release) is the same as in passing runs; Claude Code's screen
   showed its 401 "remote managed settings" notice. Not reproduced when
-  pressed 6 s after start, nor on Windows. So the bytes left ccterm every
-  time; the rare misses within the first seconds after start look like
-  Claude Code's side (start-up work such as that notice around the first
-  press) but the cause is not proven. One way ccterm
+  pressed 6 s after start, nor on Windows. Settled by the headless control
+  below: the miss also happens without a window. One way ccterm
   itself could lose a press was found and fixed: Ctrl+C was held back
   while an IME composition was shown (`input::ime_owns_key`, unit test
   `shortcuts_pass_while_composing`); ibus-hangul commits before it forwards
@@ -305,6 +303,42 @@ outside the repository on the dev machine
   written `%USERPROFILE%`; the `LICENSE` and `Cargo.toml` name the author
   and repository on purpose.
 
+### Before milestone 2 (2026-11-05, second round)
+
+- **Font scan heap** (fontdb `memmap`, `88a49c9`), Claude Code idle,
+  120x36, 11 pt, two runs each, same session: Linux RssAnon 24.8 → 8.5 MB
+  (`[heap]` 19.9 → 0.7 MB; RssFile 25.5 → 25.9 MB); Windows private
+  working set 12.1–12.5 MB before and after (private bytes 14.0–14.4 MB).
+- **Scrollback limit** (`876d8db`): rows of 120 columns kept per byte limit
+  (`examples/mem.rs`, 30 000 lines printed): 2 MB 1 328, 5 MB 4 424,
+  10 MB 9 068, 11 MB 10 229, 12 MB 11 003, 16 MB 14 873 — about 1.1 KB
+  per row; one session with a full 12 MB limit is 12.9 MB anonymous. With
+  the default filled (12 000 lines printed before Claude Code started) and
+  Claude Code idle: Linux RssAnon 19.2 MB, Windows private working set
+  22.6 MB (private bytes 30.2 MB) — under the 25 MB budget.
+- **Ctrl+C control** (`6ee18b3`, headless `wait-title`): presses 1.5 s
+  after the title showed "Claude Code", Linux, all runs in one session:
+
+  | Path | 300 ms | 700 ms | total misses |
+  |---|---|---|---|
+  | GUI (Xvfb, XTest), earlier + this round | 19/20, 20/20, 20/20 | 18/20, 19/20 | 4/100 |
+  | headless, no focus report | 20/20, 40/40 | 20/20 | 0/80 |
+  | headless, focus out/in report 0.3 s before | 19/20, 40/40 | 20/20 | 1/80 |
+
+  The miss happens without a window (headless with the focus report the
+  GUI also sends), with identical bytes from ccterm, so it is Claude Code's
+  start-up state, not ccterm's GUI input path. Whether focus reports make
+  it likelier is not established (1/80 vs 0/80).
+- **VS16 emoji in a narrow cell** (mode 2027 off): `⏸️`, `⚠️` from Noto
+  Color Emoji are scaled to the cell width and clipped to it; colour pixels
+  at x 0..10 and 1..10 of an 11 px cell, none in the neighbouring cells
+  (frame dump `%USERPROFILE%\ccterm-win\m3\dumps\vs16-narrow.png` on the dev machine). `😀` without
+  a selector is wide and spans its two cells.
+
+- **Engine comparison redone** with about the same history (DESIGN.md §4
+  table): libghostty-vt 11 MB (~10 200 rows) max RSS 31.6 MB, alacritty
+  10 000 lines 47.6 MB; the old 20 MB figure was the 680-row condition.
+
 ### Sizes (stripped)
 
 | Build | ccterm Linux | ccterm Windows | headless Linux | headless Windows |
@@ -321,8 +355,12 @@ dist; `decorations` key < 1 KB. Then release 14.46 / 10.66 MB, dist
 Milestone 1 finishing work (`dist`, Linux / Windows, bytes): wide fallback
 scaling 5 632 456 / 4 278 272 after; emoji presentation (80-range table,
 640 bytes of data, plus code) +2 240 / +2 048; Ctrl+C/IME fix, key byte
-log and memory log line +12 952 / +9 728. Current: release 14.49 / 10.69
+log and memory log line +12 952 / +9 728. Then release 14.49 / 10.69
 MB, dist 5.65 / 4.29 MB.
+
+Before milestone 2 (`dist`, Linux / Windows, bytes): fontdb `memmap`
++736 / −1 536 (memmap2 was already linked); `scrollback-limit` +1 264 /
++1 536. Current: release 14.48 / 10.69 MB, dist 5.65 / 4.29 MB.
 
 Per step (`release` + strip, Linux / Windows): empty winit+softbuffer window
 3.27 / 1.41 MB; + session (libghostty-vt, ccterm-core) and text stack
@@ -436,16 +474,15 @@ New in the GUI work (2026-11-05):
 
 New in the milestone 1 finishing work (2026-11-05):
 
-- **`SessionConfig::scrollback` is bytes, not lines.** It becomes
-  libghostty-vt's `max_scrollback`, documented in `src/terminal/Screen.zig`
-  as "the amount of scrollback to keep in bytes" (rounded to whole pages).
-  The default `10_000` keeps 678 rows of history at 120 columns (the
-  engine comparison in DESIGN.md §4 passed the same `10000` to
-  libghostty-vt and 10 000 lines to alacritty_terminal, so its RSS figures
-  are not like for like)
-  (`cargo run --release -p ccterm-core --example mem -- 3 10000 10000`);
-  a 64 MB limit kept all 10 000 rows of 120 columns, for 11.6 MB of
-  anonymous memory. Not changed yet (§6.2).
+- **libghostty-vt's `max_scrollback` is bytes, not lines**
+  (`src/terminal/Screen.zig`: "the amount of scrollback to keep in bytes",
+  rounded to whole pages). The old `SessionConfig::scrollback = 10_000`
+  kept 678 rows at 120 columns, and the first engine comparison gave
+  libghostty-vt 10 000 bytes against alacritty's 10 000 lines. Now
+  `scrollback_limit` / `scrollback-limit`, in bytes, default 12 MB.
+- glibc keeps freed large buffers in the heap once its dynamic mmap
+  threshold has risen: reading ~20 MB font files into memory at start-up
+  left 16 MB of anonymous memory behind. Map files (fontdb `memmap`).
 - Debian/Ubuntu `fonts-noto-core` 20201225 names Noto Sans Symbols 2
   **"Noto Sans Symbols2"**; a fallback list with only the spaced name
   silently skipped it (both names are listed now). Check family names with
@@ -459,7 +496,10 @@ New in the milestone 1 finishing work (2026-11-05):
   Code's own window (between 700 and 1500 ms: 1500 ms never exits). With
   the test setup's dummy API key Claude Code also shows "Remote managed
   settings failed to load (authentication rejected (401))" a moment after
-  start; see §3 for what that does to the exit test.
+  start. A second Ctrl+C is occasionally ignored within the first seconds
+  after start — also headless (§3, "Before milestone 2"): Claude Code's
+  start-up state, not ccterm. Tests that need a reliable exit wait a few
+  seconds (6 s: 40/40).
 - **Xvfb without sudo** (WSL, `/tmp/.X11-unix` is WSLg's read-only mount,
   Xvfb runs `/usr/bin/xkbcomp` by absolute path): `apt-get download` +
   `dpkg -x` xvfb, libxfont2, x11-xkb-utils, xfonts-base, xserver-common
@@ -575,16 +615,8 @@ New in the milestone 1 finishing work (2026-11-05):
   integration (OSC 133).
 - Glyph shaping (ligatures, ZWJ emoji sequences are drawn as the first
   character).
-- Scrollback is configured in bytes (§4) and defaults to 678 lines at 120
-  columns. Proposal, not done: a line count in the config converted to
-  bytes from the page size, with 10 000 lines costing ~11.6 MB per session.
-- Memory budget (DESIGN.md §3.4): one session with 10 000 lines would be
-  ~24.8 + 8.7 ≈ 33 MB anonymous on Linux, over the 25 MB budget, almost
-  all of it heap glibc keeps after the start-up font scan (Windows: 12.5
-  MB). Proposals, not done: build fontdb with its `memmap` feature so the
-  scan maps files instead of reading them into the heap, or call
-  `malloc_trim(0)` once after `Fonts::load` on glibc; measured effect of
-  the equivalent malloc setting: RssAnon 24.8 → 6.6 MB.
+- `scrollback-limit` takes plain bytes; Ghostty-style suffixes (`10MB`)
+  are not parsed.
 
 ### 6.3 Later milestones
 
