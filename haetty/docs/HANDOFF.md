@@ -660,7 +660,9 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 18. **Name and icon**: `haetty.exe` in Explorer (file icon, Properties),
     pinned to Start and the taskbar, in Alt+Tab, in the title bar — the new
     icon at every size; the window title "haetty"; `haetty install-desktop`
-    says nothing is needed.
+    says nothing is needed. Pin haetty to the taskbar, then start a copy of
+    `haetty.exe` from another folder: its window joins the pinned button
+    (same AppUserModelID); a `HAETTY_INSTANCE=dev` window gets its own.
 19. **Migration and the old daemon**: with a ccterm installation, the first
     start copies `%APPDATA%\ccterm\config` and the tab sets
     (`%LOCALAPPDATA%\ccterm\tabs`); with `ccterm.exe` still open, haetty runs
@@ -1175,6 +1177,17 @@ regression list, measurements), then committed, pushed and mirrored.
     plain; the copy fallback (with `ProgramData` pointed into the test run
     directory) gives a plain path and is refreshed after the executable
     changes.
+
+- **2026-11-06 Windows AppUserModelID.** The GUI sets
+  `SetCurrentProcessExplicitAppUserModelID(app id)` before creating windows
+  (DESIGN.md §3.12). Evidence (`aumid.ps1`, `aumid2.ps1`, test-guarded):
+  the GUI log reads `AppUserModelID io.github.dhwan0112.haetty` for copies
+  in `…\copy one\` and `…\copy two folder\`, and `….haetty.dev` for a dev
+  instance; with all three open, the taskbar (UI Automation, Windows'
+  "always combine") has two buttons: "haetty.exe - 2 running windows" (the
+  two folders together) and "haetty.exe - 1 running window" (dev). Pinning
+  is not scriptable: manual check 18. (The button says "haetty.exe": the
+  executable has no version resource with a file description.)
 
 ### ccx comparison (milestone 3)
 

@@ -435,6 +435,10 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   nothing to install.
 - Wayland `app_id` = X11 `WM_CLASS` (instance and class) = the app id, so
   docks match the window to the desktop entry.
+- Windows: the GUI process sets its AppUserModelID to the app id
+  (`io.github.dhwan0112.haetty`, a dev instance `….haetty.dev`) before any
+  window exists, so the taskbar groups haetty windows and a pinned icon
+  stays the same whatever folder the executable runs from.
 
 ### 3.13 Claude Code integration (milestone 3)
 

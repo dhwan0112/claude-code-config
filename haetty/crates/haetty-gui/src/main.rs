@@ -338,6 +338,44 @@ fn std_handle_valid(stderr: bool) -> bool {
     !h.is_null() && h as isize != -1
 }
 
+/// Windows: the AppUserModelID (`io.github.dhwan0112.haetty`, a dev
+/// instance `….haetty.dev`), so the taskbar groups haetty windows and keeps
+/// a pinned icon whatever path the executable runs from. Set before any
+/// window exists.
+#[cfg(windows)]
+fn set_app_user_model_id() {
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SetCurrentProcessExplicitAppUserModelID(id: *const u16) -> i32;
+        fn GetCurrentProcessExplicitAppUserModelID(id: *mut *mut u16) -> i32;
+    }
+    #[link(name = "ole32")]
+    extern "system" {
+        fn CoTaskMemFree(p: *mut core::ffi::c_void);
+    }
+    let id = haetty_proto::product::app_id();
+    let wide: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
+    // SAFETY: `wide` is NUL-terminated and outlives the call.
+    let hr = unsafe { SetCurrentProcessExplicitAppUserModelID(wide.as_ptr()) };
+    if hr < 0 {
+        log::warn!("AppUserModelID {id}: HRESULT {hr:#x}");
+        return;
+    }
+    let mut out: *mut u16 = std::ptr::null_mut();
+    // SAFETY: on success `out` is a NUL-terminated string we free below.
+    if unsafe { GetCurrentProcessExplicitAppUserModelID(&mut out) } >= 0 && !out.is_null() {
+        let mut n = 0;
+        // SAFETY: reading up to the NUL of a string Windows allocated.
+        while unsafe { *out.add(n) } != 0 {
+            n += 1;
+        }
+        // SAFETY: `n` u16s were just read.
+        let got = String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(out, n) });
+        unsafe { CoTaskMemFree(out.cast()) };
+        log::info!("AppUserModelID {got}");
+    }
+}
+
 #[cfg(windows)]
 fn message_box(msg: &str) {
     #[link(name = "user32")]
@@ -396,6 +434,8 @@ fn main() {
         }
         Command::Gui(o) => {
             init_log(None);
+            #[cfg(windows)]
+            set_app_user_model_id();
             let mut o = *o;
             o.first_hint = migrate::run().hint();
             load_config_file(&mut o);
