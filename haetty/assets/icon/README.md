@@ -30,10 +30,12 @@ of the 16, 24, 32 and 48 px renders (see "Small-size check") found the prompt
 
 The design is the user's own (`haetty-E-grey.svg`). The design file carried a
 `<metadata><c2pa:manifest>…</c2pa:manifest></metadata>` element (a
-content-credential manifest, about 7.7 KB of base64). For `haetty.svg` only
-that `<metadata>` element was removed; every other byte, including the root
-`<svg>` tag with its `xmlns:c2pa` declaration and every drawing element,
-attribute and value, is identical to the design file. Result: 1434 bytes.
+content-credential manifest, about 7.7 KB of base64). For `haetty.svg` that
+`<metadata>` element and the root tag's then unused `xmlns:c2pa`
+declaration were removed; every drawing element, attribute and value is
+identical to the design file. Result: 1396 bytes. Removing the declaration
+(2026-11-06) changed no rendered pixel: resvg's output at all ten sizes is
+byte-identical before and after, and identical to the committed PNGs.
 
 The removal was done with:
 
@@ -43,7 +45,9 @@ import pathlib
 src = pathlib.Path("haetty-E-grey.svg").read_bytes()
 a = src.index(b"<metadata>")
 b = src.index(b"</metadata>") + len(b"</metadata>")
-pathlib.Path("haetty.svg").write_bytes(src[:a] + src[b:])
+out = src[:a] + src[b:]
+out = out.replace(b' xmlns:c2pa="http://c2pa.org/manifest"', b"")
+pathlib.Path("haetty.svg").write_bytes(out)
 EOF
 ```
 
