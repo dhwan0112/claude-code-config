@@ -1,7 +1,7 @@
-# ccterm — instructions for Claude Code
+# haetty — instructions for Claude Code
 
 A lightweight terminal for running Claude Code, on **Windows and Linux both**.
-The backend (PTY + terminal emulation) and the first GUI milestone (`ccterm`,
+The backend (PTY + terminal emulation) and the first GUI milestone (`haetty`,
 crate `ccterm-gui`) are done. Read `docs/HANDOFF.md` (state, verified facts,
 pitfalls, tasks) and `docs/DESIGN.md` (target outer and inner design) once at
 the start of a session.
@@ -36,7 +36,7 @@ the start of a session.
 ## Working rules
 
 - Self-hosting: develop inside the stable instance; run new builds only as a
-  separate instance (`CCTERM_INSTANCE=dev`: own daemon, socket, state and
+  separate instance (`HAETTY_INSTANCE=dev`: own daemon, socket, state and
   config directories, app id, window title prefix). Never replace the
   stable binary yourself; promotion to stable needs the user's approval.
 - Protected areas — changes need the user's review before commit:
@@ -46,11 +46,11 @@ the start of a session.
   control/observe/report permission checks in IPC (`Daemon::message` and
   `Daemon::input` in `ccterm-daemon`); anything on the path of Claude Code
   permission prompts (attention `Ask`, `awaiting_permission`, the settings
-  ccterm injects).
-- Keep a recovery path: do not remove or break ccx (tmux) while ccterm is
+  haetty injects).
+- Keep a recovery path: do not remove or break ccx (tmux) while haetty is
   not yet the proven default.
 - Reference frames: updating them is a separate commit whose message says
-  why the frames changed (`CCTERM_UPDATE_REFERENCE=1 cargo test reftest`).
+  why the frames changed (`HAETTY_UPDATE_REFERENCE=1 cargo test reftest`).
 
 ## Environment
 
@@ -74,10 +74,10 @@ cargo fmt                                    # rustfmt.toml: max_width 120
 cargo run --release -p ccterm-core --example mem -- 3 67108864 10000   # anon memory per session (Linux)
 ```
 
-`ccterm-headless` drives any program without a window (see README), e.g.
-`ccterm-headless --trace -e "wait-idle 3000 60000" -e modes -- claude`.
+`haetty-headless` drives any program without a window (see README), e.g.
+`haetty-headless --trace -e "wait-idle 3000 60000" -e modes -- claude`.
 Use it to check behaviour against a real Claude Code before and after a change.
-`CCTERM_DUMP_FRAME=f.ppm ccterm ...` writes every GUI frame to a file, which
+`HAETTY_DUMP_FRAME=f.ppm haetty ...` writes every GUI frame to a file, which
 is how rendering can be checked without a screen capture.
 
 ## Conventions

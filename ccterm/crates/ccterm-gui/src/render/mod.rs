@@ -45,7 +45,7 @@ pub struct PaddingStyle {
     pub min: u32,
     pub balance: bool,
     pub color: PaddingColor,
-    /// Paint everything outside the grid red (`CCTERM_DEBUG_PADDING=1`), to
+    /// Paint everything outside the grid red (`HAETTY_DEBUG_PADDING=1`), to
     /// tell application padding from window-manager frames.
     pub debug: bool,
 }

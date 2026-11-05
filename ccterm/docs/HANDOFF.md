@@ -1,10 +1,10 @@
-# ccterm handoff
+# haetty handoff
 
 State as of 2026-11-05, after milestones 2 (daemon, IPC, tabs, tab sets,
 config file, palette, install-desktop) and 3 (Claude Code integration) —
 §6.4 is the progress log of those; sections 1–5 and 8 describe milestone 1
 (`26e0056`.., `01e1d32`.., `e9312a4`..) and are kept as its record. The code
-lives in `ccterm/` of the `dhwan0112/claude-code-config` repository.
+lives in `haetty/` of the `dhwan0112/claude-code-config` repository.
 Written for whoever continues the work (Claude Code included).
 
 ## 1. Goal
@@ -23,10 +23,10 @@ line JSON). Requirements set by the user:
 
 | Crate | State |
 |---|---|
-| `ccterm-pty` | Done. Unix via portable-pty. Windows: own ConPTY code (`src/win/mod.rs`), host order sideloaded `conpty.dll` (`CCTERM_CONPTY_DLL` or next to the exe) → embedded Microsoft ConPTY 1.25.260930003 (crate `conpty-bin-vendored`, written to `%LOCALAPPDATA%\ccterm\conpty\<version>\`) → kernel32. PATH/PATHEXT lookup; `.cmd/.bat` (npm's `claude.cmd`) run via `cmd.exe /d /s /c`. |
+| `ccterm-pty` | Done. Unix via portable-pty. Windows: own ConPTY code (`src/win/mod.rs`), host order sideloaded `conpty.dll` (`HAETTY_CONPTY_DLL` or next to the exe) → embedded Microsoft ConPTY 1.25.260930003 (crate `conpty-bin-vendored`, written to `%LOCALAPPDATA%\haetty\conpty\<version>\`) → kernel32. PATH/PATHEXT lookup; `.cmd/.bat` (npm's `claude.cmd`) run via `cmd.exe /d /s /c`. |
 | `ccterm-core` | Done. `Session::spawn(SessionConfig)` → `SessionHandle` + `Receiver<SessionEvent>`. Engine thread owns `libghostty_vt::Terminal`, `RenderState`, key/mouse encoders and the PTY writer. |
-| `ccterm-headless` | Done. Step-script runner (README lists the steps; `drag` added for selection tests). |
-| `ccterm-gui` | Milestone 1 done (binary `ccterm`). See below. |
+| `haetty-headless` | Done. Step-script runner (README lists the steps; `drag` added for selection tests). |
+| `ccterm-gui` | Milestone 1 done (binary `haetty`). See below. |
 | `ccterm-proto` | Milestone 2: product constants, paths, wire types (postcard), framing, local socket / named pipe transport, daemon client (`RemoteSession`). |
 | `ccterm-daemon` | Milestone 2: owns the sessions; frames, roles, event log (DESIGN.md §3.5–3.8). |
 | `ccterm-cc` | Milestone 3: Claude Code integration — `--settings`, `hook`/`statusline` reporters, per-session state, edit snapshots and diffs, resume (DESIGN.md §3.13). |
@@ -50,7 +50,7 @@ while the application holds synchronized output (DEC 2026), up to
 |---|---|
 | `config.rs` | Settings with `Config::set(key, value)`: `window-padding`, `window-padding-balance`, `window-padding-color`, `decorations`; the CLI passes `--KEY VALUE`, the config file (`key = value`, milestone 2) too. |
 | `chrome.rs` | Native title bar/frame colours (Windows 11) and dark/light theme request, updated when the default colours change. |
-| `main.rs` | CLI (`--font`, `--font-size` pt, `--cols`, `--rows`, settings, program; reserved subcommand names `SUBCOMMANDS` end with "not implemented yet", a program of that name goes after `--`), logger (`CCTERM_LOG`, `CCTERM_LOG_FILE`), fatal and CLI errors (Windows GUI subsystem: redirected stdout/stderr, else the parent's console, else a message box). |
+| `main.rs` | CLI (`--font`, `--font-size` pt, `--cols`, `--rows`, settings, program; reserved subcommand names `SUBCOMMANDS` end with "not implemented yet", a program of that name goes after `--`), logger (`HAETTY_LOG`, `HAETTY_LOG_FILE`), fatal and CLI errors (Windows GUI subsystem: redirected stdout/stderr, else the parent's console, else a message box). |
 | `app.rs` | winit `ApplicationHandler`: one window, one `Session`. A forwarder thread turns `SessionEvent`s into `EventLoopProxy` user events (`ControlFlow::Wait`, no polling). On `Wakeup` the snapshot is taken immediately (re-arms the next wakeup) and rows are diffed; `RedrawRequested` renders. Keyboard, mouse, wheel, IME, focus, resize, scale factor, title, bell, clipboard, exit (exit code passed on). |
 | `input.rs` | `KeyCode` → libghostty `Key`; text/consumed-mods rules; which keys the IME owns during a composition (`ime_owns_key`: not Ctrl/Super shortcuts); mouse buttons; wheel notch accumulator; paste shortcut. Unit-tested without winit events. |
 | `geom.rs` | Window pixels ↔ grid; `Layout::origin` (padding, balance) shared by renderer and input mapping. |
@@ -60,7 +60,7 @@ while the application holds synchronized output (DEC 2026), up to
 | `render/mod.rs` | `Renderer` trait (`cell_metrics`, `set_font_px`, `set_padding`, `resize`, `render(&Scene)`, `memory()` for the exit log line), `Scene`, `Preedit`. |
 | `render/paint.rs` | Window-independent painter: rows → pixels; colours, attributes, wide cells, cursor shapes, preedit; glyph cache keyed by (face, glyph, size, synthetic bold/italic); glyphs wider than their cells scaled to fit; fallback CJK faces scaled to fill wide cells (§5). Pixel tests. |
 | `render/boxdraw.rs` | U+2500–U+259F drawn procedurally. Pixel tests. |
-| `render/soft.rs` | softbuffer backend: own canvas = back buffer (always the complete frame); bands changed during `buffer.age()` frames are copied (history of 4), everything when the age is 0 or older; only the current bands are presented as damage; `CCTERM_DUMP_FRAME`, `CCTERM_DEBUG_PADDING`. |
+| `render/soft.rs` | softbuffer backend: own canvas = back buffer (always the complete frame); bands changed during `buffer.age()` frames are copied (history of 4), everything when the age is 0 or older; only the current bands are presented as damage; `HAETTY_DUMP_FRAME`, `HAETTY_DEBUG_PADDING`. |
 | `clipboard.rs` | copypasta: Win32; Wayland via the window's `wl_display`; X11 via x11rb. |
 
 Key decisions made while building it (in addition to §5):
@@ -102,7 +102,7 @@ cross-built there and run natively on the host.
 
 - `cargo test`: 5 unit tests (OSC scanner), 10 end-to-end tests; plus 47
   `ccterm-gui` unit/pixel tests (31 at the first GUI commits).
-- Query replies: DA1 `\e[?62;1;6;22;52c`, DA2, XTVERSION `ccterm(0.1.0)`,
+- Query replies: DA1 `\e[?62;1;6;22;52c`, DA2, XTVERSION `haetty(0.1.0)`,
   DECRQM 2026/2004/1006 supported, kitty keyboard query and push, CPR,
   CSI 14/16/18 t, CSI ?996 n, OSC 10/11 (needs default colours set — done).
 - Encoding through the probe: Shift+Enter `\e[13;2u` with kitty flags 1,
@@ -135,30 +135,30 @@ mode runs locally without the API — useful for scrollable content.
   PowerShell input (`42`), PASS resize (`77`). Its two Claude Code checks
   FAIL unless Claude Code is prepared (onboarding/login screen otherwise):
   run with the isolated config below and `ANTHROPIC_API_KEY` set, or use
-  the direct `ccterm-headless.exe` run in the next item.
+  the direct `haetty-headless.exe` run in the next item.
 - `ccterm-gui` unit tests built for `x86_64-pc-windows-gnu` and run natively:
   31 passed — including the Windows-only branches (winit#4746 workaround,
   AltGr text, Ctrl+V paste) and the pixel tests with Windows fonts
   (Malgun Gothic for the wide-character test).
-- `ccterm-headless.exe` + native Claude Code 2.1.318
+- `haetty-headless.exe` + native Claude Code 2.1.318
   (`%USERPROFILE%\.local\bin\claude.exe`): fullscreen renderer through the
   embedded ConPTY — `alt_screen, mouse_tracking, sgr_mouse,
   bracketed_paste, focus_events: true, kitty_keyboard: 5`; `안녕 hello` +
   Shift+Enter + `second line` shown as two input lines; Ctrl+C twice exits 0.
   So kitty keyboard negotiation does pass through OpenConsole 1.25.
-- `ccterm.exe` window: Claude Code drawn (Cascadia Mono, synthetic bold,
+- `haetty.exe` window: Claude Code drawn (Cascadia Mono, synthetic bold,
   title `✳ Claude Code`, fallback symbols from Segoe UI Symbol), typing via
   SendKeys, Shift+Enter, Unicode text `안녕` (VK_PACKET, not the IME),
   Ctrl+V pastes the Windows clipboard, the window closes when the child
-  exits and `ccterm.exe` returns the child's exit code (3 in the test). No
+  exits and `haetty.exe` returns the child's exit code (3 in the test). No
   console window (GUI subsystem); `OpenConsole.exe` runs as a hidden child.
 - Idle with Claude Code idle (30 s): 0.063 s CPU time = 0.2 % of one core;
   working set 46.9 MB, private 12.8 MB, 12 threads.
 
-### `ccterm` window on Linux (WSLg, new 2026-11-05)
+### `haetty` window on Linux (WSLg, new 2026-11-05)
 
 - X11 backend (`WAYLAND_DISPLAY` unset), keys and mouse from xdotool
-  (XTest), frames from `CCTERM_DUMP_FRAME`: Claude Code main screen
+  (XTest), frames from `HAETTY_DUMP_FRAME`: Claude Code main screen
   rendered (block-element logo, bold, faint, colours, `─` rules continuous,
   `⚠` from the symbol fallback, block cursor); `hello 안녕` (xdotool keysym
   typing) + Shift+Enter + `second line` → two input lines; `!seq 1 200`
@@ -182,21 +182,21 @@ mode runs locally without the API — useful for scrollable content.
   (initialised only; copy/paste not exercised there), libwayland-client
   mapped, frame identical to X11. Wheel was checked only with XTest under
   X11 (each click counts twice, §4); IME only under X11/XIM.
-- Idle with Claude Code idle (60 s): ccterm 0 ticks (Wayland), 2 ticks
+- Idle with Claude Code idle (60 s): haetty 0 ticks (Wayland), 2 ticks
   = 0.03 % of one core (X11); Claude Code itself ~0.8 %. RSS ~55 MB
   (RssAnon 25.7 MB, RssFile 25 MB = shared libraries and mapped fonts),
   6 threads; Claude Code ~230 MB.
-- Linkage: `readelf -d ccterm` NEEDED = libgcc_s, libm, libc, ld-linux only;
-  `ccterm.exe` imports system DLLs only (KERNEL32, USER32, GDI32, IMM32,
+- Linkage: `readelf -d haetty` NEEDED = libgcc_s, libm, libc, ld-linux only;
+  `haetty.exe` imports system DLLs only (KERNEL32, USER32, GDI32, IMM32,
   ADVAPI32, SHELL32, ole32, dwmapi, uxtheme, userenv, ws2_32, ntdll,
   msvcrt, bcryptprimitives, api-ms-win-core-synch).
 
 ### Window decorations (2026-11-05)
 
-- The "white band": `CCTERM_DEBUG_PADDING=1` plus captures of the whole
+- The "white band": `HAETTY_DEBUG_PADDING=1` plus captures of the whole
   window from the Windows side (`PrintWindow` on the WSLg RAIL window) show
   the red padding strictly inside a light title bar and ~6 px grey border
-  — that frame is WSLg Weston's X11 window manager, not ccterm. ccterm's
+  — that frame is WSLg Weston's X11 window manager, not haetty. haetty's
   client area had no light pixels (also before the change). Native
   Wayland windows get no frame under WSLg; native Windows draws its own.
 - Balance/colour: frame dumps of a 60x10 grid with blue first/last rows:
@@ -231,7 +231,7 @@ outside the repository on the dev machine
   narrower than at the font's own size by more than 1 px, left/right
   margins within 1 px, no row outside the cell) passes with DejaVu Sans
   Mono + Noto Sans Mono CJK KR, DejaVu + NanumGothicCoding (Noto hidden,
-  `CCTERM_FONT_DIR` with fonts-nanum) and natively on Windows with Cascadia
+  `HAETTY_FONT_DIR` with fonts-nanum) and natively on Windows with Cascadia
   Mono + Malgun Gothic, at 11 pt, 14 pt, 16 px and 24 px.
   `primary_wide_hangul_is_not_rescaled` (Noto Sans Mono CJK KR as the
   primary: identical fit to before) and
@@ -274,13 +274,13 @@ outside the repository on the dev machine
   release, C release) is the same as in passing runs; Claude Code's screen
   showed its 401 "remote managed settings" notice. Not reproduced when
   pressed 6 s after start (GUI 40/40), nor on Windows (60/60). See the
-  headless control in "Before milestone 2" for the conclusion. One way ccterm
+  headless control in "Before milestone 2" for the conclusion. One way haetty
   itself could lose a press was found and fixed: Ctrl+C was held back
   while an IME composition was shown (`input::ime_owns_key`, unit test
   `shortcuts_pass_while_composing`); ibus-hangul commits before it forwards
   Ctrl+C, so it did not show up here — an IME that reports the key first
   would have.
-- **Memory** (Claude Code idle, 120x36, 11 pt): Linux `ccterm` RssAnon
+- **Memory** (Claude Code idle, 120x36, 11 pt): Linux `haetty` RssAnon
   24.8 MB (`[heap]` 19.9 MB; anonymous mappings of 1.6, 1.2, 0.8, 0.4 MB =
   see below), RssFile 26.0 MB, RssShmem 2.5 MB (the MIT-SHM
   image), 6 threads; Windows private working set 12.5 MB (private bytes
@@ -299,11 +299,11 @@ outside the repository on the dev machine
   window): empty +2.2 MB; 10 000 lines kept +11.6 MB; the default limit
   keeps 678 lines, +2.9 MB.
 - **Subcommands**: unit test `reserved_subcommands_are_errors_until_implemented`;
-  `ccterm status` → message and exit 2 on Linux; on Windows with stderr
-  redirected the message arrives there, exit 2; `ccterm -- status` runs a
+  `haetty status` → message and exit 2 on Linux; on Windows with stderr
+  redirected the message arrives there, exit 2; `haetty -- status` runs a
   program `status` ("not found on PATH").
 - **Public repository search**: no user names, user paths, private
-  addresses or e-mail addresses in `ccterm/` besides the HANDOFF path now
+  addresses or e-mail addresses in `haetty/` besides the HANDOFF path now
   written `%USERPROFILE%`; the `LICENSE` and `Cargo.toml` name the author
   and repository on purpose.
 
@@ -336,7 +336,7 @@ outside the repository on the dev machine
   presses 20/20 exited, without it 20/20 (Claude Code had focus reporting
   on — `focus_events: true` at the title — so the reports reached it).
   Conclusion, item closed: there is no evidence that a GUI-only path in
-  ccterm causes the miss (ccterm sent identical bytes in every failing
+  haetty causes the miss (haetty sent identical bytes in every failing
   run); Claude Code's state right after start is the likely cause; focus
   reports showed no effect. At the title Claude Code had not yet switched
   to the alternate screen or kitty keyboard (`alt_screen: false,
@@ -353,7 +353,7 @@ outside the repository on the dev machine
 
 ### Sizes (stripped)
 
-| Build | ccterm Linux | ccterm Windows | headless Linux | headless Windows |
+| Build | haetty Linux | haetty Windows | headless Linux | headless Windows |
 |---|---|---|---|---|
 | `release` + strip | 14.44 MB | 10.64 MB | 9.49 MB | 7.34 MB |
 | `dist` profile | 5.60 MB | 4.25 MB | 1.81 MB | 3.03 MB |
@@ -468,7 +468,7 @@ New in the GUI work (2026-11-05):
   scripts as ANSI (Hangul garbled): use `pwsh` or a BOM.
 - WSLg's X11 frame (Weston XWM) is white/grey and ignores
   `_GTK_THEME_VARIANT`: what looks like a white band around the window there
-  is not ccterm. Check with `CCTERM_DEBUG_PADDING=1` before changing
+  is not haetty. Check with `HAETTY_DEBUG_PADDING=1` before changing
   padding code.
 - DWM colour attributes (caption, border, text: 34–36) are set-only —
   `DwmGetWindowAttribute` returns E_INVALIDARG — and `PrintWindow` does not
@@ -476,7 +476,7 @@ New in the GUI work (2026-11-05):
   capture of the visible frame (`DWMWA_EXTENDED_FRAME_BOUNDS`).
 - `cargo build --target <triple>` builds into `target/<triple>/`, not
   `target/release/`: after a size measurement with explicit targets, the
-  plain `target/release/ccterm` may be stale.
+  plain `target/release/haetty` may be stale.
 - Dev setup on a Windows host with WSL: `wsl.exe -- bash -lc '...'` from Git
   Bash expands `$VARS` on the Windows side and MSYS rewrites `/mnt/...`
   paths; run script files with `MSYS_NO_PATHCONV=1`. The WSL VM shuts down
@@ -511,7 +511,7 @@ New in the milestone 1 finishing work (2026-11-05):
   start. A second Ctrl+C is occasionally ignored within the first seconds
   after start (GUI 4/100 at 1.5 s after the title, headless 1/80 and 0/80,
   differences not significant; §3 "Before milestone 2"): most likely
-  Claude Code's start-up state; no evidence for a ccterm cause. Tests
+  Claude Code's start-up state; no evidence for a haetty cause. Tests
   that need a reliable exit wait a few seconds (GUI at 6 s: 40/40).
 - **Xvfb without sudo** (WSL, `/tmp/.X11-unix` is WSLg's read-only mount,
   Xvfb runs `/usr/bin/xkbcomp` by absolute path): `apt-get download` +
@@ -561,7 +561,7 @@ New in the milestone 1 finishing work (2026-11-05):
   constraints (`src/font/Glyph.zig` `Constraint`; `.fit` only shrinks) are
   applied only to "symbols" and Nerd Font icons
   (`src/renderer/generic.zig` `addGlyph`, `src/renderer/cell.zig`
-  `isSymbol`); CJK is not centred. ccterm takes the face-level idea but
+  `isSymbol`); CJK is not centred. haetty takes the face-level idea but
   targets the full two cells (requirement: Hangul from DejaVu Sans Mono +
   Nanum looked spaced out, "한 글 입 력"): factor = 2 cells / advance of 한
   (else 水), capped so the face's tall Hangul (else ideograph) reference
@@ -589,7 +589,7 @@ New in the milestone 1 finishing work (2026-11-05):
    times on each platform (automated runs: §3; rare misses on Linux only,
    within the first seconds); and Ctrl+C while composing Hangul with the
    Microsoft Korean IME.
-1. Windows: type Hangul with the Microsoft Korean IME in `ccterm.exe` running
+1. Windows: type Hangul with the Microsoft Korean IME in `haetty.exe` running
    Claude Code — composition shown inline and underlined at the cursor, no
    caret at the start of the syllable (winit#4746 workaround), candidate
    window (Hanja key) next to the cursor, commit on Space/Enter, Enter right
@@ -619,7 +619,7 @@ New in the milestone 1 finishing work (2026-11-05):
 10. (M2) Tabs with a real keyboard on both platforms: Ctrl+Shift+T/W,
     Ctrl+Tab, Alt+1..9, Ctrl+Shift+P; Hangul typed into the palette; the
     tab bar and hint legible on a real display (frame dumps only so far).
-11. (M2) After `ccterm install-desktop` on a GNOME/KDE desktop: the
+11. (M2) After `haetty install-desktop` on a GNOME/KDE desktop: the
     launcher entry, the dock icon matched to the running window (Wayland
     and X11); on Windows the taskbar, Alt+Tab and Explorer icons.
 12. (M3) With a real Claude Code account: a permission prompt in a
@@ -631,7 +631,7 @@ New in the milestone 1 finishing work (2026-11-05):
 13. (M3) Unfocused window when Claude Code finishes: taskbar flash on
     Windows, urgency + notification on GNOME/KDE (`notify-send`).
 14. (M3) Windows with Claude Code using PowerShell instead of Git Bash for
-    the status line, and ccterm installed in a path with spaces (the status
+    the status line, and haetty installed in a path with spaces (the status
     line command is then double-quoted, which PowerShell does not run).
 15. (Review) With a real account: a permission prompt now waits for the
     synchronous PermissionRequest hook — the dialog should appear without a
@@ -641,7 +641,7 @@ New in the milestone 1 finishing work (2026-11-05):
     without a running daemon: no hook error shown (only the UserPromptSubmit
     path was checked with large input).
 17. (Review) Reattach on a real desktop: kill or crash the window during a
-    long Claude Code turn, start ccterm from the launcher — the same
+    long Claude Code turn, start haetty from the launcher — the same
     conversation continues in its tab, nothing restarted; the palette's
     "Attach detached sessions" after a second window crashed.
 18. (Review) A palette "Paste" while Claude Code asks for permission is
@@ -679,7 +679,7 @@ regression list, measurements), then committed, pushed and mirrored.
   (§3.7), ids, state directory and event log (§3.8), product name constant
   (§3.9), layout rules from §2 (§3.10: exited tabs stay, the status line row
   is reserved, Ctrl+Shift for app shortcuts, `statusLine` replaced in
-  ccterm tabs). Serialization chosen by measurement: postcard
+  haetty tabs). Serialization chosen by measurement: postcard
   +13.1 / +13.3 KB dist vs a hand-written codec, bincode +21.8 / +18.4 KB.
 - **2026-11-05 P1 — daemon and IPC.** New crates `ccterm-proto` (product
   constants, paths, postcard wire types and framing, Unix socket / named
@@ -688,10 +688,10 @@ regression list, measurements), then committed, pushed and mirrored.
   state thread; reader/writer thread per client; per-client baseline
   snapshots, row-diff frames, `NextFrame` backpressure; roles; event log
   `events.log`; exit after 10 s without sessions and clients). The GUI is
-  a control client: it starts `ccterm daemon` detached when none answers,
+  a control client: it starts `haetty daemon` detached when none answers,
   creates its session there (with its environment and working directory),
   and closes it when the program exits or the window is closed; a killed
-  GUI leaves the session running. `ccterm status [--json | --screen ID]`
+  GUI leaves the session running. `haetty status [--json | --screen ID]`
   is read-only (observe role). Evidence:
   - `cargo test`: daemon integration (`crates/ccterm-daemon/tests/daemon.rs`):
     a client killed while `sh` keeps printing, reattach → session listed,
@@ -728,7 +728,7 @@ regression list, measurements), then committed, pushed and mirrored.
     serde code for the message types; the rest is std (Unix sockets,
     process spawning) and the Windows pipe/security code.
 - **2026-11-05 P2 — tabs, keys, palette, config file.** Tabs: each tab a
-  daemon session; the window grid is the active tab's screen plus ccterm's
+  daemon session; the window grid is the active tab's screen plus haetty's
   own cells (`ui.rs`: tab bar from two tabs on, one cell row, neutral
   greys, active tab on the terminal background; command palette as one
   overlay; hints). Tab names: the title without Claude Code's leading
@@ -773,7 +773,7 @@ regression list, measurements), then committed, pushed and mirrored.
     bad lines, rotation; icon PNG/ICO structure and greys only; desktop
     entry quoting; install into `XDG_DATA_HOME`.
   - `reg.sh p3` (Linux, Xvfb) 21/21: the 17 of P2 plus `last` has 2 tabs
-    after Ctrl+Shift+T in another folder; `WM_CLASS "ccterm", "ccterm"`;
+    after Ctrl+Shift+T in another folder; `WM_CLASS "haetty", "haetty"`;
     `_NET_WM_ICON` set; restart reopens 2 tabs + the requested one and
     writes `previous`; `--restore-tabs false` opens one; install-desktop
     files. (One of three runs had Ctrl+C twice exit 2/3, then 3/3 twice —
@@ -809,7 +809,7 @@ regression list, measurements), then committed, pushed and mirrored.
     Human input passes; ClearAttention clears `Wait`; Report clients cannot
     send input; reports for sessions without integration are ignored; the
     settings file goes with the session.
-  - `ccterm hook` timing (Linux): no session env 2.7 ms, no daemon 2.9 ms,
+  - `haetty hook` timing (Linux): no session env 2.7 ms, no daemon 2.9 ms,
     statusline 2.8 ms, with a daemon 3.2 ms (medians of 30; max 4.3 ms);
     stdin left open: 8 ms without a daemon, 1017 ms with one (deadline);
     stdout and stderr empty, exit 0 every time. Windows: 64 ms median
@@ -843,7 +843,7 @@ regression list, measurements), then committed, pushed and mirrored.
   - `e2e2.sh` (Linux, Xvfb, two real Claude Code tabs, fake key): a prompt
     in tab 2 then Alt+1 → log `tab 2 attention None -> Wait (active 1)`,
     amber `●` on tab 2 in the frame; Alt+2 → `Wait -> None`. Fake
-    PreToolUse/PostToolUse JSON for an Edit through the real `ccterm hook`
+    PreToolUse/PostToolUse JSON for an Edit through the real `haetty hook`
     (the synchronous one with its file copy took 5 ms) → status row
     "1 file changed · Ctrl+Shift+D", Ctrl+Shift+D shows `- two` / `+ TWO`
     / `+ and a half` with the header `+2 -1 · by main`; Ctrl+Shift+S panel
@@ -865,7 +865,7 @@ regression list, measurements), then committed, pushed and mirrored.
 
 - **2026-11-05 P5 (+ requests added during the work) — instances,
   friction log, reference frames, §2.3 checks, budgets, README.**
-  - Instances (DESIGN.md §3.9): `CCTERM_INSTANCE=dev` → own socket/pipe,
+  - Instances (DESIGN.md §3.9): `HAETTY_INSTANCE=dev` → own socket/pipe,
     runtime/state/config directories, app id, title prefix `[dev] `; the
     daemon passes the instance to session children (hooks). Test
     `crates/ccterm-gui/tests/instances.rs`: the real binary as a stable and
@@ -873,7 +873,7 @@ regression list, measurements), then committed, pushed and mirrored.
     its own session, children see their instance, `status` follows the
     variable, separate event logs, killing dev leaves stable serving.
     Windows 11 (`instwin.ps1`): pipes `ccterm-<SID>` and `ccterm-dev-<SID>`,
-    two daemon pids, `%LOCALAPPDATA%\ccterm` and `ccterm-dev`, stable still
+    two daemon pids, `%LOCALAPPDATA%\haetty` and `ccterm-dev`, stable still
     answers after dev is killed. Protocol version 3 (`Friction`).
   - Friction log (DESIGN.md §3.8): `slow_input`, `latency` summaries,
     `panic`, `error`, `gui_slow_draw`, `gui_panic`. Test
@@ -891,9 +891,9 @@ regression list, measurements), then committed, pushed and mirrored.
     Reports differing pixels (count, %, bounding box, max delta) and
     writes `target/reftest/<os>/*-actual.png` / `*-diff.png`; fails above
     0.05 % or a channel delta > 48 (a test shows a 1 px glyph move fails).
-    `CCTERM_UPDATE_REFERENCE=1` rewrites them — in a separate commit with
+    `HAETTY_UPDATE_REFERENCE=1` rewrites them — in a separate commit with
     the reason (CLAUDE.md). Linux and Windows (test exe run on Windows
-    with `CCTERM_REFERENCE_DIR`): all four identical.
+    with `HAETTY_REFERENCE_DIR`): all four identical.
   - DESIGN.md §2.3 checks (`e2e3.sh`, Linux/Xvfb, a fake `claude` that
     draws nothing, fake hook/status-line JSON through the real binary;
     pixel analysis of frame dumps):
@@ -914,7 +914,7 @@ regression list, measurements), then committed, pushed and mirrored.
     integration, desktop, environment, known limits); inconsistencies it
     found fixed (USAGE text, decorations comments, HANDOFF header/§2/§6.2/
     §6.3/§8 notes, notification wording, log levels).
-  - CLAUDE.md: working rules (self-hosting with `CCTERM_INSTANCE=dev`,
+  - CLAUDE.md: working rules (self-hosting with `HAETTY_INSTANCE=dev`,
     protected areas needing review, keep ccx as recovery path, reference
     frame updates as separate commits).
   - Regression `reg.sh p5` 21/21. Size (`dist`): Linux 6 271 928 →
@@ -945,7 +945,7 @@ regression list, measurements), then committed, pushed and mirrored.
 - **2026-11-05 Review A3 + B6 (protected area, approved) — synchronous
   PermissionRequest, 250 ms for synchronous hooks.**
   - PermissionRequest is a synchronous hook (no output, exit 0). Test
-    `crates/ccterm-gui/tests/permission.rs` runs the real `ccterm hook` in
+    `crates/ccterm-gui/tests/permission.rs` runs the real `haetty hook` in
     Claude Code's order with fake JSON (PreToolUseAll → PermissionRequest →
     [dialog] → late PreToolUseAll → PostToolUse) against a daemon and reads
     the daemon state right after each hook process ends: `Ask` is there as
@@ -983,25 +983,25 @@ regression list, measurements), then committed, pushed and mirrored.
     attached again, no `--resume` in its command line.
   - D9: DESIGN.md §3.4 hook budget is now Claude Code's wait for a
     synchronous hook (≤ 250 ms enforced; measured Linux 4.4 ms, Windows
-    69–76 ms median). D10: README — ccterm does not change Claude Code's
+    69–76 ms median). D10: README — haetty does not change Claude Code's
     permission mode; the user's settings apply unchanged.
 
 - **2026-11-05 Review B7 — large hook input without a daemon: no change
   needed.** Real Claude Code 2.1.318 (isolated HOME, fake key) driven by
-  `ccterm-headless`; a synchronous exec-form UserPromptSubmit hook (the
+  `haetty-headless`; a synchronous exec-form UserPromptSubmit hook (the
   event whose input carries the whole prompt) with pasted prompts of
   2 bytes, 64 KB, 1 MB and 4 MB; three hooks compared: one reading all of
-  stdin, one exiting without reading, `ccterm hook` with no daemon.
+  stdin, one exiting without reading, `haetty hook` with no daemon.
   - Claude Code passes hook input over a **socket** (not a pipe), written
     with `MSG_DONTWAIT|MSG_NOSIGNAL`; ~214 KB fit in its buffer. From 1 MB
     on, a hook that exits without reading makes Claude Code's write fail
-    with `EPIPE` (strace: 1 EPIPE in every 1 MB / 4 MB run of `ccterm
+    with `EPIPE` (strace: 1 EPIPE in every 1 MB / 4 MB run of `haetty
     hook` and of the plain no-read hook; none for the reading hook).
   - Claude Code ignores it: no line on the screen (also in the ctrl+o
     detail view), `--debug-file` logs `finished with status 0` for the hook
     and no extra error/warning line compared with the reading hook at the
     same size, nothing in the transcript. The prompt goes through.
-  - `ccterm hook` with 4 MB of input and no daemon exits in 2.4–7.5 ms
+  - `haetty hook` with 4 MB of input and no daemon exits in 2.4–7.5 ms
     (pipe, socket pair, file, slow writer: ~10 ms), exit 0.
   - Conclusion: exiting without draining stdin causes no hook error, so the
     "drain stdin with a time limit" fix is not made (it would only add
@@ -1011,17 +1011,38 @@ regression list, measurements), then committed, pushed and mirrored.
     `scratchpad\b7\` (`drive2.sh`, `matrix3.sh`, `summary3.txt`,
     `errdiff.txt`).
 
+- **2026-11-05 Rename to haetty (user-visible names).** Executables
+  `haetty` / `haetty-headless`; app id `io.github.dhwan0112.haetty`
+  (Wayland `app_id`, X11 `WM_CLASS`, desktop file, hicolor icon name);
+  directories, socket and pipe `haetty` (instances `haetty-dev`, app id
+  `….haetty.dev`); window title, usage, messages, `TERM_PROGRAM` and
+  XTVERSION; environment `HAETTY_*` with the old `CCTERM_*` read as a
+  fallback and announced once in the log; the hook and status-line
+  commands injected into Claude Code tabs use the running executable, now
+  `haetty` (`HAETTY_SESSION_ID`, `HAETTY_INSTANCE` in the children).
+  Migration (`migrate.rs`, GUI and daemon start): the old config file and
+  tab sets are copied when haetty has none; a running `ccterm daemon` is
+  reported and left alone (DESIGN.md §3.9). Crates and the repository
+  directory keep `ccterm` until their own commit. Evidence:
+  - `crates/ccterm-gui/tests/migrate.rs` (real binary): old config and
+    `last.tsv`/`saved.tsv` copied byte-identical, originals kept; daemon
+    log says so; an "old daemon" listening at `rt/ccterm/daemon.sock` with a
+    session keeps its session and answers, the new daemon has its own; a
+    second start does not overwrite a changed haetty config;
+    `CCTERM_SOCKET` still reaches a daemon and is announced exactly once.
+  - Instances test updated (`haetty-dev`, `io.github.dhwan0112.haetty.dev`).
+
 ### ccx comparison (milestone 3)
 
-| ccx | ccterm | |
+| ccx | haetty | |
 |---|---|---|
 | `--settings` with hooks + statusLine; user settings merged (hooks appended, statusLine dropped with warning) | same, a per-session file; exec-form hooks | ported |
 | permissions.ask (39 git/gh rules), bypassPermissions default, `--safe` tab, tui fullscreen, autoCompactWindow, NO_FLICKER/TRUECOLOR env | — | intentionally dropped (a terminal does not change Claude Code's behaviour) |
 | attention: amber on Stop/idle, red `?` on permission/elicitation/agent input, cleared by selecting (amber) or prompt/tool (red) | same marks; Ask cleared only by later-started events, not by PreToolUse; PermissionRequest also sets Ask | ported with changes |
 | terminal silent | taskbar/urgency hint + Linux `notify-send` when unfocused | new |
-| statusline-tee (prints nothing) | `ccterm statusline` (prints nothing) | ported |
+| statusline-tee (prints nothing) | `haetty statusline` (prints nothing) | ported |
 | panel: context bar, limits with reset, cost, cache, lines, workers, updated, model·effort, key rows | panel without bar graph, model·effort and key rows (Claude Code / palette show those) | ported with changes |
-| status row in Claude's status line | ccterm's own bottom row incl. "esc to interrupt" | ported with changes |
+| status row in Claude's status line | haetty's own bottom row incl. "esc to interrupt" | ported with changes |
 | pre/post snapshots, apply_edit, 2 MiB, 20 newest | same in Rust; the copy is taken in the synchronous hook; credential-like paths never read | ported with changes |
 | diff views: last edit / vs HEAD / git diff tree; keys j/k space/b g/G r m Tab | last edit only, same scroll keys | ported (edit view); HEAD and tree views deferred |
 | orchestration hooks (Agent pre/post, STATUS: verified/blocked/needs_review) | SubagentStart/Stop durations only | deferred to M4 (orchestrator) |
@@ -1032,7 +1053,7 @@ regression list, measurements), then committed, pushed and mirrored.
 
 ## 7. Long-term direction (constrains current work)
 
-ccterm grows into one standalone binary with three layers: the terminal, a
+haetty grows into one standalone binary with three layers: the terminal, a
 Claude Code adapter (hook events, status line JSON, session ids, transcripts,
 permission waits) and an orchestrator (task queue, worker sessions, worktrees,
 worker reports in the STATUS/ARTIFACT/EVIDENCE/BLOCKERS/NEXT_ACTION format).
@@ -1080,9 +1101,9 @@ format, durable ids, event log, roles, hooks, adapter and CLI now exist;
   `TMUX`/`TMUX_PANE` removal and `TERM*`), so a user's own
   `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` setup keeps working;
   nothing is forwarded anywhere else. Debug outputs that could capture
-  secrets are opt-in and local: `CCTERM_LOG=debug` no longer records typed or
-  IME text (only non-text keys and character counts); `CCTERM_DUMP_FRAME` and
-  `ccterm-headless --raw-log` / `--trace` (prints OSC 52 clipboard text)
+  secrets are opt-in and local: `HAETTY_LOG=debug` no longer records typed or
+  IME text (only non-text keys and character counts); `HAETTY_DUMP_FRAME` and
+  `haetty-headless --raw-log` / `--trace` (prints OSC 52 clipboard text)
   write screen contents or PTY bytes — never use them around `claude
   /login` or `setup-token`, and never ship them enabled.
 - **Test practice:** tests use an isolated `HOME` / `USERPROFILE` and a dummy
@@ -1096,7 +1117,7 @@ format, durable ids, event log, roles, hooks, adapter and CLI now exist;
   (`%USERPROFILE%\ccterm-win\scripts` on the dev machine) strip them all
   (`cchome.sh`, the `.ps1` files).
 - **Hooks / adapter / orchestrator / CLI JSON / MCP:** not started; nothing
-  conflicts. The binary is still the GUI (`ccterm`); the first non-option
+  conflicts. The binary is still the GUI (`haetty`); the first non-option
   word is the program, except the reserved subcommand names (`gui`,
   `daemon`, `hook`, `statusline`, `run`, `headless`, `install-desktop`,
   `status`; `main.rs` `SUBCOMMANDS`), which end with "not implemented yet"
@@ -1105,9 +1126,9 @@ format, durable ids, event log, roles, hooks, adapter and CLI now exist;
   - Layout changes without user input: 0 in steady state — the grid changes
     only on `Resized` / `ScaleFactorChanged` from the window system. At
     startup under WSLg the window passes through scale 1.75 → 1.0 before the
-    first frame (several resizes, see the ccterm log), which costs Claude
+    first frame (several resizes, see the haetty log), which costs Claude
     Code one extra redraw; not seen on Windows.
-  - Accent colours on an idle screen: 0 drawn by ccterm (it draws no UI of
+  - Accent colours on an idle screen: 0 drawn by haetty (it draws no UI of
     its own; padding `extend` repeats the application's own edge colours).
   - With one tab: nothing besides the terminal — the status line does not
     exist yet (adapter milestone).

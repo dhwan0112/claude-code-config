@@ -1,6 +1,6 @@
 //! The permission question reaches the daemon before Claude Code can show
 //! its dialog (DESIGN.md §3.13): PermissionRequest is a synchronous hook, so
-//! Claude Code waits for `ccterm hook PermissionRequest` to exit; the hook
+//! Claude Code waits for `haetty hook PermissionRequest` to exit; the hook
 //! exits only after the daemon has handled the report. Here the real binary
 //! runs the hooks in Claude Code's order with fake JSON, and the daemon's
 //! state is read right after each hook process ends. Unix only (sh).
@@ -16,15 +16,15 @@ use ccterm_proto::paths::Endpoint;
 use ccterm_proto::wire::{Attention, CreateSpec, Grid, SessionInfo};
 use ccterm_proto::{Client, Role};
 
-const BIN: &str = env!("CARGO_BIN_EXE_ccterm");
+const BIN: &str = env!("CARGO_BIN_EXE_haetty");
 
-/// Runs `ccterm hook EVENT` with `json` on stdin; returns how long it took.
+/// Runs `haetty hook EVENT` with `json` on stdin; returns how long it took.
 fn hook(ep: &Endpoint, session: &str, event: &str, json: &str) -> Duration {
     let t = Instant::now();
     let mut c = Command::new(BIN)
         .args(["hook", event])
-        .env("CCTERM_SOCKET", &ep.0)
-        .env("CCTERM_SESSION_ID", session)
+        .env("HAETTY_SOCKET", &ep.0)
+        .env("HAETTY_SESSION_ID", session)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -42,7 +42,7 @@ fn info(c: &Client, id: &str) -> SessionInfo {
 
 #[test]
 fn permission_request_is_in_the_daemon_before_the_hook_exits() {
-    let dir = std::env::temp_dir().join(format!("ccterm-permission-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("haetty-permission-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("bin")).unwrap();
     let ep = Endpoint(dir.join("rt").join("daemon.sock"));

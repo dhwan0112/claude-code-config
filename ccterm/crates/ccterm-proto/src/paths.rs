@@ -13,7 +13,7 @@ pub struct Endpoint(pub PathBuf);
 impl Endpoint {
     /// The default endpoint for this user.
     pub fn default_for_user() -> io::Result<Endpoint> {
-        if let Some(p) = std::env::var_os("CCTERM_SOCKET") {
+        if let Some(p) = product::env_os("SOCKET") {
             return Ok(Endpoint(p.into()));
         }
         #[cfg(unix)]
@@ -87,48 +87,89 @@ pub fn private_dir() -> io::Result<PathBuf> {
     }
 }
 
-/// State directory: Linux `$XDG_STATE_HOME/<app>` (`~/.local/state/<app>`),
-/// Windows `%LOCALAPPDATA%\<app>`. `CCTERM_STATE_DIR` overrides (tests).
-pub fn state_dir() -> PathBuf {
-    if let Some(p) = std::env::var_os("CCTERM_STATE_DIR") {
-        return p.into();
-    }
+/// The state directory base (without the product directory).
+fn state_base() -> PathBuf {
     #[cfg(windows)]
     {
-        let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-        base.join(product::dir())
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir)
     }
     #[cfg(not(windows))]
     {
-        let base = std::env::var_os("XDG_STATE_HOME")
+        std::env::var_os("XDG_STATE_HOME")
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
-            .unwrap_or_else(std::env::temp_dir);
-        base.join(product::dir())
+            .unwrap_or_else(std::env::temp_dir)
     }
 }
 
-/// Config directory: Linux `$XDG_CONFIG_HOME/<app>` (`~/.config/<app>`),
-/// Windows `%APPDATA%\<app>`. `CCTERM_CONFIG_DIR` overrides (tests).
-pub fn config_dir() -> PathBuf {
-    if let Some(p) = std::env::var_os("CCTERM_CONFIG_DIR") {
-        return p.into();
-    }
+/// The config directory base (without the product directory).
+fn config_base() -> PathBuf {
     #[cfg(windows)]
     {
-        let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-        base.join(product::dir())
+        std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir)
     }
     #[cfg(not(windows))]
     {
-        let base = std::env::var_os("XDG_CONFIG_HOME")
+        std::env::var_os("XDG_CONFIG_HOME")
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-            .unwrap_or_else(std::env::temp_dir);
-        base.join(product::dir())
+            .unwrap_or_else(std::env::temp_dir)
     }
+}
+
+/// The former name's state directory (`~/.local/state/ccterm`), for the
+/// migration; `None` when the state directory is overridden.
+pub fn legacy_state_dir() -> Option<PathBuf> {
+    product::env_os("STATE_DIR").is_none().then(|| state_base().join(product::legacy_dir()))
+}
+
+/// The former name's config directory; `None` when overridden.
+pub fn legacy_config_dir() -> Option<PathBuf> {
+    product::env_os("CONFIG_DIR").is_none().then(|| config_base().join(product::legacy_dir()))
+}
+
+/// Where a daemon of the former name would listen (never created here);
+/// `None` when the socket is overridden.
+pub fn legacy_endpoint() -> Option<Endpoint> {
+    if product::env_os("SOCKET").is_some() {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        let base = std::env::var_os("XDG_RUNTIME_DIR").filter(|v| !v.is_empty());
+        // SAFETY: getuid has no preconditions.
+        let uid = unsafe { libc::getuid() };
+        let dir = match base {
+            Some(b) => PathBuf::from(b).join(product::legacy_dir()),
+            None => std::env::temp_dir().join(format!("{}-{uid}", product::legacy_dir())),
+        };
+        Some(Endpoint(dir.join("daemon.sock")))
+    }
+    #[cfg(windows)]
+    {
+        let sid = crate::transport::current_user_sid().ok()?;
+        Some(Endpoint(format!(r"\\.\pipe\{}-{}", product::legacy_dir(), sid).into()))
+    }
+}
+
+/// State directory: Linux `$XDG_STATE_HOME/<app>` (`~/.local/state/<app>`),
+/// Windows `%LOCALAPPDATA%\<app>`. `HAETTY_STATE_DIR` overrides (tests).
+pub fn state_dir() -> PathBuf {
+    if let Some(p) = product::env_os("STATE_DIR") {
+        return p.into();
+    }
+    state_base().join(product::dir())
+}
+
+/// Config directory: Linux `$XDG_CONFIG_HOME/<app>` (`~/.config/<app>`),
+/// Windows `%APPDATA%\<app>`. `HAETTY_CONFIG_DIR` overrides (tests).
+pub fn config_dir() -> PathBuf {
+    if let Some(p) = product::env_os("CONFIG_DIR") {
+        return p.into();
+    }
+    config_base().join(product::dir())
 }
 
 #[cfg(all(test, unix))]
@@ -138,7 +179,7 @@ mod tests {
 
     #[test]
     fn private_dir_is_created_0700_and_checked() {
-        let base = std::env::temp_dir().join(format!("ccterm-paths-test-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("haetty-paths-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let d = base.join("rt");
         ensure_private_dir(&d).unwrap();

@@ -1,7 +1,7 @@
 //! The winit application: one window with tabs. Each tab is a session in the
-//! daemon (`ccterm daemon`, started on demand); this process is a client
+//! daemon (`haetty daemon`, started on demand); this process is a client
 //! that mirrors their screens (DESIGN.md §3.1, §3.6). The window grid is
-//! the active tab's screen plus the cells ccterm draws itself (tab bar from
+//! the active tab's screen plus the cells haetty draws itself (tab bar from
 //! two tabs on, palette, hints; `crate::ui`).
 
 use std::collections::HashSet;
@@ -77,7 +77,7 @@ struct Tab {
     exited: Option<Option<u32>>,
     /// Size last sent to the daemon.
     size: GridSize,
-    /// Claude Code with ccterm's integration: a status row is reserved.
+    /// Claude Code with haetty's integration: a status row is reserved.
     integrated: bool,
     claude: Option<Arc<ClaudeInfo>>,
 }
@@ -120,7 +120,7 @@ struct Win {
     proxy: EventLoopProxy<UserEvent>,
     tabs: Vec<Tab>,
     active: usize,
-    /// What is drawn: the active tab's screen with ccterm's own cells.
+    /// What is drawn: the active tab's screen with haetty's own cells.
     composed: Option<Snapshot>,
     /// Rows changed since the last frame was drawn.
     dirty: Vec<bool>,
@@ -307,6 +307,9 @@ impl App {
             }
             win.show_hint(parts.join(", "));
         }
+        if let Some(h) = self.opts.first_hint.take() {
+            win.show_hint(h);
+        }
         win.save_last();
         self.win = Some(win);
         Ok(())
@@ -314,7 +317,7 @@ impl App {
 }
 
 impl Win {
-    /// Rows of ccterm's own chrome above the terminal (the tab bar, shown
+    /// Rows of haetty's own chrome above the terminal (the tab bar, shown
     /// from two tabs on).
     fn top(&self) -> u16 {
         u16::from(self.tabs.len() >= 2)
@@ -350,7 +353,7 @@ impl Win {
     }
 
     /// Opens a tab running the window's command in the active tab's
-    /// directory (else where ccterm started) and selects it.
+    /// directory (else where haetty started) and selects it.
     fn open_tab(&mut self, cwd: Option<String>) -> Result<(), String> {
         let spec = TabSpec { program: self.command.0.clone(), args: self.command.1.clone(), cwd, name: None };
         self.open_spec(spec)
@@ -499,7 +502,7 @@ impl Win {
         let proxy = self.proxy.clone();
         let sid = id.clone();
         std::thread::Builder::new()
-            .name("ccterm-gui-events".into())
+            .name("haetty-gui-events".into())
             .spawn(move || {
                 for ev in events.iter() {
                     if proxy.send_event(UserEvent::Session(sid.clone(), ev)).is_err() {
@@ -688,7 +691,7 @@ impl Win {
         self.window.set_title(&title);
     }
 
-    /// Sizes of the GUI's own heap structures, for the log (`CCTERM_LOG=info`).
+    /// Sizes of the GUI's own heap structures, for the log (`HAETTY_LOG=info`).
     fn log_memory(&self) {
         let empty = vec![];
         let all = self.composed.as_ref().map_or(&empty, |s| &s.cells);
@@ -793,7 +796,7 @@ impl Win {
         }
     }
 
-    /// Rebuilds the window grid from the active tab and ccterm's cells.
+    /// Rebuilds the window grid from the active tab and haetty's cells.
     fn recompose(&mut self) {
         let (fg, bg) = self.defaults;
         let empty = Snapshot { default_fg: fg, default_bg: bg, ..Default::default() };
@@ -962,8 +965,8 @@ impl Win {
                 self.palette = None;
                 if let Some(a) = a {
                     self.recompose();
-                    // Chosen in ccterm's own UI: what it sends is made up by
-                    // ccterm, not typed into the program (DESIGN.md §3.7).
+                    // Chosen in haetty's own UI: what it sends is made up by
+                    // haetty, not typed into the program (DESIGN.md §3.7).
                     self.run(a, Origin::Program);
                     return;
                 }
@@ -1150,7 +1153,7 @@ fn save_ui_state(open: bool, width: u16) {
     let dir = ccterm_proto::paths::state_dir();
     let _ = std::fs::create_dir_all(&dir);
     let text = format!(
-        "# ccterm window state\nstatus-panel = {}\nstatus-panel-width = {width}\n",
+        "# haetty window state\nstatus-panel = {}\nstatus-panel-width = {width}\n",
         if open { "open" } else { "closed" }
     );
     if let Err(e) = std::fs::write(dir.join("ui"), text) {
@@ -1387,13 +1390,13 @@ fn decorated(d: Decorations) -> bool {
     }
 }
 
-/// Padding settings at a scale factor; `CCTERM_DEBUG_PADDING=1` paints it red.
+/// Padding settings at a scale factor; `HAETTY_DEBUG_PADDING=1` paints it red.
 fn padding_style(c: &crate::config::Config, scale: f64) -> PaddingStyle {
     PaddingStyle {
         min: (c.window_padding * scale).round() as u32,
         balance: c.padding_balance,
         color: c.padding_color,
-        debug: std::env::var_os("CCTERM_DEBUG_PADDING").is_some_and(|v| !v.is_empty() && v != "0"),
+        debug: ccterm_proto::product::env_os("DEBUG_PADDING").is_some_and(|v| !v.is_empty() && v != "0"),
     }
 }
 

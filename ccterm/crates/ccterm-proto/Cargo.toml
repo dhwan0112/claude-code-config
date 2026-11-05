@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "ccterm daemon protocol: product constants, paths, wire types, framing, local transport, session client"
+description = "haetty daemon protocol: product constants, paths, wire types, framing, local transport, session client"
 
 [dependencies]
 ccterm-core.workspace = true

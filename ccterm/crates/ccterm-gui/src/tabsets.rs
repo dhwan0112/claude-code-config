@@ -58,7 +58,7 @@ pub fn path(dir: &Path, name: &str) -> PathBuf {
 
 pub fn format(name: &str, tabs: &[SavedTab]) -> String {
     let mut s = format!(
-        "# ccterm tabs \"{name}\": {} tab(s). Columns: name, folder, program, args (U+001F-separated), Claude Code session id, active\n",
+        "# haetty tabs \"{name}\": {} tab(s). Columns: name, folder, program, args (U+001F-separated), Claude Code session id, active\n",
         tabs.len()
     );
     for t in tabs {
@@ -184,10 +184,10 @@ mod tests {
             SavedTab { args: vec![], claude_session: String::new(), ..t("three", false) },
         ];
         let text = format("last", &tabs);
-        assert!(text.starts_with("# ccterm tabs \"last\": 3 tab(s)"));
+        assert!(text.starts_with("# haetty tabs \"last\": 3 tab(s)"));
         assert_eq!(parse(&text), tabs);
         assert!(parse("# x\nbad line\n\t\t\t\t\t1\n").is_empty());
-        let d = std::env::temp_dir().join(format!("ccterm-tabsets-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("haetty-tabsets-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         save(&d, "last", &tabs).unwrap();
         assert_eq!(rotate_last(&d), tabs);

@@ -17,11 +17,11 @@ fn main() {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     // Up to 64 px: the PNGs are stored uncompressed, and a 256 px entry
     // alone would add 262 KB to the executable (Explorer scales up).
-    let ico = out.join("ccterm.ico");
+    let ico = out.join("haetty.ico");
     std::fs::write(&ico, icon::ico(&[16, 24, 32, 48, 64])).expect("write ico");
-    let rc = out.join("ccterm.rc");
+    let rc = out.join("haetty.rc");
     std::fs::write(&rc, format!("1 ICON \"{}\"\n", ico.display().to_string().replace('\\', "/"))).expect("write rc");
-    let obj = out.join("ccterm-icon.o");
+    let obj = out.join("haetty-icon.o");
     let windres = std::env::var("WINDRES").unwrap_or_else(|_| "x86_64-w64-mingw32-windres".into());
     let ok = std::process::Command::new(&windres)
         .arg("-i")
@@ -35,6 +35,6 @@ fn main() {
     if ok {
         println!("cargo:rustc-link-arg-bins={}", obj.display());
     } else {
-        println!("cargo:warning=windres ({windres}) not available: ccterm.exe gets no icon resource");
+        println!("cargo:warning=windres ({windres}) not available: haetty.exe gets no icon resource");
     }
 }

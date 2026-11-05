@@ -1,4 +1,4 @@
-//! The ccterm daemon (DESIGN.md §3.1, §3.6–3.8): owns the sessions, serves
+//! The haetty daemon (DESIGN.md §3.1, §3.6–3.8): owns the sessions, serves
 //! frames and events to clients over the local socket, enforces roles.
 //!
 //! One thread owns all state and handles every event in order (connections,
@@ -165,7 +165,7 @@ pub fn run(cfg: Config) -> io::Result<()> {
     }
     let (tx, rx) = unbounded::<Ev>();
     let atx = tx.clone();
-    std::thread::Builder::new().name("ccterm-accept".into()).spawn(move || {
+    std::thread::Builder::new().name("haetty-accept".into()).spawn(move || {
         let mut next: ClientId = 1;
         loop {
             match listener.accept() {
@@ -174,7 +174,7 @@ pub fn run(cfg: Config) -> io::Result<()> {
                     next += 1;
                     let tx = atx.clone();
                     let _ = std::thread::Builder::new()
-                        .name(format!("ccterm-client-{id}"))
+                        .name(format!("haetty-client-{id}"))
                         .spawn(move || client_reader(id, s, tx));
                 }
                 Err(e) => {
@@ -244,7 +244,7 @@ fn client_reader(id: ClientId, mut s: Stream, tx: Sender<Ev>) {
         return;
     }
     let (wtx, wrx) = unbounded::<DaemonMsg>();
-    let _ = std::thread::Builder::new().name(format!("ccterm-writer-{id}")).spawn(move || {
+    let _ = std::thread::Builder::new().name(format!("haetty-writer-{id}")).spawn(move || {
         for m in wrx {
             if write_msg(&mut w, &m).is_err() {
                 w.shutdown();
@@ -413,7 +413,7 @@ impl Daemon {
         let allowed = match (&m, role) {
             (ClientMsg::Hello { .. }, _) => false,
             // Hook and status-line reports only from Report clients (the
-            // `ccterm hook` / `ccterm statusline` processes).
+            // `haetty hook` / `haetty statusline` processes).
             (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. }, Role::Report) => true,
             (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. }, _) => false,
             (ClientMsg::Sync, _) => true,
@@ -637,7 +637,7 @@ impl Daemon {
         }
     }
 
-    /// Claude Code with the integration: its arguments with ccterm's
+    /// Claude Code with the integration: its arguments with haetty's
     /// `--settings` file (merged with the user's own `--settings`).
     fn claude_args(&self, id: &str, spec: &CreateSpec) -> Option<(Vec<String>, PathBuf)> {
         if !spec.claude_integration || !settings::is_claude(&spec.program) {
@@ -646,7 +646,7 @@ impl Daemon {
         let (rest, user) = settings::split_user_settings(&spec.args);
         let user = user.and_then(|v| {
             settings::load_user(&v, spec.cwd.as_deref().map(std::path::Path::new))
-                .map_err(|e| log::warn!("session {id}: {e}; ccterm's settings only"))
+                .map_err(|e| log::warn!("session {id}: {e}; haetty's settings only"))
                 .ok()
         });
         let exe = product::exe_path().to_string_lossy().into_owned();
@@ -704,7 +704,7 @@ impl Daemon {
                 let events = session.events.clone();
                 let tx = self.tx.clone();
                 let sid = id.clone();
-                let _ = std::thread::Builder::new().name(format!("ccterm-sess-{id}")).spawn(move || {
+                let _ = std::thread::Builder::new().name(format!("haetty-sess-{id}")).spawn(move || {
                     for e in events {
                         if tx.send(Ev::Session(sid.clone(), e)).is_err() {
                             return;

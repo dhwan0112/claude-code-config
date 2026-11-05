@@ -1,4 +1,4 @@
-//! Everything ccterm draws itself, as cells (DESIGN.md §1.3, §2): the tab
+//! Everything haetty draws itself, as cells (DESIGN.md §1.3, §2): the tab
 //! bar, the command palette and short hints, composed with the active tab's
 //! screen into one window grid that the painter draws like any terminal.
 //! Neutral greys only (§2.2); the two exceptions are Claude Code's

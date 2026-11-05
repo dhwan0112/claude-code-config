@@ -1,8 +1,8 @@
 //! ConPTY backend.
 //!
-//! Talks to the documented pseudoconsole API directly so that ccterm can pick
+//! Talks to the documented pseudoconsole API directly so that haetty can pick
 //! the ConPTY implementation and its creation flags (portable-pty 0.9 can do
-//! neither). Host order: a side-loaded `conpty.dll` (`CCTERM_CONPTY_DLL`, or
+//! neither). Host order: a side-loaded `conpty.dll` (`HAETTY_CONPTY_DLL`, or
 //! next to the executable), the copy embedded at build time, kernel32.
 //! `conpty.dll` starts the `OpenConsole.exe` in its own directory, so both
 //! files are always written together.
@@ -150,12 +150,12 @@ mod embedded {
     use std::path::{Path, PathBuf};
 
     /// Write conpty.dll, OpenConsole.exe and Microsoft's licence once per
-    /// version to `%LOCALAPPDATA%\ccterm\conpty\<version>` and return the
+    /// version to `%LOCALAPPDATA%\haetty\conpty\<version>` and return the
     /// DLL path. Files already present with the right size are left alone
-    /// (another ccterm may have them loaded).
+    /// (another haetty may have them loaded).
     pub(super) fn install() -> io::Result<PathBuf> {
         let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-        let dir = base.join("ccterm").join("conpty").join(conpty_bin_vendored::VERSION);
+        let dir = base.join("haetty").join("conpty").join(conpty_bin_vendored::VERSION);
         std::fs::create_dir_all(&dir)?;
         put(&dir.join("OpenConsole.exe"), conpty_bin_vendored::OPENCONSOLE_EXE)?;
         put(&dir.join("LICENSE-MICROSOFT.txt"), conpty_bin_vendored::MICROSOFT_LICENSE.as_bytes())?;
@@ -190,7 +190,14 @@ mod embedded {
 
 fn sideload_candidates() -> Vec<PathBuf> {
     let mut v = Vec::new();
-    if let Some(p) = std::env::var_os("CCTERM_CONPTY_DLL") {
+    // HAETTY_CONPTY_DLL; the old name CCTERM_CONPTY_DLL is still read.
+    if let Some(p) = std::env::var_os("HAETTY_CONPTY_DLL").or_else(|| {
+        let v = std::env::var_os("CCTERM_CONPTY_DLL");
+        if v.is_some() {
+            log::warn!("CCTERM_CONPTY_DLL is the old name of HAETTY_CONPTY_DLL; please rename it");
+        }
+        v
+    }) {
         v.push(PathBuf::from(p));
     }
     if let Ok(exe) = std::env::current_exe() {
@@ -284,7 +291,7 @@ impl Drop for PseudoConsole {
     fn drop(&mut self) {
         // Closing the pseudoconsole ends the child's console session and makes
         // the output pipe report EOF. Older hosts may block here until the
-        // output pipe is drained; ccterm keeps a reader thread on it.
+        // output pipe is drained; haetty keeps a reader thread on it.
         unsafe { (self.api.close)(self.hpc) };
     }
 }

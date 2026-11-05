@@ -1,4 +1,4 @@
-//! `ccterm install-desktop`: Linux desktop entry and icons for the current
+//! `haetty install-desktop`: Linux desktop entry and icons for the current
 //! user (`$XDG_DATA_HOME`, default `~/.local/share`): `applications/<app>.desktop`
 //! with the running executable, `StartupWMClass` = app id (= Wayland
 //! `app_id` = X11 `WM_CLASS`), hicolor PNGs (48, 128, 256) and an SVG.
@@ -69,15 +69,15 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn installs_into_xdg_data_home() {
-        let d = std::env::temp_dir().join(format!("ccterm-install-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("haetty-install-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         // SAFETY of the env change: this test is the only user of XDG_DATA_HOME.
         std::env::set_var("XDG_DATA_HOME", &d);
         let msg = install_desktop().unwrap();
         std::env::remove_var("XDG_DATA_HOME");
-        assert!(msg.contains("ccterm.desktop"), "{msg}");
-        assert!(d.join("icons/hicolor/256x256/apps/ccterm.png").exists());
-        assert!(d.join("icons/hicolor/scalable/apps/ccterm.svg").exists());
+        assert!(msg.contains("io.github.dhwan0112.haetty.desktop"), "{msg}");
+        assert!(d.join("icons/hicolor/256x256/apps/io.github.dhwan0112.haetty.png").exists());
+        assert!(d.join("icons/hicolor/scalable/apps/io.github.dhwan0112.haetty.svg").exists());
         std::fs::remove_dir_all(&d).unwrap();
     }
 }

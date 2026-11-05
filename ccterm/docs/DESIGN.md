@@ -1,6 +1,7 @@
 # Design: terminal + Claude Code adapter + orchestrator
 
-Working name `ccterm`; product name undecided (candidates: haetty, trinitty).
+Product name **haetty** (working name until 2026-11-05: `ccterm`; the
+crates and the repository directory keep that name until their own rename).
 This document fixes the outer design (what the user sees) and the inner
 design (processes, crates, data flow) together, so that each screen element
 has exactly one producer and one rendering path. `docs/HANDOFF.md` holds the
@@ -70,8 +71,8 @@ claude (in PTY) ──hook command──▶ `<bin> hook <event>` ───▶ �
                                                             └─ orchestrator (tasks, workers, reports)
 ```
 
-- One executable. `ccterm` (no subcommand, or `gui`) is a GUI **client**;
-  `ccterm daemon` owns the sessions. The GUI connects to the daemon's
+- One executable. `haetty` (no subcommand, or `gui`) is a GUI **client**;
+  `haetty daemon` owns the sessions. The GUI connects to the daemon's
   socket and, when nothing answers, starts `<own exe> daemon` detached and
   retries for up to 2 s. Subcommands are dispatched in `main` before any
   font, winit or softbuffer code runs, so `daemon`, `hook`, `statusline`
@@ -91,7 +92,7 @@ claude (in PTY) ──hook command──▶ `<bin> hook <event>` ───▶ �
   `<bin> statusline`), reading stdin JSON and forwarding it over the socket.
   Paths in hook commands are quoted and use forward slashes (Windows runs hook
   commands through bash).
-- `ccterm-headless` keeps running sessions in-process (tests, scripts).
+- `haetty-headless` keeps running sessions in-process (tests, scripts).
 
 ### 3.2 Crates
 
@@ -102,8 +103,8 @@ claude (in PTY) ──hook command──▶ `<bin> hook <event>` ───▶ �
 | `ccterm-proto` | product name constants, paths, wire types (postcard), framing, local socket / named pipe transport, client for the session API |
 | `ccterm-daemon` | session owner: sessions, subscriptions and frame diffs, roles, state file, event log |
 | `ccterm-cc` | Claude Code adapter: `--settings` builder, hook and status-line parsing, edit snapshots (milestone 3) |
-| `ccterm-gui` (bin `ccterm`) | window, renderer, tabs, palette, panels; subcommand dispatch (`gui`, `daemon`, `status`, `hook`, `statusline`, `install-desktop`) |
-| `ccterm-headless` | in-process step runner |
+| `ccterm-gui` (bin `haetty`) | window, renderer, tabs, palette, panels; subcommand dispatch (`gui`, `daemon`, `status`, `hook`, `statusline`, `install-desktop`) |
+| `haetty-headless` | in-process step runner |
 
 Rendering and UI stay in `ccterm-gui` until a second consumer needs them
 (the earlier plan had `ccterm-render` / `ccterm-ui` crates; splitting now
@@ -129,14 +130,14 @@ added if profiling asks for it.
 
 | Item | Target |
 |---|---|
-| Binary: `ccterm`, `dist` profile (stripped) | ≤ 12 MB Linux, ≤ 10 MB Windows (incl. the embedded ConPTY) |
+| Binary: `haetty`, `dist` profile (stripped) | ≤ 12 MB Linux, ≤ 10 MB Windows (incl. the embedded ConPTY) |
 | Idle CPU, Claude Code idle | ~0 % |
-| Anonymous memory of ccterm — GUI plus daemon — with one session (120x36, 10k lines of scrollback at 120 columns), Claude Code idle | ≤ 25 MB |
+| Anonymous memory of haetty — GUI plus daemon — with one session (120x36, 10k lines of scrollback at 120 columns), Claude Code idle | ≤ 25 MB |
 | Anonymous memory per additional session or tab (daemon + GUI), Claude Code idle, its scrollback filled to the default limit | ≤ 16 MB |
 | Key press → frame | ≤ 16 ms at 120x36 on a laptop CPU |
 
 Anonymous memory is Linux `RssAnon` (`/proc/PID/status`) and Windows
-private working set: heap, stacks and anonymous mappings of ccterm itself.
+private working set: heap, stacks and anonymous mappings of haetty itself.
 Not counted: file-backed pages (shared libraries, memory-mapped fonts;
 `RssFile`), shared memory with the display server (X11 MIT-SHM, Wayland
 pool buffers; `RssShmem`) and the child process (Claude Code).
@@ -166,7 +167,7 @@ line every 3 s):
 | GUI + daemon, one Claude Code tab, little scrollback | — | 5.9 + 5.1 MB |
 | Key → frame through the daemon, 120x36 | ≤ 16 ms | median 1.95 ms, p95 2.33 ms (Linux); 1.65 ms (Windows, P1) |
 | GUI draw per incremental frame, 120x36 | — | median 0.09 ms |
-| Claude Code's wait for a **synchronous** ccterm hook (edit-tool PreToolUse, PermissionRequest): from Claude Code starting the process to its exit | ≤ 250 ms always (enforced by the hook's own deadline); typical ≤ 10 ms Linux, ≤ 100 ms Windows | Linux median 4.4 ms, max 5.1; Windows median 69 ms (PermissionRequest) / 76 ms (PreToolUse), max 92 ms — process start alone 57 ms there |
+| Claude Code's wait for a **synchronous** haetty hook (edit-tool PreToolUse, PermissionRequest): from Claude Code starting the process to its exit | ≤ 250 ms always (enforced by the hook's own deadline); typical ≤ 10 ms Linux, ≤ 100 ms Windows | Linux median 4.4 ms, max 5.1; Windows median 69 ms (PermissionRequest) / 76 ms (PreToolUse), max 92 ms — process start alone 57 ms there |
 | Asynchronous hooks and the status line | not waited for by Claude Code; each ends within 1 s | Linux ~3 ms, Windows ~64 ms |
 
 ### 3.5 Local socket
@@ -236,14 +237,14 @@ line every 3 s):
 
 - `control`: the local GUI. Input (`Key`, `Mouse`, `Wheel`, `Paste`,
   `Focus`, `Resize`, `Scroll`, raw writes), `CreateSession`, `Close`.
-- `observe`: read-only (`ccterm status`, later CLI over SSH and MCP per §6).
+- `observe`: read-only (`haetty status`, later CLI over SSH and MCP per §6).
   Any input or session-changing message is answered with `Denied` and has no
   effect.
 - `report`: hook and status-line processes; may only send `Hook` and
   `StatusLine` — and only they may send them (a Control or Observe client
   sending a report is answered with `Denied`).
 - Every input message carries `origin` (`Human` = typed or clicked by the
-  person, from an OS input event; `Program` = made up by ccterm or a
+  person, from an OS input event; `Program` = made up by haetty or a
   program: palette actions, restored tabs, scripts, automation). The client
   library has no default: every input method takes the origin. While a
   session waits for a Claude Code permission answer or a question (known
@@ -252,7 +253,7 @@ line every 3 s):
 - What roles are and are not: a **cooperative separation between processes
   of the same user**, not a security boundary. Any process of that user can
   open the socket (0700 directory / pipe ACL for the user's SID) and claim
-  any role and any origin; the roles keep ccterm's own parts honest (a hook
+  any role and any origin; the roles keep haetty's own parts honest (a hook
   cannot type, `status` cannot close a session, a palette action cannot
   answer a permission prompt) and make mistakes visible (`Denied`). The
   boundary against other users is the socket's permissions; against the
@@ -279,8 +280,8 @@ line every 3 s):
   folder; each live session matches one saved tab), and a conversation
   running anywhere in the daemon is never resumed again (checked against
   the daemon's list at that moment, not the tabs' Claude Code state, which
-  arrives later). `ccterm` without a program opens no extra tab when
-  anything came back; `ccterm PROGRAM` still opens `PROGRAM`. Palette:
+  arrives later). `haetty` without a program opens no extra tab when
+  anything came back; `haetty PROGRAM` still opens `PROGRAM`. Palette:
   "Attach detached sessions". Sessions of another open window
   (`attached` > 0) are never taken.
 - Tab sets (`tabs/<name>.tsv` in the state directory, after ccx's
@@ -291,7 +292,7 @@ line every 3 s):
   after the requested tab; `restore-tabs = false` (config or
   `--restore-tabs false`) turns that off; palette: save as `saved`, open
   `saved`, open `previous`. Decision: restore *after* the requested tab
-  rather than instead of it, so `ccterm PROGRAM` always runs `PROGRAM` and
+  rather than instead of it, so `haetty PROGRAM` always runs `PROGRAM` and
   nothing is lost when a set is broken; tabs whose folder is gone are
   skipped with a log line. Alternatives not taken: reattaching the
   sessions a killed GUI left in the daemon (possible later: they are in
@@ -326,21 +327,34 @@ line every 3 s):
 
 ### 3.9 Product name
 
-The working name (`ccterm`; candidates haetty, trinitty) lives in one
-constant module, `ccterm_proto::product`: executable name used when
-spawning the daemon and in hook commands (taken from `current_exe()` at run
-time, falling back to the constant), app id (Wayland `app_id`, X11
-`WM_CLASS`, `.desktop` file, Windows AppUserModelID), socket, pipe, state and
-config directory names, window title prefix. Renaming = that module plus the
-`[[bin]] name` in `crates/ccterm-gui/Cargo.toml` (Cargo needs a literal).
+The product name, **haetty** (decided 2026-11-05; working name `ccterm`
+before), lives in one constant module, `ccterm_proto::product`: executable
+name used when spawning the daemon and in hook commands (taken from
+`current_exe()` at run time, falling back to the constant), app id
+`io.github.dhwan0112.haetty` (Wayland `app_id`, X11 `WM_CLASS` instance and
+class, `.desktop` file and hicolor icon name), socket, pipe, state and
+config directory names (`haetty`), window title, the environment prefix
+`HAETTY_`. Renaming also touches the `[[bin]]` names (`haetty`,
+`haetty-headless`; Cargo needs literals) and `TERM_PROGRAM` / XTVERSION in
+`ccterm-core` (below this crate, so not taken from the module).
+
+Former name: `product::env` reads `HAETTY_<NAME>` and falls back to
+`CCTERM_<NAME>`, logging once per variable that the old name was used (also
+for variables read before the logger existed). On start (GUI and daemon)
+`migrate::run` copies the old config file and `tabs/*.tsv` when haetty has
+none (originals stay; nothing is overwritten; skipped when the directories
+are overridden) and checks the old socket/pipe: a running `ccterm daemon`
+is reported in the log and a hint, never touched — the names do not
+overlap, so both daemons run side by side. Checked by
+`crates/ccterm-gui/tests/migrate.rs` with the real binary.
 
 Instances (added on request after P4): next to the name constants,
-`product::instance()` reads `CCTERM_INSTANCE` (lower-case ASCII letters,
+`product::instance()` reads `HAETTY_INSTANCE` (lower-case ASCII letters,
 digits, `-`, ≤ 16; unset or empty = stable). A named instance gets its own
-socket/pipe (`ccterm-dev`), runtime, state and config directories
-(`~/.local/state/ccterm-dev`, …), app id (`ccterm-dev`, so its desktop file
-and dock icon are separate) and window title prefix (`[dev] `). The daemon
-sets `CCTERM_INSTANCE` in every session's child, so hooks of a dev session
+socket/pipe (`haetty-dev`), runtime, state and config directories
+(`~/.local/state/haetty-dev`, …), app id (`io.github.dhwan0112.haetty.dev`,
+so its desktop file and dock icon are separate) and window title prefix (`[dev] `). The daemon
+sets `HAETTY_INSTANCE` in every session's child, so hooks of a dev session
 report to the dev daemon. Purpose: run a development build beside the
 stable one (self-hosting) without touching its sessions, tab sets or
 settings. Checked by `crates/ccterm-gui/tests/instances.rs` with two real
@@ -358,10 +372,10 @@ daemons.
 - The diff indicator says "N files changed · Ctrl+Shift+D": plain Ctrl+D
   reaches Claude Code (and exits it on an empty prompt), so app shortcuts
   use Ctrl+Shift.
-- `statusLine` is a single value: injecting ccterm's replaces the user's own
-  status line in ccterm tabs (as in ccx). `ccterm statusline` prints
+- `statusLine` is a single value: injecting haetty's replaces the user's own
+  status line in haetty tabs (as in ccx). `haetty statusline` prints
   nothing, so Claude Code draws no line of its own; the information goes to
-  ccterm's status line instead.
+  haetty's status line instead.
 - Settings are injected only into tabs whose program is `claude`.
 
 ### 3.11 Keys
@@ -375,7 +389,7 @@ Alt+M/P/T/O/Y/B/F/D/V.
 
 | Action | Default | Clash check |
 |---|---|---|
-| New tab | Ctrl+Shift+T | Claude Code: Ctrl+T (task list) only; distinct with the kitty protocol, legacy terminals cannot tell them apart but ccterm consumes the chord before the program |
+| New tab | Ctrl+Shift+T | Claude Code: Ctrl+T (task list) only; distinct with the kitty protocol, legacy terminals cannot tell them apart but haetty consumes the chord before the program |
 | Close tab (press twice) | Ctrl+Shift+W | Claude Code: Ctrl+W (delete word); same remark |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+PageDown / Ctrl+PageUp | free in Claude Code; Shift+Tab alone stays with the program |
 | Go to tab N | Alt+1 … Alt+9 | free in Claude Code; bash/readline uses Alt+digit as a numeric argument (rarely typed) — rebind if needed |
@@ -384,7 +398,7 @@ Alt+M/P/T/O/Y/B/F/D/V.
 | Diff pane / status panel (milestone 3) | Ctrl+Shift+D / Ctrl+Shift+S | free (Claude Code: Ctrl+D exit, Ctrl+S stash) |
 
 Linux: GNOME/KDE terminals use the same Ctrl+Shift family inside their own
-windows only; ccterm's window gets the keys first. Windows: Windows
+windows only; haetty's window gets the keys first. Windows: Windows
 Terminal uses Ctrl+Shift+T/W and Ctrl+Tab the same way; Alt+digit is free.
 Every binding can be changed in the config file (`keybind = CHORD=ACTION`,
 `CHORD=unbind`). Irreversible actions (close) ask for the same chord again
@@ -395,12 +409,14 @@ within 3 s, with a short hint over the bottom row; no dialog.
 The icon is a placeholder drawn in code (`ccterm-gui/src/icon.rs`, the
 single point to replace): neutral greys, `>_` on a rounded square. It
 feeds the window icon (X11 `_NET_WM_ICON`, Windows small and big icons),
-`ccterm install-desktop` (Linux: `~/.local/share/applications/ccterm.desktop`
-with `StartupWMClass`, hicolor 48/128/256 PNG and SVG; Windows: nothing to
+`haetty install-desktop` (Linux:
+`~/.local/share/applications/io.github.dhwan0112.haetty.desktop` with
+`StartupWMClass`, hicolor 48/128/256 PNG and SVG; Windows: nothing to
 install) and `build.rs` (Windows `.exe` icon resource via `windres`, sizes
 16–64: PNGs are written uncompressed by our own writer, and a 256 px entry
 would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
-("ccterm"), so docks match the window to the desktop file.
+(`io.github.dhwan0112.haetty`), so docks match the window to the desktop
+file.
 
 ### 3.13 Claude Code integration (milestone 3)
 
@@ -408,7 +424,7 @@ would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
   `claude-integration` is on (config or `--claude-integration false`; the
   GUI passes it in `CreateSpec`). The daemon then adds
   `--settings <run dir>/settings-<session>.json` (0600 in the 0700 runtime
-  directory; Windows `%LOCALAPPDATA%\ccterm\run`), removed when the session
+  directory; Windows `%LOCALAPPDATA%\haetty\run`), removed when the session
   ends or is closed, and at daemon start for sessions a killed daemon left.
   The GUI's tab spec never contains it, so tab sets do not save it.
 - What is injected: `hooks` and `statusLine`, nothing else. Not taken from
@@ -419,9 +435,9 @@ would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
 - A `--settings` the user gave (file, relative to the tab's folder, or
   inline JSON) is merged into one file: our hook entries first and the
   user's appended per event, every other key the user's, the user's
-  `statusLine` dropped with a log warning (ours feeds ccterm's status row).
+  `statusLine` dropped with a log warning (ours feeds haetty's status row).
   `~/.claude/settings.json` is never touched.
-- Hooks use Claude Code's exec form (`command` = ccterm's path with forward
+- Hooks use Claude Code's exec form (`command` = haetty's path with forward
   slashes, `args` = `["hook", EVENT]`): no shell on any platform (checked:
   their parent process is `claude`/`claude.exe`). Events: SessionStart,
   UserPromptSubmit, PreToolUse (synchronous with matcher
@@ -431,16 +447,16 @@ would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
   permission flow decides), PermissionDenied, PostToolUse,
   PostToolUseFailure, Notification, Stop, StopFailure, SubagentStart/Stop,
   SessionEnd; all asynchronous except those two; timeout 5 s.
-  `statusLine` has no exec form: `ccterm statusline` through Claude Code's
+  `statusLine` has no exec form: `haetty statusline` through Claude Code's
   shell (`sh -c`; Windows Git Bash, else PowerShell), path bare when it has
   no shell characters (every one of those shells runs it), else
   double-quoted (sh/Git Bash only; PowerShell would need `&` — not handled),
   `refreshInterval` 3 s. Side effect documented by Claude Code: with a
   custom status line it hides most footer hints ("esc to interrupt",
-  "? for shortcuts"); ccterm's status row shows "esc to interrupt" while
+  "? for shortcuts"); haetty's status row shows "esc to interrupt" while
   Claude Code works.
-- `ccterm hook EVENT` / `ccterm statusline` are dispatched first in `main`
-  (no logging, config, fonts): no `CCTERM_SESSION_ID` → exit; dial the
+- `haetty hook EVENT` / `haetty statusline` are dispatched first in `main`
+  (no logging, config, fonts): no `HAETTY_SESSION_ID` → exit; dial the
   daemon (50 ms, never start one) → none: exit without reading stdin;
   else read stdin (≤ 16 MiB), for the edit PreToolUse copy the file
   (≤ 2 MiB, UTF-8; never credential/key/token-looking paths: `.ssh`, `.aws`,

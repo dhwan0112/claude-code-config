@@ -21,7 +21,7 @@ pub fn target(tool_input: &Json) -> Option<&str> {
     tool_input.get("file_path").or_else(|| tool_input.get("notebook_path")).and_then(Json::str)
 }
 
-/// Paths ccterm never reads, even when Claude Code edits them: credential,
+/// Paths haetty never reads, even when Claude Code edits them: credential,
 /// key and token files (DESIGN.md §3.13).
 pub fn looks_secret(path: &str) -> bool {
     let p = path.replace('\\', "/").to_ascii_lowercase();
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn snapshot_statuses() {
-        let d = std::env::temp_dir().join(format!("ccterm-snap-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("haetty-snap-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         let f = d.join("a.txt");

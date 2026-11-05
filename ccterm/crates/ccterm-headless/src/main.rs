@@ -1,4 +1,4 @@
-//! `ccterm-headless`: run a program in a ccterm session without a window.
+//! `ccterm-headless`: run a program in a haetty session without a window.
 //!
 //! ```text
 //! ccterm-headless [options] -- PROGRAM [ARGS...]
@@ -55,7 +55,7 @@ struct Args {
 }
 
 fn usage(msg: &str) -> ! {
-    eprintln!("ccterm-headless: {msg}\nusage: ccterm-headless [--cols N] [--rows N] [--script FILE] [-e STEP]... [--raw-log FILE] [--trace] [--dump plain|vt|html|grid|none] [--timeout S] [--env K=V]... [--cwd DIR] -- PROGRAM [ARGS...]");
+    eprintln!("haetty-headless: {msg}\nusage: ccterm-headless [--cols N] [--rows N] [--script FILE] [-e STEP]... [--raw-log FILE] [--trace] [--dump plain|vt|html|grid|none] [--timeout S] [--env K=V]... [--cwd DIR] -- PROGRAM [ARGS...]");
     std::process::exit(2);
 }
 
@@ -447,7 +447,7 @@ fn main() {
     let session = match Session::spawn(cfg) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("ccterm-headless: cannot start {}: {e}", args.program[0]);
+            eprintln!("haetty-headless: cannot start {}: {e}", args.program[0]);
             std::process::exit(2);
         }
     };
@@ -470,7 +470,7 @@ fn main() {
             eprintln!("[step {}] {step}", i + 1);
         }
         if let Err(e) = r.step(step) {
-            eprintln!("ccterm-headless: step {} ({step}) failed: {e}", i + 1);
+            eprintln!("haetty-headless: step {} ({step}) failed: {e}", i + 1);
             failed = true;
             break;
         }

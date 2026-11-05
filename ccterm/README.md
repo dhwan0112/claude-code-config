@@ -1,65 +1,77 @@
-# ccterm
+# haetty
 
 A terminal built for running Claude Code on Linux and Windows, as a single
-executable per platform. `ccterm` opens a window (the GUI client); the
+executable per platform. `haetty` opens a window (the GUI client); the
 sessions (programs in pseudo-terminals) live in a per-user daemon,
-`ccterm daemon`, which the window starts when needed. The window has tabs,
+`haetty daemon`, which the window starts when needed. The window has tabs,
 a command palette and a config file, and in Claude Code tabs it adds
 attention marks, a status row, a status panel and a diff view of the last
 edit, fed by Claude Code's hooks and status line. Terminal emulation is
 libghostty-vt; the window draws on the CPU (winit + softbuffer + swash).
-`ccterm-headless` runs programs without a window for testing.
+`haetty-headless` runs programs without a window for testing.
 
 ```sh
-ccterm                     # your shell ($SHELL / %COMSPEC%)
-ccterm claude              # or any program with arguments
-ccterm --font "Iosevka" --font-size 12 --cols 140 --rows 40 -- claude --resume
+haetty                     # your shell ($SHELL / %COMSPEC%)
+haetty claude              # or any program with arguments
+haetty --font "Iosevka" --font-size 12 --cols 140 --rows 40 -- claude --resume
 ```
+
+## Formerly ccterm
+
+haetty was called `ccterm` until 2026-11-05. On its first start, haetty
+copies the old config file (`~/.config/ccterm/config`, Windows
+`%APPDATA%\ccterm\config`) and saved tab sets (`~/.local/state/ccterm/tabs`,
+Windows `%LOCALAPPDATA%\ccterm\tabs`) when it has none of its own; the
+originals stay. A `ccterm daemon` that is still running is left alone (its
+sessions keep running until its last ccterm window closes); haetty says so
+in a hint and its log. The old `CCTERM_*` environment variables are still
+read when the `HAETTY_*` one is unset, with a log line asking to rename
+them.
 
 ## Usage
 
 ### Starting
 
 ```text
-ccterm [gui] [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
-ccterm daemon
-ccterm status [--json | --screen ID]
-ccterm install-desktop
-ccterm hook EVENT        (run by Claude Code)
-ccterm statusline        (run by Claude Code)
+haetty [gui] [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
+haetty daemon
+haetty status [--json | --screen ID]
+haetty install-desktop
+haetty hook EVENT        (run by Claude Code)
+haetty statusline        (run by Claude Code)
 ```
 
-- `ccterm` runs your shell (`$SHELL`, else `/bin/sh`; Windows `%COMSPEC%`,
-  else `cmd.exe`); `ccterm claude` runs a program directly. `ccterm gui ...`
-  is the same as `ccterm ...`.
+- `haetty` runs your shell (`$SHELL`, else `/bin/sh`; Windows `%COMSPEC%`,
+  else `cmd.exe`); `haetty claude` runs a program directly. `haetty gui ...`
+  is the same as `haetty ...`.
 - Subcommands must be the first word. The names `gui`, `daemon`, `status`,
   `install-desktop`, `hook`, `statusline` are subcommands, and `run` and
   `headless` are reserved (they end with "not implemented yet", exit code 2).
   To run a program with one of these names, put it after `--`:
-  `ccterm -- status`.
+  `haetty -- status`.
 - `--font`, `--font-size` (points, 4–96), `--cols` and `--rows` (default
   120x36) exist on the command line only. Every other option is a setting
   (`--KEY VALUE` or `--KEY=VALUE`, see [Config file](#config-file)).
 - The daemon starts on demand: when no daemon answers, the window starts
-  `ccterm daemon` detached and connects to it. You do not start it yourself.
+  `haetty daemon` detached and connects to it. You do not start it yourself.
   It exits when it has had no session and no window for 10 s, and logs to
   `daemon.log` in the state directory.
 - Sessions belong to the daemon. If the window crashes or is killed, its
-  sessions keep running (`ccterm status` shows them with `attached` 0), and
-  the next ccterm window takes them back as tabs, as they are — the
+  sessions keep running (`haetty status` shows them with `attached` 0), and
+  the next haetty window takes them back as tabs, as they are — the
   programs are not restarted. Palette: "Attach detached sessions" does the
   same at any time. Closing the window normally ends its sessions (the tab
   set `last` keeps them for the next start, see [Tab sets](#tab-sets)).
-- `ccterm` without a program opens no new tab when it took sessions back or
-  reopened tabs; `ccterm PROGRAM` always opens `PROGRAM` as well.
-- `ccterm status` lists the daemon's sessions; `--json` prints the same as
+- `haetty` without a program opens no new tab when it took sessions back or
+  reopened tabs; `haetty PROGRAM` always opens `PROGRAM` as well.
+- `haetty status` lists the daemon's sessions; `--json` prints the same as
   JSON; `--screen ID` prints one session's screen as text (IDs come from
-  `ccterm status`). It is read-only and never starts a daemon: without one
+  `haetty status`). It is read-only and never starts a daemon: without one
   it prints `no daemon running` (with `--json`:
   `{"daemon_pid":null,"sessions":[]}`).
 - If a daemon of another version is still running (after an upgrade), the
   window says so and does not connect. That daemon exits by itself 10 s after
-  its last window closes; ending the `ccterm daemon` process also ends its
+  its last window closes; ending the `haetty daemon` process also ends its
   sessions.
 
 ### In the window
@@ -89,7 +101,7 @@ started with, in the active tab's folder. Tab names come from Claude Code's
 session name, else the title (without Claude Code's leading state glyph),
 else the program name. When a tab's program exits, the tab stays, dimmed
 and marked `[exited N]`, until you close it. With one tab, the window closes
-when its program exits and `ccterm` returns the program's exit code.
+when its program exits and `haetty` returns the program's exit code.
 
 Application shortcuts use Ctrl+Shift (plus Ctrl+Tab and Alt+digit); plain
 Ctrl+letter keys go to the program.
@@ -136,8 +148,8 @@ Ctrl+letter keys go to the program.
 
 | OS | Path |
 |---|---|
-| Linux | `$XDG_CONFIG_HOME/ccterm/config` (default `~/.config/ccterm/config`) |
-| Windows | `%APPDATA%\ccterm\config` |
+| Linux | `$XDG_CONFIG_HOME/haetty/config` (default `~/.config/haetty/config`) |
+| Windows | `%APPDATA%\haetty\config` |
 
 One `key = value` per line, as in Ghostty. Lines starting with `#` are
 comments, values may be in double quotes, booleans are `true` / `yes` / `1`
@@ -146,7 +158,7 @@ number. The same keys work on the command line as `--KEY VALUE` or
 `--KEY=VALUE`, and the command line wins over the file.
 
 ```text
-# ~/.config/ccterm/config
+# ~/.config/haetty/config
 window-padding = 6
 restore-tabs = false
 keybind = ctrl+shift+n=new_tab
@@ -167,8 +179,8 @@ keybind = ctrl+shift+n=new_tab
 ### Tab sets
 
 A tab set is a file `tabs/<NAME>.tsv` in the state directory (Linux
-`$XDG_STATE_HOME/ccterm`, default `~/.local/state/ccterm`; Windows
-`%LOCALAPPDATA%\ccterm`). Per tab it stores the name, folder, program,
+`$XDG_STATE_HOME/haetty`, default `~/.local/state/haetty`; Windows
+`%LOCALAPPDATA%\haetty`). Per tab it stores the name, folder, program,
 arguments, Claude Code session id and whether it was active; never
 environment variables.
 
@@ -178,7 +190,7 @@ environment variables.
 | `previous` | at start, from `last` | automatically at start; palette "Open the previous run's tabs" |
 | `saved` | palette "Save tabs" | palette "Open saved tabs" |
 
-- At start, ccterm first takes back the daemon's running sessions that no
+- At start, haetty first takes back the daemon's running sessions that no
   window shows, then `last` becomes `previous` and only its tabs that the
   daemon does not have are reopened (Claude Code tabs are matched by
   conversation, other tabs by program, arguments and folder).
@@ -198,24 +210,24 @@ as in any terminal.
 
 **What is injected.** The daemon adds `--settings <file>` to the command
 line, pointing to a per-session file in a private runtime directory (mode
-0600; Windows `%LOCALAPPDATA%\ccterm\run`), removed when the session ends.
-The file contains only `hooks` and `statusLine`: ccterm does not change
+0600; Windows `%LOCALAPPDATA%\haetty\run`), removed when the session ends.
+The file contains only `hooks` and `statusLine`: haetty does not change
 Claude Code's permission mode (no `--dangerously-skip-permissions`, no
 `defaultMode`, no allow/ask/deny rules) or any other behaviour — your own
 settings (`~/.claude/settings.json`, project and local settings, managed
 policy, command-line flags) apply exactly as in any other terminal — and it
 never touches those files. The hooks only report: they print nothing and
 never answer a permission prompt. If you pass your own `--settings` (file or inline
-JSON), it is merged into that file: your hooks are kept after ccterm's, your
+JSON), it is merged into that file: your hooks are kept after haetty's, your
 other keys are kept, and your `statusLine` is dropped with a log warning
-(ccterm's status row uses it). The hooks run `ccterm hook EVENT` directly
-(no shell); the status line runs `ccterm statusline` through Claude Code's
+(haetty's status row uses it). The hooks run `haetty hook EVENT` directly
+(no shell); the status line runs `haetty statusline` through Claude Code's
 shell. Both forward the JSON to the daemon and print nothing.
 
 **Side effect.** Claude Code documents that with a custom status line it
 hides most of its footer hints ("esc to interrupt", "? for shortcuts").
-ccterm's status row shows "esc to interrupt" itself while Claude Code
-works. `ccterm statusline` prints nothing, so Claude Code draws no status
+haetty's status row shows "esc to interrupt" itself while Claude Code
+works. `haetty statusline` prints nothing, so Claude Code draws no status
 line of its own.
 
 **Attention marks.** On the tab bar, on tabs other than the active one:
@@ -273,14 +285,15 @@ notification; the taskbar/urgency hint stays.
 
 ### Desktop integration
 
-- Linux: `ccterm install-desktop` writes, for the current user (under
+- Linux: `haetty install-desktop` writes, for the current user (under
   `$XDG_DATA_HOME`, default `~/.local/share`),
-  `applications/ccterm.desktop` (pointing to the running executable, with
-  `StartupWMClass=ccterm`) and the icon as hicolor 48/128/256 px PNGs and
-  an SVG. The Wayland `app_id` and X11 `WM_CLASS` are `ccterm`, so docks
-  match the window to the entry. Run it again after moving the executable.
-- Windows: nothing to install; `ccterm.exe` carries its icon (pin it to
-  Start or the taskbar). `ccterm install-desktop` says so.
+  `applications/io.github.dhwan0112.haetty.desktop` (pointing to the
+  running executable, with `StartupWMClass=io.github.dhwan0112.haetty`) and
+  the icon in the hicolor theme (`io.github.dhwan0112.haetty`). The Wayland
+  `app_id` and X11 `WM_CLASS` are that app id, so docks match the window to
+  the entry. Run it again after moving the executable.
+- Windows: nothing to install; `haetty.exe` carries its icon (pin it to
+  Start or the taskbar). `haetty install-desktop` says so.
 
 The icon is a placeholder (`>_` on a rounded square in neutral greys).
 
@@ -288,24 +301,24 @@ The icon is a placeholder (`>_` on a rounded square in neutral greys).
 
 | Variable | Effect |
 |---|---|
-| `CCTERM_LOG` | `off` / `error` / `warn` / `info` / `debug` / `trace` (default `warn`; `debug` never records typed text) |
-| `CCTERM_LOG_FILE` | log to this file instead of stderr (the Windows build has no console) |
-| `CCTERM_INSTANCE` | run a second, separate instance (e.g. a development build) with `CCTERM_INSTANCE=dev`: own daemon, sessions, settings, tab sets. Directories, app id and desktop file become `ccterm-dev`, window titles start with `[dev]`. Letters, digits and `-`, up to 16 characters; unset or empty is the normal instance. |
-| `CCTERM_FONT_DIR` | an extra font directory |
-| `CCTERM_CONPTY_DLL` | Windows: use this `conpty.dll` (see [Windows notes](#windows-notes)) |
-| `CCTERM_DUMP_FRAME` | write every frame to this `.ppm` file (debugging) |
-| `CCTERM_DEBUG_PADDING` | `1` paints everything outside the grid red, to tell ccterm's padding from a window manager's frame |
-| `CCTERM_SOCKET`, `CCTERM_STATE_DIR`, `CCTERM_CONFIG_DIR` | for tests: override the daemon socket / pipe, the state directory and the config directory |
+| `HAETTY_LOG` | `off` / `error` / `warn` / `info` / `debug` / `trace` (default `warn`; `debug` never records typed text) |
+| `HAETTY_LOG_FILE` | log to this file instead of stderr (the Windows build has no console) |
+| `HAETTY_INSTANCE` | run a second, separate instance (e.g. a development build) with `HAETTY_INSTANCE=dev`: own daemon, sessions, settings, tab sets. Directories become `haetty-dev`, the app id and desktop file `io.github.dhwan0112.haetty.dev`, window titles start with `[dev]`. Letters, digits and `-`, up to 16 characters; unset or empty is the normal instance. |
+| `HAETTY_FONT_DIR` | an extra font directory |
+| `HAETTY_CONPTY_DLL` | Windows: use this `conpty.dll` (see [Windows notes](#windows-notes)) |
+| `HAETTY_DUMP_FRAME` | write every frame to this `.ppm` file (debugging) |
+| `HAETTY_DEBUG_PADDING` | `1` paints everything outside the grid red, to tell haetty's padding from a window manager's frame |
+| `HAETTY_SOCKET`, `HAETTY_STATE_DIR`, `HAETTY_CONFIG_DIR` | for tests: override the daemon socket / pipe, the state directory and the config directory |
 
-`CCTERM_SESSION_ID` (and `CCTERM_INSTANCE`) are set by the daemon in every
-session's child, so that `ccterm hook` and `ccterm statusline` reach the
+`HAETTY_SESSION_ID` (and `HAETTY_INSTANCE`) are set by the daemon in every
+session's child, so that `haetty hook` and `haetty statusline` reach the
 right daemon and tab.
 
 ### Known limits
 
 - `decorations = integrated` (own title bar with tabs) is not implemented;
   it falls back to `native`.
-- Tab sets are not per window: with several ccterm windows open, the last
+- Tab sets are not per window: with several haetty windows open, the last
   one to write wins the `last` set.
 - The diff view shows the last edit only (no diff against `HEAD`, no file
   tree); NotebookEdit edits record the path only.
@@ -314,7 +327,7 @@ right daemon and tab.
   the edit hook (PreToolUse for Write/Edit/MultiEdit/NotebookEdit) makes
   Claude Code wait for it.
 - Windows: if Claude Code runs its status line through PowerShell (no Git
-  Bash) and ccterm is installed in a path with spaces, the double-quoted
+  Bash) and haetty is installed in a path with spaces, the double-quoted
   status-line command does not run in PowerShell.
 - Windows: no toast notifications; only the taskbar flash.
 - Status panel reset times are in UTC.
@@ -334,11 +347,11 @@ right daemon and tab.
               local socket (Unix socket / Windows named pipe)
 GUI client(s) ◀──────────────────────────────────────────▶ daemon
                                                             ├─ sessions: PTY + VT engine thread each
-claude (in PTY) ──hook command──▶ `ccterm hook <event>` ──▶ └─ Claude Code adapter (hooks, status line, transcripts)
+claude (in PTY) ──hook command──▶ `haetty hook <event>` ──▶ └─ Claude Code adapter (hooks, status line, transcripts)
 ```
 
-The socket is `$XDG_RUNTIME_DIR/ccterm/daemon.sock` on Linux (else
-`/tmp/ccterm-<uid>/daemon.sock`; in a private 0700 directory) and the named pipe `\\.\pipe\ccterm-<user SID>` on Windows
+The socket is `$XDG_RUNTIME_DIR/haetty/daemon.sock` on Linux (else
+`/tmp/haetty-<uid>/daemon.sock`; in a private 0700 directory) and the named pipe `\\.\pipe\haetty-<user SID>` on Windows
 (only that user may connect, no remote clients). There is no network
 listener. Details: `docs/DESIGN.md` §3.
 
@@ -351,8 +364,8 @@ listener. Details: `docs/DESIGN.md` §3.
 | `ccterm-proto` | Product name and instance, paths, wire types (postcard), framing, local socket / named pipe transport, the daemon client. |
 | `ccterm-daemon` | Session owner: sessions, subscriptions and row-diff frames, roles, event log. |
 | `ccterm-cc` | Claude Code adapter: `--settings` builder, hook and status-line reporters, per-session state, edit snapshots and diffs, resume. |
-| `ccterm-headless` | CLI that runs a program in a session and drives it with a step script (type, keys, wheel, drag, resize, wait for text, dump the screen). |
-| `ccterm-gui` | The `ccterm` binary: subcommand dispatch, the window (winit: X11 and Wayland loaded at run time, Win32), tabs, palette, panels, CPU rendering into softbuffer behind a `Renderer` trait, glyphs by swash, fonts found with fontdb, clipboard via copypasta. |
+| `haetty-headless` | CLI that runs a program in a session and drives it with a step script (type, keys, wheel, drag, resize, wait for text, dump the screen). |
+| `ccterm-gui` | The `haetty` binary: subcommand dispatch, the window (winit: X11 and Wayland loaded at run time, Win32), tabs, palette, panels, CPU rendering into softbuffer behind a `Renderer` trait, glyphs by swash, fonts found with fontdb, clipboard via copypasta. |
 
 ### Threads and data flow
 
@@ -388,18 +401,18 @@ Windows binaries can be cross-built from Linux with `rustup target add
 x86_64-pc-windows-gnu` and mingw-w64 (`cargo build --release --target
 x86_64-pc-windows-gnu`); the result depends only on system DLLs. The icon
 resource is compiled with mingw's `windres` (`WINDRES` overrides the name);
-without it, or for an MSVC target, `ccterm.exe` gets no icon. On Linux the
+without it, or for an MSVC target, `haetty.exe` gets no icon. On Linux the
 binary links only libc/libm/libgcc_s; X11, Wayland and xkbcommon are loaded
 at run time.
 
 For shipping, `cargo build --profile dist [--target ...]` (opt-level "s",
-thin LTO, stripped): `ccterm` about 6.3 MB on Linux and 4.9 MB on Windows
+thin LTO, stripped): `haetty` about 6.3 MB on Linux and 4.9 MB on Windows
 (milestone 3).
 
-## ccterm-headless
+## haetty-headless
 
 ```sh
-ccterm-headless --cols 120 --rows 36 --trace \
+haetty-headless --cols 120 --rows 36 --trace \
   -e "wait-idle 3000 60000" -e "modes" -e "type hello" -e "key shift+Enter" -e "print" \
   -- claude
 ```
@@ -429,15 +442,15 @@ Milestone 1, verified on Linux (x86_64):
   tracking, kitty keyboard flags 5, bracketed paste, focus events), 24-bit
   colour output, Hangul input, Shift+Enter for a second input line, Ctrl+C
   twice to exit with status 0.
-- `ccterm` window with Claude Code under X11 and native Wayland: rendering,
+- `haetty` window with Claude Code under X11 and native Wayland: rendering,
   typing (ASCII, Hangul through ibus-hangul/XIM), Shift+Enter, wheel,
   resize, selection copy to the clipboard and paste (X11), idle CPU ~0%.
 
 Windows 11 (native, x86_64): the PTY checks of `scripts/windows-smoke.ps1`
 pass (embedded ConPTY 1.25); its Claude Code checks need a prepared Claude
 Code config (see `docs/HANDOFF.md` §3) and pass with one, run through
-`ccterm-headless` (fullscreen renderer, kitty keyboard flags 5 included).
-The `ccterm` window runs Claude Code (typing, Shift+Enter, Ctrl+V paste,
+`haetty-headless` (fullscreen renderer, kitty keyboard flags 5 included).
+The `haetty` window runs Claude Code (typing, Shift+Enter, Ctrl+V paste,
 exit code passed on), and the GUI unit tests pass there.
 
 Milestones 2–3: daemon integration tests (a killed client's session keeps
@@ -452,10 +465,10 @@ and 5 MB anonymous memory on Linux.
 
 ConPTY sits between the child and the terminal. The in-box host re-renders
 output and has dropped mouse-mode requests (older builds), APC strings and
-kitty keyboard negotiation. ccterm therefore loads, in order: a `conpty.dll`
-named by `CCTERM_CONPTY_DLL` or placed next to the executable; the copy
+kitty keyboard negotiation. haetty therefore loads, in order: a `conpty.dll`
+named by `HAETTY_CONPTY_DLL` or placed next to the executable; the copy
 embedded in the binary, written once to
-`%LOCALAPPDATA%\ccterm\conpty\<version>\` together with `OpenConsole.exe`
+`%LOCALAPPDATA%\haetty\conpty\<version>\` together with `OpenConsole.exe`
 and Microsoft's licence; kernel32. With the out-of-band host it passes
 `PSEUDOCONSOLE_GLYPH_WIDTH_GRAPHEMES` (0x8); the in-box host gets no flags,
 because 0x8 meant `PSEUDOCONSOLE_PASSTHROUGH_MODE` in older declarations.

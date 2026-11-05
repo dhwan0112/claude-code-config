@@ -315,7 +315,7 @@ pub struct Worker {
     pub ended_ms: Option<u64>,
 }
 
-/// What ccterm knows about the Claude Code session in a tab, from hooks and
+/// What haetty knows about the Claude Code session in a tab, from hooks and
 /// status-line JSON (derived fields only; never prompts or file contents).
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct ClaudeInfo {

@@ -101,7 +101,7 @@ impl Fonts {
     pub fn load(family: Option<&str>) -> Result<Fonts, String> {
         let mut db = Database::new();
         db.load_system_fonts();
-        if let Ok(dir) = std::env::var("CCTERM_FONT_DIR") {
+        if let Some(dir) = ccterm_proto::product::env("FONT_DIR") {
             db.load_fonts_dir(dir);
         }
         Self::from_db(db, family)

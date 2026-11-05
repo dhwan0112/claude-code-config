@@ -4,7 +4,7 @@
 use ccterm_proto::paths::Endpoint;
 use ccterm_proto::{Client, ConnectError, Role, SessionInfo, SessionState};
 
-/// `ccterm daemon`: serve until idle. Another daemon already listening is
+/// `haetty daemon`: serve until idle. Another daemon already listening is
 /// not an error (two GUIs may start one at the same time).
 pub fn daemon() -> i32 {
     let cfg = match ccterm_daemon::Config::default_for_user() {
@@ -27,41 +27,41 @@ pub fn daemon() -> i32 {
     }
 }
 
-/// `ccterm status [--json]`: the daemon's sessions, read-only (observe
+/// `haetty status [--json]`: the daemon's sessions, read-only (observe
 /// role). Never starts a daemon. Returns the text and the exit code.
 pub fn status(json: bool) -> (String, i32) {
     let ep = match Endpoint::default_for_user() {
         Ok(e) => e,
-        Err(e) => return (format!("ccterm status: {e}"), 1),
+        Err(e) => return (format!("haetty status: {e}"), 1),
     };
     let client = match Client::connect(&ep, Role::Observe, "status") {
         Ok(c) => c,
         Err(ConnectError::NotRunning) => {
             return (if json { r#"{"daemon_pid":null,"sessions":[]}"#.into() } else { "no daemon running".into() }, 0)
         }
-        Err(e) => return (format!("ccterm status: {e}"), 1),
+        Err(e) => return (format!("haetty status: {e}"), 1),
     };
     match client.list_sessions() {
         Ok(list) if json => (status_json(client.daemon_pid, &list), 0),
         Ok(list) => (status_text(client.daemon_pid, &list), 0),
-        Err(e) => (format!("ccterm status: {e}"), 1),
+        Err(e) => (format!("haetty status: {e}"), 1),
     }
 }
 
-/// `ccterm status --screen ID`: the session's screen as plain text, read
+/// `haetty status --screen ID`: the session's screen as plain text, read
 /// with the observe role (no input possible). For scripts and tests.
 pub fn screen(id: &str) -> (String, i32) {
     let ep = match Endpoint::default_for_user() {
         Ok(e) => e,
-        Err(e) => return (format!("ccterm status: {e}"), 1),
+        Err(e) => return (format!("haetty status: {e}"), 1),
     };
     let client = match Client::connect(&ep, Role::Observe, "status-screen") {
         Ok(c) => c,
-        Err(e) => return (format!("ccterm status: {e}"), 1),
+        Err(e) => return (format!("haetty status: {e}"), 1),
     };
     let s = match client.attach(id, None) {
         Ok(s) => s,
-        Err(e) => return (format!("ccterm status: {e}"), 1),
+        Err(e) => return (format!("haetty status: {e}"), 1),
     };
     let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
     while std::time::Instant::now() < end {
@@ -71,11 +71,11 @@ pub fn screen(id: &str) -> (String, i32) {
                     return (snap.text(), 0);
                 }
             }
-            Ok(ccterm_core::SessionEvent::Exited(_)) => return (format!("ccterm status: no session {id}"), 1),
+            Ok(ccterm_core::SessionEvent::Exited(_)) => return (format!("haetty status: no session {id}"), 1),
             _ => {}
         }
     }
-    (format!("ccterm status: no screen from session {id}"), 1)
+    (format!("haetty status: no screen from session {id}"), 1)
 }
 
 fn status_text(pid: u32, list: &[SessionInfo]) -> String {

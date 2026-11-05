@@ -2,9 +2,9 @@
 //! offscreen with the CPU painter and compared with committed images in
 //! `tests/reference/<os>/`.
 //!
-//! - `CCTERM_UPDATE_REFERENCE=1` writes the references (and `fonts.txt`, the
+//! - `HAETTY_UPDATE_REFERENCE=1` writes the references (and `fonts.txt`, the
 //!   font fingerprint) instead of comparing.
-//! - `CCTERM_REFERENCE_DIR=dir` replaces `tests/reference` (a test binary
+//! - `HAETTY_REFERENCE_DIR=dir` replaces `tests/reference` (a test binary
 //!   copied to Windows still has the Linux `CARGO_MANIFEST_DIR` built in).
 //! - No references for this OS, or other fonts than the ones they were made
 //!   with: the test says why and passes.
@@ -310,9 +310,9 @@ fn os() -> &'static str {
     std::env::consts::OS
 }
 
-/// `tests/reference` (or `CCTERM_REFERENCE_DIR`).
+/// `tests/reference` (or `HAETTY_REFERENCE_DIR`).
 fn reference_root() -> PathBuf {
-    match std::env::var_os("CCTERM_REFERENCE_DIR").filter(|v| !v.is_empty()) {
+    match ccterm_proto::product::env_os("REFERENCE_DIR").filter(|v| !v.is_empty()) {
         Some(d) => d.into(),
         None => Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("reference"),
     }
@@ -335,7 +335,7 @@ fn write(path: &Path, data: &[u8]) {
 
 #[test]
 fn reference_frames() {
-    let update = std::env::var_os("CCTERM_UPDATE_REFERENCE").is_some_and(|v| v == "1");
+    let update = ccterm_proto::product::env_os("UPDATE_REFERENCE").is_some_and(|v| v == "1");
     let root = reference_root();
     let dir = root.join(os());
     let out = output_dir(&root);
@@ -361,7 +361,7 @@ fn reference_frames() {
     }
     if update {
         let parent = root.parent().expect("reference dir has a parent");
-        assert!(parent.is_dir(), "{} does not exist; set CCTERM_REFERENCE_DIR", parent.display());
+        assert!(parent.is_dir(), "{} does not exist; set HAETTY_REFERENCE_DIR", parent.display());
         std::fs::create_dir_all(&dir).expect("create reference dir");
         write(&fonts_file, format!("{fingerprint}\n").as_bytes());
     }

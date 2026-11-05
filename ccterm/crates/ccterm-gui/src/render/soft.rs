@@ -52,7 +52,7 @@ impl SoftRenderer {
             padding: PaddingStyle::default(),
             stale: true,
             history: VecDeque::new(),
-            dump: std::env::var_os("CCTERM_DUMP_FRAME").map(Into::into),
+            dump: ccterm_proto::product::env_os("DUMP_FRAME").map(Into::into),
         })
     }
 }

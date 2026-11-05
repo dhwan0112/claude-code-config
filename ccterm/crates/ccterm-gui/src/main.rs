@@ -1,26 +1,26 @@
-//! `ccterm`: terminal windows whose sessions live in the ccterm daemon.
+//! `haetty`: terminal windows whose sessions live in the haetty daemon.
 //!
 //! ```text
-//! ccterm [gui] [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
-//! ccterm daemon
-//! ccterm status [--json | --screen ID]
-//! ccterm install-desktop
-//! ccterm hook EVENT        (run by Claude Code)
-//! ccterm statusline        (run by Claude Code)
+//! haetty [gui] [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
+//! haetty daemon
+//! haetty status [--json | --screen ID]
+//! haetty install-desktop
+//! haetty hook EVENT        (run by Claude Code)
+//! haetty statusline        (run by Claude Code)
 //! ```
 //! Without a program it runs the user's shell (`$SHELL`, else `/bin/sh`;
 //! Windows: `%COMSPEC%`, else `cmd.exe`). The first word after the options is
-//! the program (`ccterm claude`), except the subcommand names in
+//! the program (`haetty claude`), except the subcommand names in
 //! [`SUBCOMMANDS`]; a program with one of those names goes after `--`
-//! (`ccterm -- status`).
+//! (`haetty -- status`).
 //!
-//! Environment: `CCTERM_LOG=off|error|warn|info|debug|trace` (default warn),
-//! `CCTERM_INSTANCE=NAME` (a separate instance: own daemon, directories,
+//! Environment: `HAETTY_LOG=off|error|warn|info|debug|trace` (default warn),
+//! `HAETTY_INSTANCE=NAME` (a separate instance: own daemon, directories,
 //! app id; DESIGN.md §3.9),
-//! `CCTERM_LOG_FILE=path` (log there instead of stderr; on Windows the
-//! release build has no console), `CCTERM_DUMP_FRAME=path.ppm` (write every
-//! frame as an image, for debugging), `CCTERM_FONT_DIR=dir` (extra fonts),
-//! `CCTERM_DEBUG_PADDING=1` (paint everything outside the grid red).
+//! `HAETTY_LOG_FILE=path` (log there instead of stderr; on Windows the
+//! release build has no console), `HAETTY_DUMP_FRAME=path.ppm` (write every
+//! frame as an image, for debugging), `HAETTY_FONT_DIR=dir` (extra fonts),
+//! `HAETTY_DEBUG_PADDING=1` (paint everything outside the grid red).
 //!
 //! `KEY` is any setting in [`config`] (`--window-padding-color extend` or
 //! `--window-padding-color=extend`).
@@ -40,6 +40,7 @@ mod icon;
 mod input;
 mod install;
 mod keymap;
+mod migrate;
 #[cfg(test)]
 mod reftest;
 mod render;
@@ -61,6 +62,8 @@ pub struct Options {
     pub command: CommandSpec,
     /// A program was named on the command line (else the default shell).
     pub explicit_program: bool,
+    /// Shown over the bottom row at start (migration from ccterm).
+    pub first_hint: Option<String>,
     pub config: config::Config,
     /// Settings given on the command line, applied after the config file.
     pub settings: Vec<(String, String)>,
@@ -102,17 +105,17 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
     match args.first().map(String::as_str) {
         Some("daemon") => match args.len() {
             1 => Ok(Command::Daemon),
-            _ => Err("usage: ccterm daemon".into()),
+            _ => Err("usage: haetty daemon".into()),
         },
         Some("status") => match &args[1..] {
             [] => Ok(Command::Status { json: false }),
             [j] if j == "--json" => Ok(Command::Status { json: true }),
             [s, id] if s == "--screen" => Ok(Command::Screen { id: id.clone() }),
-            _ => Err("usage: ccterm status [--json | --screen ID]".into()),
+            _ => Err("usage: haetty status [--json | --screen ID]".into()),
         },
         Some("install-desktop") => match args.len() {
             1 => Ok(Command::InstallDesktop),
-            _ => Err("usage: ccterm install-desktop".into()),
+            _ => Err("usage: haetty install-desktop".into()),
         },
         Some("gui") => parse_args(args.into_iter().skip(1)).map(|o| Command::Gui(Box::new(o))),
         _ => parse_args(args).map(|o| Command::Gui(Box::new(o))),
@@ -120,14 +123,14 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
 }
 
 const USAGE: &str =
-    "usage: ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
+    "usage: haetty [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
      settings (KEY): window-padding N, window-padding-balance true|false,\n\
      window-padding-color background|extend|extend-always, decorations native|integrated|none,\n\
      scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row),\n\
      restore-tabs true|false, claude-integration true|false, notifications true|false (default true)\n\
-     subcommands: ccterm gui [OPTIONS] [PROGRAM...], ccterm daemon, ccterm status [--json | --screen ID],\n\
-     ccterm install-desktop; run by Claude Code: hook EVENT, statusline; reserved: run, headless;\n\
-     to run a program with a subcommand's name: ccterm [OPTIONS] -- NAME [ARGS...]";
+     subcommands: haetty gui [OPTIONS] [PROGRAM...], haetty daemon, haetty status [--json | --screen ID],\n\
+     haetty install-desktop; run by Claude Code: hook EVENT, statusline; reserved: run, headless;\n\
+     to run a program with a subcommand's name: haetty [OPTIONS] -- NAME [ARGS...]";
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
     let mut o = Options {
@@ -137,6 +140,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
         rows: 36,
         command: default_shell(),
         explicit_program: false,
+        first_hint: None,
         config: config::Config::default(),
         settings: vec![],
         keymap: keymap::Keymap::default(),
@@ -156,7 +160,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
             "--cols" => o.cols = val("--cols")?.parse().map_err(|_| "bad --cols")?,
             "--rows" => o.rows = val("--rows")?.parse().map_err(|_| "bad --rows")?,
             "-h" | "--help" => return Err(USAGE.into()),
-            "--version" => return Err(format!("ccterm {}", env!("CARGO_PKG_VERSION"))),
+            "--version" => return Err(format!("haetty {}", env!("CARGO_PKG_VERSION"))),
             "--" => {
                 program.extend(it.by_ref());
                 break;
@@ -178,14 +182,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
             }
             s if IMPLEMENTED.contains(&s) => {
                 return Err(format!(
-                    "ccterm: '{s}' is a subcommand and must come first (ccterm {s} ...); \
-                     to run a program named {s}, use: ccterm -- {s}"
+                    "ccterm: '{s}' is a subcommand and must come first (haetty {s} ...); \
+                     to run a program named {s}, use: haetty -- {s}"
                 ));
             }
             s if SUBCOMMANDS.contains(&s) => {
                 return Err(format!(
                     "ccterm: '{s}' is a subcommand that is not implemented yet; \
-                     to run a program named {s}, use: ccterm -- {s}"
+                     to run a program named {s}, use: haetty -- {s}"
                 ));
             }
             _ => {
@@ -231,7 +235,9 @@ struct Logger {
 
 impl log::Log for Logger {
     fn enabled(&self, m: &log::Metadata) -> bool {
-        m.level() <= self.level && (m.target().starts_with("ccterm") || m.level() <= log::Level::Warn)
+        // Our crates (named ccterm-* until the crate rename) and the binary.
+        let ours = m.target().starts_with("haetty") || m.target().starts_with("ccterm");
+        m.level() <= self.level && (ours || m.level() <= log::Level::Warn)
     }
     fn log(&self, r: &log::Record) {
         if !self.enabled(r.metadata()) {
@@ -249,7 +255,7 @@ impl log::Log for Logger {
 }
 
 fn init_log(default_file: Option<std::path::PathBuf>) {
-    let level = match std::env::var("CCTERM_LOG").unwrap_or_default().as_str() {
+    let level = match ccterm_proto::product::env("LOG").unwrap_or_default().as_str() {
         "error" => log::LevelFilter::Error,
         "info" => log::LevelFilter::Info,
         "debug" => log::LevelFilter::Debug,
@@ -257,7 +263,7 @@ fn init_log(default_file: Option<std::path::PathBuf>) {
         "off" => log::LevelFilter::Off,
         _ => log::LevelFilter::Warn,
     };
-    let file = std::env::var_os("CCTERM_LOG_FILE")
+    let file = ccterm_proto::product::env_os("LOG_FILE")
         .map(std::path::PathBuf::from)
         .or(default_file)
         .and_then(|p| std::fs::OpenOptions::new().create(true).append(true).open(p).ok())
@@ -266,6 +272,7 @@ fn init_log(default_file: Option<std::path::PathBuf>) {
     if log::set_logger(logger).is_ok() {
         log::set_max_level(level);
     }
+    ccterm_proto::product::log_legacy_env();
 }
 
 /// Report an error the user must see and exit. On Windows the release build
@@ -340,7 +347,7 @@ fn message_box(msg: &str) {
         fn MessageBoxW(hwnd: *mut core::ffi::c_void, text: *const u16, caption: *const u16, kind: u32) -> i32;
     }
     let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
-    let (text, caption) = (wide(msg), wide("ccterm"));
+    let (text, caption) = (wide(msg), wide("haetty"));
     // SAFETY: both strings are NUL-terminated UTF-16 buffers that outlive the call.
     unsafe {
         MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), 0x10);
@@ -360,7 +367,7 @@ fn main() {
         Ok(c) => c,
         Err(msg) => {
             init_log(None);
-            exit_with(&msg, if msg.starts_with("usage") || msg.starts_with("ccterm ") { 0 } else { 2 })
+            exit_with(&msg, if msg.starts_with("usage") || msg.starts_with("haetty ") { 0 } else { 2 })
         }
     };
     let opts = match cmd {
@@ -369,6 +376,7 @@ fn main() {
             let dir = ccterm_proto::paths::state_dir();
             let _ = std::fs::create_dir_all(&dir);
             init_log(Some(dir.join("daemon.log")));
+            migrate::run();
             std::process::exit(cli::daemon());
         }
         Command::Status { json } => {
@@ -380,7 +388,7 @@ fn main() {
             init_log(None);
             match install::install_desktop() {
                 Ok(msg) => exit_with(&msg, 0),
-                Err(e) => exit_with(&format!("ccterm install-desktop: {e}"), 1),
+                Err(e) => exit_with(&format!("haetty install-desktop: {e}"), 1),
             }
         }
         Command::Screen { id } => {
@@ -391,6 +399,7 @@ fn main() {
         Command::Gui(o) => {
             init_log(None);
             let mut o = *o;
+            o.first_hint = migrate::run().hint();
             load_config_file(&mut o);
             o
         }
@@ -453,7 +462,7 @@ mod tests {
         }
         for name in IMPLEMENTED {
             let e = args(&["--cols", "80", name]).unwrap_err();
-            assert!(e.contains("must come first") && e.contains(&format!("ccterm -- {name}")), "{e}");
+            assert!(e.contains("must come first") && e.contains(&format!("haetty -- {name}")), "{e}");
             assert_eq!(args(&["--", name]).unwrap().command.program, *name);
         }
     }
@@ -462,7 +471,7 @@ mod tests {
     fn reserved_subcommands_are_errors_until_implemented() {
         for name in SUBCOMMANDS.iter().filter(|n| !IMPLEMENTED.contains(n)) {
             let e = args(&[name]).err().unwrap_or_else(|| panic!("{name} must be rejected"));
-            assert!(e.contains("not implemented") && e.contains(&format!("ccterm -- {name}")), "{e}");
+            assert!(e.contains("not implemented") && e.contains(&format!("haetty -- {name}")), "{e}");
             // Also after options, and with arguments.
             assert!(args(&["--cols", "80", name, "--json"]).is_err());
             // After `--` the word is a program again.
@@ -480,7 +489,7 @@ mod tests {
         assert_eq!(o.command.args, vec!["status"]);
         // Not mistaken for usage or version output (those exit 0).
         let e = args(&["hook"]).unwrap_err();
-        assert!(!e.starts_with("usage") && !e.starts_with("ccterm "));
+        assert!(!e.starts_with("usage") && !e.starts_with("haetty "));
     }
 
     #[test]

@@ -1,13 +1,13 @@
 [package]
 name = "ccterm-gui"
-description = "ccterm window: winit + softbuffer frontend for a ccterm-core session"
+description = "haetty window: winit + softbuffer frontend for a ccterm-core session"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "ccterm"
+name = "haetty"
 path = "src/main.rs"
 
 [dependencies]

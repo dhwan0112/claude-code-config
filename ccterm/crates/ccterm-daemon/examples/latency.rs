@@ -20,7 +20,7 @@ use ccterm_proto::{Client, Role};
 
 fn main() {
     let n: usize = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(200);
-    let dir = std::env::temp_dir().join(format!("ccterm-latency-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("haetty-latency-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     #[cfg(unix)]
     let ep = Endpoint(dir.join("rt").join("daemon.sock"));

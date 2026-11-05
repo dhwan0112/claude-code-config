@@ -1,4 +1,4 @@
-//! ccterm terminal backend.
+//! haetty terminal backend.
 //!
 //! A [`Session`] runs one program in a pseudo-terminal and keeps a
 //! libghostty-vt terminal up to date with its output. Three threads are
@@ -32,7 +32,7 @@ pub use types::*;
 use engine::{Cmd, EngineConfig};
 
 /// Version reported to applications through XTVERSION (`CSI > q`).
-pub const XTVERSION: &str = concat!("ccterm(", env!("CARGO_PKG_VERSION"), ")");
+pub const XTVERSION: &str = concat!("haetty(", env!("CARGO_PKG_VERSION"), ")");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ColorSchemePref {
@@ -135,7 +135,7 @@ impl Session {
             let mut env: Vec<(OsString, Option<OsString>)> = vec![
                 ("TERM".into(), Some("xterm-256color".into())),
                 ("COLORTERM".into(), Some("truecolor".into())),
-                ("TERM_PROGRAM".into(), Some("ccterm".into())),
+                ("TERM_PROGRAM".into(), Some("haetty".into())),
                 ("TERM_PROGRAM_VERSION".into(), Some(env!("CARGO_PKG_VERSION").into())),
                 // Claude Code lowers its colour depth when it sees TMUX.
                 ("TMUX".into(), None),
@@ -168,7 +168,7 @@ impl Session {
         // Reader: PTY output -> engine.
         let mut reader = spawned.reader;
         let tx_r = tx.clone();
-        thread::Builder::new().name("ccterm-pty-reader".into()).spawn(move || {
+        thread::Builder::new().name("haetty-pty-reader".into()).spawn(move || {
             let mut buf = vec![0u8; 64 * 1024];
             loop {
                 match reader.read(&mut buf) {
@@ -189,7 +189,7 @@ impl Session {
         // Waiter: child exit -> engine.
         let mut child = spawned.child;
         let tx_w = tx.clone();
-        thread::Builder::new().name("ccterm-child-waiter".into()).spawn(move || {
+        thread::Builder::new().name("haetty-child-waiter".into()).spawn(move || {
             let status = child.wait().unwrap_or(ExitStatus { code: None, signal: None });
             let _ = tx_w.send(Cmd::ChildExited(status));
         })?;
@@ -208,7 +208,7 @@ impl Session {
         let writer = spawned.writer;
         let control = spawned.control;
         let engine = thread::Builder::new()
-            .name("ccterm-engine".into())
+            .name("haetty-engine".into())
             .spawn(move || engine::run(ecfg, rx, ev_tx, writer, control))?;
 
         Ok(Session { handle: SessionHandle { tx, backend, pid }, events: ev_rx, engine: Some(engine) })

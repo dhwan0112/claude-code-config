@@ -818,7 +818,7 @@ mod tests {
     /// cells, is centred, and stays inside the cell height — at 11 pt and
     /// 14 pt (96 dpi) and two more sizes. Run with the platform's fonts:
     /// Linux DejaVu Sans Mono + Noto Sans Mono CJK / Nanum (hide Noto and set
-    /// `CCTERM_FONT_DIR` to test Nanum), Windows Cascadia Mono + Malgun Gothic.
+    /// `HAETTY_FONT_DIR` to test Nanum), Windows Cascadia Mono + Malgun Gothic.
     #[test]
     fn wide_fallback_hangul_fills_two_cells() {
         let Ok(fonts) = Fonts::load(None) else { return };

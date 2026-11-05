@@ -1,4 +1,4 @@
-//! Pseudo-terminal layer for ccterm.
+//! Pseudo-terminal layer for haetty.
 //!
 //! One interface over two very different OS facilities:
 //!
@@ -8,15 +8,15 @@
 //!   everything on (mouse-mode requests on older builds, APC strings, kitty
 //!   keyboard negotiation). Microsoft ships a newer, out-of-band ConPTY —
 //!   `conpty.dll` plus `OpenConsole.exe`, MIT-licensed, NuGet package
-//!   `Microsoft.Windows.Console.ConPTY` — and ccterm prefers it: a copy given
-//!   by `CCTERM_CONPTY_DLL` or placed next to the executable, else the copy
+//!   `Microsoft.Windows.Console.ConPTY` — and haetty prefers it: a copy given
+//!   by `HAETTY_CONPTY_DLL` or placed next to the executable, else the copy
 //!   embedded at build time (feature `embedded-conpty`), else the in-box host.
 //!   `portable-pty` cannot choose the DLL or the creation flags, so the
 //!   Windows backend (`win/`) talks to the ConPTY API directly.
 //!
 //! Note on flags: `0x8` meant `PSEUDOCONSOLE_PASSTHROUGH_MODE` in older
 //! declarations but is `PSEUDOCONSOLE_GLYPH_WIDTH_GRAPHEMES` in current
-//! ConPTY headers, so ccterm never sends it to the in-box host and only sends
+//! ConPTY headers, so haetty never sends it to the in-box host and only sends
 //! glyph-width flags to the out-of-band one.
 
 use std::ffi::OsString;
@@ -101,11 +101,11 @@ pub enum GlyphWidth {
 /// Platform knobs. Ignored where they do not apply.
 #[derive(Clone, Debug)]
 pub struct PtyOptions {
-    /// Windows: look for `conpty.dll` in `CCTERM_CONPTY_DLL` or next to the
+    /// Windows: look for `conpty.dll` in `HAETTY_CONPTY_DLL` or next to the
     /// executable first.
     pub conpty_sideload: bool,
     /// Windows: otherwise use the copy embedded in the binary (written once to
-    /// `%LOCALAPPDATA%\ccterm\conpty\<version>`), if built with
+    /// `%LOCALAPPDATA%\haetty\conpty\<version>`), if built with
     /// `embedded-conpty`.
     pub conpty_embedded: bool,
     pub conpty_glyph_width: GlyphWidth,

@@ -1,6 +1,6 @@
 //! Settings. Each key can be given on the command line as `--KEY VALUE` or
-//! `--KEY=VALUE`, or in the config file (Linux `$XDG_CONFIG_HOME/ccterm/config`,
-//! Windows `%APPDATA%\ccterm\config`) as `key = value` lines like Ghostty's,
+//! `--KEY=VALUE`, or in the config file (Linux `$XDG_CONFIG_HOME/haetty/config`,
+//! Windows `%APPDATA%\haetty\config`) as `key = value` lines like Ghostty's,
 //! `#` comments; the command line wins. `keybind = CHORD=ACTION` (file only)
 //! changes shortcuts (`crate::keymap`). Bad lines are skipped and logged.
 //!
@@ -33,7 +33,7 @@ pub enum PaddingColor {
 pub enum Decorations {
     /// The platform's title bar and frame (coloured to match on Windows 11).
     Native,
-    /// Title bar drawn by ccterm with tabs — not implemented (milestone 2's
+    /// Title bar drawn by haetty with tabs — not implemented (milestone 2's
     /// optional P6 was not done); falls back to `Native`.
     Integrated,
     /// No title bar or frame.
@@ -50,7 +50,7 @@ pub struct Config {
     pub scrollback_limit: usize,
     /// Reopen the previous run's tabs (tab set "previous") at start.
     pub restore_tabs: bool,
-    /// Claude Code tabs get ccterm's hooks and status line.
+    /// Claude Code tabs get haetty's hooks and status line.
     pub claude_integration: bool,
     pub notifications: bool,
 }

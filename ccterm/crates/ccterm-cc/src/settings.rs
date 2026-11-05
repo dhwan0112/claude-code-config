@@ -1,11 +1,11 @@
-//! The `--settings` ccterm gives Claude Code tabs (DESIGN.md §3.13): hooks
-//! that report to the daemon (`ccterm hook EVENT`, exec form: no shell) and
-//! a status line (`ccterm statusline`, prints nothing). Only these two keys;
+//! The `--settings` haetty gives Claude Code tabs (DESIGN.md §3.13): hooks
+//! that report to the daemon (`haetty hook EVENT`, exec form: no shell) and
+//! a status line (`haetty statusline`, prints nothing). Only these two keys;
 //! none of ccx's behaviour-changing settings (permissions, tui, env).
 //!
 //! A `--settings` the user passed (file or inline JSON) is merged: our hook
 //! entries first, the user's appended per event; every other key the user's;
-//! the user's `statusLine` is dropped with a warning (ours feeds ccterm's
+//! the user's `statusLine` is dropped with a warning (ours feeds haetty's
 //! status row).
 
 use crate::json::{obj, s, Json};
@@ -19,7 +19,7 @@ pub const EDIT_MATCHER: &str = "Write|Edit|MultiEdit|NotebookEdit";
 /// daemon ignores it for edit tools, which the synchronous entry reports.
 pub const PRE_ALL: &str = "PreToolUseAll";
 
-/// (Claude Code event, matcher, async, name passed to `ccterm hook`).
+/// (Claude Code event, matcher, async, name passed to `haetty hook`).
 pub const EVENTS: &[(&str, Option<&str>, bool, &str)] = &[
     ("SessionStart", None, true, "SessionStart"),
     ("UserPromptSubmit", None, true, "UserPromptSubmit"),
@@ -39,7 +39,7 @@ pub const EVENTS: &[(&str, Option<&str>, bool, &str)] = &[
     ("SessionEnd", None, true, "SessionEnd"),
 ];
 
-/// Hook timeout for Claude Code (seconds); `ccterm hook` ends far sooner.
+/// Hook timeout for Claude Code (seconds); `haetty hook` ends far sooner.
 const TIMEOUT: f64 = 5.0;
 
 /// Whether `program` is Claude Code (`claude`, `claude.exe`, `claude.cmd`).
@@ -72,7 +72,7 @@ pub fn statusline_command(exe: &str) -> String {
     }
 }
 
-/// ccterm's settings for `exe`.
+/// haetty's settings for `exe`.
 pub fn ours(exe: &str) -> Json {
     let exe = exe_for_claude(exe);
     let mut hooks: Vec<(String, Json)> = vec![];
@@ -117,7 +117,7 @@ pub fn merge(mut ours: Json, user: Option<Json>) -> (Json, Vec<String>) {
     for (k, v) in user {
         match k.as_str() {
             "statusLine" => warnings
-                .push("your --settings statusLine is not used in ccterm tabs (ccterm draws its own status row)".into()),
+                .push("your --settings statusLine is not used in haetty tabs (haetty draws its own status row)".into()),
             "hooks" => {
                 let Json::Obj(user_hooks) = v else {
                     warnings.push("your --settings hooks is not an object; ignored".into());
@@ -187,12 +187,12 @@ mod tests {
 
     #[test]
     fn settings_have_exec_form_hooks_and_a_status_line() {
-        let v = ours(r"C:\Program Files\ccterm\ccterm.exe");
+        let v = ours(r"C:\Program Files\haetty\haetty.exe");
         let pre = v.at(&["hooks", "PreToolUse"]).and_then(Json::arr).unwrap();
         assert_eq!(pre.len(), 2);
         assert_eq!(pre[0].get("matcher").and_then(Json::str), Some(EDIT_MATCHER));
         let h = &pre[0].get("hooks").and_then(Json::arr).unwrap()[0];
-        assert_eq!(h.get("command").and_then(Json::str), Some("C:/Program Files/ccterm/ccterm.exe"));
+        assert_eq!(h.get("command").and_then(Json::str), Some("C:/Program Files/haetty/haetty.exe"));
         assert_eq!(h.get("args").unwrap().to_string(), r#"["hook","PreToolUse"]"#);
         assert_eq!(h.get("async"), None, "PreToolUse of edit tools is synchronous");
         let all = &pre[1].get("hooks").and_then(Json::arr).unwrap()[0];
@@ -212,10 +212,10 @@ mod tests {
         }
         assert_eq!(
             v.at(&["statusLine", "command"]).and_then(Json::str),
-            Some(r#""C:/Program Files/ccterm/ccterm.exe" statusline"#)
+            Some(r#""C:/Program Files/haetty/haetty.exe" statusline"#)
         );
-        assert_eq!(statusline_command("/home/a/.local/bin/ccterm"), "/home/a/.local/bin/ccterm statusline");
-        assert_eq!(statusline_command("/x/a$b/ccterm"), r#""/x/a\$b/ccterm" statusline"#);
+        assert_eq!(statusline_command("/home/a/.local/bin/haetty"), "/home/a/.local/bin/haetty statusline");
+        assert_eq!(statusline_command("/x/a$b/haetty"), r#""/x/a\$b/haetty" statusline"#);
         assert!(v.get("permissions").is_none() && v.get("env").is_none());
     }
 
@@ -226,13 +226,13 @@ mod tests {
                 "statusLine":{"type":"command","command":"theirs"},"model":"opus","permissions":{"ask":["Bash(rm:*)"]}}"#,
         )
         .unwrap();
-        let (m, w) = merge(ours("/bin/ccterm"), Some(user));
+        let (m, w) = merge(ours("/bin/haetty"), Some(user));
         assert_eq!(w.len(), 1);
         let stop = m.at(&["hooks", "Stop"]).and_then(Json::arr).unwrap();
         assert_eq!(stop.len(), 2, "ours first, theirs appended");
         assert!(stop[1].to_string().contains("mine"));
         assert!(m.at(&["hooks", "Custom"]).is_some());
-        assert_eq!(m.at(&["statusLine", "command"]).and_then(Json::str), Some("/bin/ccterm statusline"));
+        assert_eq!(m.at(&["statusLine", "command"]).and_then(Json::str), Some("/bin/haetty statusline"));
         assert_eq!(m.get("model").and_then(Json::str), Some("opus"));
         assert!(m.at(&["permissions", "ask"]).is_some());
         let args: Vec<String> = ["--model", "x", "--settings", "a.json", "--settings={}", "--", "--settings", "y"]

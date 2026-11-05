@@ -1,10 +1,10 @@
-//! `ccterm hook EVENT` and `ccterm statusline`: run by Claude Code, forward
+//! `haetty hook EVENT` and `haetty statusline`: run by Claude Code, forward
 //! their stdin JSON to the daemon and end. They never write to stdout or
 //! stderr (UserPromptSubmit's stdout would go into the model's context),
 //! always exit 0, never start a daemon, and end within [`SYNC_DEADLINE`]
 //! (synchronous hooks, which Claude Code waits for) or [`DEADLINE`] (the
 //! others) whatever happens (stdin left open, a stuck daemon); without a
-//! daemon or outside a ccterm session they end at once (DESIGN.md §3.13).
+//! daemon or outside a haetty session they end at once (DESIGN.md §3.13).
 
 use std::io::Read;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -26,7 +26,7 @@ pub const SYNC_DEADLINE: Duration = Duration::from_millis(250);
 /// reported without it (the edit is then shown without a diff).
 const SNAPSHOT_BUDGET: Duration = Duration::from_millis(150);
 
-/// The hooks ccterm installs as synchronous (settings.rs).
+/// The hooks haetty installs as synchronous (settings.rs).
 pub fn is_synchronous(event: &str) -> bool {
     matches!(event, "PreToolUse" | "PermissionRequest")
 }
@@ -50,15 +50,15 @@ pub fn main(kind: Kind) -> ! {
     std::panic::set_hook(Box::new(|_| {})); // silent: nothing on stderr
     let start = Instant::now();
     let ts_ms = now_ms();
-    let Some(session) = std::env::var(product::SESSION_ENV).ok().filter(|s| !s.is_empty()) else {
-        std::process::exit(0); // not a ccterm tab
+    let Some(session) = product::env("SESSION_ID").filter(|s| !s.is_empty()) else {
+        std::process::exit(0); // not a haetty tab
     };
     let deadline = match &kind {
         Kind::Hook(e) if is_synchronous(e) => SYNC_DEADLINE,
         _ => DEADLINE,
     };
     let (tx, rx) = std::sync::mpsc::channel();
-    let _ = std::thread::Builder::new().name("ccterm-report".into()).spawn(move || {
+    let _ = std::thread::Builder::new().name("haetty-report".into()).spawn(move || {
         let _ = run(kind, session, ts_ms, start + deadline);
         let _ = tx.send(());
     });
@@ -91,7 +91,7 @@ fn timed_snapshot(input: &str) -> Option<ccterm_proto::wire::PreSnapshot> {
     let (tx, rx) = std::sync::mpsc::channel();
     let input = input.to_string();
     std::thread::Builder::new()
-        .name("ccterm-snapshot".into())
+        .name("haetty-snapshot".into())
         .spawn(move || {
             let _ = tx.send(pre_snapshot(&input));
         })

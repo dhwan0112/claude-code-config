@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn append_escape_and_resume_from_cursor() {
-        let dir = std::env::temp_dir().join(format!("ccterm-evlog-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("haetty-evlog-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("events.log");

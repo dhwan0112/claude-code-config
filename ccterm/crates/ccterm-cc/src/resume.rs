@@ -71,7 +71,7 @@ mod tests {
             ["--model", "opus", "-c", "--resume", "old-id", "--verbose"].iter().map(|s| s.to_string()).collect();
         assert_eq!(resume_args(&a, "abc-1"), ["--model", "opus", "--verbose", "--resume", "abc-1"]);
         assert!(valid_id("0f0fc5c9-9b5a-4538-81fb-def23b2a894b") && !valid_id("../x") && !valid_id(""));
-        let d = std::env::temp_dir().join(format!("ccterm-resume-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("haetty-resume-{}", std::process::id()));
         let id = "0f0fc5c9-9b5a-4538-81fb-def23b2a894b";
         let p = d.join("projects").join(project_key("/tmp/p"));
         std::fs::create_dir_all(&p).unwrap();

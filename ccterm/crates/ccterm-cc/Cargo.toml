@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "ccterm's Claude Code integration: settings, hook/status-line reporters, session state, edit diffs"
+description = "haetty's Claude Code integration: settings, hook/status-line reporters, session state, edit diffs"
 
 [dependencies]
 ccterm-proto.workspace = true

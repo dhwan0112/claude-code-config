@@ -33,7 +33,7 @@ impl std::fmt::Display for ConnectError {
             ConnectError::NotRunning => f.write_str("no daemon is running"),
             ConnectError::Refused(r) if r.starts_with("protocol version") => write!(
                 f,
-                "a ccterm daemon of another version is running ({r}). It exits by itself 10 s after its                  last window closes; or end the `ccterm daemon` process (its sessions end with it)"
+                "a haetty daemon of another version is running ({r}). It exits by itself 10 s after its                  last window closes; or end the `haetty daemon` process (its sessions end with it)"
             ),
             ConnectError::Refused(r) => write!(f, "daemon refused the connection: {r}"),
             ConnectError::Io(e) => write!(f, "daemon connection: {e}"),
@@ -99,7 +99,7 @@ impl Client {
         let shared = Arc::new(Shared { mirrors: Mutex::new(HashMap::new()), writer: Mutex::new(stream) });
         let (rtx, rrx) = unbounded();
         let sh = shared.clone();
-        std::thread::Builder::new().name("ccterm-client-reader".into()).spawn(move || reader_loop(reader, sh, rtx))?;
+        std::thread::Builder::new().name("haetty-client-reader".into()).spawn(move || reader_loop(reader, sh, rtx))?;
         Ok(Client { shared, replies: rrx, request: Mutex::new(0), daemon_pid, role })
     }
 
@@ -327,7 +327,7 @@ pub struct RemoteSession {
 
 /// Same methods as `ccterm_core::SessionHandle`, except that every input
 /// method takes its [`Origin`] (DESIGN.md §3.7): `Human` only for what a
-/// person typed or clicked (OS input events), `Program` for input ccterm or a
+/// person typed or clicked (OS input events), `Program` for input haetty or a
 /// script made up (palette actions, restored tabs, automation). There is no
 /// default: the caller has to say which.
 #[derive(Clone)]

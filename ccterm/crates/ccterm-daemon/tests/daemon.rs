@@ -13,7 +13,7 @@ use ccterm_proto::wire::{Attention, ClientMsg, CreateSpec, DaemonMsg, Grid, Orig
 use ccterm_proto::{Client, RemoteSession, Role};
 
 fn tmp(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("ccterm-daemon-test-{name}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("haetty-daemon-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -147,7 +147,7 @@ fn observe_and_report_clients_cannot_send_input_or_create() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A fake `claude` (a shell script of that name) gets ccterm's `--settings`
+/// A fake `claude` (a shell script of that name) gets haetty's `--settings`
 /// file; hook and status-line reports from a Report client update the
 /// session's Claude Code state, which the GUI client receives; a pending
 /// permission question blocks Program input but not Human input; the

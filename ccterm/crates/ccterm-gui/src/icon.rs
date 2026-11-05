@@ -1,6 +1,6 @@
 //! The application icon — a **placeholder** until a real one exists. This
 //! file is the one place to change: `rgba` feeds the window icon (X11,
-//! Windows), `ccterm install-desktop` (hicolor PNGs and SVG) and `build.rs`
+//! Windows), `haetty install-desktop` (hicolor PNGs and SVG) and `build.rs`
 //! (the Windows .exe resource, via `include!`). Neutral greys: a dark
 //! rounded square with a light prompt `>_`.
 //!
