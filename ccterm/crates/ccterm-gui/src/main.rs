@@ -31,7 +31,9 @@ mod emoji;
 mod font;
 mod geom;
 mod input;
+mod keymap;
 mod render;
+mod ui;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -47,6 +49,9 @@ pub struct Options {
     pub rows: u16,
     pub command: CommandSpec,
     pub config: config::Config,
+    /// Settings given on the command line, applied after the config file.
+    pub settings: Vec<(String, String)>,
+    pub keymap: keymap::Keymap,
 }
 
 fn default_shell() -> CommandSpec {
@@ -113,6 +118,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
         rows: 36,
         command: default_shell(),
         config: config::Config::default(),
+        settings: vec![],
+        keymap: keymap::Keymap::default(),
     };
     let mut it = args.into_iter();
     let mut program: Vec<String> = vec![];
@@ -147,6 +154,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
                     None => it.next().ok_or(format!("--{key} needs a value"))?,
                 };
                 o.config.set(key, &value)?;
+                o.settings.push((key.to_owned(), value));
             }
             s if IMPLEMENTED.contains(&s) => {
                 return Err(format!(
@@ -173,6 +181,21 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
     o.cols = o.cols.max(2);
     o.rows = o.rows.max(1);
     Ok(o)
+}
+
+/// The config file (`config.rs`), then the command line's settings on top.
+fn load_config_file(o: &mut Options) {
+    let path = ccterm_proto::paths::config_dir().join("config");
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let mut c = config::Config::default();
+    for bad in c.apply_file(&text, &mut o.keymap) {
+        log::warn!("{}: {bad} (ignored)", path.display());
+    }
+    for (k, v) in &o.settings {
+        let _ = c.set(k, v);
+    }
+    log::info!("config: {}", path.display());
+    o.config = c;
 }
 
 /// Display width of a character in cells (0, 1 or 2).
@@ -331,7 +354,9 @@ fn main() {
         }
         Command::Gui(o) => {
             init_log(None);
-            *o
+            let mut o = *o;
+            load_config_file(&mut o);
+            o
         }
     };
     let fonts = font::Fonts::load(opts.font.as_deref()).unwrap_or_else(|e| fatal(&e));

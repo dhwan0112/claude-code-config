@@ -262,19 +262,6 @@ pub fn ime_owns_key(composing: bool, pressed: bool, has_text: bool, m: Modifiers
     composing && pressed && has_text && !m.control_key() && !m.super_key()
 }
 
-/// The paste shortcut. Linux: Ctrl+Shift+V (plain Ctrl+V reaches the
-/// application, Claude Code uses it to paste images). Windows: Ctrl+V as
-/// well, as in Windows Terminal. Both: Shift+Insert.
-pub fn is_paste(code: Option<KeyCode>, m: ModifiersState) -> bool {
-    let (ctrl, shift, alt, sup) = (m.control_key(), m.shift_key(), m.alt_key(), m.super_key());
-    match code {
-        Some(KeyCode::KeyV) => ctrl && !alt && !sup && (shift || cfg!(windows)),
-        Some(KeyCode::Insert) => shift && !ctrl && !alt && !sup,
-        Some(KeyCode::Paste) => true,
-        _ => false,
-    }
-}
-
 /// Turns wheel deltas into whole notches. Touchpads send pixel deltas;
 /// those are accumulated by cell height.
 #[derive(Default, Debug)]
@@ -395,15 +382,5 @@ mod tests {
         assert_eq!(w.notches(MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 27.0)), 18), -2);
         assert_eq!(wheel_lines(-1, true), -1);
         assert_eq!(wheel_lines(-1, false), -3);
-    }
-
-    #[test]
-    fn paste_shortcuts() {
-        let cs = ModifiersState::CONTROL | ModifiersState::SHIFT;
-        assert!(is_paste(Some(KeyCode::KeyV), cs));
-        assert!(is_paste(Some(KeyCode::Insert), ModifiersState::SHIFT));
-        assert_eq!(is_paste(Some(KeyCode::KeyV), ModifiersState::CONTROL), cfg!(windows));
-        assert!(!is_paste(Some(KeyCode::KeyV), ModifiersState::empty()));
-        assert!(!is_paste(Some(KeyCode::KeyC), cs));
     }
 }

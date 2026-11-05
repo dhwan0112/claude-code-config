@@ -686,15 +686,52 @@ regression list, measurements), then committed, pushed and mirrored.
     2.59, max 3.73 (300 keys); Windows median 1.65, p95 2.03, max 2.44 (200
     keys, cmd.exe echo). GUI draw of an incremental frame (trace log
     "frame drawn in"): median 0.08 ms. Total well under 16 ms.
-  - Idle 30 s with Claude Code idle: Linux GUI 0 ticks, RssAnon 5.2 MB;
-    daemon 0 ticks, RssAnon 11.6 MB (it now holds the session: engine,
-    screen, scrollback), 12 threads. Windows GUI private working set 8.7 MB,
+  - Idle 30 s with Claude Code idle: Linux GUI 0 ticks, RssAnon 5.5 MB;
+    daemon 1 tick, RssAnon 5.2 MB (it now holds the session: engine,
+    screen, scrollback), 8 threads. (Corrected in P2: the first P1 figures,
+    11.6 MB and 12 threads, were taken from a leftover test daemon.) Windows GUI private working set 8.7 MB,
     0.016 s CPU; daemon 6.1 MB, 0 s.
   - Size (`dist`, stripped): Linux 5 649 648 → 5 901 656 (+252 KB), Windows
     4 290 048 → 4 558 848 (+269 KB). cargo-bloat (release `.text`):
     `ccterm_daemon` 114 KiB, `ccterm_proto` 97 KiB including the postcard /
     serde code for the message types; the rest is std (Unix sockets,
     process spawning) and the Windows pipe/security code.
+- **2026-11-05 P2 — tabs, keys, palette, config file.** Tabs: each tab a
+  daemon session; the window grid is the active tab's screen plus ccterm's
+  own cells (`ui.rs`: tab bar from two tabs on, one cell row, neutral
+  greys, active tab on the terminal background; command palette as one
+  overlay; hints). Tab names: the title without Claude Code's leading
+  state glyph ("✳ ", Braille spinner frames), else the program name; an
+  exited tab stays, dimmed with `[exited N]`, until closed (one tab: the
+  window ends with its program, as before). Keys (`keymap.rs`, DESIGN.md
+  §3.11): Ctrl+Shift+T new tab in the active tab's directory, Ctrl+Shift+W
+  close (second press within 3 s; hint over the bottom row), Ctrl+Tab /
+  Ctrl+Shift+Tab, Ctrl+PageDown/Up, Alt+1..9, Ctrl+Shift+P palette (type
+  to filter, arrows, Enter, Esc; shows each action's shortcut), paste
+  chords; the release of a consumed chord is not sent either. Config file
+  (`config_dir()/config`, Ghostty-style `key = value`, own parser, bad lines
+  logged and skipped; command line wins; `keybind = CHORD=ACTION|unbind`).
+  Evidence:
+  - Unit tests (gui 54): keymap defaults/rebind/unbind, Claude Code's keys
+    left alone; tab names; tab bar greys only; palette filter; composition
+    (screen below the bar, cursor moved); config file (comments, quotes,
+    keybind, bad lines with numbers).
+  - `reg.sh` (Linux, Xvfb) 17 checks: the 10 of P1 plus Ctrl+Shift+T → 2
+    sessions; typed keys reach the new tab only; Alt+1 → tab 1 gets the
+    input; first Ctrl+Shift+W leaves 2 sessions, the second closes; palette
+    "new" + Enter opens a tab; `keybind = ctrl+shift+n=new_tab` from the
+    config file works. Frame dumps (dev machine `ccterm-win\reg\p2`):
+    tab bar, close hint, palette.
+  - Windows 11 (SendInput, `p2win.ps1`): Ctrl+Shift+T → 2 sessions, Alt+1
+    action logged, one Ctrl+Shift+W → 2, the second → 1, palette → new tab.
+  - Memory and idle CPU, Claude Code idle in every tab (Linux): 1 / 4 / 8
+    tabs → GUI RssAnon 5.5 / 6.8 / 8.1 MB, daemon 5.4 / 17.8 / 34.3 MB, 0–1
+    tick per 20 s each: ~4.1 MB per session (daemon) + ~0.3 MB per tab
+    (GUI). DESIGN.md §3.4 now budgets ≤ 25 MB for GUI + daemon with one
+    session and ≤ 16 MB per additional session with a full default
+    scrollback.
+  - Size (`dist`): Linux 5 901 656 → 5 957 016 (+55 KB), Windows 4 558 848
+    → 4 618 752 (+60 KB); no new dependency.
 
 ## 7. Long-term direction (constrains current work)
 

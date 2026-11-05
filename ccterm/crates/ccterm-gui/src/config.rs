@@ -1,6 +1,8 @@
 //! Settings. Each key can be given on the command line as `--KEY VALUE` or
-//! `--KEY=VALUE`; a config file (later milestone) will feed the same
-//! [`Config::set`].
+//! `--KEY=VALUE`, or in the config file (Linux `$XDG_CONFIG_HOME/ccterm/config`,
+//! Windows `%APPDATA%\ccterm\config`) as `key = value` lines like Ghostty's,
+//! `#` comments; the command line wins. `keybind = CHORD=ACTION` (file only)
+//! changes shortcuts (`crate::keymap`). Bad lines are skipped and logged.
 //!
 //! | key | values | default |
 //! |---|---|---|
@@ -103,6 +105,28 @@ impl Config {
         }
         Ok(())
     }
+
+    /// Applies a config file's text; returns one message per skipped line.
+    pub fn apply_file(&mut self, text: &str, keys: &mut crate::keymap::Keymap) -> Vec<String> {
+        let mut bad = vec![];
+        for (n, line) in text.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((k, v)) = line.split_once('=') else {
+                bad.push(format!("line {}: expected key = value", n + 1));
+                continue;
+            };
+            let (k, v) = (k.trim(), v.trim());
+            let v = v.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(v);
+            let r = if k == "keybind" { keys.apply(v) } else { self.set(k, v) };
+            if let Err(e) = r {
+                bad.push(format!("line {}: {e}", n + 1));
+            }
+        }
+        bad
+    }
 }
 
 #[cfg(test)]
@@ -133,6 +157,17 @@ mod tests {
         assert_eq!(c.scrollback_limit, 0);
         assert!(c.set("scrollback-limit", "10MB").is_err());
         assert!(c.set("scrollback-limit", "-1").is_err());
+        // Config file: comments, quotes, keybind, bad lines reported.
+        let mut keys = crate::keymap::Keymap::default();
+        let mut c = Config::default();
+        let bad = c.apply_file(
+            "# comment\n\nwindow-padding = 8\ndecorations = \"none\"\nkeybind = ctrl+shift+n=new_tab\nnope = 1\nwindow-padding-color\nscrollback-limit = x\n",
+            &mut keys,
+        );
+        assert_eq!((c.window_padding, c.decorations), (8.0, Decorations::None));
+        assert!(keys.action(&crate::keymap::Chord::parse("ctrl+shift+n").unwrap()).is_some());
+        assert_eq!(bad.len(), 3, "{bad:?}");
+        assert!(bad[0].starts_with("line 6:") && bad[1].starts_with("line 7:") && bad[2].starts_with("line 8:"));
         for k in KEYS {
             assert!(!c.clone().set(k, "?").unwrap_err().starts_with("unknown"));
         }

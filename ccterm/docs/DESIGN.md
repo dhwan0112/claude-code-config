@@ -130,8 +130,8 @@ added if profiling asks for it.
 |---|---|
 | Binary: `ccterm`, `dist` profile (stripped) | ≤ 12 MB Linux, ≤ 10 MB Windows (incl. the embedded ConPTY) |
 | Idle CPU, Claude Code idle | ~0 % |
-| Anonymous memory of the `ccterm` process with one session (120x36, 10k lines of scrollback at 120 columns), Claude Code idle | ≤ 25 MB |
-| Anonymous memory per additional session (same scrollback) | measured, reported (no budget yet) |
+| Anonymous memory of ccterm — GUI plus daemon — with one session (120x36, 10k lines of scrollback at 120 columns), Claude Code idle | ≤ 25 MB |
+| Anonymous memory per additional session or tab (daemon + GUI), Claude Code idle, its scrollback filled to the default limit | ≤ 16 MB |
 | Key press → frame | ≤ 16 ms at 120x36 on a laptop CPU |
 
 Anonymous memory is Linux `RssAnon` (`/proc/PID/status`) and Windows
@@ -145,7 +145,12 @@ scrollback_limit` = libghostty-vt's `max_scrollback`, as Ghostty's
 rows of 120 columns. The default, 12 000 000 bytes, keeps about 11 000 such
 rows (~1.1 KB per row). Measured 2026-11-05 with the default filled and
 Claude Code idle: Linux 19.2 MB `RssAnon`, Windows 22.6 MB private working
-set — inside the budget.
+set — inside the budget (single process, before the daemon split).
+Per session since the daemon (2026-11-05, Linux, Claude Code idle, little
+scrollback): 1 / 4 / 8 tabs → daemon 5.4 / 17.8 / 34.3 MB, GUI 5.5 / 6.8 /
+8.1 MB, i.e. about 4.1 MB per session in the daemon and 0.3 MB per tab in
+the GUI; a full default scrollback adds up to about 11 MB to its session
+(`examples/mem.rs`), hence the 16 MB per-session budget.
 
 ### 3.5 Local socket
 
@@ -261,6 +266,32 @@ config directory names, window title prefix. Renaming = that module plus the
   nothing, so Claude Code draws no line of its own; the information goes to
   ccterm's status line instead.
 - Settings are injected only into tabs whose program is `claude`.
+
+### 3.11 Keys
+
+Application shortcuts use Ctrl+Shift (plus Ctrl+Tab and Alt+digit), never
+plain Ctrl+letter, which belongs to the program. Checked against Claude
+Code's interactive-mode reference (code.claude.com/docs/en/interactive-mode,
+2026-11-05): it binds Ctrl+C/D/G/L/O/R/V/B/T/S/Z/A/E/K/U/W/Y/P/N/_,
+Ctrl+Shift+- (undo), Ctrl+Enter, Ctrl+X chords, Shift+Tab, Tab, Esc,
+Alt+M/P/T/O/Y/B/F/D/V.
+
+| Action | Default | Clash check |
+|---|---|---|
+| New tab | Ctrl+Shift+T | Claude Code: Ctrl+T (task list) only; distinct with the kitty protocol, legacy terminals cannot tell them apart but ccterm consumes the chord before the program |
+| Close tab (press twice) | Ctrl+Shift+W | Claude Code: Ctrl+W (delete word); same remark |
+| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+PageDown / Ctrl+PageUp | free in Claude Code; Shift+Tab alone stays with the program |
+| Go to tab N | Alt+1 … Alt+9 | free in Claude Code; bash/readline uses Alt+digit as a numeric argument (rarely typed) — rebind if needed |
+| Command palette | Ctrl+Shift+P | free (Claude Code: Ctrl+P = previous history line) |
+| Paste | Ctrl+Shift+V, Shift+Insert, Paste key; Windows also Ctrl+V | Linux plain Ctrl+V stays with Claude Code (image paste) |
+| Diff pane / status panel (milestone 3) | Ctrl+Shift+D / Ctrl+Shift+S | free (Claude Code: Ctrl+D exit, Ctrl+S stash) |
+
+Linux: GNOME/KDE terminals use the same Ctrl+Shift family inside their own
+windows only; ccterm's window gets the keys first. Windows: Windows
+Terminal uses Ctrl+Shift+T/W and Ctrl+Tab the same way; Alt+digit is free.
+Every binding can be changed in the config file (`keybind = CHORD=ACTION`,
+`CHORD=unbind`). Irreversible actions (close) ask for the same chord again
+within 3 s, with a short hint over the bottom row; no dialog.
 
 ## 4. VT engine decision (measured 2026-11-04)
 
