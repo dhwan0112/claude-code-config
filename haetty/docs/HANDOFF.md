@@ -583,69 +583,104 @@ New in the milestone 1 finishing work (2026-11-05):
 
 ## 6. Next tasks
 
-### 6.1 Manual checks still open for milestone 1
+### 6.1 Manual checks (by a person; regrouped 2026-11-05 after the rename)
 
-0. Ctrl+C twice with a real keyboard right after Claude Code starts, a few
-   times on each platform (automated runs: §3; rare misses on Linux only,
-   within the first seconds); and Ctrl+C while composing Hangul with the
-   Microsoft Korean IME.
-1. Windows: type Hangul with the Microsoft Korean IME in `haetty.exe` running
-   Claude Code — composition shown inline and underlined at the cursor, no
-   caret at the start of the syllable (winit#4746 workaround), candidate
-   window (Hanja key) next to the cursor, commit on Space/Enter, Enter right
-   after a syllable submits once.
-2. Linux on a real desktop: Hangul with ibus or fcitx5 under native Wayland
-   (`zwp_text_input_v3`) and under X11 (XIM).
-3. A physical mouse wheel and a touchpad: one notch = one step in Claude
-   Code; touchpad scrolling smooth enough.
-4. HiDPI: a 150–200 % monitor on Windows and Wayland; moving the window
-   between monitors with different scales (ScaleFactorChanged path).
-5. Interactive resize by dragging the window edge (only programmatic
-   resizes were tested).
-6. Real clipboard managers: copy from Claude Code, paste in another app;
-   paste a large text (bracketed) into Claude Code; the same on a Wayland
-   session (only initialisation was seen) and on Windows (selection copy
-   from Claude Code was only checked on X11).
-7. Font choice with `--font` on each platform; on a full Linux desktop and
-   on Windows, look at Hangul next to Latin (size and baseline after the
-   wide-cell scaling) and at Claude Code's status symbols (⏸ ⚠ ✔ ●)
-   — judged so far from frame dumps only.
+What automation could not show: real keyboards, IMEs, displays, desktops,
+and a logged-in Claude Code (the tests use a fake key, so Claude Code never
+answers, edits or asks for permission). "Real account" = Claude Code logged
+in. Commands below assume `haetty` is on `PATH` (or run it by its path);
+for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 
-8. Windows 10: dark title bar from the theme request (Windows 11 colours
-   do not apply there).
-9. Linux on a GNOME/KDE session: dark title bar on X11 (mutter/KWin read
-   `_GTK_THEME_VARIANT`) and the dark adwaita CSD on Wayland; padding while
-   dragging the window edge.
-10. (M2) Tabs with a real keyboard on both platforms: Ctrl+Shift+T/W,
-    Ctrl+Tab, Alt+1..9, Ctrl+Shift+P; Hangul typed into the palette; the
-    tab bar and hint legible on a real display (frame dumps only so far).
-11. (M2) After `haetty install-desktop` on a GNOME/KDE desktop: the
-    launcher entry, the dock icon matched to the running window (Wayland
-    and X11); on Windows the taskbar, Alt+Tab and Explorer icons.
-12. (M3) With a real Claude Code account: a permission prompt in a
-    background tab shows the red `?`; Stop shows amber; answering clears
-    them; the status row shows context, limits and cost; an Edit/Write by
-    Claude Code shows "N files changed" and Ctrl+Shift+D shows exactly that
-    edit; subagents appear in the panel. (Only fake hook JSON and a fake
-    key were used so far.)
-13. (M3) Unfocused window when Claude Code finishes: taskbar flash on
-    Windows, urgency + notification on GNOME/KDE (`notify-send`).
-14. (M3) Windows with Claude Code using PowerShell instead of Git Bash for
-    the status line, and haetty installed in a path with spaces (the status
-    line command is then double-quoted, which PowerShell does not run).
-15. (Review) With a real account: a permission prompt now waits for the
-    synchronous PermissionRequest hook — the dialog should appear without a
-    noticeable delay (Windows ~70 ms); the red `?` must be on the tab when
-    the dialog shows.
-16. (Review) A real Write of a multi-MB file by Claude Code with and
-    without a running daemon: no hook error shown (only the UserPromptSubmit
-    path was checked with large input).
-17. (Review) Reattach on a real desktop: kill or crash the window during a
-    long Claude Code turn, start haetty from the launcher — the same
-    conversation continues in its tab, nothing restarted; the palette's
-    "Attach detached sessions" after a second window crashed.
-18. (Review) A palette "Paste" while Claude Code asks for permission is
-    refused with a hint; a Ctrl+Shift+V paste typed by you goes through.
+#### A. Linux, no real account needed (a shell, `vim`/`less`, or Claude Code's start screen)
+
+1. **Name and icon.** `haetty install-desktop`, then on GNOME/KDE: the
+   launcher shows "haetty" with the new icon (window with an orange bar,
+   grey `❯_`); a started window is matched to it in the dock (X11 and
+   Wayland session: `WM_CLASS`/`app_id` = `io.github.dhwan0112.haetty`);
+   the icon at the smallest sizes (top bar, Alt+Tab, a 16/24 px panel) —
+   `❯`, cursor and orange bar still recognisable.
+2. **Migration from ccterm** (only if you used ccterm): the first `haetty`
+   start shows "settings and tab sets copied from ccterm"; your
+   `~/.config/ccterm/config` settings apply; the palette's "Open the
+   previous run's tabs" offers your old tabs; the ccterm files are still
+   there. With a `ccterm` window still open: the hint says a ccterm daemon
+   is running, and that window keeps working.
+3. **Old variable names**: `CCTERM_LOG=info haetty` still logs, with one
+   line asking to rename it to `HAETTY_LOG`.
+4. **Hangul IME**: ibus or fcitx5 under native Wayland
+   (`zwp_text_input_v3`) and under X11 (XIM): composition inline at the
+   cursor, commit on Space/Enter, Hangul typed into the palette (Ctrl+Shift+P).
+5. **Keys and tabs** with a real keyboard: Ctrl+Shift+T/W (W twice),
+   Ctrl+Tab / Ctrl+Shift+Tab, Alt+1..9, Ctrl+Shift+P, Ctrl+Shift+V,
+   Shift+Insert; the tab bar and hints legible on your display.
+6. **Mouse**: a wheel notch = one step in a full-screen program; touchpad
+   scrolling smooth enough.
+7. **Window**: drag the edge to resize (padding while dragging); HiDPI
+   150–200 % on Wayland and moving between monitors of different scale;
+   dark title bar on GNOME/KDE X11 (`_GTK_THEME_VARIANT`) and the dark
+   adwaita decorations on Wayland.
+8. **Clipboard** with a real clipboard manager on X11 and Wayland: copy in
+   the terminal, paste elsewhere; paste a large text (bracketed paste).
+9. **Fonts**: `--font` with a few families; Hangul next to Latin (size and
+   baseline), the symbols ⏸ ⚠ ✔ ● (judged from frame dumps only so far).
+10. **Reattach** without Claude Code: open two tabs with shells, `kill -9`
+    the haetty window (or let it crash), start `haetty` again from the
+    launcher — both shells come back as they were (same history), nothing
+    restarted; a second window killed → palette "Attach detached sessions"
+    takes its tabs.
+
+#### B. Linux with a real account (Claude Code logged in)
+
+11. **Ctrl+C twice** right after Claude Code starts, a few times (rare
+    misses were seen only within the first seconds, §3).
+12. **Attention marks**: in a background tab, a permission prompt shows the
+    red `?` *already when the dialog appears* (the hook is synchronous; no
+    noticeable delay before the dialog); Stop shows the amber dot;
+    selecting the tab clears amber; answering clears `?`.
+13. **Unfocused window**: when Claude Code finishes or asks, the window gets
+    the urgency hint and a desktop notification (`notify-send`; off with
+    `notifications = false`), with no session text in it.
+14. **Status row and panel**: context %, 5h/7d limits, cost match Claude
+    Code's `/status`; "esc to interrupt" while it works; Ctrl+Shift+S panel
+    (reset times, subagents with durations, last edit).
+15. **Edits and diff**: after an Edit or Write by Claude Code, "N files
+    changed · Ctrl+Shift+D"; Ctrl+Shift+D shows exactly that edit (side by
+    side at ≥ 110 columns); a multi-MB Write shows no hook error, with and
+    without the daemon running.
+16. **Permission prompt and the palette**: while Claude Code asks, the
+    palette's "Paste" is refused with a hint; Ctrl+Shift+V typed by you
+    goes through.
+17. **Resume and reattach**: kill the window during a long Claude Code turn
+    and start haetty again → the same conversation continues in its tab
+    (not restarted, no second `--resume`); after a reboot (daemon gone) the
+    tabs reopen and each Claude Code tab resumes its conversation once.
+
+#### C. Windows 11 (and 10 where noted)
+
+18. **Name and icon**: `haetty.exe` in Explorer (file icon, Properties),
+    pinned to Start and the taskbar, in Alt+Tab, in the title bar — the new
+    icon at every size; the window title "haetty"; `haetty install-desktop`
+    says nothing is needed.
+19. **Migration and the old daemon**: with a ccterm installation, the first
+    start copies `%APPDATA%\ccterm\config` and the tab sets
+    (`%LOCALAPPDATA%\ccterm\tabs`); with `ccterm.exe` still open, haetty runs
+    beside it (separate pipes) and says so; the ccterm window keeps working.
+20. **Microsoft Korean IME** in `haetty.exe` running Claude Code:
+    composition inline and underlined at the cursor, no caret at the start
+    of the syllable, Hanja candidate window next to the cursor, commit on
+    Space/Enter, Enter right after a syllable submits once; Ctrl+C while
+    composing.
+21. **Keys, mouse, clipboard, fonts, HiDPI** as in 5–9 (Ctrl+V also pastes
+    on Windows); dark title bar on Windows 10 (Windows 11 colours do not
+    apply there).
+22. **With a real account**: 11–17 on Windows (taskbar flash instead of a
+    notification for 13; the permission dialog after the synchronous hook,
+    ~70 ms on the test machine).
+23. **Status line through PowerShell**: on a machine without Git Bash,
+    Claude Code runs the status line with PowerShell — the status row still
+    fills; and with haetty in a folder whose path has spaces (the command
+    is then double-quoted, which PowerShell does not run — expected to
+    fail; tell me if it matters).
 
 ### 6.2 Known gaps (not in milestone 1's scope)
 
@@ -1051,6 +1086,27 @@ regression list, measurements), then committed, pushed and mirrored.
     16, 24, 48, 256 px and Explorer's 32 px icon show the design; the
     window's small (16 px) and big (32 px) icons are set from it.
   - Linux: regression `install-desktop files` and `_NET_WM_ICON set`.
+
+- **2026-11-05 Rename checks.** Crates `haetty-*` and directory
+  `haetty/` (commit of their own), leftover "ccterm:" message prefixes
+  fixed (separate commit). Old and new side by side with the real ccterm
+  binary saved before the rename (`coexist.sh`, `coexist.ps1`, isolated
+  directories): Linux — sockets `rt/ccterm` and `rt/haetty`, each daemon
+  lists only its own session, the haetty window copied the old config and
+  `last.tsv` and logged the old daemon (the GUI and the daemon it starts
+  each say it once), the ccterm daemon keeps its session after haetty
+  ends; Windows — pipes `ccterm-<SID>` and `haetty-<SID>`, two daemon
+  pids, `%APPDATA%\haetty\config` copied, same log lines, ccterm still
+  answers after haetty's daemon is killed. `.desktop` after
+  `install-desktop`: `Icon=io.github.dhwan0112.haetty`,
+  `StartupWMClass=io.github.dhwan0112.haetty`, 8 hicolor sizes + SVG
+  installed. Regression 27/27 under the new names. Size (`dist`, after
+  the reviews and the rename): Linux 6 346 136 (rename) → 6 402 544
+  (icon: +56 KB), Windows 4 992 000 → 4 974 592 (−17 KB).
+  - Session pitfall: a `wsl -- bash -c '… $(mktemp -d) …'` from Git Bash
+    gave an empty variable, so a test `install-desktop` wrote into the real
+    `~/.local/share` (10 new haetty files, removed right after, nothing
+    else touched). Put such commands in a script file run by `wsl bash`.
 
 ### ccx comparison (milestone 3)
 
