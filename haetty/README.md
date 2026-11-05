@@ -221,6 +221,16 @@ selection-foreground = #141414
   hard to read; at 3 they — and colour 0 — turn white, at 4.5 also red,
   magenta and bright blue. The table and frame dumps are in
   `assets/themes/README.md` and `docs/theme/`.
+- **Claude Code in the theme's colours:** Claude Code's own themes use
+  fixed 24-bit colours, which no terminal theme changes. To have Claude
+  Code's screen use the theme's palette too, choose its ANSI theme once:
+  in Claude Code type `/theme` and pick **Dark mode (ANSI colors only)**
+  (it is saved as `"theme": "dark-ansi"` in `~/.claude/settings.json`).
+  Checked with Claude Code 2.1.318: with its default dark theme its start
+  screen and `/theme` preview use only 24-bit colours (`38;2`/`48;2`, 63
+  times, no palette numbers); with "Dark mode (ANSI colors only)" the same
+  screens use only palette numbers (`37`, `91`–`96`, `40`; 40 times) and no
+  24-bit colour — so IBM 5153 CGA's colours appear in Claude Code itself.
 - A theme applies to tabs opened after haetty starts with it; tabs that
   were still running in the daemon keep their colours.
 

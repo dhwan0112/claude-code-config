@@ -168,7 +168,7 @@ line every 3 s):
 
 | Item | Target | Measured |
 |---|---|---|
-| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6 402 872 B (6.4 MB), Windows 4 981 760 B (5.0 MB), re-measured 2026-11-06 after the rename to haetty, the crate rename, the final icon, the status-line path fix and the AppUserModelID (see HANDOFF.md §6.4 for each step) |
+| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6 422 992 B (6.4 MB), Windows 5 001 216 B (5.0 MB), 2026-11-06 after the themes and `minimum-contrast` (+20 KB / +19 KB; see HANDOFF.md §6.4 for each step) |
 | Idle CPU, Claude Code idle, 30 s | ~0 % | GUI 0 ticks, daemon 1 tick (10 ms) |
 | GUI + daemon, one session, default scrollback filled at 120 columns | ≤ 25 MB | 6.3 + 14.3 = 20.5 MB |
 | Per additional session, scrollback filled | ≤ 16 MB | +14.0 MB (2nd: daemon +13.1, GUI +0.9), +13.4 MB (3rd) |
@@ -613,6 +613,14 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   computing and Powerline glyphs (Ghostty's `noMinContrast`). The default
   keeps the theme's colours as they are (IBM 5153 CGA: blue 1.85:1, bright
   black 2.21:1 on `#141414`; table in `assets/themes/README.md`).
+- Windows 11: title bar, border and the padding take the theme's
+  background (`chrome.rs`, from the first frame); checked by screen capture
+  for each built-in theme and an override.
+- Claude Code: its own themes draw in fixed 24-bit colours; its "Dark mode
+  (ANSI colors only)" (`/theme`, saved as `"theme": "dark-ansi"` in the
+  user's settings) uses palette numbers only, so it follows the theme.
+  haetty does not set Claude Code's theme (§3.13: nothing but hooks and the
+  status line is injected); the README tells the user.
 - A theme takes effect for sessions created after the GUI started with
   it; sessions already running in the daemon (reattached) keep their
   colours. Recolouring them would need a new client message (and a role

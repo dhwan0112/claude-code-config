@@ -685,6 +685,14 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     user folder with a space, the status row at the bottom of a Claude Code
     tab fills (`$ 0.00` …) within a few seconds. The injected command is the
     8.3 short path (checked to run in PowerShell 5.1 and 7 directly).
+24. **Theme** (Linux and Windows): IBM 5153 CGA on your display — text
+    `#cecece` on `#141414`, colour 3 brown, blue dark; the title bar
+    (Windows 11), padding, tab bar and status row in the same greys; the
+    waiting mark brown, the question mark red. `theme = haetty classic`
+    brings the old look back; a Ghostty theme file in the themes folder
+    works by its name; `minimum-contrast = 3` makes dark blue text white.
+    In Claude Code, `/theme` → "Dark mode (ANSI colors only)": its screen
+    then uses the theme's colours.
 
 ### 6.2 Known gaps (not in milestone 1's scope)
 
@@ -1150,7 +1158,6 @@ regression list, measurements), then committed, pushed and mirrored.
     script writes both forms.)
   - Note: PowerShell may refuse to dot-source a script from
     `\\wsl.localhost\…` inside a `-File` run; copy `test-guard.ps1` locally.
-
   - 2026-11-06 follow-up: a relative base is refused too (all three guards).
     An earlier guard check had passed a Windows path whose backslashes the
     shell ate (`C:UsersdennyAppDataLocalTempx`): a relative path, which the
@@ -1278,6 +1285,36 @@ regression list, measurements), then committed, pushed and mirrored.
     socket/state): `docs/theme/minimum-contrast-{1,3,4.5}.png` — at 3,
     colours 0, 4, 8 are white; at 4.5 also 1, 5, 12 and the faint text;
     the others unchanged; box drawing unchanged.
+
+- **2026-11-06 Theme checks: Windows frame, §2.3, Claude Code's ANSI
+  theme, size.**
+  - Windows 11 (`chromewin.ps1`, test-guarded, dev instance; screen capture
+    of the visible frame, the window made topmost for it — no focus taken):
+    title bar, border, left and bottom padding are `#141414` (IBM 5153
+    CGA), `#1e1e1e` (haetty classic), `#000000` (CGA Black) and `#203040`
+    (`--background "#203040"` on CGA) — each exactly the theme background.
+  - DESIGN.md §2.3 re-run with the new default (`e2e3.sh`, Linux/Xvfb,
+    frames' most common colour `#141414`): one tab → only the status row
+    besides the background, 0 non-grey pixels; two idle tabs → 0 non-grey;
+    events → no layout change (grids 80x18 before and after, 0 resizes);
+    sensitivity: the `?` mark 37 non-grey pixels, 96 % context 230. 5/5.
+    Regression `reg.sh` 27/27.
+  - Windows natively: GUI unit tests 69/69 (reference frames identical),
+    core unit tests 8/8.
+  - Claude Code 2.1.318 (headless, isolated home, dummy key; raw PTY logs
+    kept in the test run directory, counts only): `/theme` lists "Dark mode
+    (ANSI colors only)" (4 below "Dark mode"); choosing it writes `"theme":
+    "dark-ansi"` to `~/.claude/settings.json`. Same screens (start screen,
+    `/theme` with its diff preview), SGR colours counted: default theme
+    `38;2` 51, `48;2` 12, palette numbers 0; ANSI theme `38;2`/`48;2` 0,
+    palette numbers 40 (`37`×21, `94`×6, `91`×4, `92`×3, `93`×3, `96`×1,
+    `40`×2). So with that theme Claude Code's screen takes the haetty
+    theme's colours (e.g. `37` → `#cecece`, `94` → `#4e4edc`). README says
+    how to choose it.
+  - Size (`dist`, stripped) after the themes and `minimum-contrast`: Linux
+    6 402 872 → 6 422 992 (+20 120 B), Windows 4 981 760 → 5 001 216
+    (+19 456 B); no new dependency (the theme parser, contrast code, ~1.2
+    KB of embedded theme files and libghostty-vt's colour parser).
 
 ### ccx comparison (milestone 3)
 
