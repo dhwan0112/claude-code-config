@@ -26,6 +26,8 @@ line JSON). Requirements set by the user:
 | `ccterm-core` | Done. `Session::spawn(SessionConfig)` → `SessionHandle` + `Receiver<SessionEvent>`. Engine thread owns `libghostty_vt::Terminal`, `RenderState`, key/mouse encoders and the PTY writer. |
 | `ccterm-headless` | Done. Step-script runner (README lists the steps; `drag` added for selection tests). |
 | `ccterm-gui` | Milestone 1 done (binary `ccterm`). See below. |
+| `ccterm-proto` | Milestone 2: product constants, paths, wire types (postcard), framing, local socket / named pipe transport, daemon client (`RemoteSession`). |
+| `ccterm-daemon` | Milestone 2: owns the sessions; frames, roles, event log (DESIGN.md §3.5–3.8). |
 
 Public API a frontend uses (`ccterm-core`):
 
@@ -648,6 +650,51 @@ regression list, measurements), then committed, pushed and mirrored.
   is reserved, Ctrl+Shift for app shortcuts, `statusLine` replaced in
   ccterm tabs). Serialization chosen by measurement: postcard
   +13.1 / +13.3 KB dist vs a hand-written codec, bincode +21.8 / +18.4 KB.
+- **2026-11-05 P1 — daemon and IPC.** New crates `ccterm-proto` (product
+  constants, paths, postcard wire types and framing, Unix socket / named
+  pipe transport with overlapped I/O and a user-only DACL, a client whose
+  `RemoteSession` has the shape of `Session`) and `ccterm-daemon` (one
+  state thread; reader/writer thread per client; per-client baseline
+  snapshots, row-diff frames, `NextFrame` backpressure; roles; event log
+  `events.log`; exit after 10 s without sessions and clients). The GUI is
+  a control client: it starts `ccterm daemon` detached when none answers,
+  creates its session there (with its environment and working directory),
+  and closes it when the program exits or the window is closed; a killed
+  GUI leaves the session running. `ccterm status [--json | --screen ID]`
+  is read-only (observe role). Evidence:
+  - `cargo test`: daemon integration (`crates/ccterm-daemon/tests/daemon.rs`):
+    a client killed while `sh` keeps printing, reattach → session listed,
+    seq continues (larger), output went on (+20 lines or more), frames keep
+    coming; observe client's `Key`/`Paste`/`Close` and report client's
+    `Create` → `Denied`, the program got nothing, control input works; idle
+    exit; event log lines. Unit tests: frames, key/mouse round trip, frame
+    limits, private dir (0700, symlink and mode refused), event log.
+  - Regression list through the daemon (Linux, Xvfb, `reg.sh`, 10/10): probe
+    receives `a`, `Z`, Shift+Enter `\e[13;2u`, Ctrl+Shift+V paste
+    `\e[200~pasted-text\e[201~`, wheel `\e[<64;`, focus `\e[I`; OSC 52 →
+    X clipboard `osc52-ok`; resize 80x20 → 54x17; Ctrl+C twice exits Claude
+    Code 3/3 (6 s after start); ibus-hangul preedit 7 events, commit, 한
+    received; Hangul two-cell and monochrome-first symbols unchanged (frame
+    dump).
+  - Windows 11 (native): `status --json` without a daemon →
+    `{"daemon_pid":null,"sessions":[]}`; GUI started the daemon (parent =
+    GUI); after `Stop-Process -Force` on the GUI the session is still listed
+    as running and its output went on (`tick 4` → `tick 10` 5 s later),
+    daemon alive; closing the last window → daemon gone after its 10 s idle.
+  - Latency key → frame through the daemon (`cargo run --release -p
+    ccterm-daemon --example latency`, 120x36): Linux median 2.14 ms, p95
+    2.59, max 3.73 (300 keys); Windows median 1.65, p95 2.03, max 2.44 (200
+    keys, cmd.exe echo). GUI draw of an incremental frame (trace log
+    "frame drawn in"): median 0.08 ms. Total well under 16 ms.
+  - Idle 30 s with Claude Code idle: Linux GUI 0 ticks, RssAnon 5.2 MB;
+    daemon 0 ticks, RssAnon 11.6 MB (it now holds the session: engine,
+    screen, scrollback), 12 threads. Windows GUI private working set 8.7 MB,
+    0.016 s CPU; daemon 6.1 MB, 0 s.
+  - Size (`dist`, stripped): Linux 5 649 648 → 5 901 656 (+252 KB), Windows
+    4 290 048 → 4 558 848 (+269 KB). cargo-bloat (release `.text`):
+    `ccterm_daemon` 114 KiB, `ccterm_proto` 97 KiB including the postcard /
+    serde code for the message types; the rest is std (Unix sockets,
+    process spawning) and the Windows pipe/security code.
 
 ## 7. Long-term direction (constrains current work)
 

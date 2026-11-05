@@ -1,0 +1,29 @@
+[package]
+name = "ccterm-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "ccterm daemon protocol: product constants, paths, wire types, framing, local transport, session client"
+
+[dependencies]
+ccterm-core.workspace = true
+crossbeam-channel.workspace = true
+log.workspace = true
+serde = { version = "1", default-features = false, features = ["derive", "std"] }
+postcard = { version = "1.1", default-features = false, features = ["use-std"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
+] }

@@ -1,11 +1,13 @@
-//! `ccterm`: a terminal window for one ccterm-core session.
+//! `ccterm`: terminal windows whose sessions live in the ccterm daemon.
 //!
 //! ```text
-//! ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
+//! ccterm [gui] [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
+//! ccterm daemon
+//! ccterm status [--json | --screen ID]
 //! ```
 //! Without a program it runs the user's shell (`$SHELL`, else `/bin/sh`;
 //! Windows: `%COMSPEC%`, else `cmd.exe`). The first word after the options is
-//! the program (`ccterm claude`), except the reserved subcommand names in
+//! the program (`ccterm claude`), except the subcommand names in
 //! [`SUBCOMMANDS`]; a program with one of those names goes after `--`
 //! (`ccterm -- status`).
 //!
@@ -21,6 +23,7 @@
 
 mod app;
 mod chrome;
+mod cli;
 mod clipboard;
 mod config;
 mod damage;
@@ -54,20 +57,53 @@ fn default_shell() -> CommandSpec {
     CommandSpec::new(prog)
 }
 
-/// Subcommand names reserved for later milestones (`docs/DESIGN.md` §3.2,
-/// §6). As a first word they end with an error instead of running a program
-/// of that name, so adding a subcommand later does not change what an
-/// existing command line does.
+/// All subcommand names (`docs/DESIGN.md` §3.2, §6). Implemented ones are
+/// in [`IMPLEMENTED`] and must be the first word; the others are reserved:
+/// as a first word they end with an error instead of running a program of
+/// that name, so adding them later does not change what a command line does.
 pub const SUBCOMMANDS: &[&str] =
     &["gui", "daemon", "hook", "statusline", "run", "headless", "install-desktop", "status"];
+pub const IMPLEMENTED: &[&str] = &["gui", "daemon", "status"];
+
+/// What the command line asks for.
+#[derive(Debug)]
+pub enum Command {
+    Gui(Box<Options>),
+    Daemon,
+    Status {
+        json: bool,
+    },
+    /// `status --screen ID`: one session's screen as text (read-only).
+    Screen {
+        id: String,
+    },
+}
+
+fn parse_command(args: Vec<String>) -> Result<Command, String> {
+    match args.first().map(String::as_str) {
+        Some("daemon") => match args.len() {
+            1 => Ok(Command::Daemon),
+            _ => Err("usage: ccterm daemon".into()),
+        },
+        Some("status") => match &args[1..] {
+            [] => Ok(Command::Status { json: false }),
+            [j] if j == "--json" => Ok(Command::Status { json: true }),
+            [s, id] if s == "--screen" => Ok(Command::Screen { id: id.clone() }),
+            _ => Err("usage: ccterm status [--json | --screen ID]".into()),
+        },
+        Some("gui") => parse_args(args.into_iter().skip(1)).map(|o| Command::Gui(Box::new(o))),
+        _ => parse_args(args).map(|o| Command::Gui(Box::new(o))),
+    }
+}
 
 const USAGE: &str =
     "usage: ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
      settings (KEY): window-padding N, window-padding-balance true|false,\n\
      window-padding-color background|extend|extend-always, decorations native|integrated|none,\n\
      scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row)\n\
-     reserved subcommands (not implemented yet): gui, daemon, hook, statusline, run, headless,\n\
-     install-desktop, status; to run a program with one of these names: ccterm [OPTIONS] -- NAME [ARGS...]";
+     subcommands: ccterm gui [OPTIONS] [PROGRAM...], ccterm daemon, ccterm status [--json | --screen ID]\n\
+     reserved (not implemented yet): hook, statusline, run, headless, install-desktop;\n\
+     to run a program with a subcommand's name: ccterm [OPTIONS] -- NAME [ARGS...]";
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
     let mut o = Options {
@@ -111,6 +147,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
                     None => it.next().ok_or(format!("--{key} needs a value"))?,
                 };
                 o.config.set(key, &value)?;
+            }
+            s if IMPLEMENTED.contains(&s) => {
+                return Err(format!(
+                    "ccterm: '{s}' is a subcommand and must come first (ccterm {s} ...); \
+                     to run a program named {s}, use: ccterm -- {s}"
+                ));
             }
             s if SUBCOMMANDS.contains(&s) => {
                 return Err(format!(
@@ -162,7 +204,7 @@ impl log::Log for Logger {
     fn flush(&self) {}
 }
 
-fn init_log() {
+fn init_log(default_file: Option<std::path::PathBuf>) {
     let level = match std::env::var("CCTERM_LOG").unwrap_or_default().as_str() {
         "error" => log::LevelFilter::Error,
         "info" => log::LevelFilter::Info,
@@ -172,6 +214,8 @@ fn init_log() {
         _ => log::LevelFilter::Warn,
     };
     let file = std::env::var_os("CCTERM_LOG_FILE")
+        .map(std::path::PathBuf::from)
+        .or(default_file)
         .and_then(|p| std::fs::OpenOptions::new().create(true).append(true).open(p).ok())
         .map(Mutex::new);
     let logger = Box::leak(Box::new(Logger { level, file }));
@@ -260,10 +304,35 @@ fn message_box(msg: &str) {
 }
 
 fn main() {
-    init_log();
-    let opts = match parse_args(std::env::args().skip(1)) {
-        Ok(o) => o,
-        Err(msg) => exit_with(&msg, if msg.starts_with("usage") || msg.starts_with("ccterm ") { 0 } else { 2 }),
+    let cmd = match parse_command(std::env::args().skip(1).collect()) {
+        Ok(c) => c,
+        Err(msg) => {
+            init_log(None);
+            exit_with(&msg, if msg.starts_with("usage") || msg.starts_with("ccterm ") { 0 } else { 2 })
+        }
+    };
+    let opts = match cmd {
+        // No window, fonts or event loop for these (DESIGN.md §3.1).
+        Command::Daemon => {
+            let dir = ccterm_proto::paths::state_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            init_log(Some(dir.join("daemon.log")));
+            std::process::exit(cli::daemon());
+        }
+        Command::Status { json } => {
+            init_log(None);
+            let (text, code) = cli::status(json);
+            exit_with(&text, code)
+        }
+        Command::Screen { id } => {
+            init_log(None);
+            let (text, code) = cli::screen(&id);
+            exit_with(&text, code)
+        }
+        Command::Gui(o) => {
+            init_log(None);
+            *o
+        }
     };
     let fonts = font::Fonts::load(opts.font.as_deref()).unwrap_or_else(|e| fatal(&e));
     let el =
@@ -308,8 +377,29 @@ mod tests {
     }
 
     #[test]
+    fn implemented_subcommands_come_first() {
+        assert!(matches!(parse_command(vec!["daemon".into()]), Ok(Command::Daemon)));
+        assert!(matches!(parse_command(vec!["status".into()]), Ok(Command::Status { json: false })));
+        assert!(matches!(parse_command(vec!["status".into(), "--json".into()]), Ok(Command::Status { json: true })));
+        assert!(parse_command(vec!["status".into(), "--xml".into()]).is_err());
+        assert!(parse_command(vec!["daemon".into(), "x".into()]).is_err());
+        assert!(
+            matches!(parse_command(vec!["status".into(), "--screen".into(), "a-1".into()]), Ok(Command::Screen { id }) if id == "a-1")
+        );
+        match parse_command(vec!["gui".into(), "--cols".into(), "90".into(), "claude".into()]) {
+            Ok(Command::Gui(o)) => assert_eq!((o.cols, o.command.program.to_str()), (90, Some("claude"))),
+            other => panic!("{other:?}"),
+        }
+        for name in IMPLEMENTED {
+            let e = args(&["--cols", "80", name]).unwrap_err();
+            assert!(e.contains("must come first") && e.contains(&format!("ccterm -- {name}")), "{e}");
+            assert_eq!(args(&["--", name]).unwrap().command.program, *name);
+        }
+    }
+
+    #[test]
     fn reserved_subcommands_are_errors_until_implemented() {
-        for name in SUBCOMMANDS {
+        for name in SUBCOMMANDS.iter().filter(|n| !IMPLEMENTED.contains(n)) {
             let e = args(&[name]).err().unwrap_or_else(|| panic!("{name} must be rejected"));
             assert!(e.contains("not implemented") && e.contains(&format!("ccterm -- {name}")), "{e}");
             // Also after options, and with arguments.

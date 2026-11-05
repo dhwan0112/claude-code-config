@@ -12,6 +12,8 @@ path = "src/main.rs"
 
 [dependencies]
 ccterm-core.workspace = true
+ccterm-proto.workspace = true
+ccterm-daemon.workspace = true
 log.workspace = true
 # X11 and Wayland client libraries are loaded at run time (dlopen), so the
 # binary links no windowing library. Wayland window decorations: see

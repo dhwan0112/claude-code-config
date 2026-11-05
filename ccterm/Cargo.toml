@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/ccterm-pty", "crates/ccterm-core", "crates/ccterm-headless", "crates/ccterm-gui"]
+members = [
+  "crates/ccterm-pty",
+  "crates/ccterm-core",
+  "crates/ccterm-proto",
+  "crates/ccterm-daemon",
+  "crates/ccterm-headless",
+  "crates/ccterm-gui",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,6 +19,8 @@ rust-version = "1.90"
 [workspace.dependencies]
 ccterm-pty = { path = "crates/ccterm-pty" }
 ccterm-core = { path = "crates/ccterm-core" }
+ccterm-proto = { path = "crates/ccterm-proto" }
+ccterm-daemon = { path = "crates/ccterm-daemon" }
 libghostty-vt = "=0.2.2"
 portable-pty = "0.9.0"
 crossbeam-channel = "0.5"

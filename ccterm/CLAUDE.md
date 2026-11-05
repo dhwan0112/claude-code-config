@@ -46,7 +46,7 @@ the start of a session.
 
 ```sh
 cargo build --release
-cargo test                                   # core: 5 unit + 10 end-to-end (Linux, needs python3); gui: 47
+cargo test                                   # core 5+10 (Linux, python3); gui 49; proto 4; daemon 1+2 (Unix)
 cargo clippy --all-targets                   # must stay warning-free
 cargo clippy --all-targets --target x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu

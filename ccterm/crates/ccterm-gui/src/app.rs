@@ -1,11 +1,15 @@
-//! The winit application: one window, one session.
+//! The winit application: one window, one session. The session runs in the
+//! daemon (`ccterm daemon`, started on demand); this process is a client
+//! that mirrors its screen (DESIGN.md §3.1, §3.6).
 
 use std::rc::Rc;
 
 use ccterm_core::{
-    GridSize, Key, KeyInput, MouseAction, MouseButton, MouseInput, Session, SessionConfig, SessionEvent, SessionHandle,
-    Snapshot,
+    GridSize, Key, KeyInput, MouseAction, MouseButton, MouseInput, SessionConfig, SessionEvent, Snapshot,
 };
+use ccterm_proto::paths::Endpoint;
+use ccterm_proto::wire::{rgb, CreateSpec};
+use ccterm_proto::{Client, RemoteHandle, RemoteSession, Role};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, WindowEvent};
@@ -48,7 +52,8 @@ struct Win {
     /// Window inner size, physical pixels.
     size: PhysicalSize<u32>,
     grid: GridSize,
-    session: Session,
+    client: Client,
+    session: RemoteSession,
     snap: Option<Snapshot>,
     /// Rows changed since the last frame was drawn.
     dirty: Vec<bool>,
@@ -109,16 +114,27 @@ impl App {
             if size.width > 0 && size.height > 0 { layout.grid(size.width, size.height) } else { layout.grid(w, h) };
         renderer.resize(size.width, size.height);
 
+        let ep = Endpoint::default_for_user().map_err(|e| format!("daemon socket: {e}"))?;
+        let client = Client::connect_or_spawn(&ep, Role::Control, "gui").map_err(|e| e.to_string())?;
+        let cmd = &self.opts.command;
+        let spec = CreateSpec {
+            program: cmd.program.to_string_lossy().into_owned(),
+            args: cmd.args.iter().map(|a| a.to_string_lossy().into_owned()).collect(),
+            cwd: std::env::current_dir().ok().map(|d| d.to_string_lossy().into_owned()),
+            // The daemon may run in an older environment: the child gets ours
+            // (never stored, DESIGN.md §3.6).
+            env: std::env::vars_os()
+                .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+                .collect(),
+            size: grid.into(),
+            scrollback_limit: self.opts.config.scrollback_limit as u64,
+            default_fg: rgb(cfg.default_fg),
+            default_bg: rgb(cfg.default_bg),
+        };
+        let id = client.create(spec).map_err(|e| e.to_string())?;
         cfg.size = grid;
-        cfg.scrollback_limit = self.opts.config.scrollback_limit;
-        let session = Session::spawn(cfg).map_err(|e| format!("cannot start {:?}: {e}", self.opts.command.program))?;
-        log::info!(
-            "session: {} pid {:?}, grid {}x{}",
-            session.handle.backend(),
-            session.handle.pid(),
-            grid.cols,
-            grid.rows
-        );
+        let session = client.attach(&id, None).map_err(|e| format!("attach: {e}"))?;
+        log::info!("session {id} in daemon {}, grid {}x{}", client.daemon_pid, grid.cols, grid.rows);
 
         // Forward session events into the event loop; this thread ends when
         // the session's channel closes or the loop is gone.
@@ -142,6 +158,7 @@ impl App {
             layout,
             size,
             grid,
+            client,
             session,
             snap: None,
             dirty: vec![],
@@ -161,8 +178,15 @@ impl App {
 }
 
 impl Win {
-    fn handle(&self) -> &SessionHandle {
+    fn handle(&self) -> &RemoteHandle {
         &self.session.handle
+    }
+
+    /// Tells the daemon to end this window's session.
+    fn close_session(&self) {
+        if let Err(e) = self.client.close(&self.session.id) {
+            log::warn!("close session {}: {e}", self.session.id);
+        }
     }
 
     /// Sizes of the GUI's own heap structures, for the log (`CCTERM_LOG=info`).
@@ -286,9 +310,11 @@ impl Win {
         }
         let scene =
             Scene { snap, dirty: &self.dirty, full: self.full, focused: self.focused, preedit: self.preedit.as_ref() };
+        let t0 = std::time::Instant::now();
         if let Err(e) = self.renderer.render(&scene) {
             log::error!("render: {e}");
         }
+        log::trace!("frame drawn in {} us (full {})", t0.elapsed().as_micros(), self.full);
         self.full = false;
         self.dirty.iter_mut().for_each(|d| *d = false);
     }
@@ -331,6 +357,7 @@ impl ApplicationHandler<UserEvent> for App {
             SessionEvent::Exited(status) => {
                 log::info!("child exited: {status:?}");
                 win.log_memory();
+                win.close_session();
                 self.exit_code = status.code.map_or(1, |c| c as i32);
                 el.exit();
             }
@@ -359,6 +386,10 @@ impl ApplicationHandler<UserEvent> for App {
         match event {
             WindowEvent::CloseRequested => {
                 win.log_memory();
+                // Closing the window ends its session, as before the daemon
+                // (tab sets bring sessions back, P3). A crashed or killed GUI
+                // leaves the session running in the daemon.
+                win.close_session();
                 el.exit()
             }
             WindowEvent::RedrawRequested => win.draw(),
