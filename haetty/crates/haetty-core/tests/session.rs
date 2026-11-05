@@ -58,7 +58,8 @@ fn answers_startup_queries() {
     assert_eq!(line_with(&s, "KITTY_AFTER_PUSH="), "KITTY_AFTER_PUSH=\\e[?1u");
     assert_eq!(line_with(&s, "SIZE_CELLS="), "SIZE_CELLS=\\e[8;30;100t");
     assert_eq!(line_with(&s, "COLOR_SCHEME="), "COLOR_SCHEME=\\e[?997;1n");
-    assert_eq!(line_with(&s, "OSC11_BG="), "OSC11_BG=\\e]11;rgb:1e1e/1e1e/1e1e\\e\\");
+    // The default theme's background (IBM 5153 CGA).
+    assert_eq!(line_with(&s, "OSC11_BG="), "OSC11_BG=\\e]11;rgb:1414/1414/1414\\e\\");
     assert!(line_with(&s, "DA1=").starts_with("DA1=\\e[?62;"));
 }
 

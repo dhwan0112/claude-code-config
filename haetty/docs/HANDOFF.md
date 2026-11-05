@@ -1235,6 +1235,24 @@ regression list, measurements), then committed, pushed and mirrored.
   - The reference frames are unchanged (the default is still "haetty
     classic", whose colours are the old ones).
 
+- **2026-11-06 Default theme IBM 5153 CGA (DESIGN §2 protected area,
+  approved).** `DEFAULT_THEME = "IBM 5153 CGA"` (GUI, daemon default for
+  sessions without a palette, headless); haetty's state colours come from
+  the theme: Wait mark and usage ≥ 80 % = colour 3, Ask mark and usage ≥
+  95 % = colour 9, diff tints = colours 2/1 (were fixed amber `#dea532`, red
+  `#e25046`, green/red tints). Greys are mixed from the screen's default
+  colours as before. DESIGN.md §2.2 and §3.13, README. Evidence:
+  - Unit test `ui_colours_follow_the_theme`: for IBM 5153 CGA, its Black
+    variant and haetty classic, the tab bar's `●`/`?` and the status row at
+    97 % use the theme's colours 3/9 (CGA: `#d08c1b`, `#dc4e4e`); every
+    background and all other text are greys (r = g = b); the three themes
+    give different UI colours.
+  - Core test `answers_startup_queries`: OSC 11 with the default theme is
+    `rgb:1414/1414/1414`.
+  - The reference frames are still the old ones: their scenes are drawn
+    with the colours they were made with (`#dcdcdc` on `#1e1e1e`, amber
+    and red) until the next commit makes them with the default theme.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

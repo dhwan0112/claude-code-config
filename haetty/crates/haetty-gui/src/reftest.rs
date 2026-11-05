@@ -29,6 +29,16 @@ use crate::ui::{self, Compose, Greys, TabView};
 
 const FG: Rgb = Rgb { r: 220, g: 220, b: 220 };
 const BG: Rgb = Rgb { r: 30, g: 30, b: 30 };
+
+/// The scenes' state colours: the colours the references were made with
+/// (amber and red as they were before themes), so that they stay valid
+/// until the reference frames are made with the default theme.
+fn accents() -> [Rgb; 16] {
+    let mut p = haetty_core::theme::Theme::base().palette;
+    p[3] = Rgb { r: 222, g: 165, b: 50 };
+    p[9] = Rgb { r: 226, g: 80, b: 70 };
+    p
+}
 const PROMPT: Rgb = Rgb { r: 120, g: 190, b: 120 };
 const COLS: u16 = 60;
 const ROWS: u16 = 12;
@@ -180,9 +190,10 @@ fn screen(cols: u16, rows: u16, lines: &[&str], cursor: Option<(u16, u16)>) -> S
     }
 }
 
-fn compose(screen: &Snapshot) -> Compose<'_> {
+fn compose<'a>(screen: &'a Snapshot, accents: &'a [Rgb; 16]) -> Compose<'a> {
     Compose {
         screen,
+        accents,
         cols: COLS,
         rows: ROWS,
         tab_bar: None,
@@ -228,7 +239,9 @@ fn claude_info() -> ClaudeInfo {
 
 /// The window states: name, composed grid, IME preedit.
 fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
-    let g = Greys::from(FG, BG);
+    let acc = accents();
+    let g = Greys::new(FG, BG, &acc);
+    let compose = |s| compose(s, &acc);
     let mut out = vec![];
 
     let s = screen(COLS, ROWS, &[], Some((0, 0)));

@@ -175,7 +175,7 @@ keybind = ctrl+shift+n=new_tab
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |
 | `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
 | `keybind` | `CHORD=ACTION` or `CHORD=unbind` (file only, may repeat) | see [Tabs and keys](#tabs-and-keys) |
-| `theme` | a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes)) | `haetty classic` |
+| `theme` | a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes)) | `IBM 5153 CGA` |
 | `palette` | `N=COLOR`, N 0–15 (may repeat) — on top of the theme | the theme's |
 | `background`, `foreground`, `cursor-color`, `cursor-text`, `selection-background`, `selection-foreground` | a colour (`#rrggbb`, `rrggbb`, an X11 name) — on top of the theme | the theme's |
 
@@ -196,10 +196,14 @@ selection-background = #4e4e4e
 selection-foreground = #141414
 ```
 
-- Built in: `IBM 5153 CGA`, `IBM 5153 CGA (Black)` (the IBM 5153 colour
-  monitor's CGA colours; sources and licence in
-  [Third-party components](#third-party-components)) and `haetty classic`
-  (haetty's earlier colours).
+- Built in: `IBM 5153 CGA` (the default) and `IBM 5153 CGA (Black)` — the
+  IBM 5153 colour monitor's CGA colours, colour 3 ("yellow") is brown as on
+  the real monitor; sources and licence in
+  [Third-party components](#third-party-components) — and `haetty classic`
+  (haetty's colours before themes: `theme = haetty classic`).
+- haetty's own rows follow the theme: greys mixed from its background and
+  foreground; the "waiting" mark and usage ≥ 80 % in colour 3, the "asks
+  you" mark and usage ≥ 95 % in colour 9.
 - Your own: put the file into the themes folder — Linux
   `~/.config/haetty/themes/` (`$XDG_CONFIG_HOME/haetty/themes/`), Windows
   `%APPDATA%\haetty\themes\` — and use its file name: `theme = My Theme`.
@@ -272,8 +276,8 @@ line of its own.
 
 | Mark | Meaning | Goes away |
 |---|---|---|
-| amber `●` | Claude Code stopped or is idle, waiting for you | when you select the tab, or focus the window on it |
-| red `?` | a permission prompt or a question | only when Claude Code moves on (a prompt is sent, the tool runs or is denied, it stops), not by looking |
+| `●` (theme colour 3: brown in IBM 5153 CGA, amber in others) | Claude Code stopped or is idle, waiting for you | when you select the tab, or focus the window on it |
+| `?` (theme colour 9: red) | a permission prompt or a question | only when Claude Code moves on (a prompt is sent, the tool runs or is denied, it stops), not by looking |
 
 **Status row.** The bottom row of a Claude Code tab, reserved from the
 start so that Claude Code is not reflowed when the first report arrives (it
@@ -285,7 +289,7 @@ ctx  42%  5h  12%  7d  30%  $  1.23  3 files changed · Ctrl+Shift+D
 ```
 
 Context use, 5-hour and 7-day limits, cost and files changed, in greys;
-amber from 80 %, red from 95 %. "esc to interrupt" appears at the right
+colour 3 (brown/amber) from 80 %, colour 9 (red) from 95 %. "esc to interrupt" appears at the right
 while Claude Code works.
 
 **Status panel (Ctrl+Shift+S).** A column on the right, hidden by default;

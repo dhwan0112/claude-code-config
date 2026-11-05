@@ -182,8 +182,9 @@ impl DiffView {
             put(&mut grid[top + 2.min(height - 1)], 2, &fit(n, cols - 4), g.dim, g.bg, false);
             return;
         }
-        let add_bg = mix(g.bg, Rgb { r: 60, g: 170, b: 90 }, 55);
-        let del_bg = mix(g.bg, Rgb { r: 200, g: 70, b: 70 }, 55);
+        // The theme's green and red, faint on the background.
+        let add_bg = mix(g.bg, g.added, 55);
+        let del_bg = mix(g.bg, g.removed, 55);
         let rows = self.rows(cols);
         let split = cols >= SPLIT_COLS;
         let nw = 5; // line-number width

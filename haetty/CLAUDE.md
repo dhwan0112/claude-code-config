@@ -77,7 +77,7 @@ the start of a session.
 
 ```sh
 cargo build --release
-cargo test                                   # core 8+11 (Linux, python3); gui 68 + instances, migrate, permission 1 each; proto 4; cc 11; daemon 1+4 (Unix); testkit 1
+cargo test                                   # core 8+11 (Linux, python3); gui 69 + instances, migrate, permission 1 each; proto 4; cc 11; daemon 1+4 (Unix); testkit 1
 cargo clippy --all-targets                   # must stay warning-free
 cargo clippy --all-targets --target x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu

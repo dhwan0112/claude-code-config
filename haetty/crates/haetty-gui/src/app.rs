@@ -808,7 +808,7 @@ impl Win {
         let (fg, bg) = (self.theme.foreground, self.theme.background);
         let empty = Snapshot { default_fg: fg, default_bg: bg, ..Default::default() };
         let screen = self.tab().snap.as_ref().unwrap_or(&empty);
-        let g = ui::Greys::from(screen.default_fg, screen.default_bg);
+        let g = ui::Greys::new(screen.default_fg, screen.default_bg, &self.theme.palette);
         let names: Vec<String> = self.tabs.iter().map(Tab::name).collect();
         let bar = (self.tabs.len() >= 2).then(|| {
             let views: Vec<TabView> = names
@@ -827,6 +827,7 @@ impl Win {
         let panel = (pc > 0).then(|| ui::panel(tab.claude.as_deref(), pc, area, g, now_ms()));
         let next = Compose {
             screen,
+            accents: &self.theme.palette,
             cols: self.grid.cols,
             rows: self.grid.rows,
             tab_bar: bar,

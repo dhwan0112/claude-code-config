@@ -40,9 +40,17 @@ away. Functions stay; what changes is when they are visible.
   line and panel show context use, rate limits, cost and workers.
 
 ### 2.2 Visual rules
-- Neutral greys (background, separator, dim, normal, strong) plus one accent
-  family used only for state: waiting (amber), permission/question (red),
-  error. Idle screen shows no accent colour.
+- Colours come from one theme (Ghostty's theme format, §3.14); the default
+  is **IBM 5153 CGA** (the IBM 5153 colour monitor's CGA colours: `#cecece`
+  on `#141414`, colour 3 brown). The terminal's 16 colours, background,
+  foreground and cursor are the theme's.
+- haetty's own cells (tab bar, status row, status panel, command palette,
+  separators, hints) use neutral greys mixed from the theme's background
+  and foreground (background, separator, dim, normal, strong), plus one
+  accent family used only for state, taken from the theme: waiting = colour
+  3, permission/question = colour 9 (also usage ≥ 80 % / ≥ 95 %); the diff
+  view tints added/removed lines with colours 2/1. Another theme changes
+  all of them. Idle screen shows no accent colour.
 - One font, one size everywhere; hierarchy by weight and dimming only. State
   glyphs (● ✓ ✗ ? -) instead of icons.
 - Space instead of boxes; where a separator is needed, a 1 px low-contrast
@@ -531,7 +539,8 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   +54 KB Linux / +51 KB Windows against serde_json's +71 / +64 KB.
 - The event log gets `attention` lines (event name and result) only.
 - In the window (all hidden or quiet by default, nothing opens by itself):
-  - Tab bar marks on *other* tabs: amber `●` = Wait, red `?` = Ask (the
+  - Tab bar marks on *other* tabs: `●` in theme colour 3 (amber/brown) =
+    Wait, `?` in colour 9 (red) = Ask (the
     only accent colours besides usage near a limit). Selecting a tab, or
     focusing the window on it, clears Wait (the GUI sends
     `ClearAttention`); Ask stays until Claude Code moves on.
@@ -544,7 +553,8 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   - Status row (bottom row of Claude Code tabs, reserved from creation so
     Claude Code is not reflowed when the first report arrives):
     `ctx  42%  5h  12%  7d  30%  $  1.23  3 files changed · Ctrl+Shift+D`,
-    percentages and cost in fixed widths, greys; amber ≥ 80 %, red ≥ 95 %;
+    percentages and cost in fixed widths, greys; colour 3 ≥ 80 %, colour 9
+    ≥ 95 %;
     "esc to interrupt" at the right while Claude Code works.
   - Status panel (Ctrl+Shift+S, a right column, hidden by default; the
     program is resized when it opens, and it is not shown below 40 program
@@ -580,8 +590,8 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
 - `theme = VALUE` (config or `--theme`): a path when it contains `/` or `\`
   (relative to the config directory), else `<config dir>/themes/VALUE`, else
   a built-in theme (`assets/themes/`, embedded: "IBM 5153 CGA", "IBM 5153
-  CGA (Black)", "haetty classic"); unknown → the default theme and a log
-  line. The colour keys in the config apply after the theme, in their
+  CGA (Black)", "haetty classic"); unknown → the default theme ("IBM 5153
+  CGA", §2.2) and a log line. The colour keys in the config apply after the theme, in their
   order, wherever they stand.
 - The two CGA files are copied unchanged (sources: `THIRD-PARTY-NOTICES.md`);
   at load, a selection background missing or equal to the foreground is

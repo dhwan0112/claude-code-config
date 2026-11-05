@@ -17,7 +17,7 @@ use crate::Rgb;
 const CLASSIC: &str = "haetty classic";
 
 /// The theme haetty uses unless the config names another.
-pub const DEFAULT_THEME: &str = CLASSIC;
+pub const DEFAULT_THEME: &str = "IBM 5153 CGA";
 
 /// Name and file text of every built-in theme.
 const BUILTIN: &[(&str, &str)] = &[
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn builtin_themes_and_the_selection_fill_in() {
         let cga = Theme::builtin("IBM 5153 CGA").unwrap();
-        assert_eq!(Theme::default(), Theme::builtin(DEFAULT_THEME).unwrap());
+        assert_eq!(Theme::default(), cga, "the default theme");
         assert_eq!((cga.background, cga.foreground), (rgb(0x141414), rgb(0xcecece)));
         let want = [
             0x141414, 0xd03333, 0x1bd01b, 0xd08c1b, 0x1b1bd0, 0xd01bd0, 0x1bd0d0, 0xcecece, 0x4e4e4e, 0xdc4e4e,

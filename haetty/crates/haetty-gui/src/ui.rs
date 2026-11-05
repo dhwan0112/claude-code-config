@@ -1,9 +1,11 @@
 //! Everything haetty draws itself, as cells (DESIGN.md §1.3, §2): the tab
 //! bar, the command palette and short hints, composed with the active tab's
 //! screen into one window grid that the painter draws like any terminal.
-//! Neutral greys only (§2.2); the two exceptions are Claude Code's
-//! attention marks (amber: waiting for you, red `?`: asks you, after ccx)
-//! and usage near a limit in the status row.
+//! Neutral greys only (§2.2), mixed from the theme's background and
+//! foreground; the exceptions are Claude Code's attention marks (theme
+//! colour 3: waiting for you, colour 9 `?`: asks you, after ccx), usage near
+//! a limit in the status row (the same two) and the diff view's tints
+//! (colours 2 and 1).
 
 use haetty_core::{Cell, CellFlags, Cursor, Rgb, Snapshot, Width};
 use haetty_proto::wire::{Attention, ClaudeInfo};
@@ -16,7 +18,8 @@ fn mix(a: Rgb, b: Rgb, t: u8) -> Rgb {
     Rgb { r: m(a.r, b.r), g: m(a.g, b.g), b: m(a.b, b.b) }
 }
 
-/// Neutral greys derived from the terminal's default colours.
+/// haetty's own colours: greys mixed from the terminal's default colours,
+/// plus the few state colours taken from the theme's palette.
 #[derive(Clone, Copy, Debug)]
 pub struct Greys {
     pub bg: Rgb,
@@ -24,11 +27,35 @@ pub struct Greys {
     pub dim: Rgb,
     pub normal: Rgb,
     pub strong: Rgb,
+    /// Colour 3: "waiting for you" (amber `●`), usage ≥ 80 %.
+    pub wait: Rgb,
+    /// Colour 9: "asks you" (`?`), usage ≥ 95 %.
+    pub ask: Rgb,
+    /// Colours 2 and 1: the diff view's added / removed tints.
+    pub added: Rgb,
+    pub removed: Rgb,
 }
 
 impl Greys {
+    /// `fg`/`bg`: the screen's default colours; `palette`: the theme's 0–15.
+    pub fn new(fg: Rgb, bg: Rgb, palette: &[Rgb; 16]) -> Greys {
+        Greys {
+            bg,
+            bar: mix(bg, fg, 18),
+            dim: mix(fg, bg, 120),
+            normal: mix(fg, bg, 40),
+            strong: fg,
+            wait: palette[3],
+            ask: palette[9],
+            added: palette[2],
+            removed: palette[1],
+        }
+    }
+
+    /// With "haetty classic"'s palette (tests).
+    #[cfg(test)]
     pub fn from(fg: Rgb, bg: Rgb) -> Greys {
-        Greys { bg, bar: mix(bg, fg, 18), dim: mix(fg, bg, 120), normal: mix(fg, bg, 40), strong: fg }
+        Greys::new(fg, bg, &haetty_core::theme::Theme::base().palette)
     }
 }
 
@@ -109,9 +136,6 @@ fn blank(fg: Rgb, bg: Rgb) -> Cell {
     Cell { text: String::new(), fg: Some(fg), bg: Some(bg), flags: CellFlags(0), width: Width::Narrow }
 }
 
-pub const AMBER: Rgb = Rgb { r: 222, g: 165, b: 50 };
-pub const RED: Rgb = Rgb { r: 226, g: 80, b: 70 };
-
 /// What the tab bar needs to know about a tab.
 pub struct TabView<'a> {
     pub name: &'a str,
@@ -145,8 +169,8 @@ pub fn tab_bar(tabs: &[TabView], active: usize, cols: usize, g: Greys) -> Vec<Ce
         }
         // The mark, on other tabs only (the active one shows Claude Code itself).
         let mark = match (is_active, t.attention) {
-            (false, Attention::Wait) => Some(("● ", AMBER)),
-            (false, Attention::Ask) => Some(("? ", RED)),
+            (false, Attention::Wait) => Some(("● ", g.wait)),
+            (false, Attention::Ask) => Some(("? ", g.ask)),
             _ => None,
         };
         let num = format!("{} ", i + 1);
@@ -244,9 +268,9 @@ fn pct(v: f32) -> String {
 
 fn level_color(v: f32, g: Greys) -> Rgb {
     if v >= 95.0 {
-        RED
+        g.ask
     } else if v >= 80.0 {
-        AMBER
+        g.wait
     } else {
         g.normal
     }
@@ -449,6 +473,8 @@ pub fn hint(grid: &mut [Vec<Cell>], text: &str, g: Greys) {
 /// open it sits in the query line.
 pub struct Compose<'a> {
     pub screen: &'a Snapshot,
+    /// The theme's colours 0–15 (state colours, [`Greys::new`]).
+    pub accents: &'a [Rgb; 16],
     pub cols: u16,
     pub rows: u16,
     pub tab_bar: Option<Vec<Cell>>,
@@ -465,7 +491,7 @@ pub struct Compose<'a> {
 impl Compose<'_> {
     pub fn build(&self) -> Snapshot {
         let s = self.screen;
-        let g = Greys::from(s.default_fg, s.default_bg);
+        let g = Greys::new(s.default_fg, s.default_bg, self.accents);
         let (cols, rows) = (self.cols as usize, self.rows as usize);
         let top = usize::from(self.tab_bar.is_some());
         let mut grid: Vec<Vec<Cell>> = vec![vec![Cell::default(); cols]; rows];
@@ -604,6 +630,7 @@ mod tests {
         let bar = tab_bar(&[tv("a"), tv("b")], 1, 4, g);
         let out = Compose {
             screen: &s,
+            accents: &haetty_core::theme::Theme::base().palette,
             cols: 4,
             rows: 3,
             tab_bar: Some(bar),
@@ -619,6 +646,7 @@ mod tests {
         assert_eq!(out.cursor.unwrap().y, 2);
         let plain = Compose {
             screen: &s,
+            accents: &haetty_core::theme::Theme::base().palette,
             cols: 4,
             rows: 2,
             tab_bar: None,
@@ -635,6 +663,7 @@ mod tests {
         let st = vec![Cell { text: "S".into(), ..Default::default() }; 4];
         let with = Compose {
             screen: &s,
+            accents: &haetty_core::theme::Theme::base().palette,
             cols: 4,
             rows: 3,
             tab_bar: None,
@@ -663,8 +692,47 @@ mod tests {
         let row = tab_bar(&tabs, 0, 60, g);
         let t = text(&row);
         assert!(t.contains("1 a") && t.contains("2 ● b") && t.contains("3 ? c"), "{t}");
-        assert!(row.iter().any(|c| c.text == "●" && c.fg == Some(AMBER)));
-        assert!(row.iter().any(|c| c.text == "?" && c.fg == Some(RED)));
+        assert!(row.iter().any(|c| c.text == "●" && c.fg == Some(g.wait)));
+        assert!(row.iter().any(|c| c.text == "?" && c.fg == Some(g.ask)));
+    }
+
+    /// The UI follows the theme: greys from its background and foreground,
+    /// marks from its colours 3 and 9; with IBM 5153 CGA the greys stay
+    /// neutral (r = g = b) and the marks are brown and bright red.
+    #[test]
+    fn ui_colours_follow_the_theme() {
+        use haetty_core::theme::Theme;
+        let tabs = [
+            TabView { name: "a", exited: false, attention: Attention::None },
+            TabView { name: "b", exited: false, attention: Attention::Wait },
+            TabView { name: "c", exited: false, attention: Attention::Ask },
+        ];
+        let mut seen = vec![];
+        for name in ["IBM 5153 CGA", "IBM 5153 CGA (Black)", "haetty classic"] {
+            let t = Theme::builtin(name).unwrap();
+            let g = Greys::new(t.foreground, t.background, &t.palette);
+            assert_eq!((g.bg, g.strong, g.wait, g.ask), (t.background, t.foreground, t.palette[3], t.palette[9]));
+            let row = tab_bar(&tabs, 0, 60, g);
+            assert!(row.iter().any(|c| c.text == "●" && c.fg == Some(t.palette[3])), "{name}");
+            assert!(row.iter().any(|c| c.text == "?" && c.fg == Some(t.palette[9])), "{name}");
+            let mut i = ClaudeInfo { context_pct: Some(97.0), ..Default::default() };
+            let st = status_row(Some(&i), 60, g, "");
+            assert!(st.iter().any(|c| c.fg == Some(t.palette[9])), "{name}: ≥ 95 % = colour 9");
+            i.context_pct = Some(10.0);
+            for c in status_row(Some(&i), 60, g, "").iter().chain(&row) {
+                // Backgrounds all grey; text grey except the two marks
+                // (whose trailing space carries the mark colour, unseen).
+                let (f, b) = (c.fg.unwrap(), c.bg.unwrap());
+                let mark = f == g.wait || f == g.ask;
+                assert!(mark || f.r == f.g && f.g == f.b, "{name}: text {f:?} is not grey");
+                assert!(b.r == b.g && b.g == b.b, "{name}: background {b:?} is not grey");
+            }
+            seen.push((g.bar, g.dim, g.wait));
+        }
+        let cga = Theme::builtin("IBM 5153 CGA").unwrap();
+        assert_eq!(seen[0].2, Rgb { r: 0xd0, g: 0x8c, b: 0x1b }, "CGA brown");
+        assert_eq!(cga.palette[9], Rgb { r: 0xdc, g: 0x4e, b: 0x4e });
+        assert!(seen[0] != seen[1] && seen[0] != seen[2], "another theme, other UI colours");
     }
 
     #[test]
@@ -683,7 +751,7 @@ mod tests {
         i.context_pct = Some(85.0);
         i.busy = true;
         let row = status_row(Some(&i), 80, g, "");
-        assert!(row.iter().any(|c| c.fg == Some(AMBER)));
+        assert!(row.iter().any(|c| c.fg == Some(g.wait)));
         assert!(text(&row).trim_end().ends_with("esc to interrupt"));
         assert!(text(&status_row(None, 40, g, "")).contains("Claude Code"));
     }
