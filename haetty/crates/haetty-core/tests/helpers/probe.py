@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Terminal capability probe used by ccterm's integration tests.
+"""Terminal capability probe used by haetty's integration tests.
 
 Modes:
   queries      send the queries Claude Code and other TUIs use at start-up and

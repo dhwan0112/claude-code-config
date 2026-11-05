@@ -182,13 +182,13 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
             }
             s if IMPLEMENTED.contains(&s) => {
                 return Err(format!(
-                    "ccterm: '{s}' is a subcommand and must come first (haetty {s} ...); \
+                    "haetty: '{s}' is a subcommand and must come first (haetty {s} ...); \
                      to run a program named {s}, use: haetty -- {s}"
                 ));
             }
             s if SUBCOMMANDS.contains(&s) => {
                 return Err(format!(
-                    "ccterm: '{s}' is a subcommand that is not implemented yet; \
+                    "haetty: '{s}' is a subcommand that is not implemented yet; \
                      to run a program named {s}, use: haetty -- {s}"
                 ));
             }
@@ -286,7 +286,7 @@ pub fn fatal(msg: &str) -> ! {
     }
     #[cfg(not(windows))]
     {
-        eprintln!("ccterm: {msg}");
+        eprintln!("haetty: {msg}");
     }
     std::process::exit(1);
 }
@@ -460,7 +460,10 @@ mod tests {
         }
         for name in IMPLEMENTED {
             let e = args(&["--cols", "80", name]).unwrap_err();
-            assert!(e.contains("must come first") && e.contains(&format!("haetty -- {name}")), "{e}");
+            assert!(
+                e.starts_with("haetty: ") && e.contains("must come first") && e.contains(&format!("haetty -- {name}")),
+                "{e}"
+            );
             assert_eq!(args(&["--", name]).unwrap().command.program, *name);
         }
     }
@@ -469,7 +472,10 @@ mod tests {
     fn reserved_subcommands_are_errors_until_implemented() {
         for name in SUBCOMMANDS.iter().filter(|n| !IMPLEMENTED.contains(n)) {
             let e = args(&[name]).err().unwrap_or_else(|| panic!("{name} must be rejected"));
-            assert!(e.contains("not implemented") && e.contains(&format!("haetty -- {name}")), "{e}");
+            assert!(
+                e.starts_with("haetty: ") && e.contains("not implemented") && e.contains(&format!("haetty -- {name}")),
+                "{e}"
+            );
             // Also after options, and with arguments.
             assert!(args(&["--cols", "80", name, "--json"]).is_err());
             // After `--` the word is a program again.

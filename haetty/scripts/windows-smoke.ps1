@@ -1,4 +1,4 @@
-# ccterm Windows smoke test. Run from the folder that holds haetty-headless.exe:
+# haetty Windows smoke test. Run from the folder that holds haetty-headless.exe:
 #   powershell -ExecutionPolicy Bypass -File windows-smoke.ps1
 # Each check prints PASS/FAIL; the full screen of a failed check is shown.
 $ErrorActionPreference = "Continue"

@@ -25,7 +25,7 @@ fn main() {
     #[cfg(unix)]
     let ep = Endpoint(dir.join("rt").join("daemon.sock"));
     #[cfg(windows)]
-    let ep = Endpoint(format!(r"\\.\pipe\ccterm-latency-{}", std::process::id()).into());
+    let ep = Endpoint(format!(r"\\.\pipe\haetty-latency-{}", std::process::id()).into());
     let _d = haetty_daemon::spawn(Config {
         endpoint: ep.clone(),
         state_dir: dir.join("state"),
