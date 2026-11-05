@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use ccterm_cc::{settings, Claude, Json};
 use ccterm_core::{ColorSchemePref, CommandSpec, GridSize, Session, SessionConfig, SessionEvent, Snapshot};
 use ccterm_proto::paths::Endpoint;
 use ccterm_proto::product;
@@ -26,6 +27,8 @@ pub use log_file::EventLog;
 pub struct Config {
     pub endpoint: Endpoint,
     pub state_dir: PathBuf,
+    /// Private directory for per-session files (Claude Code settings).
+    pub run_dir: PathBuf,
     /// Exit after this long without sessions and clients (`None`: never).
     pub idle_exit: Option<Duration>,
 }
@@ -35,6 +38,7 @@ impl Config {
         Ok(Config {
             endpoint: Endpoint::default_for_user()?,
             state_dir: ccterm_proto::paths::state_dir(),
+            run_dir: ccterm_proto::paths::private_dir()?,
             idle_exit: Some(Duration::from_secs(10)),
         })
     }
@@ -53,9 +57,23 @@ struct Sess {
     session: Session,
     info: SessionInfo,
     latest: Option<Arc<Snapshot>>,
-    /// Set from Claude Code hook events (milestone 3): a permission prompt
-    /// or question is open, so only Human input is accepted.
-    awaiting_permission: bool,
+    /// Claude Code state (a Claude Code tab with the integration). While it
+    /// waits for a permission answer, only Human input is accepted.
+    claude: Option<Claude>,
+    /// The `--settings` file given to Claude Code; removed with the session.
+    settings_file: Option<PathBuf>,
+}
+
+impl Sess {
+    fn awaiting_permission(&self) -> bool {
+        self.claude.as_ref().is_some_and(Claude::awaiting_permission)
+    }
+
+    fn drop_settings_file(&mut self) {
+        if let Some(p) = self.settings_file.take() {
+            let _ = std::fs::remove_file(p);
+        }
+    }
 }
 
 struct Sub {
@@ -76,6 +94,16 @@ pub fn run(cfg: Config) -> io::Result<()> {
     let listener = Listener::bind(&cfg.endpoint)?;
     std::fs::create_dir_all(&cfg.state_dir)?;
     let log = EventLog::open(&cfg.state_dir.join("events.log"))?;
+    // Settings files of sessions a killed daemon left behind (we are the
+    // only daemon now: none of them is in use).
+    if let Ok(rd) = std::fs::read_dir(&cfg.run_dir) {
+        for e in rd.flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.starts_with("settings-") && n.ends_with(".json") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
     let (tx, rx) = unbounded::<Ev>();
     let atx = tx.clone();
     std::thread::Builder::new().name("ccterm-accept".into()).spawn(move || {
@@ -98,7 +126,7 @@ pub fn run(cfg: Config) -> io::Result<()> {
         }
     })?;
     log::info!("daemon {} listening on {}", std::process::id(), cfg.endpoint.0.display());
-    let mut d = Daemon { sessions: HashMap::new(), clients: HashMap::new(), tx, log, counter: 0 };
+    let mut d = Daemon { sessions: HashMap::new(), clients: HashMap::new(), tx, log, counter: 0, run_dir: cfg.run_dir };
     d.log.write("daemon_start", "", &[("pid", &std::process::id().to_string())]);
     d.run(rx, cfg.idle_exit);
     d.log.write("daemon_stop", "", &[]);
@@ -167,6 +195,7 @@ struct Daemon {
     tx: Sender<Ev>,
     log: EventLog,
     counter: u64,
+    run_dir: PathBuf,
 }
 
 impl Daemon {
@@ -231,6 +260,7 @@ impl Daemon {
             SessionEvent::Exited(st) => {
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     s.info.state = SessionState::Exited { code: st.code };
+                    s.drop_settings_file();
                 }
                 let code = st.code.map(|c| c.to_string()).unwrap_or_default();
                 self.log.write("session_exited", &sid, &[("code", &code)]);
@@ -277,7 +307,7 @@ impl Daemon {
         // Role check (DESIGN.md §3.7).
         let allowed = match (&m, role) {
             (ClientMsg::Hello { .. }, _) => false,
-            (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. }, _) => true,
+            (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. } | ClientMsg::Sync, _) => true,
             (_, Role::Report) => false,
             (
                 ClientMsg::ListSessions
@@ -309,10 +339,14 @@ impl Daemon {
                 if s.latest.is_none() {
                     s.latest = s.session.handle.snapshot().map(Arc::new);
                 }
+                let claude = s.claude.as_ref().map(|cl| Box::new(cl.info.clone()));
                 if let Some(cl) = self.clients.get_mut(&c) {
                     cl.subs.insert(session.clone(), Sub { base: None, wanted: true });
                 }
                 self.push_frames(&session);
+                if let Some(info) = claude {
+                    self.reply(c, DaemonMsg::Claude { session, info });
+                }
             }
             ClientMsg::Detach { session } => {
                 if let Some(cl) = self.clients.get_mut(&c) {
@@ -326,7 +360,8 @@ impl Daemon {
                 self.push_frames(&session);
             }
             ClientMsg::Close { session } => {
-                if self.sessions.remove(&session).is_some() {
+                if let Some(mut s) = self.sessions.remove(&session) {
+                    s.drop_settings_file();
                     self.log.write("session_closed", &session, &[]);
                     for cl in self.clients.values_mut() {
                         if cl.subs.remove(&session).is_some() {
@@ -335,9 +370,27 @@ impl Daemon {
                     }
                 }
             }
-            ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. } => {
-                // Milestone 3 (P4): Claude Code adapter.
+            ClientMsg::Hook { session, event, json, ts_ms, snapshot } => {
+                self.claude_report(session, |cl, j| cl.hook(&event, j, ts_ms, snapshot), &json.0, &event)
             }
+            ClientMsg::StatusLine { session, json, ts_ms } => {
+                self.claude_report(session, |cl, j| cl.statusline(j, ts_ms), &json.0, "statusline")
+            }
+            ClientMsg::ClearAttention { session } => {
+                if self.sessions.get_mut(&session).and_then(|s| s.claude.as_mut()).is_some_and(Claude::clear_wait) {
+                    self.push_claude(&session);
+                }
+            }
+            ClientMsg::GetEdit { session } => {
+                let edit = self
+                    .sessions
+                    .get(&session)
+                    .and_then(|s| s.claude.as_ref())
+                    .and_then(Claude::last_edit)
+                    .map(Box::new);
+                self.reply(c, DaemonMsg::Edit { session, edit });
+            }
+            ClientMsg::Sync => self.reply(c, DaemonMsg::Synced),
             input => self.input(c, input),
         }
     }
@@ -359,7 +412,7 @@ impl Daemon {
             self.reply(c, DaemonMsg::NoSession { session });
             return;
         };
-        if s.awaiting_permission && origin.is_some_and(|o| o != Origin::Human) {
+        if s.awaiting_permission() && origin.is_some_and(|o| o != Origin::Human) {
             let what = format!("{} from a program while the session waits for a permission answer", msg_name(&m));
             self.denied(c, &what);
             return;
@@ -379,8 +432,8 @@ impl Daemon {
             ClientMsg::Wheel { lines, col, row, mods, .. } => {
                 h.wheel(lines, col, row, ccterm_core::Mods::from_bits_truncate(mods))
             }
-            ClientMsg::Paste { text, .. } => h.paste(text),
-            ClientMsg::Write { bytes, .. } => h.write(bytes),
+            ClientMsg::Paste { text, .. } => h.paste(text.0),
+            ClientMsg::Write { bytes, .. } => h.write(bytes.0),
             ClientMsg::Focus { focused, .. } => h.focus(focused),
             ClientMsg::Resize { size, .. } => {
                 s.info.cols = size.cols;
@@ -397,9 +450,82 @@ impl Daemon {
         }
     }
 
+    /// A hook or status-line report for a session: update its Claude Code
+    /// state and tell the subscribers when something shown changed. The
+    /// payload is never logged; the event log gets the event name and the
+    /// resulting attention only.
+    fn claude_report(
+        &mut self,
+        session: Option<SessionId>,
+        apply: impl FnOnce(&mut Claude, &Json) -> bool,
+        json: &str,
+        what: &str,
+    ) {
+        let Some(sid) = session else { return };
+        let Some(cl) = self.sessions.get_mut(&sid).and_then(|s| s.claude.as_mut()) else {
+            log::debug!("{what} for session {sid}, which has no Claude Code integration");
+            return;
+        };
+        let j = match Json::parse(json) {
+            Ok(j) => j,
+            Err(e) => {
+                log::warn!("{what} for {sid}: payload is not JSON ({} bytes): {e}", json.len());
+                return;
+            }
+        };
+        let attention = cl.info.attention;
+        if !apply(cl, &j) {
+            return;
+        }
+        let now = cl.info.attention;
+        if now != attention {
+            self.log.write("attention", &sid, &[("event", what), ("attention", &format!("{now:?}"))]);
+        }
+        self.push_claude(&sid);
+    }
+
+    fn push_claude(&self, sid: &str) {
+        let Some(info) = self.sessions.get(sid).and_then(|s| s.claude.as_ref()).map(|c| &c.info) else { return };
+        for c in self.clients.values() {
+            if c.subs.contains_key(sid) {
+                let _ = c.tx.send(DaemonMsg::Claude { session: sid.to_string(), info: Box::new(info.clone()) });
+            }
+        }
+    }
+
+    /// Claude Code with the integration: its arguments with ccterm's
+    /// `--settings` file (merged with the user's own `--settings`).
+    fn claude_args(&self, id: &str, spec: &CreateSpec) -> Option<(Vec<String>, PathBuf)> {
+        if !spec.claude_integration || !settings::is_claude(&spec.program) {
+            return None;
+        }
+        let (rest, user) = settings::split_user_settings(&spec.args);
+        let user = user.and_then(|v| {
+            settings::load_user(&v, spec.cwd.as_deref().map(std::path::Path::new))
+                .map_err(|e| log::warn!("session {id}: {e}; ccterm's settings only"))
+                .ok()
+        });
+        let exe = product::exe_path().to_string_lossy().into_owned();
+        let (merged, warnings) = settings::merge(settings::ours(&exe), user);
+        for w in warnings {
+            log::warn!("session {id}: {w}");
+        }
+        let path = self.run_dir.join(format!("settings-{id}.json"));
+        if let Err(e) = write_private(&path, merged.to_string().as_bytes()) {
+            log::error!("session {id}: {}: {e}", path.display());
+            return None;
+        }
+        let mut args = rest;
+        args.push("--settings".into());
+        args.push(path.to_string_lossy().into_owned());
+        Some((args, path))
+    }
+
     fn create(&mut self, c: ClientId, req: u32, spec: CreateSpec) {
         let id = self.new_id();
-        let mut cmd = CommandSpec::new(&spec.program).args(&spec.args);
+        let claude = self.claude_args(&id, &spec);
+        let args = claude.as_ref().map_or(&spec.args, |(a, _)| a);
+        let mut cmd = CommandSpec::new(&spec.program).args(args);
         if let Some(cwd) = &spec.cwd {
             cmd = cmd.cwd(cwd);
         }
@@ -437,10 +563,17 @@ impl Daemon {
                 });
                 self.log.write("session_created", &id, &[("program", &spec.program), ("cwd", &info.cwd)]);
                 log::info!("session {id}: {} (pid {:?}) in {:?}", spec.program, info.pid, spec.cwd);
-                self.sessions.insert(id.clone(), Sess { session, info, latest: None, awaiting_permission: false });
+                let (claude, settings_file) = match claude {
+                    Some((_, p)) => (Some(Claude::default()), Some(p)),
+                    None => (None, None),
+                };
+                self.sessions.insert(id.clone(), Sess { session, info, latest: None, claude, settings_file });
                 self.reply(c, DaemonMsg::Created { req, session: id });
             }
             Err(e) => {
+                if let Some((_, p)) = claude {
+                    let _ = std::fs::remove_file(p);
+                }
                 self.reply(c, DaemonMsg::CreateFailed { req, error: format!("cannot start {:?}: {e}", spec.program) })
             }
         }
@@ -467,5 +600,22 @@ fn msg_name(m: &ClientMsg) -> &'static str {
         ClientMsg::Close { .. } => "Close",
         ClientMsg::Hook { .. } => "Hook",
         ClientMsg::StatusLine { .. } => "StatusLine",
+        ClientMsg::ClearAttention { .. } => "ClearAttention",
+        ClientMsg::GetEdit { .. } => "GetEdit",
+        ClientMsg::Sync => "Sync",
     }
+}
+
+/// Writes a file only this user can read (Unix mode 0600; on Windows the
+/// directory is in the user's profile).
+fn write_private(path: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
+    use std::io::Write;
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    o.open(path)?.write_all(bytes)
 }

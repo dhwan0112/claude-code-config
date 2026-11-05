@@ -71,6 +71,22 @@ pub fn ensure_private_dir(dir: &std::path::Path) -> io::Result<()> {
     Ok(())
 }
 
+/// A directory only this user can read, for per-session files (the
+/// settings file of a Claude Code tab): Linux the runtime directory,
+/// Windows `<state dir>\run` (under the user's profile).
+pub fn private_dir() -> io::Result<PathBuf> {
+    #[cfg(unix)]
+    {
+        runtime_dir()
+    }
+    #[cfg(windows)]
+    {
+        let d = state_dir().join("run");
+        std::fs::create_dir_all(&d)?;
+        Ok(d)
+    }
+}
+
 /// State directory: Linux `$XDG_STATE_HOME/<app>` (`~/.local/state/<app>`),
 /// Windows `%LOCALAPPDATA%\<app>`. `CCTERM_STATE_DIR` overrides (tests).
 pub fn state_dir() -> PathBuf {

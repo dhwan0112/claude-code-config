@@ -28,6 +28,7 @@ line JSON). Requirements set by the user:
 | `ccterm-gui` | Milestone 1 done (binary `ccterm`). See below. |
 | `ccterm-proto` | Milestone 2: product constants, paths, wire types (postcard), framing, local socket / named pipe transport, daemon client (`RemoteSession`). |
 | `ccterm-daemon` | Milestone 2: owns the sessions; frames, roles, event log (DESIGN.md §3.5–3.8). |
+| `ccterm-cc` | Milestone 3: Claude Code integration — `--settings`, `hook`/`statusline` reporters, per-session state, edit snapshots and diffs, resume (DESIGN.md §3.13). |
 
 Public API a frontend uses (`ccterm-core`):
 
@@ -766,6 +767,44 @@ regression list, measurements), then committed, pushed and mirrored.
     16–64 px). No new dependency; `windres` from mingw at build time.
   - Not done: reattaching sessions left by a killed GUI (they keep running
     and show in `status`); per-window sets.
+- **2026-11-05 P4a — Claude Code adapter: settings injection, `hook`,
+  `statusline`, daemon state.** New crate `ccterm-cc` (json, settings,
+  report, state, edit, resume); protocol version 2 (DESIGN.md §3.6: any new
+  variant bumps it; `Secret` for content); DESIGN.md §3.13. Evidence:
+  - Unit tests (cc 10): JSON round trip/escapes/surrogates/depth;
+    settings (exec form, sync edit PreToolUse with matcher, async rest,
+    status-line quoting, merge with the user's settings, `--settings`
+    split); attention ordering (an older event does not clear `Ask`;
+    looking does not clear `Ask`; idle does not replace it); edits rebuilt
+    from snapshots; credential paths never read; snapshot statuses;
+    status-line fields and "no change on refresh"; resume arguments.
+  - Daemon integration test (fake `claude` script): the program gets
+    `--settings <run dir>/settings-ID.json` (0600) instead of the user's,
+    merged (user's `model` kept, their `statusLine` dropped); status-line
+    and hook reports reach the GUI client; `Ask` refuses Program input,
+    Human input passes; ClearAttention clears `Wait`; Report clients cannot
+    send input; reports for sessions without integration are ignored; the
+    settings file goes with the session.
+  - `ccterm hook` timing (Linux): no session env 2.7 ms, no daemon 2.9 ms,
+    statusline 2.8 ms, with a daemon 3.2 ms (medians of 30; max 4.3 ms);
+    stdin left open: 8 ms without a daemon, 1017 ms with one (deadline);
+    stdout and stderr empty, exit 0 every time. Windows: 64 ms median
+    against 51–53 ms for `hostname.exe`/`whoami.exe` (process start on this
+    machine) — the 50 ms target is not met on Windows; recorded in §3.13.
+  - Real Claude Code 2.1.318 (isolated HOME, fake key, Linux under Xvfb):
+    no settings error on its screen; SessionStart, statusline (every 3 s),
+    UserPromptSubmit, StopFailure reach the daemon (9 report clients in
+    15 s); `events.log` gets `attention event=StopFailure attention=Wait`.
+    Windows 11 with `claude.exe`: settings file in `%LOCALAPPDATA%`-style
+    run dir, hook commands with forward slashes, hooks' parent is
+    `claude.exe` (exec form, no shell), status line and SessionStart
+    reached the daemon (6 report clients), settings file removed on close.
+    Typing a prompt on Windows was skipped (foreground lock).
+  - Regression `reg.sh p4a` 21/21 (Ctrl+C twice now with the integration
+    on).
+  - Size (`dist`): Linux 5 984 152 → 6 214 224 (+230 KB, of which
+    `similar` 87 KB), Windows 4 673 536 → 4 877 824 (+204 KB). New
+    dependency: `similar` 2 (text feature only).
 
 ## 7. Long-term direction (constrains current work)
 

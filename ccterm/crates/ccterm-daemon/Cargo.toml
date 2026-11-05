@@ -8,6 +8,7 @@ rust-version.workspace = true
 description = "ccterm daemon: owns sessions, serves frames and events to GUI, CLI and hook clients"
 
 [dependencies]
+ccterm-cc.workspace = true
 ccterm-core.workspace = true
 ccterm-proto.workspace = true
 crossbeam-channel.workspace = true

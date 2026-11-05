@@ -181,8 +181,18 @@ the GUI; a full default scrollback adds up to about 11 MB to its session
   codec for ~40 message types), smallest frames (varints).
 - Versioning: the client's first message is `Hello { magic: "CCTM",
   version, role, name }`, the daemon answers `Welcome { version }` or
-  `Refused`. postcard encodes enum variants by index, so variants and
-  fields are only **appended**; any other change bumps the version.
+  `Refused`. postcard encodes enum variants by index and a receiver
+  cannot skip a variant it does not know (the decode fails and the
+  connection drops), so **every** new variant or field bumps the version:
+  an older daemon then refuses a newer client in `Hello`, and the GUI says
+  that a daemon of another version runs and how it goes away (decided in
+  P4, version 2; the first rule, "append only, same version", would have
+  let a P3 daemon drop a P4 GUI on its first new message). Alternative not
+  taken: feature bits in `Hello` (more code for a case that only occurs
+  across an upgrade with sessions open).
+- Text from users or programs (pastes, hook payloads, file contents) is
+  wrapped in `Secret`, whose `Debug` shows the size only, so logging a
+  message never logs its content.
 - Schema: the `SessionHandle` methods (`key`, `mouse`, `wheel`, `paste`,
   `focus`, `resize`, `scroll`, `set_color_scheme`) and `SessionEvent`
   carried over one-to-one, plus `CreateSession`, `ListSessions`,
@@ -320,6 +330,81 @@ install) and `build.rs` (Windows `.exe` icon resource via `windres`, sizes
 16–64: PNGs are written uncompressed by our own writer, and a 256 px entry
 would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
 ("ccterm"), so docks match the window to the desktop file.
+
+### 3.13 Claude Code integration (milestone 3)
+
+- Which tabs: the program's file name is `claude` (`.exe`, `.cmd`), and
+  `claude-integration` is on (config or `--claude-integration false`; the
+  GUI passes it in `CreateSpec`). The daemon then adds
+  `--settings <run dir>/settings-<session>.json` (0600 in the 0700 runtime
+  directory; Windows `%LOCALAPPDATA%\ccterm\run`), removed when the session
+  ends or is closed, and at daemon start for sessions a killed daemon left.
+  The GUI's tab spec never contains it, so tab sets do not save it.
+- What is injected: `hooks` and `statusLine`, nothing else. Not taken from
+  ccx (intentionally): its `permissions` defaults (bypassPermissions unless
+  `--safe`, 39 `ask` rules for destructive git/gh), `tui`,
+  `autoCompactWindow`, `CLAUDE_CODE_NO_FLICKER`/`TMUX_TRUECOLOR` — they
+  change Claude Code's behaviour, which a terminal must not.
+- A `--settings` the user gave (file, relative to the tab's folder, or
+  inline JSON) is merged into one file: our hook entries first and the
+  user's appended per event, every other key the user's, the user's
+  `statusLine` dropped with a log warning (ours feeds ccterm's status row).
+  `~/.claude/settings.json` is never touched.
+- Hooks use Claude Code's exec form (`command` = ccterm's path with forward
+  slashes, `args` = `["hook", EVENT]`): no shell on any platform (checked:
+  their parent process is `claude`/`claude.exe`). Events: SessionStart,
+  UserPromptSubmit, PreToolUse (synchronous with matcher
+  `Write|Edit|MultiEdit|NotebookEdit`, and asynchronous for all tools as
+  `PreToolUseAll`), PermissionRequest, PermissionDenied, PostToolUse,
+  PostToolUseFailure, Notification, Stop, StopFailure, SubagentStart/Stop,
+  SessionEnd; all asynchronous except the edit PreToolUse; timeout 5 s.
+  `statusLine` has no exec form: `ccterm statusline` through Claude Code's
+  shell (`sh -c`; Windows Git Bash, else PowerShell), path bare when it has
+  no shell characters (every one of those shells runs it), else
+  double-quoted (sh/Git Bash only; PowerShell would need `&` — not handled),
+  `refreshInterval` 3 s. Side effect documented by Claude Code: with a
+  custom status line it hides most footer hints ("esc to interrupt",
+  "? for shortcuts"); ccterm's status row shows "esc to interrupt" while
+  Claude Code works.
+- `ccterm hook EVENT` / `ccterm statusline` are dispatched first in `main`
+  (no logging, config, fonts): no `CCTERM_SESSION_ID` → exit; dial the
+  daemon (50 ms, never start one) → none: exit without reading stdin;
+  else read stdin (≤ 16 MiB), for the edit PreToolUse copy the file
+  (≤ 2 MiB, UTF-8; never credential/key/token-looking paths: `.ssh`, `.aws`,
+  `.env*`, `*.pem`, `*.key`, `*token*`, `*secret*`, `.credentials.json`, …),
+  send it as a `Report` client, wait for `Synced`, exit 0. Never stdout or
+  stderr (UserPromptSubmit's stdout would reach the model), silent panic
+  hook, a 1 s deadline for the whole process. Measured: Linux median
+  2.7–3.3 ms with and without a daemon, max 4.3 ms; stdin left open: 8 ms
+  without a daemon, 1.02 s (the deadline) with one. Windows (this machine):
+  process start alone is ~52 ms (`hostname.exe`, `whoami.exe` medians), the
+  hook 64 ms — the 50 ms target is not reachable there; the extra ~12 ms is
+  loading the GUI binary's DLLs (the same with an immediate exit). Only the
+  edit PreToolUse makes Claude Code wait for it.
+- State per session (daemon, `ccterm_cc::state`): Claude Code session id,
+  name, model, attention, busy, context %, rate limits, cost, lines,
+  files changed, edits, last edit, subagents, prompt cache — derived
+  fields only, sent to attached clients as `Claude` messages when they
+  change (a status-line refresh with the same content sends nothing, so an
+  idle Claude Code tab does not wake the GUI every 3 s). Edit texts stay in
+  the daemon (last 20) and are sent only on `GetEdit`.
+- Attention (after ccx): Stop/StopFailure and Notification `idle_prompt` →
+  `Wait`; PermissionRequest and Notification `permission_prompt`,
+  `elicitation_dialog`, `elicitation_url_dialog`, `agent_needs_input` →
+  `Ask`. `Wait` goes when the tab is looked at, on UserPromptSubmit and
+  PreToolUse. `Ask` is not cleared by looking or by PreToolUse; only by
+  UserPromptSubmit, PostToolUse(Failure), PermissionDenied, Stop whose hook
+  started after the one that set it (each report carries its start time;
+  asynchronous hooks can arrive out of order) — the permission state fails
+  closed. While `Ask`, the daemon accepts only `Human` input (§3.7).
+- Edits (after ccx `apply_edit`): the synchronous PreToolUse copies the
+  file; PostToolUse rebuilds the text after from the copy and the tool's
+  input (Write: content; Edit: first or all occurrences; MultiEdit in
+  order; NotebookEdit: path only), so the diff is exactly that edit. Diff:
+  `similar` (+87 KB Linux dist; a diff crate as asked, no `delta`).
+- JSON: an own parser/writer (`ccterm_cc::json`, ~350 lines): standalone
+  +54 KB Linux / +51 KB Windows against serde_json's +71 / +64 KB.
+- The event log gets `attention` lines (event name and result) only.
 
 ## 4. VT engine decision (measured 2026-11-04)
 

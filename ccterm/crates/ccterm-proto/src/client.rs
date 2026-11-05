@@ -31,6 +31,10 @@ impl std::fmt::Display for ConnectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConnectError::NotRunning => f.write_str("no daemon is running"),
+            ConnectError::Refused(r) if r.starts_with("protocol version") => write!(
+                f,
+                "a ccterm daemon of another version is running ({r}). It exits by itself 10 s after its                  last window closes; or end the `ccterm daemon` process (its sessions end with it)"
+            ),
             ConnectError::Refused(r) => write!(f, "daemon refused the connection: {r}"),
             ConnectError::Io(e) => write!(f, "daemon connection: {e}"),
         }
@@ -45,6 +49,8 @@ impl From<io::Error> for ConnectError {
 
 struct Mirror {
     snap: Snapshot,
+    /// Claude Code state from the daemon (DESIGN.md §3.13).
+    claude: Option<Arc<ClaudeInfo>>,
     /// A Wakeup was sent and `snapshot()` has not been called since.
     woken: bool,
     tx: Sender<SessionEvent>,
@@ -73,7 +79,12 @@ pub struct Client {
 impl Client {
     /// Connects and says hello. `NotRunning` when nobody listens.
     pub fn connect(ep: &Endpoint, role: Role, name: &str) -> Result<Client, ConnectError> {
-        let mut stream = match dial(ep, Duration::from_secs(2)) {
+        Client::connect_with(ep, role, name, Duration::from_secs(2))
+    }
+
+    /// [`Client::connect`] with a dial timeout (hooks use a short one).
+    pub fn connect_with(ep: &Endpoint, role: Role, name: &str, timeout: Duration) -> Result<Client, ConnectError> {
+        let mut stream = match dial(ep, timeout) {
             Dial::Connected(s) => s,
             Dial::NotRunning => return Err(ConnectError::NotRunning),
             Dial::Failed(e) => return Err(ConnectError::Io(e)),
@@ -82,7 +93,7 @@ impl Client {
         let daemon_pid = match read_msg::<DaemonMsg>(&mut stream)? {
             DaemonMsg::Welcome { daemon_pid, .. } => daemon_pid,
             DaemonMsg::Refused { reason } => return Err(ConnectError::Refused(reason)),
-            other => return Err(ConnectError::Refused(format!("unexpected answer {other:?}"))),
+            _ => return Err(ConnectError::Refused("unexpected answer to Hello".into())),
         };
         let reader = stream.try_clone()?;
         let shared = Arc::new(Shared { mirrors: Mutex::new(HashMap::new()), writer: Mutex::new(stream) });
@@ -131,6 +142,32 @@ impl Client {
         }
     }
 
+    /// Waits until the daemon has handled everything sent before.
+    pub fn sync(&self, timeout: Duration) -> bool {
+        let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
+        self.send(&ClientMsg::Sync).is_ok()
+            && self
+                .wait_reply(timeout, |m| match m {
+                    DaemonMsg::Synced => Some(()),
+                    _ => None,
+                })
+                .is_ok()
+    }
+
+    /// The session's last edit, before and after (the diff view).
+    pub fn get_edit(&self, id: &str) -> io::Result<Option<Box<EditView>>> {
+        let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
+        self.send(&ClientMsg::GetEdit { session: id.to_owned() })?;
+        self.wait_reply(Duration::from_secs(5), |m| match m {
+            DaemonMsg::Edit { session, edit } if session == id => Some(edit),
+            _ => None,
+        })
+    }
+
+    pub fn clear_attention(&self, id: &str) -> io::Result<()> {
+        self.send(&ClientMsg::ClearAttention { session: id.to_owned() })
+    }
+
     pub fn list_sessions(&self) -> io::Result<Vec<SessionInfo>> {
         let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
         self.send(&ClientMsg::ListSessions)?;
@@ -160,7 +197,7 @@ impl Client {
             .mirrors
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(id.to_owned(), Mirror { snap: Snapshot::default(), woken: false, tx });
+            .insert(id.to_owned(), Mirror { snap: Snapshot::default(), claude: None, woken: false, tx });
         self.send(&ClientMsg::Attach { session: id.to_owned() })?;
         Ok(RemoteSession {
             id: id.to_owned(),
@@ -224,6 +261,16 @@ fn reader_loop(mut r: Stream, sh: Arc<Shared>, replies: Sender<DaemonMsg>) {
                     }
                 }
             }
+            DaemonMsg::Claude { session, info } => {
+                let mut ms = sh.mirrors.lock().unwrap_or_else(|p| p.into_inner());
+                if let Some(m) = ms.get_mut(&session) {
+                    m.claude = Some(Arc::from(info));
+                    if !m.woken {
+                        m.woken = true;
+                        let _ = m.tx.send(SessionEvent::Wakeup);
+                    }
+                }
+            }
             DaemonMsg::Event { session, event } => {
                 let ms = sh.mirrors.lock().unwrap_or_else(|p| p.into_inner());
                 if let Some(m) = ms.get(&session) {
@@ -280,7 +327,7 @@ impl RemoteHandle {
         self.pid
     }
     pub fn write(&self, bytes: impl Into<Vec<u8>>) {
-        self.send(ClientMsg::Write { session: self.id.clone(), origin: Origin::Human, bytes: bytes.into() });
+        self.send(ClientMsg::Write { session: self.id.clone(), origin: Origin::Human, bytes: Secret(bytes.into()) });
     }
     pub fn key(&self, k: KeyInput) {
         self.send(ClientMsg::Key { session: self.id.clone(), origin: Origin::Human, key: WireKey::from(&k) });
@@ -299,7 +346,7 @@ impl RemoteHandle {
         });
     }
     pub fn paste(&self, text: impl Into<String>) {
-        self.send(ClientMsg::Paste { session: self.id.clone(), origin: Origin::Human, text: text.into() });
+        self.send(ClientMsg::Paste { session: self.id.clone(), origin: Origin::Human, text: Secret(text.into()) });
     }
     pub fn focus(&self, focused: bool) {
         self.send(ClientMsg::Focus { session: self.id.clone(), focused });
@@ -318,6 +365,12 @@ impl RemoteHandle {
         };
         self.send(ClientMsg::SetColorScheme { session: self.id.clone(), scheme });
     }
+    /// The Claude Code state of the session, if it runs Claude Code with
+    /// the integration (a change comes as a `Wakeup`, like a frame).
+    pub fn claude(&self) -> Option<Arc<ClaudeInfo>> {
+        self.shared.mirrors.lock().unwrap_or_else(|p| p.into_inner()).get(&self.id)?.claude.clone()
+    }
+
     /// The mirrored screen; asks the daemon for the next frame.
     pub fn snapshot(&self) -> Option<Snapshot> {
         let snap = {

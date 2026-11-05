@@ -1,7 +1,12 @@
 //! Wire types and framing (DESIGN.md §3.6). Frames are a `u32` little-endian
 //! length followed by a postcard-encoded message. postcard encodes enum
-//! variants by index: variants and fields are only ever **appended**; any
-//! other change bumps [`VERSION`].
+//! variants by index, and a receiver cannot skip one it does not know: any
+//! new variant or field bumps [`VERSION`] (an older daemon refuses the
+//! newer client in `Hello`, which the GUI explains).
+//!
+//! Text that came from the user or a program (pastes, hook payloads, file
+//! contents) is wrapped in [`Secret`], whose `Debug` shows only its size, so
+//! logging a message never logs its content.
 
 use std::io::{self, Read, Write};
 
@@ -12,11 +17,37 @@ use ccterm_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
 pub type SessionId = String;
+
+/// Content that must not reach a log: `Debug` prints its size only.
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct Secret<T>(pub T);
+
+impl std::fmt::Debug for Secret<String> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{} bytes>", self.0.len())
+    }
+}
+
+impl std::fmt::Debug for Secret<Vec<u8>> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{} bytes>", self.0.len())
+    }
+}
+
+impl std::fmt::Debug for Secret<Option<String>> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Some(s) => write!(f, "<{} bytes>", s.len()),
+            None => f.write_str("None"),
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -84,6 +115,9 @@ pub struct CreateSpec {
     pub scrollback_limit: u64,
     pub default_fg: [u8; 3],
     pub default_bg: [u8; 3],
+    /// Claude Code integration (hooks, status line) when the program is
+    /// Claude Code (DESIGN.md §3.13).
+    pub claude_integration: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -150,12 +184,12 @@ pub enum ClientMsg {
     Paste {
         session: SessionId,
         origin: Origin,
-        text: String,
+        text: Secret<String>,
     },
     Write {
         session: SessionId,
         origin: Origin,
-        bytes: Vec<u8>,
+        bytes: Secret<Vec<u8>>,
     },
     Focus {
         session: SessionId,
@@ -178,17 +212,130 @@ pub enum ClientMsg {
     Close {
         session: SessionId,
     },
-    /// A Claude Code hook event (milestone 3); `json` is the hook's stdin.
+    /// A Claude Code hook event; `json` is the hook's stdin. `ts_ms`: when
+    /// the hook process started (orders events of concurrent hooks).
+    /// `snapshot`: for an edit tool's PreToolUse, the file before the edit.
     Hook {
         session: Option<SessionId>,
         event: String,
-        json: String,
+        json: Secret<String>,
+        ts_ms: u64,
+        snapshot: Option<PreSnapshot>,
     },
-    /// Claude Code status line JSON (milestone 3).
+    /// Claude Code status line JSON.
     StatusLine {
         session: Option<SessionId>,
-        json: String,
+        json: Secret<String>,
+        ts_ms: u64,
     },
+    /// The user saw the tab: a "waiting" mark goes (a question stays).
+    ClearAttention {
+        session: SessionId,
+    },
+    /// The last edit of the session, before and after (answer: `Edit`).
+    GetEdit {
+        session: SessionId,
+    },
+    /// Answered with `Synced` once every earlier message was handled.
+    Sync,
+}
+
+/// A file as the hook found it before an edit tool ran.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PreSnapshot {
+    pub path: String,
+    pub status: SnapStatus,
+    pub text: Secret<Option<String>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnapStatus {
+    /// The file did not exist.
+    New,
+    Copied,
+    /// Larger than the 2 MiB limit.
+    TooLarge,
+    /// Not UTF-8 text.
+    Binary,
+    /// Looks like a credential or key file: never read.
+    Skipped,
+    Error,
+}
+
+/// What a tab marks (DESIGN.md §3.13): `Wait` — Claude Code finished or
+/// idles at its prompt; `Ask` — it waits for a permission answer or input.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Attention {
+    #[default]
+    None,
+    Wait,
+    Ask,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Limit {
+    /// `five_hour`, `seven_day`, `spend_limit`, …
+    pub name: String,
+    pub used_pct: f32,
+    /// Unix seconds.
+    pub resets_at: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct EditMeta {
+    pub path: String,
+    /// `main` or the subagent type.
+    pub agent: String,
+    pub at_ms: u64,
+    pub added: u32,
+    pub removed: u32,
+    /// Before/after known (else only the path is shown).
+    pub diffable: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Worker {
+    pub id: String,
+    pub kind: String,
+    pub started_ms: u64,
+    pub ended_ms: Option<u64>,
+}
+
+/// What ccterm knows about the Claude Code session in a tab, from hooks and
+/// status-line JSON (derived fields only; never prompts or file contents).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct ClaudeInfo {
+    /// Claude Code's session id (UUID), for `--resume`.
+    pub claude_session: String,
+    pub name: String,
+    pub model: String,
+    pub attention: Attention,
+    /// Between UserPromptSubmit and Stop.
+    pub busy: bool,
+    pub context_pct: Option<f32>,
+    pub context_size: Option<u64>,
+    pub limits: Vec<Limit>,
+    pub cost_usd: Option<f64>,
+    pub lines_added: u64,
+    pub lines_removed: u64,
+    pub files_changed: u32,
+    pub edits: u32,
+    pub last_edit: Option<EditMeta>,
+    /// Running subagents, then the last finished ones.
+    pub workers: Vec<Worker>,
+    pub cache_warm: Option<bool>,
+    pub cache_hit_pct: Option<f32>,
+    /// Last status-line update, Unix ms.
+    pub updated_ms: u64,
+}
+
+/// The last edit with its text before and after.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct EditView {
+    pub meta: EditMeta,
+    pub status: SnapStatus,
+    pub before: Secret<String>,
+    pub after: Secret<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -283,6 +430,17 @@ pub enum DaemonMsg {
     NoSession {
         session: SessionId,
     },
+    /// Claude Code state of a session (on attach and on every change).
+    Claude {
+        session: SessionId,
+        info: Box<ClaudeInfo>,
+    },
+    /// Answer to `GetEdit`.
+    Edit {
+        session: SessionId,
+        edit: Option<Box<EditView>>,
+    },
+    Synced,
 }
 
 // ---------------------------------------------------------------- framing

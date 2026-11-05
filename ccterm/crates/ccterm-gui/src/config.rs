@@ -10,6 +10,7 @@
 //! | `window-padding-balance` | `true` / `false`: spread the leftover space evenly on all sides | `true` |
 //! | `window-padding-color` | `background` / `extend` / `extend-always` | `extend` |
 //! | `decorations` | `native` / `integrated` / `none` | `native` |
+//! | `claude-integration` | `true` / `false`: hooks and status line in Claude Code tabs | `true` |
 //! | `restore-tabs` | `true` / `false`: reopen the previous run's tabs at start | `true` |
 //! | `scrollback-limit` | bytes of scrollback per session (as Ghostty; ~1.1 KB per 120-column row) | 12000000 |
 
@@ -48,6 +49,8 @@ pub struct Config {
     pub scrollback_limit: usize,
     /// Reopen the previous run's tabs (tab set "previous") at start.
     pub restore_tabs: bool,
+    /// Claude Code tabs get ccterm's hooks and status line.
+    pub claude_integration: bool,
 }
 
 impl Default for Config {
@@ -59,6 +62,7 @@ impl Default for Config {
             decorations: Decorations::Native,
             scrollback_limit: ccterm_core::DEFAULT_SCROLLBACK_LIMIT,
             restore_tabs: true,
+            claude_integration: true,
         }
     }
 }
@@ -70,6 +74,7 @@ pub const KEYS: &[&str] = &[
     "decorations",
     "scrollback-limit",
     "restore-tabs",
+    "claude-integration",
 ];
 
 impl Config {
@@ -83,13 +88,8 @@ impl Config {
                 }
                 self.window_padding = v;
             }
-            "restore-tabs" => {
-                self.restore_tabs = match value {
-                    "true" | "yes" | "1" => true,
-                    "false" | "no" | "0" => false,
-                    _ => return Err(bad()),
-                }
-            }
+            "restore-tabs" => self.restore_tabs = parse_bool(value).ok_or_else(bad)?,
+            "claude-integration" => self.claude_integration = parse_bool(value).ok_or_else(bad)?,
             "window-padding-balance" => {
                 self.padding_balance = match value {
                     "true" | "yes" | "1" => true,
@@ -143,6 +143,14 @@ impl Config {
             }
         }
         bad
+    }
+}
+
+fn parse_bool(v: &str) -> Option<bool> {
+    match v {
+        "true" | "yes" | "1" => Some(true),
+        "false" | "no" | "0" => Some(false),
+        _ => None,
     }
 }
 

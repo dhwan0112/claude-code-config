@@ -25,7 +25,12 @@ fn main() {
     let ep = Endpoint(dir.join("rt").join("daemon.sock"));
     #[cfg(windows)]
     let ep = Endpoint(format!(r"\\.\pipe\ccterm-latency-{}", std::process::id()).into());
-    let _d = ccterm_daemon::spawn(Config { endpoint: ep.clone(), state_dir: dir.join("state"), idle_exit: None });
+    let _d = ccterm_daemon::spawn(Config {
+        endpoint: ep.clone(),
+        state_dir: dir.join("state"),
+        run_dir: dir.join("run"),
+        idle_exit: None,
+    });
     let c = loop {
         match Client::connect(&ep, Role::Control, "latency") {
             Ok(c) => break c,
@@ -43,6 +48,7 @@ fn main() {
             scrollback_limit: 12_000_000,
             default_fg: [220, 220, 220],
             default_bg: [30, 30, 30],
+            claude_integration: false,
         })
         .expect("create");
     let s = c.attach(&id, None).expect("attach");

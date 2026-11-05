@@ -5,6 +5,8 @@
 //! ccterm daemon
 //! ccterm status [--json | --screen ID]
 //! ccterm install-desktop
+//! ccterm hook EVENT        (run by Claude Code)
+//! ccterm statusline        (run by Claude Code)
 //! ```
 //! Without a program it runs the user's shell (`$SHELL`, else `/bin/sh`;
 //! Windows: `%COMSPEC%`, else `cmd.exe`). The first word after the options is
@@ -72,7 +74,7 @@ fn default_shell() -> CommandSpec {
 /// that name, so adding them later does not change what a command line does.
 pub const SUBCOMMANDS: &[&str] =
     &["gui", "daemon", "hook", "statusline", "run", "headless", "install-desktop", "status"];
-pub const IMPLEMENTED: &[&str] = &["gui", "daemon", "status", "install-desktop"];
+pub const IMPLEMENTED: &[&str] = &["gui", "daemon", "status", "install-desktop", "hook", "statusline"];
 
 /// What the command line asks for.
 #[derive(Debug)]
@@ -114,7 +116,8 @@ const USAGE: &str =
     "usage: ccterm [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
      settings (KEY): window-padding N, window-padding-balance true|false,\n\
      window-padding-color background|extend|extend-always, decorations native|integrated|none,\n\
-     scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row)\n\
+     scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row),\n\
+     restore-tabs true|false, claude-integration true|false (default true)\n\
      subcommands: ccterm gui [OPTIONS] [PROGRAM...], ccterm daemon, ccterm status [--json | --screen ID],\n\
      ccterm install-desktop; reserved (not implemented yet): hook, statusline, run, headless;\n\
      to run a program with a subcommand's name: ccterm [OPTIONS] -- NAME [ARGS...]";
@@ -336,6 +339,14 @@ fn message_box(msg: &str) {
 }
 
 fn main() {
+    // Claude Code's hooks and status line: first, before any setup (they
+    // must end within milliseconds and never print; DESIGN.md §3.13).
+    let mut argv = std::env::args().skip(1);
+    match argv.next().as_deref() {
+        Some("hook") => ccterm_cc::report::main(ccterm_cc::report::Kind::Hook(argv.next().unwrap_or_default())),
+        Some("statusline") => ccterm_cc::report::main(ccterm_cc::report::Kind::StatusLine),
+        _ => {}
+    }
     let cmd = match parse_command(std::env::args().skip(1).collect()) {
         Ok(c) => c,
         Err(msg) => {

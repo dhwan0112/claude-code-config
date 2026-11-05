@@ -132,6 +132,7 @@ struct Win {
     start_cwd: Option<String>,
     defaults: (ccterm_core::Rgb, ccterm_core::Rgb),
     scrollback_limit: usize,
+    claude_integration: bool,
     /// Set when the last tab is gone: the window closes.
     quit: Option<i32>,
     /// The window is closing: closing its tabs must not shrink `last`.
@@ -234,6 +235,7 @@ impl App {
             start_cwd: std::env::current_dir().ok().map(|d| d.to_string_lossy().into_owned()),
             defaults: (cfg.default_fg, cfg.default_bg),
             scrollback_limit: self.opts.config.scrollback_limit,
+            claude_integration: self.opts.config.claude_integration,
             quit: None,
             shutting_down: false,
         };
@@ -356,6 +358,7 @@ impl Win {
             scrollback_limit: self.scrollback_limit as u64,
             default_fg: rgb(self.defaults.0),
             default_bg: rgb(self.defaults.1),
+            claude_integration: self.claude_integration,
         };
         let id = self.client.create(create).map_err(|e| e.to_string())?;
         let session = self.client.attach(&id, None).map_err(|e| format!("attach: {e}"))?;
