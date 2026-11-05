@@ -465,10 +465,18 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   permission flow decides), PermissionDenied, PostToolUse,
   PostToolUseFailure, Notification, Stop, StopFailure, SubagentStart/Stop,
   SessionEnd; all asynchronous except those two; timeout 5 s.
-  `statusLine` has no exec form: `haetty statusline` through Claude Code's
-  shell (`sh -c`; Windows Git Bash, else PowerShell), path bare when it has
-  no shell characters (every one of those shells runs it), else
-  double-quoted (sh/Git Bash only; PowerShell would need `&` — not handled),
+  `statusLine` has no exec form (checked 2026-11-06 in the status line
+  guide and the settings reference: only `type`, `command`, `padding`,
+  `refreshInterval`, `hideVimModeIndicator`): `haetty statusline` runs
+  through Claude Code's shell (`sh -c`; Windows Git Bash when installed,
+  else PowerShell). The path must therefore be one every shell runs bare
+  (`settings::shell_safe_exe`): as it is when it has no spaces or shell
+  characters; on Windows otherwise its 8.3 short path
+  (`C:/Users/KIMTES~1/…/haetty.exe`), and when the volume has no short
+  names a copy in `%ProgramData%\haetty\<dir>-<SID>\` (refreshed when the
+  executable changes; only the user's own processes run it, so another
+  user replacing it would only break its status line). A quoted path runs
+  in sh/Git Bash only — PowerShell rejects it (checked: parser error).
   `refreshInterval` 3 s. Side effect documented by Claude Code: with a
   custom status line it hides most footer hints ("esc to interrupt",
   "? for shortcuts"); haetty's status row shows "esc to interrupt" while

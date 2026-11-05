@@ -676,11 +676,13 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 22. **With a real account**: 11–17 on Windows (taskbar flash instead of a
     notification for 13; the permission dialog after the synchronous hook,
     ~70 ms on the test machine).
-23. **Status line through PowerShell**: on a machine without Git Bash,
-    Claude Code runs the status line with PowerShell — the status row still
-    fills; and with haetty in a folder whose path has spaces (the command
-    is then double-quoted, which PowerShell does not run — expected to
-    fail; tell me if it matters).
+23. **Status line on a machine without Git Bash** (Claude Code then runs it
+    through PowerShell; could not be produced here — Claude Code finds Git
+    Bash at its default install location even with Git off `PATH`): with
+    haetty in a folder with spaces (e.g. `C:\Program Files\haetty`) or in a
+    user folder with a space, the status row at the bottom of a Claude Code
+    tab fills (`$ 0.00` …) within a few seconds. The injected command is the
+    8.3 short path (checked to run in PowerShell 5.1 and 7 directly).
 
 ### 6.2 Known gaps (not in milestone 1's scope)
 
@@ -1146,6 +1148,33 @@ regression list, measurements), then committed, pushed and mirrored.
     script writes both forms.)
   - Note: PowerShell may refuse to dot-source a script from
     `\\wsl.localhost\…` inside a `-File` run; copy `test-guard.ps1` locally.
+
+- **2026-11-06 Windows status line with spaces in paths (protected area,
+  approved: the injected settings).** Claude Code's docs (status line
+  guide, settings reference) show no shell-free form for `statusLine`
+  (unlike hooks' `command` + `args`). So the status line command now uses a
+  path no shell mangles: unchanged when plain, else the 8.3 short path,
+  else a refreshed copy in `%ProgramData%\haetty\<dir>-<SID>`; quoted
+  only as a last resort (DESIGN.md §3.13). Evidence:
+  - Real Claude Code 2.1.318 (dummy key, isolated profile in the test run
+    directory, `statusline-matrix.ps1`): haetty installed in
+    `…\Program Files X\haetty\` and in a user folder `…\Users\Kim Test\…`,
+    each with Git on `PATH` and with Git removed from `PATH` — injected
+    command `C:/Users/Public/HAETTY~1/…/PROGRA~1/haetty/haetty.exe
+    statusline` / `…/Users/KIMTES~1/…`, 6 report connections in 16 s in
+    every case (SessionStart + the status line every 3 s), the frame dump's
+    status row shows `$ 0.00` (cost comes only from the status line). Claude
+    Code's debug log: `Using bash path: "C:\Program Files\Git\bin\bash.exe"`
+    in all four, also with Git off `PATH` — a PowerShell-only machine could
+    not be made here (manual check 23).
+  - The command run directly (`statusline-shells.ps1`): the new form
+    reaches the daemon from Git Bash, Windows PowerShell 5.1 and
+    PowerShell 7; the old quoted form from Git Bash only (both PowerShells:
+    parser error).
+  - Windows unit test `windows_status_line_path_without_spaces`: short path
+    plain; the copy fallback (with `ProgramData` pointed into the test run
+    directory) gives a plain path and is refreshed after the executable
+    changes.
 
 ### ccx comparison (milestone 3)
 

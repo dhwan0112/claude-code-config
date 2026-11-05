@@ -649,8 +649,10 @@ impl Daemon {
                 .map_err(|e| log::warn!("session {id}: {e}; haetty's settings only"))
                 .ok()
         });
-        let exe = product::exe_path().to_string_lossy().into_owned();
-        let (merged, warnings) = settings::merge(settings::ours(&exe), user);
+        let exe_path = product::exe_path();
+        let exe = exe_path.to_string_lossy().into_owned();
+        let statusline_exe = settings::shell_safe_exe(&exe_path);
+        let (merged, warnings) = settings::merge(settings::ours(&exe, &statusline_exe), user);
         for w in warnings {
             log::warn!("session {id}: {w}");
         }
