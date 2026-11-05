@@ -1032,6 +1032,26 @@ regression list, measurements), then committed, pushed and mirrored.
     `CCTERM_SOCKET` still reaches a daemon and is announced exactly once.
   - Instances test updated (`haetty-dev`, `io.github.dhwan0112.haetty.dev`).
 
+- **2026-11-05 Final icon.** The user's design (`assets/icon/haetty.svg`,
+  metadata block removed, drawing byte-identical) replaces the placeholder
+  drawn in code; generated files committed (`assets/icon/README.md`:
+  resvg 0.49.0, Python 3.12 standard library). `icon.rs` now only embeds
+  them; `build.rs` links the committed `.ico`. Evidence:
+  - Unit test `committed_icon_files_are_what_they_claim`: hicolor PNG
+    sizes and RGBA, the SVG's drawing elements, the `.ico`'s 8 sizes with
+    PNG entries, the RGBA window icon.
+  - Small sizes, magnified: `assets/icon/check/haetty-16-rendered-x16.png`,
+    `haetty-24-rendered-x12.png` (also 32 ×8, 48 ×6): `❯`, cursor and bar
+    keep their shape; no pixel edits. Seen at 16 px: the 1 px `❯` comes out
+    lighter-than-body grey (#84807C) on the orange-tinted corner, the bar's
+    right third fades to dark brown, the window edges are soft
+    (part-pixels), the 8 % outline is invisible below 64 px — inherent to
+    the design at that size, reported, not changed.
+  - Windows 11 (`iconwin.ps1`): one icon resource; the resource loaded at
+    16, 24, 48, 256 px and Explorer's 32 px icon show the design; the
+    window's small (16 px) and big (32 px) icons are set from it.
+  - Linux: regression `install-desktop files` and `_NET_WM_ICON set`.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

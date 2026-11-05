@@ -295,7 +295,8 @@ notification; the taskbar/urgency hint stays.
 - Windows: nothing to install; `haetty.exe` carries its icon (pin it to
   Start or the taskbar). `haetty install-desktop` says so.
 
-The icon is a placeholder (`>_` on a rounded square in neutral greys).
+The icon is in `assets/icon/` (the design `haetty.svg` and the PNG, ICO
+and RGBA files generated from it; `assets/icon/README.md` says how).
 
 ### Environment variables
 

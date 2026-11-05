@@ -375,7 +375,7 @@ fn reference_frames() {
         let cv = render(&mut painter, &snap, preedit.as_ref());
         let (w, h) = (cv.width, cv.height);
         let actual_png = out.join(format!("{name}-actual.png"));
-        let _ = std::fs::write(&actual_png, crate::icon::png_wh(w, h, &rgba(&cv.pixels)));
+        let _ = std::fs::write(&actual_png, png_wh(w, h, &rgba(&cv.pixels)));
         let file = dir.join(format!("{name}.ccrf"));
         if update {
             let data = encode(w, h, &cv.pixels);
@@ -400,7 +400,7 @@ fn reference_frames() {
             continue;
         }
         let diff_png = out.join(format!("{name}-diff.png"));
-        let _ = std::fs::write(&diff_png, crate::icon::png_wh(w, h, &rgba(&diff_image(&cv.pixels, &d.mask))));
+        let _ = std::fs::write(&diff_png, png_wh(w, h, &rgba(&diff_image(&cv.pixels, &d.mask))));
         let msg = format!("{name}: {}; see {} and {}", d.describe(), actual_png.display(), diff_png.display());
         if d.fails() {
             failures.push(msg);
@@ -462,4 +462,59 @@ fn moved_glyph_fails_and_noise_passes() {
         *p = pack(Rgb { r: 40, g: 30, b: 30 });
     }
     assert!(compare(w, &base, &noisy).fails());
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut c = 0xFFFF_FFFFu32;
+    for &b in data {
+        c ^= b as u32;
+        for _ in 0..8 {
+            c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+        }
+    }
+    !c
+}
+
+fn adler32(data: &[u8]) -> u32 {
+    let (mut a, mut b) = (1u32, 0u32);
+    for &x in data {
+        a = (a + x as u32) % 65521;
+        b = (b + a) % 65521;
+    }
+    (b << 16) | a
+}
+
+/// An uncompressed RGBA PNG (stored deflate blocks): output for people to
+/// look at, so size does not matter.
+fn png_wh(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    let mut raw = Vec::with_capacity(rgba.len() + h as usize);
+    for row in rgba.chunks(w as usize * 4) {
+        raw.push(0); // filter: none
+        raw.extend_from_slice(row);
+    }
+    let mut z = vec![0x78, 0x01];
+    let chunks: Vec<&[u8]> = raw.chunks(65_535).collect();
+    for (i, c) in chunks.iter().enumerate() {
+        z.push(u8::from(i + 1 == chunks.len()));
+        z.extend_from_slice(&(c.len() as u16).to_le_bytes());
+        z.extend_from_slice(&(!(c.len() as u16)).to_le_bytes());
+        z.extend_from_slice(c);
+    }
+    z.extend_from_slice(&adler32(&raw).to_be_bytes());
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    let mut chunk = |kind: &[u8], body: &[u8]| {
+        out.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        let mut c = kind.to_vec();
+        c.extend_from_slice(body);
+        out.extend_from_slice(&c);
+        out.extend_from_slice(&crc32(&c).to_be_bytes());
+    };
+    let mut ihdr = vec![];
+    ihdr.extend_from_slice(&w.to_be_bytes());
+    ihdr.extend_from_slice(&h.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8-bit RGBA
+    chunk(b"IHDR", &ihdr);
+    chunk(b"IDAT", &z);
+    chunk(b"IEND", &[]);
+    out
 }

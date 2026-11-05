@@ -1,13 +1,11 @@
-//! Windows: puts the (placeholder) application icon into the executable as
-//! a resource, so Explorer, the taskbar and shortcuts show it. The icon is
-//! drawn by `src/icon.rs` — the one place to change it.
-
-#[allow(dead_code)]
-#[path = "src/icon.rs"]
-mod icon;
+//! Windows: links the application icon (`assets/icon/haetty.ico`, committed,
+//! see `assets/icon/README.md`) into the executable as icon resource 1, so
+//! Explorer, the taskbar, shortcuts and the window (`icon.rs`) show it.
 
 fn main() {
-    println!("cargo:rerun-if-changed=src/icon.rs");
+    let manifest = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let ico = manifest.join("../../assets/icon/haetty.ico");
+    println!("cargo:rerun-if-changed={}", ico.display());
     println!("cargo:rerun-if-changed=build.rs");
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
@@ -15,10 +13,7 @@ fn main() {
         return; // (an MSVC build would use rc.exe; not set up)
     }
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
-    // Up to 64 px: the PNGs are stored uncompressed, and a 256 px entry
-    // alone would add 262 KB to the executable (Explorer scales up).
-    let ico = out.join("haetty.ico");
-    std::fs::write(&ico, icon::ico(&[16, 24, 32, 48, 64])).expect("write ico");
+    let ico = ico.canonicalize().expect("assets/icon/haetty.ico");
     let rc = out.join("haetty.rc");
     std::fs::write(&rc, format!("1 ICON \"{}\"\n", ico.display().to_string().replace('\\', "/"))).expect("write rc");
     let obj = out.join("haetty-icon.o");

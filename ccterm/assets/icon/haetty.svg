@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" xmlns:c2pa="http://c2pa.org/manifest">
+  <defs>
+    <clipPath id="win"><rect x="12" y="36" width="232" height="184" rx="18"/></clipPath>
+    <linearGradient id="glow" gradientUnits="userSpaceOnUse" x1="12" y1="36" x2="244" y2="220">
+      <stop offset="0"    stop-color="#FF6A2C" stop-opacity="0.34"/>
+      <stop offset="0.28" stop-color="#FF6A2C" stop-opacity="0.16"/>
+      <stop offset="0.50" stop-color="#FF6A2C" stop-opacity="0.05"/>
+      <stop offset="0.66" stop-color="#FF6A2C" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FF6A2C" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#FF6A2C" stop-opacity="0.10"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#win)">
+    <rect x="12" y="36" width="232" height="184" fill="#0A0A0B"/>
+    <rect x="12" y="36" width="232" height="184" fill="url(#glow)"/>
+    <rect x="12" y="36" width="232" height="30" fill="url(#bar)"/>
+    <polyline points="58,104 100,136 58,168" fill="none" stroke="#B4B2AF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="116" y="158" width="58" height="15" rx="2" fill="#B4B2AF"/>
+  </g>
+  <rect x="12.75" y="36.75" width="230.5" height="182.5" rx="17.25" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="1.5"/>
+</svg>

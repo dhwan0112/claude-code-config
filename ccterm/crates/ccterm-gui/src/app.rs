@@ -187,14 +187,18 @@ impl App {
         let (w, h) = Layout { cell: painter.cell_metrics(), padding: pad0.min, balance: pad0.balance }
             .window_size(self.opts.cols, self.opts.rows);
         let cfg = SessionConfig::new(self.opts.command.clone());
-        let icon = winit::window::Icon::from_rgba(crate::icon::rgba(64), 64, 64).ok();
         let attrs = Window::default_attributes()
             .with_title(ccterm_proto::product::display_name())
-            .with_inner_size(PhysicalSize::new(w, h))
-            .with_window_icon(icon.clone());
-        // Windows: the big icon (Alt+Tab, taskbar) as well as the small one.
+            .with_inner_size(PhysicalSize::new(w, h));
+        #[cfg(not(windows))]
+        let attrs = attrs.with_window_icon(crate::icon::window_icon());
+        // Windows: small icon (title bar) and big icon (Alt+Tab, taskbar),
+        // both from the executable's icon resource.
         #[cfg(windows)]
-        let attrs = winit::platform::windows::WindowAttributesExtWindows::with_taskbar_icon(attrs, icon.clone());
+        let attrs = {
+            let (small, big) = crate::icon::window_icons();
+            winit::platform::windows::WindowAttributesExtWindows::with_taskbar_icon(attrs.with_window_icon(small), big)
+        };
         // Wayland app_id and X11 WM_CLASS = the desktop file's name.
         #[cfg(all(unix, not(target_os = "macos")))]
         let attrs = {

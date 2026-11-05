@@ -1,7 +1,8 @@
 //! `haetty install-desktop`: Linux desktop entry and icons for the current
 //! user (`$XDG_DATA_HOME`, default `~/.local/share`): `applications/<app>.desktop`
 //! with the running executable, `StartupWMClass` = app id (= Wayland
-//! `app_id` = X11 `WM_CLASS`), hicolor PNGs (48, 128, 256) and an SVG.
+//! `app_id` = X11 `WM_CLASS`), the icon (`assets/icon`) as hicolor PNGs
+//! (16–512) and an SVG, under the app id.
 //! Windows needs nothing: the executable carries its icon (build.rs).
 
 use ccterm_proto::product;
@@ -28,10 +29,10 @@ pub fn install_desktop() -> Result<String, String> {
     };
     let desktop = desktop_entry(&exe.to_string_lossy());
     write(format!("applications/{id}.desktop"), desktop.as_bytes())?;
-    for s in [48u32, 128, 256] {
-        write(format!("icons/hicolor/{s}x{s}/apps/{id}.png"), &crate::icon::png(s, &crate::icon::rgba(s)))?;
+    for (s, png) in crate::icon::HICOLOR {
+        write(format!("icons/hicolor/{s}x{s}/apps/{id}.png"), png)?;
     }
-    write(format!("icons/hicolor/scalable/apps/{id}.svg"), crate::icon::svg().as_bytes())?;
+    write(format!("icons/hicolor/scalable/apps/{id}.svg"), crate::icon::SVG.as_bytes())?;
     Ok(format!("installed:\n  {}", written.join("\n  ")))
 }
 

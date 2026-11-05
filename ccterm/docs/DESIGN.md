@@ -406,17 +406,35 @@ within 3 s, with a short hint over the bottom row; no dialog.
 
 ### 3.12 Icon and desktop integration
 
-The icon is a placeholder drawn in code (`ccterm-gui/src/icon.rs`, the
-single point to replace): neutral greys, `>_` on a rounded square. It
-feeds the window icon (X11 `_NET_WM_ICON`, Windows small and big icons),
-`haetty install-desktop` (Linux:
-`~/.local/share/applications/io.github.dhwan0112.haetty.desktop` with
-`StartupWMClass`, hicolor 48/128/256 PNG and SVG; Windows: nothing to
-install) and `build.rs` (Windows `.exe` icon resource via `windres`, sizes
-16–64: PNGs are written uncompressed by our own writer, and a 256 px entry
-would add 262 KB). Wayland `app_id` = X11 `WM_CLASS` = `APP_ID`
-(`io.github.dhwan0112.haetty`), so docks match the window to the desktop
-file.
+The icon is the user's design (`assets/icon/haetty.svg`, 256×256: a
+window-shaped body #0A0A0B with transparent margins, an orange #FF6A2C
+gradient bar on top and an orange glow fading into the black from the top
+left, a grey #B4B2AF `❯` and underscore cursor). Its colours, shapes and
+proportions are not changed by code. Everything derived from it is
+generated once and committed (`assets/icon/README.md`: resvg 0.49 and
+small Python scripts), so a build needs no conversion tool:
+- `png/haetty-N.png` for N = 16, 20, 24, 32, 40, 48, 64, 128, 256, 512;
+  16 and 24 px were checked magnified (`assets/icon/check/`) and are the
+  plain renders (the shapes hold; no hand-tuned pixels);
+- `haetty.ico` with 16, 20, 24, 32, 40, 48, 64, 256 (PNG entries);
+- `rgba/haetty-64.rgba`, the 64 px image as raw RGBA.
+
+Uses (`crates/ccterm-gui/src/icon.rs`, `build.rs`):
+- Windows: `build.rs` links `haetty.ico` as icon resource 1 (`windres`), so
+  Explorer, shortcuts and the taskbar show it; the window's small and big
+  icons are loaded from that resource at the system's small/large icon
+  sizes, so Windows picks the matching image from the `.ico`.
+- Linux X11: the window icon (`_NET_WM_ICON`) is the embedded 64 px RGBA
+  (no PNG decoder at run time). Wayland has no window icon in winit; the
+  dock uses the desktop entry.
+- `haetty install-desktop` (Linux) writes
+  `~/.local/share/applications/io.github.dhwan0112.haetty.desktop`
+  (`Icon=` and `StartupWMClass=` = the app id) and the icon as
+  `icons/hicolor/{16…512}x{16…512}/apps/io.github.dhwan0112.haetty.png`
+  plus `scalable/apps/io.github.dhwan0112.haetty.svg`; on Windows it has
+  nothing to install.
+- Wayland `app_id` = X11 `WM_CLASS` (instance and class) = the app id, so
+  docks match the window to the desktop entry.
 
 ### 3.13 Claude Code integration (milestone 3)
 
