@@ -11,7 +11,8 @@ fn main() {
     let data = std::fs::read(&a[1]).unwrap();
     let (cols, rows): (usize, usize) = (a[2].parse().unwrap(), a[3].parse().unwrap());
     let reps: usize = a.get(4).map(|s| s.parse().unwrap()).unwrap_or(1);
-    let mut cfg = Config::default(); cfg.scrolling_history = 10000;
+    // Lines of history (5th argument), default 10 000.
+    let mut cfg = Config::default(); cfg.scrolling_history = a.get(5).map(|s| s.parse().unwrap()).unwrap_or(10_000);
     let mut term = Term::new(cfg, &Size{c:cols,r:rows}, VoidListener);
     let mut p: Processor = Processor::new();
     let t0 = Instant::now();

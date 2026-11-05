@@ -6,7 +6,10 @@ fn main() {
     let data = std::fs::read(&a[1]).unwrap();
     let (cols, rows): (u16, u16) = (a[2].parse().unwrap(), a[3].parse().unwrap());
     let reps: usize = a.get(4).map(|s| s.parse().unwrap()).unwrap_or(1);
-    let mut term = Terminal::new(TerminalOptions { cols, rows, max_scrollback: 10000 }).unwrap();
+    // max_scrollback is a byte limit; 11_000_000 keeps ~10 200 rows of 120 columns,
+    // comparable to alacritty's 10 000 lines (5th argument, bytes).
+    let max_scrollback: usize = a.get(5).map(|s| s.parse().unwrap()).unwrap_or(11_000_000);
+    let mut term = Terminal::new(TerminalOptions { cols, rows, max_scrollback }).unwrap();
     let t0 = Instant::now();
     for _ in 0..reps { for ch in data.chunks(65536) { term.vt_write(ch); } }
     let dt = t0.elapsed();
