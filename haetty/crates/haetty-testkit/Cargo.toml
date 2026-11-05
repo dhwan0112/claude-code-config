@@ -1,0 +1,11 @@
+[package]
+name = "haetty-testkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Test isolation for haetty's tests: a per-run temporary directory, never the user's home or configuration"
+publish = false
+
+[dependencies]

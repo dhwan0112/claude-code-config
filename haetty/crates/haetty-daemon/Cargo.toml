@@ -13,3 +13,6 @@ haetty-core.workspace = true
 haetty-proto.workspace = true
 crossbeam-channel.workspace = true
 log.workspace = true
+
+[dev-dependencies]
+haetty-testkit.workspace = true

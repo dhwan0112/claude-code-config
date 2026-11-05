@@ -13,10 +13,7 @@ use haetty_proto::wire::{Attention, ClientMsg, CreateSpec, DaemonMsg, Grid, Orig
 use haetty_proto::{Client, RemoteSession, Role};
 
 fn tmp(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("haetty-daemon-test-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+    haetty_testkit::run_dir(&format!("daemon-{name}"))
 }
 
 fn start(dir: &std::path::Path, idle: Duration) -> (Endpoint, std::thread::JoinHandle<std::io::Result<()>>) {
@@ -108,7 +105,7 @@ fn session_survives_a_dead_client_and_reattaches_with_continuing_seq() {
         log.contains("\tsession_created\t") && log.contains("\tsession_closed\t") && log.contains("\tdaemon_stop\t"),
         "{log}"
     );
-    let _ = std::fs::remove_dir_all(&dir);
+    haetty_testkit::remove_dir_all(&dir);
 }
 
 #[test]
@@ -144,7 +141,7 @@ fn observe_and_report_clients_cannot_send_input_or_create() {
     s.handle.paste(Origin::Human, "ok");
     s.handle.key(Origin::Human, KeyInput::parse("Enter").unwrap());
     wait_screen(&s, "control input", |sn| sn.text().contains("got:ok"));
-    let _ = std::fs::remove_dir_all(&dir);
+    haetty_testkit::remove_dir_all(&dir);
 }
 
 /// A fake `claude` (a shell script of that name) gets haetty's `--settings`
@@ -292,7 +289,7 @@ fn claude_reports_reach_the_client_and_gate_program_input() {
     gui.close(&plain).unwrap();
     assert!(gui.sync(Duration::from_secs(5)));
     assert!(!std::path::Path::new(&path).exists(), "settings file removed with the session");
-    let _ = std::fs::remove_dir_all(&dir);
+    haetty_testkit::remove_dir_all(&dir);
 }
 
 /// Friction log (DESIGN.md §3.8): a key whose screen change comes after the
@@ -328,5 +325,5 @@ fn friction_reaches_the_event_log() {
     assert!(lat.contains("\tn=1\t") && lat.contains("over_16ms=1"), "{lat}");
     assert!(line("gui_slow_draw").contains("ms=21.5"));
     assert!(!log.contains("secret-typed-text"), "typed text must never reach the log");
-    let _ = std::fs::remove_dir_all(&dir);
+    haetty_testkit::remove_dir_all(&dir);
 }

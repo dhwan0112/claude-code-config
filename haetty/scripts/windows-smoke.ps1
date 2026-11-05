@@ -1,7 +1,15 @@
-# haetty Windows smoke test. Run from the folder that holds haetty-headless.exe:
+# haetty Windows smoke test. Copy it with test-guard.ps1 next to haetty-headless.exe and run:
+#   $env:HAETTY_TEST_TMP = "$env:PUBLIC\haetty-test"
 #   powershell -ExecutionPolicy Bypass -File windows-smoke.ps1
 # Each check prints PASS/FAIL; the full screen of a failed check is shown.
+# Test isolation (test-guard.ps1): files are written only in a fresh run
+# directory under $env:HAETTY_TEST_TMP (refused when unset, empty, or inside
+# your profile, %APPDATA% or %LOCALAPPDATA%); Claude Code runs there with its
+# own home and a dummy API key, never with your account or ~\.claude.
 $ErrorActionPreference = "Continue"
+. (Join-Path $PSScriptRoot "test-guard.ps1")
+$run = Initialize-HaettyGuard -Name HAETTY_TEST_TMP
+Write-Host "run directory: $run"
 $exe = Join-Path $PSScriptRoot "haetty-headless.exe"
 if (-not (Test-Path $exe)) { $exe = "haetty-headless.exe" }
 $fail = 0
@@ -28,7 +36,18 @@ Check "resize" @("--cols","100","--rows","20","-e","wait-idle 1500 15000","-e","
 # 5. Claude Code, if installed: fullscreen renderer, modes and keys.
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 if ($claude) {
-    $out = & $exe --cols 120 --rows 36 --timeout 90 --env CLAUDE_CODE_NO_FLICKER=1 `
+    # An isolated home: onboarding done, the project trusted, a dummy key.
+    $home_ = Join-Path $run "claude-home"; $proj = Join-Path $run "project"
+    foreach ($p in $home_, "$home_\.claude", $proj) { Assert-HaettyPath $p; New-Item -ItemType Directory -Force $p | Out-Null }
+    $cfg = @{ hasCompletedOnboarding = $true; theme = "dark"; customApiKeyResponses = @{ approved = @("A" * 20); rejected = @() }
+              # Claude Code on Windows keys projects with forward slashes; both forms, to be safe.
+              projects = @{ $proj = @{ hasTrustDialogAccepted = $true; hasCompletedProjectOnboarding = $true }
+                            ($proj -replace "\\", "/") = @{ hasTrustDialogAccepted = $true; hasCompletedProjectOnboarding = $true } } } | ConvertTo-Json -Depth 5
+    foreach ($f in "$home_\.claude.json", "$home_\.claude\.claude.json") { Assert-HaettyPath $f; Set-Content -Path $f -Value $cfg -Encoding utf8 }
+    Get-ChildItem env: | Where-Object { $_.Name -match '^CLAUDE_CODE_|^CLAUDECODE$|^CLAUDE_.*SESSION' } | ForEach-Object { Remove-Item "env:$($_.Name)" }
+    $key = "sk-ant-api03-" + ("A" * 95)
+    $out = & $exe --cols 120 --rows 36 --timeout 90 --cwd $proj --env CLAUDE_CODE_NO_FLICKER=1 `
+        --env "USERPROFILE=$home_" --env "HOME=$home_" --env "CLAUDE_CONFIG_DIR=$home_\.claude" --env "ANTHROPIC_API_KEY=$key" `
         -e "wait-idle 3000 60000" -e "modes" -e "print" -e "type 안녕 hello" -e "key shift+Enter" -e "type second line" `
         -e "wait-idle 800 5000" -e "print" -e "key ctrl+c" -e "key ctrl+c" -e "wait-exit 15000" --dump none -- $claude.Source 2>&1 | Out-String
     Write-Host $out

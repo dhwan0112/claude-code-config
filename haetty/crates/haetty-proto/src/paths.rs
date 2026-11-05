@@ -179,8 +179,7 @@ mod tests {
 
     #[test]
     fn private_dir_is_created_0700_and_checked() {
-        let base = std::env::temp_dir().join(format!("haetty-paths-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        let base = haetty_testkit::run_dir("paths");
         let d = base.join("rt");
         ensure_private_dir(&d).unwrap();
         assert_eq!(std::fs::metadata(&d).unwrap().permissions().mode() & 0o777, 0o700);
@@ -191,6 +190,6 @@ mod tests {
         std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700)).unwrap();
         std::os::unix::fs::symlink(&d, &link).unwrap();
         assert!(ensure_private_dir(&link).is_err(), "a symlink must be refused");
-        std::fs::remove_dir_all(&base).unwrap();
+        haetty_testkit::remove_dir_all(&base);
     }
 }

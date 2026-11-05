@@ -27,3 +27,6 @@ windows-sys = { version = "0.59", features = [
   "Win32_System_Pipes",
   "Win32_System_Threading",
 ] }
+
+[dev-dependencies]
+haetty-testkit.workspace = true

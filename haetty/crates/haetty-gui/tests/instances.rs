@@ -70,8 +70,8 @@ fn events(dir: &Path) -> String {
 
 #[test]
 fn stable_and_dev_instances_do_not_interfere() {
-    let tmp: PathBuf = std::env::temp_dir().join(format!("haetty-instances-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
+    // First, before HOME is pointed elsewhere: the guard takes the real home now.
+    let tmp: PathBuf = haetty_testkit::run_dir("instances");
     std::fs::create_dir_all(tmp.join("rt")).unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(tmp.join("rt"), std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -129,5 +129,5 @@ fn stable_and_dev_instances_do_not_interfere() {
     assert!(stable.sync(Duration::from_secs(5)));
     stable_d.kill().unwrap();
     let _ = stable_d.wait();
-    let _ = std::fs::remove_dir_all(&tmp);
+    haetty_testkit::remove_dir_all(&tmp);
 }

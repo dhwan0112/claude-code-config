@@ -20,8 +20,8 @@ use haetty_proto::{Client, Role};
 
 fn main() {
     let n: usize = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(200);
-    let dir = std::env::temp_dir().join(format!("haetty-latency-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    // Writes only inside haetty_testkit's run directory (never the real home).
+    let dir = haetty_testkit::run_dir("latency");
     #[cfg(unix)]
     let ep = Endpoint(dir.join("rt").join("daemon.sock"));
     #[cfg(windows)]
@@ -97,5 +97,5 @@ fn main() {
         ms(times[n - 1])
     );
     let _ = c.close(&id);
-    let _ = std::fs::remove_dir_all(&dir);
+    haetty_testkit::remove_dir_all(&dir);
 }

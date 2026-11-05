@@ -42,8 +42,7 @@ fn info(c: &Client, id: &str) -> SessionInfo {
 
 #[test]
 fn permission_request_is_in_the_daemon_before_the_hook_exits() {
-    let dir = std::env::temp_dir().join(format!("haetty-permission-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = haetty_testkit::run_dir("permission");
     std::fs::create_dir_all(dir.join("bin")).unwrap();
     let ep = Endpoint(dir.join("rt").join("daemon.sock"));
     let cfg = Config { endpoint: ep.clone(), state_dir: dir.join("state"), run_dir: dir.join("rt"), idle_exit: None };
@@ -112,5 +111,5 @@ fn permission_request_is_in_the_daemon_before_the_hook_exits() {
     assert!(times[times.len() - 1] < Duration::from_millis(250), "{times:?}");
     gui.close(&id).unwrap();
     assert!(gui.sync(Duration::from_secs(5)));
-    let _ = std::fs::remove_dir_all(&dir);
+    haetty_testkit::remove_dir_all(&dir);
 }

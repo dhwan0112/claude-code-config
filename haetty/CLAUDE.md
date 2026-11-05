@@ -47,6 +47,18 @@ the start of a session.
   `Daemon::input` in `haetty-daemon`); anything on the path of Claude Code
   permission prompts (attention `Ask`, `awaiting_permission`, the settings
   haetty injects).
+- Test isolation (enforced in code): tests write and remove files only in
+  their run directory — Rust tests through `haetty_testkit::run_dir` /
+  `check` / `remove_dir_all` (a dev-dependency); shell scripts source
+  `scripts/test-guard.sh` and call `haetty_guard_init HAETTY_TEST_TMP` and
+  `haetty_guard PATH`; PowerShell dot-sources `scripts/test-guard.ps1`
+  (`Initialize-HaettyGuard`, `Assert-HaettyPath`). An empty base variable or
+  a path in the real HOME, `~/.config`, `~/.local`, `~/.claude`, XDG dirs,
+  `%APPDATA%`, `%LOCALAPPDATA%` (and, in WSL, the Windows profile) is refused
+  before anything is written. Bases: Linux `/tmp/…`; Windows
+  `%PUBLIC%\haetty-test` (the Windows temp folder is under `%LOCALAPPDATA%`).
+  Claude Code in tests: an isolated home in the run directory and a dummy
+  key only.
 - Keep a recovery path: do not remove or break ccx (tmux) while haetty is
   not yet the proven default.
 - Reference frames: updating them is a separate commit whose message says
@@ -65,7 +77,7 @@ the start of a session.
 
 ```sh
 cargo build --release
-cargo test                                   # core 5+10 (Linux, python3); gui 67 + instances, migrate, permission 1 each; proto 4; cc 11; daemon 1+4 (Unix)
+cargo test                                   # core 5+10 (Linux, python3); gui 67 + instances, migrate, permission 1 each; proto 4; cc 11; daemon 1+4 (Unix); testkit 1
 cargo clippy --all-targets                   # must stay warning-free
 cargo clippy --all-targets --target x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu

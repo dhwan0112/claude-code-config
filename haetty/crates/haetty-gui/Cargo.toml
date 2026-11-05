@@ -45,3 +45,6 @@ copypasta = { version = "0.10.2", default-features = false, features = ["x11", "
 # shares smithay-client-toolkit 0.19 with winit 0.30 (0.7.3 pulls in 0.20,
 # a second copy of sctk and calloop, +89 KB stripped).
 smithay-clipboard = { version = "=0.7.2", default-features = false }
+
+[dev-dependencies]
+haetty-testkit.workspace = true

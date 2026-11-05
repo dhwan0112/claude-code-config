@@ -1108,6 +1108,45 @@ regression list, measurements), then committed, pushed and mirrored.
     `~/.local/share` (10 new haetty files, removed right after, nothing
     else touched). Put such commands in a script file run by `wsl bash`.
 
+- **2026-11-06 Test isolation in code (after the stray `install-desktop`
+  of the rename).** New dev-only crate `haetty-testkit`: a run directory
+  `<base>/haetty-test-<pid>-<time>` (base `HAETTY_TEST_TMP`, else `/tmp` on
+  Unix and `%PUBLIC%\haetty-test` on Windows), `run_dir`, `check`,
+  `remove_dir_all`; refuses an empty base and any path that is, or is
+  inside, the real home, `~/.config`, `~/.local`, `~/.claude`, the XDG dirs,
+  `%APPDATA%`, `%LOCALAPPDATA%` (real = taken before a test changes `HOME`),
+  and anything outside the run directory, before writing. Every test that
+  writes files uses it (proto paths; cc snapshot, resume; daemon event log
+  and integration tests; gui install, tab sets, reftest output, instances,
+  migrate, permission; the latency example). Scripts:
+  `scripts/test-guard.sh` (Linux/WSL/Git Bash; in WSL the Windows profile
+  is protected too; Git Bash compares Windows paths — `cygpath -u` maps the
+  Windows temp folder to `/tmp` and would have hidden `%LOCALAPPDATA%`) and
+  `scripts/test-guard.ps1`; `windows-smoke.ps1` uses it and now runs Claude
+  Code only with an isolated home and a dummy key in the run directory
+  (before: the user's real profile). Evidence:
+  - Rust: `HAETTY_TEST_TMP=` (empty), `$HOME/x`, `~/.local/share/x` → the
+    writing test panics with "test isolation: …", nothing created; unset →
+    all pass (testkit's own test: real home, `.local`, `.claude`, empty,
+    `..` escape, a base inside the home refused).
+  - `test-guard.sh` 12 cases each on WSL and Git Bash, `test-guard.ps1` 12
+    cases: unset/empty base, base = home, under `~/.local`, `~/.claude`,
+    `%TEMP%`/`%APPDATA%` (Windows), `/mnt/c/Users/<you>` (WSL) → refused;
+    a write inside the run allowed; writes to `~/.local/share`, `%APPDATA%`,
+    outside the run, `..` escapes, empty paths → refused; a test `HOME` set
+    after loading does not move the protection. Nothing left behind.
+  - The harness (`xns.sh`, `reg.sh`, `cchome.sh`, `meas.sh`, …, kept with
+    the session notes) writes only in `$HAETTY_RUN`; with the base unset,
+    empty or under `$HOME` it exits 3 before writing; with
+    `HAETTY_TEST_TMP=/tmp/haetty-test` the regression passes 27/27.
+  - `windows-smoke.ps1`: empty base or one in `%LOCALAPPDATA%` → refused;
+    `%PUBLIC%\haetty-test` → 7/7 PASS including Claude Code, nothing in
+    the real `~\.claude\projects` for the run's project. (Found on the way:
+    Claude Code on Windows keys trusted projects with forward slashes; the
+    script writes both forms.)
+  - Note: PowerShell may refuse to dot-source a script from
+    `\\wsl.localhost\…` inside a `-File` run; copy `test-guard.ps1` locally.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

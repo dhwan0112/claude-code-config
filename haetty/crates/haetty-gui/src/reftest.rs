@@ -318,11 +318,11 @@ fn reference_root() -> PathBuf {
     }
 }
 
-/// `target/reftest/<os>` of the repository holding `root`
-/// (`<repo>/crates/haetty-gui/tests/reference`).
-fn output_dir(root: &Path) -> PathBuf {
-    let repo = root.ancestors().nth(4).map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-    repo.join("target").join("reftest").join(os())
+/// `reftest-<os>` in the test run's directory (haetty_testkit: never the
+/// real home). Only an explicit update (`HAETTY_UPDATE_REFERENCE=1`) writes
+/// elsewhere: into the reference directory itself.
+fn output_dir() -> PathBuf {
+    haetty_testkit::run_dir(&format!("reftest-{}", os()))
 }
 
 fn write(path: &Path, data: &[u8]) {
@@ -338,7 +338,8 @@ fn reference_frames() {
     let update = haetty_proto::product::env_os("UPDATE_REFERENCE").is_some_and(|v| v == "1");
     let root = reference_root();
     let dir = root.join(os());
-    let out = output_dir(&root);
+    let out = output_dir();
+    println!("reftest: output in {}", out.display());
     let fonts = match Fonts::load(None) {
         Ok(f) => f,
         Err(e) => {

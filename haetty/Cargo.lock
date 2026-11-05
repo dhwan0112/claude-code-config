@@ -532,6 +532,7 @@ name = "haetty-cc"
 version = "0.1.0"
 dependencies = [
  "haetty-proto",
+ "haetty-testkit",
  "log",
  "similar",
 ]
@@ -554,6 +555,7 @@ dependencies = [
  "haetty-cc",
  "haetty-core",
  "haetty-proto",
+ "haetty-testkit",
  "log",
 ]
 
@@ -567,6 +569,7 @@ dependencies = [
  "haetty-core",
  "haetty-daemon",
  "haetty-proto",
+ "haetty-testkit",
  "log",
  "smithay-clipboard",
  "softbuffer",
@@ -588,6 +591,7 @@ version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
  "haetty-core",
+ "haetty-testkit",
  "libc",
  "log",
  "postcard",
@@ -604,6 +608,10 @@ dependencies = [
  "portable-pty",
  "windows-sys 0.59.0",
 ]
+
+[[package]]
+name = "haetty-testkit"
+version = "0.1.0"
 
 [[package]]
 name = "hashbrown"

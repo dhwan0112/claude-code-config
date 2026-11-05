@@ -4,6 +4,7 @@ members = [
   "crates/haetty-pty",
   "crates/haetty-core",
   "crates/haetty-proto",
+  "crates/haetty-testkit",
   "crates/haetty-cc",
   "crates/haetty-daemon",
   "crates/haetty-headless",
@@ -23,6 +24,7 @@ haetty-core = { path = "crates/haetty-core" }
 haetty-proto = { path = "crates/haetty-proto" }
 haetty-daemon = { path = "crates/haetty-daemon" }
 haetty-cc = { path = "crates/haetty-cc" }
+haetty-testkit = { path = "crates/haetty-testkit" }
 libghostty-vt = "=0.2.2"
 portable-pty = "0.9.0"
 crossbeam-channel = "0.5"

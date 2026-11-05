@@ -68,9 +68,7 @@ mod tests {
 
     #[test]
     fn append_escape_and_resume_from_cursor() {
-        let dir = std::env::temp_dir().join(format!("haetty-evlog-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = haetty_testkit::run_dir("evlog");
         let p = dir.join("events.log");
         let mut l = EventLog::open(&p).unwrap();
         l.write("a", "s1", &[("title", "x\ty\nz")]);
@@ -83,6 +81,6 @@ mod tests {
         assert!(all[0].ends_with("title=x\\ty\\nz"));
         assert!(all[2].starts_with("3\t"));
         assert_eq!(EventLog::read_from(&p, 2).unwrap().len(), 1);
-        std::fs::remove_dir_all(&dir).unwrap();
+        haetty_testkit::remove_dir_all(&dir);
     }
 }

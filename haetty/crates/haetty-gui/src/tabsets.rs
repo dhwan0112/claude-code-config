@@ -187,14 +187,13 @@ mod tests {
         assert!(text.starts_with("# haetty tabs \"last\": 3 tab(s)"));
         assert_eq!(parse(&text), tabs);
         assert!(parse("# x\nbad line\n\t\t\t\t\t1\n").is_empty());
-        let d = std::env::temp_dir().join(format!("haetty-tabsets-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = haetty_testkit::run_dir("tabsets");
         save(&d, "last", &tabs).unwrap();
         assert_eq!(rotate_last(&d), tabs);
         assert!(load(&d, "last").is_none());
         assert_eq!(load(&d, "previous").unwrap(), tabs);
         assert!(rotate_last(&d).is_empty());
-        std::fs::remove_dir_all(&d).unwrap();
+        haetty_testkit::remove_dir_all(&d);
     }
 
     fn live(program: &str, args: &[&str], cwd: &str, claude: &str, running: bool) -> SessionInfo {

@@ -70,8 +70,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn installs_into_xdg_data_home() {
-        let d = std::env::temp_dir().join(format!("haetty-install-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = haetty_testkit::run_dir("install");
         // SAFETY of the env change: this test is the only user of XDG_DATA_HOME.
         std::env::set_var("XDG_DATA_HOME", &d);
         let msg = install_desktop().unwrap();
@@ -79,6 +78,6 @@ mod tests {
         assert!(msg.contains("io.github.dhwan0112.haetty.desktop"), "{msg}");
         assert!(d.join("icons/hicolor/256x256/apps/io.github.dhwan0112.haetty.png").exists());
         assert!(d.join("icons/hicolor/scalable/apps/io.github.dhwan0112.haetty.svg").exists());
-        std::fs::remove_dir_all(&d).unwrap();
+        haetty_testkit::remove_dir_all(&d);
     }
 }

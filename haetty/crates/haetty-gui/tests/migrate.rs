@@ -40,8 +40,8 @@ fn daemon(env: &[(&str, &Path)]) -> Child {
 
 #[test]
 fn old_settings_are_copied_and_an_old_daemon_is_left_alone() {
-    let tmp: PathBuf = std::env::temp_dir().join(format!("haetty-migrate-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
+    // First, before HOME is pointed elsewhere: the guard takes the real home now.
+    let tmp: PathBuf = haetty_testkit::run_dir("migrate");
     let rt = tmp.join("rt");
     std::fs::create_dir_all(&rt).unwrap();
     use std::os::unix::fs::PermissionsExt;
@@ -137,5 +137,5 @@ fn old_settings_are_copied_and_an_old_daemon_is_left_alone() {
         let _ = p.kill();
         let _ = p.wait();
     }
-    let _ = std::fs::remove_dir_all(&tmp);
+    haetty_testkit::remove_dir_all(&tmp);
 }

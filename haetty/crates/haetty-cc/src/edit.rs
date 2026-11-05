@@ -180,9 +180,7 @@ mod tests {
 
     #[test]
     fn snapshot_statuses() {
-        let d = std::env::temp_dir().join(format!("haetty-snap-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
+        let d = haetty_testkit::run_dir("snapshot");
         let f = d.join("a.txt");
         assert_eq!(snapshot(f.to_str().unwrap()).status, SnapStatus::New);
         std::fs::write(&f, "hello\n").unwrap();
@@ -192,6 +190,6 @@ mod tests {
         assert_eq!(snapshot(f.to_str().unwrap()).status, SnapStatus::Binary);
         std::fs::write(&f, vec![b'a'; (MAX_BYTES + 1) as usize]).unwrap();
         assert_eq!(snapshot(f.to_str().unwrap()).status, SnapStatus::TooLarge);
-        std::fs::remove_dir_all(&d).unwrap();
+        haetty_testkit::remove_dir_all(&d);
     }
 }
