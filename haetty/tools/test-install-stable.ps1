@@ -34,6 +34,17 @@ try {
     $r = Inst @("-Prefix", $env:LOCALAPPDATA, $Ref1)
     if ($r.rc -ne 0 -and $r.out -match "refusing" -and (& $realState) -eq $before) { Ok "real prefix refused, nothing written" } else { Bad "real prefix" "rc=$($r.rc) $($r.out)" }
 
+    # 1b. A release tag whose crate version differs is refused before building (a throwaway tag in a
+    #     clone in WSL's /tmp; the real repository gets no tag).
+    $clone = "/tmp/haetty-test-tagclone-$PID"
+    $head = (& wsl.exe -d $Distro --exec git -C $WslRepo rev-parse HEAD).Trim()
+    & wsl.exe -d $Distro --exec bash -c "git clone -q '$WslRepo' '$clone' && git -C '$clone' checkout -q $head && git -C '$clone' tag haetty-v9.9.9 HEAD"
+    $have = (& wsl.exe -d $Distro --exec bash -c "sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *`"\([^`"]*\)`".*/\1/p' '$clone/haetty/Cargo.toml' | head -1").Trim()
+    $out = & pwsh -NoProfile -ExecutionPolicy Bypass -File $inst -Distro $Distro -WslRepo $clone -Prefix $P haetty-v9.9.9 2>&1 | Out-String
+    $rc = $LASTEXITCODE
+    & wsl.exe -d $Distro --exec rm -rf $clone
+    if ($rc -ne 0 -and $out -match "crate version is $([regex]::Escape($have)), not 9\.9\.9" -and $out -notmatch "(?m)^building" -and -not (Test-Path $Root)) { Ok "tag haetty-v9.9.9 on a $have commit refused before building" } else { Bad "tag/version mismatch" "rc=$rc $out" }
+
     $env:APPDATA = Join-Path $run "roaming"; New-Item -ItemType Directory -Force $env:APPDATA | Out-Null
     # 2. First install.
     $r1 = Inst @("-Prefix", $P, $Ref1)

@@ -24,6 +24,17 @@ out=$("$INSTALL" --prefix "$HOME" "$REF1" 2>&1); rc=$?
 [ $rc -ne 0 ] && echo "$out" | grep -q "refusing" && [ "$(real_state)" = "$before" ] \
   && ok "real prefix refused (rc=$rc), nothing written" || bad "real prefix" "rc=$rc $(echo "$out" | tail -2)"
 
+# 1b. A release tag whose crate version differs is refused before building (a throwaway tag in a clone
+#     inside the run directory; the real repository gets no tag).
+CL=$HAETTY_RUN/clone; haetty_guard "$CL"
+git clone -q "$REPO" "$CL" && git -C "$CL" checkout -q "$(git -C "$REPO" rev-parse HEAD)" 2>/dev/null
+have=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\([^"]*\)".*/\1/p' "$CL/haetty/Cargo.toml" | head -1)
+git -C "$CL" tag haetty-v9.9.9 HEAD
+out=$(HAETTY_RUN=$HAETTY_RUN "$CL/haetty/tools/install-stable.sh" --prefix "$P" haetty-v9.9.9 2>&1); rc=$?
+[ $rc -ne 0 ] && echo "$out" | grep -q "crate version is $have, not 9.9.9" && ! echo "$out" | grep -q "^building" && [ ! -e "$OPT" ] \
+  && ok "tag haetty-v9.9.9 on a $have commit refused before building" || bad "tag/version mismatch" "rc=$rc $(echo "$out" | tail -2)"
+# (A matching tag passes the check: REF1 below is the real tag haetty-v0.1.0.)
+
 # 2. First install.
 "$INSTALL" --prefix "$P" "$REF1" > "$HAETTY_RUN/install1.log" 2>&1; rc=$?
 [ $rc -eq 0 ] && ok "install $REF1 (rc 0)" || bad "install $REF1" "rc=$rc; $(tail -5 "$HAETTY_RUN/install1.log")"

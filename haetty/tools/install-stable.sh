@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Install a stable haetty (Linux; also builds the Windows binary for install-stable.ps1).
 #
-#   tools/install-stable.sh [--prefix DIR] [--target-dir DIR] REF   build REF (commit or tag) in its own git
+#   tools/install-stable.sh [--prefix DIR] [--target-dir DIR] REF   build REF (commit or tag; a tag haetty-vX.Y.Z
+#                                                                    must carry crate version X.Y.Z) in its own git
 #                                                                    worktree with the dist profile, install, activate
 #   tools/install-stable.sh [--prefix DIR] --list                    installed versions (* = active)
 #   tools/install-stable.sh [--prefix DIR] --activate VERSION        point haetty at an installed version (rollback)
@@ -87,10 +88,22 @@ activate() { # VERSION
   return 0
 }
 
+# A release tag haetty-vX.Y.Z must point at a commit whose crate version is X.Y.Z: checked before
+# anything is built. Commits, branches and other tag names are not checked.
+check_tag_version() { # REF COMMIT
+  local ref=$1 commit=$2 want have
+  case "$ref" in haetty-v[0-9]*) ;; *) return 0 ;; esac
+  git -C "$REPO" rev-parse -q --verify "refs/tags/$ref" >/dev/null || return 0
+  want=${ref#haetty-v}
+  have=$(git -C "$REPO" show "$commit:haetty/Cargo.toml" | sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\([^"]*\)".*/\1/p' | head -1)
+  [ "$have" = "$want" ] || die "refusing: tag $ref points at ${commit:0:12}, whose crate version is $have, not $want"
+}
+
 # Build REF in a temporary worktree; sets COMMIT, PKGVER, VER, BUILT (path of the binary), WTSRC.
 build() { # REF TRIPLE
   local ref=$1 triple=$2
   COMMIT=$(git -C "$REPO" rev-parse --verify --quiet "$ref^{commit}") || die "no such commit or tag: $ref"
+  check_tag_version "$ref" "$COMMIT"
   local base=${TMPDIR:-/tmp}
   if [ "$TESTING" = 1 ]; then base=$HAETTY_RUN; fi
   WT=$(mktemp -d "$base/haetty-install.XXXXXX"); guard "$WT"
@@ -168,6 +181,7 @@ case "$MODE" in
   install)
     [ -n "$REF" ] || usage
     COMMIT=$(git -C "$REPO" rev-parse --verify --quiet "$REF^{commit}") || die "no such commit or tag: $REF"
+    check_tag_version "$REF" "$COMMIT"
     PKGVER=$(git -C "$REPO" show "$COMMIT:haetty/Cargo.toml" | sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\([^"]*\)".*/\1/p' | head -1)
     VER="$PKGVER-${COMMIT:0:12}"
     if [ -d "$OPT/$VER" ]; then

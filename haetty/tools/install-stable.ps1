@@ -1,7 +1,8 @@
 <#
 Install a stable haetty on Windows.
 
-  install-stable.ps1 REF                  build REF (commit or tag) in its own git worktree in WSL (cross-build,
+  install-stable.ps1 REF                  build REF (commit or tag; a tag haetty-vX.Y.Z must carry crate version
+                                          X.Y.Z, else refused before building) in its own git worktree in WSL (cross-build,
                                           dist profile, via install-stable.sh --build-only), install, activate
   install-stable.ps1 -List                installed versions (* = active)
   install-stable.ps1 -Activate VERSION    make an installed version the active one (rollback)
