@@ -1,0 +1,13 @@
+# Commits already pushed that fail the quick gate on their own (tools/check-range.sh). Pushed history is never
+# rewritten (CLAUDE.md), so check-range reports these as "KNOWN" instead of "FAIL" — but only when every step
+# that fails is a step listed here; any other failing step, or any commit not listed, is a "FAIL".
+#
+# Adding, changing or removing a line needs the user's approval, given for that line (CLAUDE.md, "Commits and
+# reference frames"): never add a commit here to make a range pass. The "approved" column says when and where.
+#
+# Columns, tab-separated: full commit hash, failing steps (comma-separated: fmt, clippy-linux, clippy-windows,
+# test), cause, fixed in, approved.
+9fabc3b23676a16dd42e719e52e78237996e3c1b	clippy-linux	crates/haetty-daemon/tests/ipcfuzz.rs:109:21 unusual_byte_groupings; crates/haetty-core/tests/vtfuzz.rs:245:44 needless_borrows_for_generic_args (stage S4)	22dcba95021afc2390814eb432ab7d075f17006a	2026-11-06, user (instruction U1; table in HANDOFF.md, T1)
+bad524733738190ec4670d4701cbfa9b9c87eb52	clippy-linux	same code as 9fabc3b (HANDOFF record of stage S4)	22dcba95021afc2390814eb432ab7d075f17006a	2026-11-06, user (instruction U1; table in HANDOFF.md, T1)
+174928b0ae77da6b6e34d3ab3fb1aa9d21927801	clippy-linux	same code as 9fabc3b (HANDOFF in-progress line of stage S5)	22dcba95021afc2390814eb432ab7d075f17006a	2026-11-06, user (instruction U1; table in HANDOFF.md, T1)
+e9f5bee330b998fbe8f540f07fac2a4d4f2226a3	clippy-linux	the two warnings of 9fabc3b (version 0.2.0)	22dcba95021afc2390814eb432ab7d075f17006a	2026-11-06, user (instruction U1; table in HANDOFF.md, T1)

@@ -2156,6 +2156,26 @@ regression list, measurements), then committed, pushed and mirrored.
     both platforms, which did not complete. Candidate: `63822de`. §6.1
     item 30.
 
+- **2026-11-06 U1 — check-range: known failures listed, everything else
+  fails.**
+  - `tools/known-gate-failures`: the four commits of the T1 table (full
+    hash, failing steps, cause, fixed in `22dcba9`, approved by the user in
+    instruction U1). Tab-separated; a malformed line stops check-range
+    with exit 2 instead of being ignored.
+  - `tools/check-range.sh` prints PASS, KNOWN or FAIL per commit. KNOWN
+    only when the commit is listed **and** every failing step is a listed
+    step; an unlisted commit, or a listed one failing another step too, is
+    FAIL. Exit status = number of FAIL; the summary reads `N commit(s)
+    changing haetty/, F failing, K known`. A change of the list inside the
+    checked range prints a NOTE (new entries need the user's approval).
+  - CLAUDE.md: the approval rule for the list; tag conditions use "0
+    failing" (KNOWN does not count).
+  - Checked: `be3fcd0..22dcba9` with the list → 0 failing, 4 known, exit
+    0; with `9fabc3b` listed for `fmt` only and `e9f5bee` removed → both
+    FAIL ("listed for fmt only; also failing: clippy-linux"), 2 known,
+    exit 2; a malformed line → exit 2; `174928b..e9f5bee` without the
+    `e9f5bee` line → exit 1, with it → exit 0.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

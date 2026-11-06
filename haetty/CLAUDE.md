@@ -91,6 +91,12 @@ the start of a session.
     fixed before the push (the branch is not pushed yet, so it may be
     rewritten); pushed history is never rewritten — a commit found failing
     later is recorded in HANDOFF.md instead.
+  - `tools/known-gate-failures` lists the pushed commits known to fail on
+    their own (stage T1); check-range reports them as KNOWN — only for the
+    steps listed — and everything else as FAIL. **Adding, changing or
+    removing an entry needs the user's approval for that entry**; never add
+    a commit to make a range pass. Tag conditions use check-range "0
+    failing" (KNOWN does not count; FAIL does).
   - An approved change of the outer design (DESIGN.md §2) puts the code and
     the updated reference frames into **one** commit whose message says
     "DESIGN §2 change, approved".
