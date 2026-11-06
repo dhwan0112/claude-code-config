@@ -7,8 +7,8 @@
 param(
     [Parameter(Mandatory, Position = 0)][string]$Ref1,
     [Parameter(Mandatory, Position = 1)][string]$Ref2,
-    [string]$Distro = "Ubuntu",
-    [string]$WslRepo = "/home/denny/projects/claude-code-config"
+    [string]$Distro,
+    [string]$WslRepo
 )
 . (Join-Path $PSScriptRoot "..\scripts\test-guard.ps1")
 $run = Initialize-HaettyGuard -Name HAETTY_TEST_TMP
@@ -19,6 +19,13 @@ function Bad([string]$m, [string]$why) { $script:fail++; "FAIL ${m}: $why" }
 function Inst([string[]]$a) {
     $out = & pwsh -NoProfile -ExecutionPolicy Bypass -File $inst -Distro $Distro -WslRepo $WslRepo @a 2>&1 | Out-String
     @{ rc = $LASTEXITCODE; out = $out }
+}
+# Default: the distro and repository this script lives in (\\wsl.localhost\<distro>\<repo>\haetty\tools).
+if (-not $Distro -or -not $WslRepo) {
+    $m = [regex]::Match($PSScriptRoot, '^\\\\wsl(?:\.localhost|\$)\\([^\\]+)(\\.*)\\haetty\\tools$')
+    if (-not $m.Success) { throw "test-install-stable.ps1: give -Distro and -WslRepo (script not under \\wsl.localhost\...)" }
+    if (-not $Distro) { $Distro = $m.Groups[1].Value }
+    if (-not $WslRepo) { $WslRepo = $m.Groups[2].Value -replace '\\', '/' }
 }
 function Commit([string]$r) { (& wsl.exe -d $Distro --exec git -C $WslRepo rev-parse "$r^{commit}").Trim() }
 $realRoot = Join-Path $env:LOCALAPPDATA "Programs\haetty"

@@ -556,6 +556,15 @@ synchronized output (mode 2026), up to `sync_timeout` (500 ms default).
 Over the socket the daemon sends a window the rows that changed since its
 last frame, and the next frame only after the window asked for it.
 
+## Testing
+
+`cargo test` runs the unit and integration tests; `scripts/gate.sh` the full
+gate (both targets, clippy, tests, sizes). The end-to-end checks drive the
+real GUI and daemon under Xvfb (and on Windows): see
+[`scripts/e2e/README.md`](scripts/e2e/README.md). All of them write only in a
+test directory (`HAETTY_TEST_TMP`) and use their own `HAETTY_INSTANCE=dev`
+daemon.
+
 ## Building
 
 Needs Rust 1.90+ and Zig 0.15.2 on `PATH` (libghostty-vt is built from

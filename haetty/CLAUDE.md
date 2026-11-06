@@ -124,8 +124,12 @@ cargo fmt                                    # rustfmt.toml: max_width 120
 cargo run --release -p haetty-core --example mem -- 3 67108864 10000   # anon memory per session (Linux)
 ```
 
-`tools/check-range.sh RANGE` runs the quick gate on every commit of a range
-(see Commits and reference frames).
+`scripts/gate.sh` is the full gate (fmt, both targets, clippy on both, all
+tests, sizes; ends with `GATE fail=0`); `tools/check-range.sh RANGE` runs the
+quick gate on every commit of a range (see Commits and reference frames).
+End-to-end checks of the real GUI (Linux, Xvfb): `scripts/e2e/run-all.sh`
+(`scripts/e2e/README.md`: what each script checks, Xvfb without root, the
+VT fuzz corpus); Windows: `scripts/e2e/windows/`.
 
 Stable installs (the user runs them; `docs/DESIGN.md` §3.15, README):
 `tools/install-stable.sh REF` / `tools/install-stable.ps1 REF`, rollback

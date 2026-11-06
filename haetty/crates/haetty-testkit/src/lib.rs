@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn refuses_real_home_config_and_outside_paths() {
-        let home = PathBuf::from(if cfg!(windows) { r"C:\Users\kim" } else { "/home/kim" });
+        let home = PathBuf::from(if cfg!(windows) { r"C:\Users\someone" } else { "/home/someone" });
         let protected: Vec<PathBuf> = ["", ".config", ".local", ".claude"]
             .iter()
             .map(|s| if s.is_empty() { home.clone() } else { home.join(s) })
@@ -174,9 +174,9 @@ mod tests {
         assert!(refusal(&home.join(".claude/settings.json"), &root, &protected).is_some());
         assert!(refusal(Path::new(""), &root, &protected).is_some(), "empty variable");
         // The base itself: empty or relative (a path whose separators a
-        // shell ate, e.g. `C:UsersdennyTemp`) is refused.
+        // shell ate, e.g. `C:UserssomeoneTemp`) is refused.
         assert!(base_refusal(Path::new("")).is_some());
-        assert!(base_refusal(Path::new("C:UsersdennyAppDataLocalTempx")).is_some());
+        assert!(base_refusal(Path::new("C:UserssomeoneAppDataLocalTempx")).is_some());
         assert!(base_refusal(Path::new("haetty-test")).is_some());
         assert!(base_refusal(&root).is_none());
         // A run directory inside the home is refused even for its own files.
