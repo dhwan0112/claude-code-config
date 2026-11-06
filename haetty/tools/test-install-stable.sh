@@ -17,7 +17,8 @@ bad() { fail=$((fail+1)); echo "FAIL $1: $2"; }
 real_state() { ls -la "$HOME/.local/opt/haetty" "$HOME/.local/bin/haetty" "$HOME/.local/share/applications/io.github.dhwan0112.haetty.desktop" 2>&1 | md5sum; }
 before=$(real_state)
 c1=$(git -C "$REPO" rev-parse "$REF1^{commit}"); c2=$(git -C "$REPO" rev-parse "$REF2^{commit}")
-v1="0.1.0-${c1:0:12}" v2="0.1.0-${c2:0:12}"
+crate_version() { git -C "$REPO" show "$1:haetty/Cargo.toml" | sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\([^"]*\)".*/\1/p' | head -1; }
+v1="$(crate_version "$c1")-${c1:0:12}" v2="$(crate_version "$c2")-${c2:0:12}"
 
 # 1. A real prefix is refused before anything is built or written.
 out=$("$INSTALL" --prefix "$HOME" "$REF1" 2>&1); rc=$?

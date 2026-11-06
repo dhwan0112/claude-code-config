@@ -27,7 +27,8 @@ $realState = { "{0}|{1}|{2}" -f (Test-Path $realRoot), (Test-Path $realLnk), [En
 $before = & $realState
 $savedAppData = $env:APPDATA
 $c1 = Commit $Ref1; $c2 = Commit $Ref2
-$v1 = "0.1.0-" + $c1.Substring(0, 12); $v2 = "0.1.0-" + $c2.Substring(0, 12)
+function CrateVersion([string]$c) { (& wsl.exe -d $Distro --exec bash -c "git -C '$WslRepo' show '${c}:haetty/Cargo.toml' | sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *`"\([^`"]*\)`".*/\1/p' | head -1").Trim() }
+$v1 = (CrateVersion $c1) + "-" + $c1.Substring(0, 12); $v2 = (CrateVersion $c2) + "-" + $c2.Substring(0, 12)
 $P = Join-Path $run "local"; $Root = Join-Path $P "Programs\haetty"; $Cur = Join-Path $Root "current"
 try {
     # 1. A real prefix is refused before anything is built or written.

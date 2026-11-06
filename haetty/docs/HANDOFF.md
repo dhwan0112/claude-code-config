@@ -7,7 +7,6 @@ config file, palette, install-desktop) and 3 (Claude Code integration) —
 lives in `haetty/` of the `dhwan0112/claude-code-config` repository.
 Written for whoever continues the work (Claude Code included).
 
-> **In progress:** stage s0 (branch `haetty/s0`, worktree `~/projects/claude-code-config-wt/s0`). Remaining: version 0.1.1; installer refuses a haetty-vX.Y.Z tag whose crate version differs (self-tests); full checks on the final commit's build; tag haetty-v0.1.1 if all pass
 
 ## 1. Goal
 
@@ -1535,6 +1534,17 @@ regression list, measurements), then committed, pushed and mirrored.
   (`dist`): Linux 6 438 512, Windows 5 014 016. Note: the crate version is
   still 0.1.0, so this build calls itself `haetty 0.1.0 (commit
   07e67ee00a6d, …)` and installs as `0.1.0-07e67ee00a6d`.
+
+- **2026-11-06 Stage S0 — version 0.1.1, tag check in the installers.**
+  Workspace version 0.1.1 (`47cb67f`). `install-stable.sh` (and through it
+  the `.ps1`) refuses a tag `haetty-vX.Y.Z` before building when the tagged
+  commit's crate version is not X.Y.Z; hashes, branches and other names as
+  before (`21505dc`). Self-tests with the mismatch case (a throwaway tag
+  `haetty-v9.9.9` in a clone inside the test run directory / WSL `/tmp`;
+  the real repository gets no tag) and per-commit version folders: Linux
+  19/19, Windows 18/18 (`haetty-v0.1.0` → `21505dc`, rollback, reinstall).
+  The stable-release checks on the merged commit and the tag follow in the
+  next entry.
 
 ### ccx comparison (milestone 3)
 
