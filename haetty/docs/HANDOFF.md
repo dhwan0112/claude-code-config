@@ -15,7 +15,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage t2 (branch `haetty/t2`, worktree `~/projects/claude-code-config-wt/t2`). Remaining: T2: test harness into the repository (scripts/e2e, scripts/gate.sh, scripts/dist-sizes.sh), personal paths removed, gate from a fresh clone, VT corpus procedure documented
 
 ## 1. Goal
 
@@ -1939,6 +1938,53 @@ regression list, measurements), then committed, pushed and mirrored.
     (`zig` not on a non-login shell's PATH); the script now adds
     `~/.local/bin` when `zig` is missing and stops with a clear message if
     it is still missing, and it uses the usual target directory.
+
+- **2026-11-06 T2 — the test harness is in the repository.** The gate and
+  the end-to-end scripts that lived in a session folder (`~/m4/harness`)
+  moved: `scripts/gate.sh` (the full gate), `scripts/dist-sizes.sh`,
+  `scripts/e2e/` (`regression.sh`, `design-2-3.sh`, `themes.sh`,
+  `titlebar.sh`, `tabs.sh`, `orchestrator.sh`, `daemon-crash.sh`,
+  `look.sh`, `dump-sample.sh`, `firehose.sh`, `record-claude.sh`,
+  `claude-home.sh` + `mkcfg.py`, `sizes.py`, `nongrey.py`, `lib.sh`,
+  `xvfb.sh`, `run-all.sh`, `windows/{daemon-crash,soak}.ps1`,
+  `README.md`). Session-only helpers that commit, stage and push
+  (`c.sh`, `stage.sh`, `push.sh`) stay outside; they call
+  `scripts/gate.sh` and `tools/check-range.sh`.
+  - Everything is resolved from the script's own location (`lib.sh`: repo,
+    `BIN`, `HL`, probe, guard, Claude Code variables removed); `xvfb.sh`
+    uses a system Xvfb, or one unpacked without root (`HAETTY_XROOT`, how
+    to unpack it in the README); no `pkill`: the IME daemon is started
+    in the foreground and ended by its `$!`, session programs by the PIDs
+    `status --json` reports.
+  - Personal-data scan of `scripts/`, `tools/`, every crate's `src`,
+    `tests`, `examples`, `CLAUDE.md`, `README.md`, `Cargo.toml` (user
+    names, home paths, `/mnt/c/Users`, mail, `sk-ant-…` other than the
+    all-`A` dummy, GitHub/AWS/Slack token shapes): three hits, fixed —
+    `tools/test-install-stable.ps1`'s default repository path with a user
+    name (now taken from where the script lives, as `check-range.ps1`),
+    and two test strings in `haetty-testkit` (now `someone`). Remaining
+    `C:\Users\a\…` strings are test fixtures without a name.
+  - From the repository (`scripts/e2e/run-all.sh`, Xvfb from
+    `HAETTY_XROOT`): §2.3 5/5 and 5/5 integrated, themes 8/8, title row
+    13/13, tab features 20/20, orchestrator 20/20, daemon crash 9/9;
+    the regression failed 6 tab checks on the first run — the port had
+    replaced `pkill ibus-daemon` by `ibus exit`, which left the daemon
+    holding the keyboard for the next sections; with the PID-based stop:
+    0 failed, no `ibus-daemon` left.
+  - The gate from a fresh clone (`git clone` of `haetty/t2`, `env -i` with
+    only `HOME`, `PATH` with cargo and zig, a new target directory, so
+    Ghostty fetched and built afresh): first run failed `instances` —
+    "path must be shorter than SUN_LEN": the test base
+    (`/tmp/haetty-fresh/haetty-run.…/t`) was too long for the sockets the
+    tests create under it. `scripts/gate.sh` now refuses a base longer than
+    32 characters with that reason (and finds `zig` in `~/.local/bin`).
+    Second run (`870b4f4`, base `/tmp/hf-t`): `GATE fail=0`, 302 s. The
+    gate uses nothing outside the repository.
+  - The VT fuzz corpus stays outside the repository; how to record it
+    (isolated `HOME` and `CLAUDE_CONFIG_DIR`, dummy key, nothing
+    submitted, scrubbed) is in `scripts/e2e/README.md`. The gate needs no
+    corpus: `vtfuzz`'s quick mode mutates a built-in Claude-Code-like
+    stream and generated streams.
 
 ### ccx comparison (milestone 3)
 
