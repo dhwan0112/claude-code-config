@@ -18,6 +18,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage t6 (branch `haetty/t6`, worktree `~/projects/claude-code-config-wt/t6`). Remaining: T6: README orchestrator guide for people (so §6.1 item 27 can be done from it alone); a new tab opens in the active tab's folder (also a worker's worktree)
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
