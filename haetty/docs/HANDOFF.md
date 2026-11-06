@@ -7,6 +7,8 @@ config file, palette, install-desktop) and 3 (Claude Code integration) —
 lives in `haetty/` of the `dhwan0112/claude-code-config` repository.
 Written for whoever continues the work (Claude Code included).
 
+> **In progress:** stage s0 (branch `haetty/s0`, worktree `~/projects/claude-code-config-wt/s0`). Remaining: version 0.1.1; installer refuses a haetty-vX.Y.Z tag whose crate version differs (self-tests); full checks on the final commit's build; tag haetty-v0.1.1 if all pass
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
