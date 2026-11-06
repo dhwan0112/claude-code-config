@@ -19,6 +19,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage t4 (branch `haetty/t4`, worktree `~/projects/claude-code-config-wt/t4`). Remaining: T4: soak v2 on the final candidate build (1 h, Linux and Windows): 4 tabs plus 200 tab open/close, 50 detach/attach, 20 tasks with worker exit and worktree removal, 10 theme changes; 5-minute samples; criteria written first
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
