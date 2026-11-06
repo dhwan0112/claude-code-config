@@ -1474,6 +1474,32 @@ regression list, measurements), then committed, pushed and mirrored.
   manual checks of §6.1 (real keyboards and IMEs, a logged-in Claude
   Code, HiDPI, a machine without Git Bash).
 
+- **2026-11-06 Look from Ubuntu 26.04 GNOME (DESIGN §2 protected area,
+  approved).** Tab bar on the terminal background, active tab in the
+  foreground colour with a thin rule (`CellFlags::TAB_ACTIVE`, the font's
+  stroke) under its share, others dim, no band and no separator; default
+  padding 10 / 6 logical px (`window-padding-x` / `-y`; `window-padding`
+  sets both; balance unchanged); the status row of a Claude Code tab blank
+  until Claude Code reports a value (context, limits, cost, changed files,
+  busy), shell tabs without one (already so: their grid is the full area).
+  Evidence:
+  - Unit tests: tab bar all on the body background, active foreground +
+    rule, inactive dim without; status row blank for no report and for an
+    empty report; padding per axis (window size, grid, origin, balance).
+  - Real GUI frame dumps (`docs/look/`): Linux X11 (Xvfb) shell tab, Claude
+    Code tab before and after its first status line, after 20 switches;
+    Linux native Wayland (WSLg's compositor, not GNOME — a frame dump is the
+    window's content, the same for every backend); Windows 11 Claude Code
+    tab before/after the status line beside a cmd tab.
+  - Tab switching: shell tab 70x11, Claude Code tab 70x10 (daemon `status`);
+    after 20 Alt+1/Alt+2 switches the same, 0 resize log lines.
+  - Pitfall (test scripts): in PowerShell, `'…' | & haetty.exe statusline`
+    connects but the report never arrives (reproduced 3/3); `cmd /c "type
+    f | haetty.exe statusline"`, `… | powershell -Command "<path>
+    statusline"`, `… | pwsh -Command …` deliver (state updated). The paths
+    Claude Code uses (Git Bash, PowerShell `-Command`) are the delivering
+    ones; write test JSON through `cmd /c type`.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

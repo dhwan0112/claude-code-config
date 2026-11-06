@@ -61,6 +61,9 @@ impl CellFlags {
     /// by the engine. The renderer leaves these colours as they are
     /// (`minimum-contrast` applies to the program's cells only).
     pub const HAETTY_UI: u16 = 1 << 10;
+    /// The active tab in haetty's tab bar: the renderer draws a thin line
+    /// in the text colour along the cell's bottom edge (set by the GUI only).
+    pub const TAB_ACTIVE: u16 = 1 << 11;
     pub fn has(self, bit: u16) -> bool {
         self.0 & bit != 0
     }

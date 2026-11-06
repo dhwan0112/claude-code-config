@@ -95,8 +95,9 @@ haetty statusline        (run by Claude Code)
 
 ### Tabs and keys
 
-Each tab is a daemon session. The tab bar (one row) appears from two tabs
-on; click a tab to select it. A new tab runs the program the window was
+Each tab is a daemon session. The tab bar (one row, on the terminal's own
+background; the active tab in the text colour with a thin line under it,
+the others dim) appears from two tabs on; click a tab to select it. A new tab runs the program the window was
 started with, in the active tab's folder. Tab names come from Claude Code's
 session name, else the title (without Claude Code's leading state glyph),
 else the program name. When a tab's program exits, the tab stays, dimmed
@@ -166,7 +167,8 @@ keybind = ctrl+shift+n=new_tab
 
 | Key | Values | Default |
 |---|---|---|
-| `window-padding` | minimum padding around the grid, logical px (0–200) | `4` |
+| `window-padding` | minimum padding around the grid on all sides, logical px (0–200) | — |
+| `window-padding-x`, `window-padding-y` | the same, left/right or top/bottom only | `10`, `6` |
 | `window-padding-balance` | `true` / `false` — spread leftover space evenly on all sides | `true` |
 | `window-padding-color` | `background` / `extend` / `extend-always` (as in Ghostty) | `extend` |
 | `decorations` | `native` / `integrated` (not implemented yet; falls back to `native`) / `none` | `native` |
@@ -315,8 +317,9 @@ line of its own.
 
 **Status row.** The bottom row of a Claude Code tab, reserved from the
 start so that Claude Code is not reflowed when the first report arrives (it
-shows `-` until then; the window adds that row, so `--rows N` still gives
-Claude Code N rows):
+stays blank until Claude Code reports something; the window adds that row,
+so `--rows N` still gives Claude Code N rows). Shell tabs have no status row
+and use the whole height; every tab keeps its size when you switch tabs:
 
 ```text
 ctx  42%  5h  12%  7d  30%  $  1.23  3 files changed · Ctrl+Shift+D

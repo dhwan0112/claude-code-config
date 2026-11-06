@@ -42,8 +42,8 @@ pub struct Scene<'a> {
 /// How the area around the grid is laid out and coloured.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PaddingStyle {
-    /// Minimum padding, physical pixels.
-    pub min: u32,
+    /// Minimum padding left/right and top/bottom, physical pixels.
+    pub min: (u32, u32),
     pub balance: bool,
     pub color: PaddingColor,
     /// Paint everything outside the grid red (`HAETTY_DEBUG_PADDING=1`), to
@@ -53,7 +53,7 @@ pub struct PaddingStyle {
 
 impl Default for PaddingStyle {
     fn default() -> Self {
-        PaddingStyle { min: 0, balance: false, color: PaddingColor::Background, debug: false }
+        PaddingStyle { min: (0, 0), balance: false, color: PaddingColor::Background, debug: false }
     }
 }
 

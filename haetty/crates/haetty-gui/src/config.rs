@@ -6,7 +6,8 @@
 //!
 //! | key | values | default |
 //! |---|---|---|
-//! | `window-padding` | logical pixels around the grid (minimum) | 4 |
+//! | `window-padding` | logical pixels around the grid (minimum), both axes | — |
+//! | `window-padding-x`, `window-padding-y` | the same, left/right and top/bottom only | 10, 6 |
 //! | `window-padding-balance` | `true` / `false`: spread the leftover space evenly on all sides | `true` |
 //! | `window-padding-color` | `background` / `extend` / `extend-always` | `extend` |
 //! | `decorations` | `native` / `integrated` / `none` | `native` |
@@ -53,7 +54,9 @@ pub enum Decorations {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
-    pub window_padding: f64,
+    /// Minimum padding left/right and top/bottom, logical pixels.
+    pub window_padding_x: f64,
+    pub window_padding_y: f64,
     pub padding_balance: bool,
     pub padding_color: PaddingColor,
     pub decorations: Decorations,
@@ -76,7 +79,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            window_padding: 4.0,
+            window_padding_x: 10.0,
+            window_padding_y: 6.0,
             padding_balance: true,
             padding_color: PaddingColor::Extend,
             decorations: Decorations::Native,
@@ -93,6 +97,8 @@ impl Default for Config {
 
 pub const KEYS: &[&str] = &[
     "window-padding",
+    "window-padding-x",
+    "window-padding-y",
     "window-padding-balance",
     "window-padding-color",
     "decorations",
@@ -115,12 +121,17 @@ impl Config {
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
         let bad = || format!("invalid value {value:?} for {key}");
         match key {
-            "window-padding" => {
+            "window-padding" | "window-padding-x" | "window-padding-y" => {
                 let v: f64 = value.parse().map_err(|_| bad())?;
                 if !(0.0..=200.0).contains(&v) {
                     return Err(bad());
                 }
-                self.window_padding = v;
+                if key != "window-padding-y" {
+                    self.window_padding_x = v;
+                }
+                if key != "window-padding-x" {
+                    self.window_padding_y = v;
+                }
             }
             "restore-tabs" => self.restore_tabs = parse_bool(value).ok_or_else(bad)?,
             "claude-integration" => self.claude_integration = parse_bool(value).ok_or_else(bad)?,
@@ -262,7 +273,10 @@ mod tests {
         c.set("decorations", "none").unwrap();
         assert_eq!(c.padding_color, PaddingColor::ExtendAlways);
         assert!(!c.padding_balance);
-        assert_eq!(c.window_padding, 10.0);
+        assert_eq!((c.window_padding_x, c.window_padding_y), (10.0, 10.0));
+        c.set("window-padding-y", "3").unwrap();
+        assert_eq!((c.window_padding_x, c.window_padding_y), (10.0, 3.0));
+        assert_eq!((Config::default().window_padding_x, Config::default().window_padding_y), (10.0, 6.0));
         assert_eq!(c.decorations, Decorations::None);
         assert!(c.set("window-padding-color", "red").is_err());
         assert!(c.set("decorations", "fancy").is_err());
@@ -289,7 +303,7 @@ mod tests {
             "# comment\n\nwindow-padding = 8\ndecorations = \"none\"\nkeybind = ctrl+shift+n=new_tab\nnope = 1\nwindow-padding-color\nscrollback-limit = x\n",
             &mut keys,
         );
-        assert_eq!((c.window_padding, c.decorations), (8.0, Decorations::None));
+        assert_eq!((c.window_padding_x, c.window_padding_y, c.decorations), (8.0, 8.0, Decorations::None));
         assert!(keys.action(&crate::keymap::Chord::parse("ctrl+shift+n").unwrap()).is_some());
         assert_eq!(bad.len(), 3, "{bad:?}");
         assert!(bad[0].starts_with("line 6:") && bad[1].starts_with("line 7:") && bad[2].starts_with("line 8:"));

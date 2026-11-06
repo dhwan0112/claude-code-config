@@ -1464,7 +1464,7 @@ fn decorated(d: Decorations) -> bool {
 /// Padding settings at a scale factor; `HAETTY_DEBUG_PADDING=1` paints it red.
 fn padding_style(c: &crate::config::Config, scale: f64) -> PaddingStyle {
     PaddingStyle {
-        min: (c.window_padding * scale).round() as u32,
+        min: ((c.window_padding_x * scale).round() as u32, (c.window_padding_y * scale).round() as u32),
         balance: c.padding_balance,
         color: c.padding_color,
         debug: haetty_proto::product::env_os("DEBUG_PADDING").is_some_and(|v| !v.is_empty() && v != "0"),

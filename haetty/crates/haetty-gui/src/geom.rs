@@ -7,8 +7,9 @@ use crate::render::CellMetrics;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Layout {
     pub cell: CellMetrics,
-    /// Minimum padding on every side, physical pixels.
-    pub padding: u32,
+    /// Minimum padding left/right (`.0`) and top/bottom (`.1`), physical
+    /// pixels.
+    pub padding: (u32, u32),
     /// Spread the space left over after whole cells evenly on all sides
     /// (Ghostty's `window-padding-balance`); otherwise it goes to the right
     /// and bottom.
@@ -20,22 +21,22 @@ impl Layout {
     /// (at least 1×1).
     pub fn grid(&self, width: u32, height: u32) -> GridSize {
         let usable =
-            |len: u32, cell: u32| (len.saturating_sub(2 * self.padding) / cell.max(1)).clamp(1, u16::MAX as u32);
-        let cols = usable(width, self.cell.width) as u16;
-        let rows = usable(height, self.cell.height) as u16;
+            |len: u32, cell: u32, pad: u32| (len.saturating_sub(2 * pad) / cell.max(1)).clamp(1, u16::MAX as u32);
+        let cols = usable(width, self.cell.width, self.padding.0) as u16;
+        let rows = usable(height, self.cell.height, self.padding.1) as u16;
         GridSize::new(cols, rows).with_cell(self.cell.width as u16, self.cell.height as u16)
     }
 
     /// Window size in physical pixels for `cols` × `rows`.
     pub fn window_size(&self, cols: u16, rows: u16) -> (u32, u32) {
-        (cols as u32 * self.cell.width + 2 * self.padding, rows as u32 * self.cell.height + 2 * self.padding)
+        (cols as u32 * self.cell.width + 2 * self.padding.0, rows as u32 * self.cell.height + 2 * self.padding.1)
     }
 
     /// Top-left pixel of a `cols` × `rows` grid in a `width` × `height`
     /// window. Renderer and input mapping both use this.
     pub fn origin(&self, width: u32, height: u32, cols: u16, rows: u16) -> (u32, u32) {
         if !self.balance {
-            return (self.padding, self.padding);
+            return self.padding;
         }
         let gw = cols as u32 * self.cell.width;
         let gh = rows as u32 * self.cell.height;
@@ -67,7 +68,20 @@ mod tests {
     use super::*;
 
     fn layout(balance: bool) -> Layout {
-        Layout { cell: CellMetrics { width: 9, height: 18 }, padding: 4, balance }
+        Layout { cell: CellMetrics { width: 9, height: 18 }, padding: (4, 4), balance }
+    }
+
+    /// Different horizontal and vertical padding (the defaults 10 / 6 px).
+    #[test]
+    fn padding_per_axis() {
+        let l = Layout { cell: CellMetrics { width: 9, height: 18 }, padding: (10, 6), balance: false };
+        assert_eq!(l.window_size(80, 24), (9 * 80 + 20, 18 * 24 + 12));
+        let g = l.grid(9 * 80 + 20, 18 * 24 + 12);
+        assert_eq!((g.cols, g.rows), (80, 24));
+        assert_eq!(l.grid(9 * 80 + 19, 18 * 24 + 11).cols, 79, "one pixel short of the x padding");
+        assert_eq!(l.origin(1000, 1000, 80, 24), (10, 6));
+        let b = Layout { balance: true, ..l };
+        assert_eq!(b.origin(9 * 80 + 20 + 4, 18 * 24 + 12 + 6, 80, 24), (12, 9), "leftover split evenly");
     }
 
     #[test]

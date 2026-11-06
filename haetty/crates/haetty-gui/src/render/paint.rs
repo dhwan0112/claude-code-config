@@ -228,6 +228,12 @@ impl Painter {
             if f.has(CellFlags::OVERLINE) {
                 cv.fill(Rect::new(rect.x, top, rect.w, m.stroke), fg);
             }
+            // The active tab: a thin rule in the text colour along the bottom
+            // edge (the font's stroke: 1 px at 100 %, 2 px at 200 %).
+            if f.has(CellFlags::TAB_ACTIVE) {
+                let t = m.stroke.max(1);
+                cv.fill(Rect::new(rect.x, top + m.cell_h - t, rect.w, t), fg);
+            }
         }
 
         // Pass 3: non-block cursor shapes (and hollow when unfocused).
@@ -1054,7 +1060,7 @@ mod tests {
         let w = s.cols as i32 * m.cell_w + 2 * pad + 3; // +3: uneven leftover on the right
         let h = s.rows as i32 * m.cell_h + 2 * pad + 1;
         let mut cv = Canvas::new(w as u32, h as u32);
-        let style = PaddingStyle { min: pad as u32, balance: false, color, debug };
+        let style = PaddingStyle { min: (pad as u32, pad as u32), balance: false, color, debug };
         let sc = Scene { snap: s, dirty: &[], full: true, focused: true, preedit: None };
         for y in 0..s.rows {
             p.paint_row(&mut cv, (pad, pad), &sc, y, style);

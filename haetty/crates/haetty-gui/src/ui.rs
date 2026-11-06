@@ -143,10 +143,14 @@ pub struct TabView<'a> {
     pub attention: Attention,
 }
 
-/// The tab bar row: ` 1 name ` per tab, equal shares, the active tab on the
-/// terminal's background, the others on the bar grey and dimmed.
+/// The tab bar row: ` 1 name ` per tab, equal shares, all on the terminal's
+/// background (no band, no separator: the gap to the screen is space). The
+/// active tab's text is in the foreground colour and the renderer underlines
+/// its whole share with a thin line of that colour
+/// ([`CellFlags::TAB_ACTIVE`]); the other tabs' text is dim. No accent
+/// colour except the attention marks.
 pub fn tab_bar(tabs: &[TabView], active: usize, cols: usize, g: Greys) -> Vec<Cell> {
-    let mut row = vec![blank(g.dim, g.bar); cols];
+    let mut row = vec![blank(g.dim, g.bg); cols];
     if tabs.is_empty() || cols == 0 {
         return row;
     }
@@ -158,12 +162,9 @@ pub fn tab_bar(tabs: &[TabView], active: usize, cols: usize, g: Greys) -> Vec<Ce
         }
         let end = (x + share).min(cols);
         let is_active = i == active;
-        let bg = if is_active { g.bg } else { g.bar };
-        let fg = match (is_active, t.exited) {
-            (_, true) => g.dim,
-            (true, false) => g.strong,
-            (false, false) => g.normal,
-        };
+        let bg = g.bg;
+        // An exited tab stays dimmed even when active (DESIGN §3.10).
+        let fg = if is_active && !t.exited { g.strong } else { g.dim };
         for c in &mut row[x..end] {
             *c = blank(fg, bg);
         }
@@ -180,6 +181,11 @@ pub fn tab_bar(tabs: &[TabView], active: usize, cols: usize, g: Greys) -> Vec<Ce
         }
         let room = end.saturating_sub(cx + 1);
         put(&mut row[..end], cx, &fit(t.name, room), fg, bg, is_active);
+        if is_active {
+            for c in &mut row[x..end] {
+                c.flags.0 |= CellFlags::TAB_ACTIVE;
+            }
+        }
         x = end;
     }
     row
@@ -276,17 +282,25 @@ fn level_color(v: f32, g: Greys) -> Rgb {
     }
 }
 
+/// Whether the status row has anything to show: a value from Claude Code's
+/// status line, changed files, or "esc to interrupt".
+fn has_status(i: &ClaudeInfo) -> bool {
+    i.context_pct.is_some() || !i.limits.is_empty() || i.cost_usd.is_some() || i.files_changed > 0 || i.busy
+}
+
 /// Claude Code's status row (bottom, Claude Code tabs only): context, rate
 /// limits, cost, files changed with the diff key; "esc to interrupt" while
 /// it works (Claude Code hides that hint when a status line is set).
-/// Greys; amber/red only near a limit (≥ 80 % / ≥ 95 %).
+/// Greys; amber/red only near a limit (≥ 80 % / ≥ 95 %). Before Claude Code
+/// has sent anything (`None`) the row is blank on the terminal's background:
+/// it is reserved (its arrival must not resize the program, DESIGN §3.10)
+/// but shows nothing.
 pub fn status_row(info: Option<&ClaudeInfo>, cols: usize, g: Greys, diff_key: &str) -> Vec<Cell> {
+    let Some(i) = info.filter(|i| has_status(i)) else {
+        return vec![blank(g.bg, g.bg); cols];
+    };
     let bg = g.bar;
     let mut row = vec![blank(g.dim, bg); cols];
-    let Some(i) = info else {
-        put(&mut row, 1, "Claude Code", g.dim, bg, false);
-        return row;
-    };
     let mut x = 1;
     let sep = |row: &mut Vec<Cell>, x: usize| put(row, x, "  ", g.dim, bg, false);
     let item = |row: &mut Vec<Cell>, x: &mut usize, label: &str, value: String, color: Rgb| {
@@ -716,6 +730,20 @@ mod tests {
     }
 
     #[test]
+    fn tab_bar_on_the_body_background_with_the_active_tab_underlined() {
+        let g = Greys::from(FG, BG);
+        let tv = |name| TabView { name, exited: false, attention: Attention::None };
+        let row = tab_bar(&[tv("one"), tv("two"), tv("three")], 1, 60, g);
+        assert!(row.iter().all(|c| c.bg == Some(g.bg)), "no band: the terminal's background everywhere");
+        let line = |c: &Cell| c.flags.has(CellFlags::TAB_ACTIVE);
+        let t = text(&row);
+        let (a, b) = (t.find("2 two").unwrap(), t.find("3 three").unwrap());
+        assert!(row[a..a + 5].iter().all(|c| c.fg == Some(g.strong) && line(c)), "active: foreground + rule");
+        assert!(row[b..b + 7].iter().all(|c| c.fg == Some(g.dim) && !line(c)), "inactive: dim, no rule");
+        assert!(row.iter().filter(|c| line(c)).count() >= 5 && row.iter().filter(|c| line(c)).count() <= 20);
+    }
+
+    #[test]
     fn attention_marks_only_on_other_tabs() {
         let g = Greys::from(FG, BG);
         let tabs = [
@@ -787,7 +815,12 @@ mod tests {
         let row = status_row(Some(&i), 80, g, "");
         assert!(row.iter().any(|c| c.fg == Some(g.wait)));
         assert!(text(&row).trim_end().ends_with("esc to interrupt"));
-        assert!(text(&status_row(None, 40, g, "")).contains("Claude Code"));
+        // Nothing from Claude Code yet: a blank row on the terminal background.
+        let none = status_row(None, 40, g, "");
+        assert!(none.iter().all(|c| c.text.is_empty() && c.bg == Some(g.bg)), "reserved but empty");
+        // Claude Code known but nothing reported yet: blank too.
+        let empty = status_row(Some(&ClaudeInfo::default()), 40, g, "");
+        assert!(empty.iter().all(|c| c.text.is_empty() && c.bg == Some(g.bg)), "{}", text(&empty));
     }
 
     #[test]

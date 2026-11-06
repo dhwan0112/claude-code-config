@@ -126,7 +126,7 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
 const USAGE: &str =
     "usage: haetty [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
-     settings (KEY): window-padding N, window-padding-balance true|false,\n\
+     settings (KEY): window-padding N (window-padding-x N, window-padding-y N; default 10, 6), window-padding-balance true|false,\n\
      window-padding-color background|extend|extend-always, decorations native|integrated|none,\n\
      scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row),\n\
      restore-tabs true|false, claude-integration true|false, notifications true|false (default true),\n\

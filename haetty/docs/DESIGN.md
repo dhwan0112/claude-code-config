@@ -29,7 +29,9 @@ away. Functions stay; what changes is when they are visible.
 
 ### 2.1 Layout
 - Default view: the terminal (Claude Code) and one status line. Tab bar only
-  with two or more tabs. Status panel, diff pane and worker list are hidden
+  with two or more tabs. The status line exists only in Claude Code tabs and
+  shows only when it has something to show (a reserved row stays blank until
+  then, §3.10); a shell tab has no status line and gets the whole height. Status panel, diff pane and worker list are hidden
   by default and opened by key, palette or click; open/closed state and sizes
   persist per user.
 - Events never change the layout. An edit, a finished worker or a pending
@@ -55,6 +57,14 @@ away. Functions stay; what changes is when they are visible.
   glyphs (● ✓ ✗ ? -) instead of icons.
 - Space instead of boxes; where a separator is needed, a 1 px low-contrast
   line. No shadows, gradients or rounded boxes inside the window.
+- Tab bar: on the terminal's own background (no band); the active tab's
+  text in the foreground colour with a thin line of that colour under its
+  whole share (the font's stroke: 1 px at 100 %, 2 px at 200 %), other tabs'
+  text dim; no accent colour for the active tab; between the tab bar and
+  the terminal no line, only space.
+- Padding around the grid: at least 10 px left/right and 6 px top/bottom
+  (logical px, times the display scale); leftover space spread evenly
+  (`window-padding-balance`).
 - Key hints appear next to an element when it first shows, not in a resident
   list; a command palette (Ctrl+Shift+P) lists all actions.
 - No sounds, pop-ups or animations. Notifications: tab marker, and an OS
@@ -373,10 +383,22 @@ daemons.
 - A tab whose program exits stays, dimmed with its exit status, until the
   user closes it; with one tab, the window closes when its program exits
   (as in milestone 1). So an event never removes a tab or the tab bar.
-- The status line row is part of the layout from the first frame when
-  Claude Code integration is on (it shows `-` until the first status line
-  JSON), so its arrival does not resize the terminal. Window size requests
-  add that row, so the terminal keeps the requested rows.
+- The status line row is part of a Claude Code tab's layout from the first
+  frame (integration on): it stays blank on the terminal's background until
+  Claude Code reports something (context, limits, cost, changed files, or
+  work in progress), so its arrival does not resize the terminal. Window
+  size requests add that row, so the terminal keeps the requested rows.
+- Shell (non-Claude Code) tabs have no status row: their program gets that
+  row too. Decision on tab switching (2026-11-06): every tab keeps its own
+  grid size for its whole life — shell tabs the full area, Claude Code tabs
+  one row less — and switching tabs only changes which one is shown, never
+  a size. So switching never resizes a session (a resize would make Claude
+  Code redraw its whole screen) and a Claude Code tab is never reflowed by
+  its status row appearing. Alternatives not taken: one size for all tabs
+  (a shell tab would lose a row to a status line it never has) and
+  reserving the row only once content arrives (one full Claude Code redraw
+  per tab). Checked (Linux, Xvfb): a shell tab 70x11 beside a Claude Code
+  tab 70x10; 20 switches → the same sizes, no resize.
 - The diff indicator says "N files changed · Ctrl+Shift+D": plain Ctrl+D
   reaches Claude Code (and exits it on an empty prompt), so app shortcuts
   use Ctrl+Shift.
@@ -551,7 +573,8 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
     the tab and says "waiting"/"asks you"; never session content. Windows
     toast notifications are not done (they need WinRT registration).
   - Status row (bottom row of Claude Code tabs, reserved from creation so
-    Claude Code is not reflowed when the first report arrives):
+    Claude Code is not reflowed when the first report arrives; blank until
+    there is something to show):
     `ctx  42%  5h  12%  7d  30%  $  1.23  3 files changed · Ctrl+Shift+D`,
     percentages and cost in fixed widths, greys; colour 3 ≥ 80 %, colour 9
     ≥ 95 %;
