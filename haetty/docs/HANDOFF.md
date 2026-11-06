@@ -1521,6 +1521,19 @@ regression list, measurements), then committed, pushed and mirrored.
   `TERM_PROGRAM=tmux`), with a `.bashrc` example that skips tmux when
   `TERM_PROGRAM=haetty`.
 
+- **2026-11-06 Stable candidate haetty-v0.1.1: `07e67ee`** (not tagged; the
+  user decides; `haetty-v0.1.0` = `4d75fcd`). Contains the GNOME look
+  (`19d2844` + `5292b74`), the GNOME/tmux notes (`124d64a`) and the commit
+  rule (`07e67ee`). Checks on that commit's own build (`haetty --version` →
+  `commit 07e67ee00a6d`): gate passed at `5292b74`, `124d64a` and `07e67ee`;
+  regression `reg.sh` 27/27; DESIGN §2.3 `e2e3.sh` 5/5; `themerun.sh` 8/8;
+  installer self-tests (`haetty-v0.1.0` → `07e67ee`, rollback and back)
+  Linux 18/18, Windows 17/17; Windows natively: GUI unit tests 72/72
+  (reference frames identical), `windows-smoke.ps1` 0 failures. Size
+  (`dist`): Linux 6 438 512, Windows 5 014 016. Note: the crate version is
+  still 0.1.0, so this build calls itself `haetty 0.1.0 (commit
+  07e67ee00a6d, …)` and installs as `0.1.0-07e67ee00a6d`.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |
