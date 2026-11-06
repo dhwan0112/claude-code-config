@@ -301,7 +301,9 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
 
 /// One full frame, as `SoftRenderer::render` paints it.
 fn render(painter: &mut Painter, snap: &Snapshot, preedit: Option<&Preedit>) -> Canvas {
-    let pad = PaddingStyle { min: (4, 4), balance: false, ..Default::default() };
+    // The default padding: 10 / 6 logical px at scale 1 (the frame fits the
+    // grid exactly, so balance changes nothing).
+    let pad = PaddingStyle { min: (10, 6), balance: false, ..Default::default() };
     let layout = Layout { cell: painter.cell_metrics(), padding: pad.min, balance: pad.balance };
     let (w, h) = layout.window_size(snap.cols, snap.rows);
     let mut cv = Canvas::new(w, h);
