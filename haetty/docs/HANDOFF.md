@@ -2177,6 +2177,50 @@ regression list, measurements), then committed, pushed and mirrored.
     exit 2; a malformed line → exit 2; `174928b..e9f5bee` without the
     `e9f5bee` line → exit 1, with it → exit 0.
 
+- **2026-11-07 U2 — at most two heavy jobs, enforced.**
+  - `tools/heavy.sh`: two slots (`HAETTY_HEAVY_SLOTS`), lock files under
+    `/tmp/haetty-heavy` (`HAETTY_HEAVY_DIR`) held with `flock`. A job that
+    finds both slots taken waits, says so on stderr and gets its waiting
+    time in `heavy.log`. Every start and end is logged: time, slot,
+    seconds waited, exit status and duration, label.
+  - The command does not inherit the lock, so a daemon left behind holds
+    no slot. A killed `heavy.sh` frees its slot at once.
+  - A nested call inside a slot runs directly (`HAETTY_HEAVY_SLOT`). Cases:
+    `run-all.sh` → `xvfb.sh`, the stage commit → `gate.sh`, a Windows
+    job's WSL build. `--status` lists the holders; its exit status is the
+    number of slots in use.
+  - `tools/heavy.ps1`: a Windows job takes a slot from the same `heavy.sh`
+    through `wsl.exe … heavy.sh --hold` with a stdin pipe, so Linux and
+    Windows jobs share the two slots. The slot ends when the job ends or
+    the PowerShell process dies (the pipe closes).
+    `HAETTY_HEAVY_SLOT` goes into WSL through `WSLENV`. It works from
+    Windows PowerShell 5.1 too. Staged copies outside the checkout need
+    `HAETTY_HEAVY_SH=<distro>:<path of tools/heavy.sh>`.
+  - Wrapped:
+    - re-run themselves inside a slot: `scripts/gate.sh`,
+      `tools/check-range.sh`, `scripts/e2e/run-all.sh`,
+      `scripts/e2e/xvfb.sh`, `scripts/e2e/lib.sh` (every e2e script:
+      soak, measure, record-claude, …), `scripts/dist-sizes.sh`,
+      `scripts/zig-mode.sh`, `tools/test-install-stable.sh`;
+    - hold a slot for the whole run: `scripts/e2e/windows/lib.ps1` (tabs,
+      orchestrator, soak), `daemon-crash.ps1`, `scripts/windows-smoke.ps1`,
+      `tools/test-install-stable.ps1`;
+    - the README fuzz command goes through `tools/heavy.sh`.
+  - Tests:
+    - `tools/test-heavy.sh` 11/11: with both slots taken for 12 s a third
+      job waited 13 s, said so, and the log shows "waited 13 s"; the first
+      two did not wait; nested call: no second slot; a leftover child
+      holds no slot; SIGKILL frees the slot; `--hold` holds until stdin
+      closes.
+    - `tools/test-heavy.ps1` 9/9:
+      - two WSL jobs → a Windows job waited 11 s;
+      - two Windows jobs → a WSL job waited 10 s;
+      - a nested WSL job ran in the Windows slot;
+      - a killed Windows job freed its slot.
+    - Every wrapped entry point, started while two holders kept both slots
+      (private slot directory), waited and did not start: 9 bash scripts,
+      6 PowerShell scripts. No process left behind.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |

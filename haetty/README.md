@@ -649,7 +649,8 @@ Zig mode per profile). To run the engine fuzzing with Zig's safety checks on:
 
 ```sh
 LIBGHOSTTY_VT_SYS_OPTIMIZE=ReleaseSafe CARGO_TARGET_DIR=/tmp/safe-target \
-  HAETTY_VT_FUZZ=full HAETTY_TEST_TMP=/tmp/haetty-test cargo test --release -p haetty-core --test vtfuzz
+  HAETTY_VT_FUZZ=full HAETTY_TEST_TMP=/tmp/haetty-test \
+  tools/heavy.sh cargo test --release -p haetty-core --test vtfuzz
 ```
 
 `scripts/e2e/measure.sh [dist|release]` measures the DESIGN.md §3.4 budgets.

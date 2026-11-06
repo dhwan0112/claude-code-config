@@ -3,6 +3,9 @@
 param([string]$Exe)
 $ErrorActionPreference = "Continue"
 . (Join-Path $PSScriptRoot "..\..\test-guard.ps1")
+foreach ($h in (Join-Path $PSScriptRoot "..\..\..\tools\heavy.ps1"), (Join-Path $PSScriptRoot "heavy.ps1")) { if (Test-Path $h) { . $h; break } }
+if (-not (Get-Command Enter-HaettyHeavy -ErrorAction SilentlyContinue)) { Write-Host "daemon-crash.ps1: tools\heavy.ps1 not found"; exit 2 }
+Enter-HaettyHeavy "daemon-crash.ps1 $args"   # at most two heavy jobs, Linux and Windows together (tools/heavy.ps1)
 $run = Initialize-HaettyGuard -Name HAETTY_TEST_TMP
 $w = Join-Path $run "crash"; Assert-HaettyPath $w
 foreach ($d in "$w", "$w\state\tabs", "$w\cfg") { New-Item -ItemType Directory -Force $d | Out-Null }

@@ -3,6 +3,7 @@
 # decorations), theme change, the integrated title row, tab features, the orchestrator, the GUI after a daemon crash.
 #   HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/run-all.sh [--no-build]
 # Prints each check's FAIL lines and TOTAL; exits with the number of scripts that had a failure (77: no Xvfb).
+[ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/../../tools/heavy.sh" --label "run-all.sh $*" -- bash "$0" "$@"   # at most two heavy jobs (tools/heavy.sh)
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/../.." || exit 2
 . "$HOME/.cargo/env" 2>/dev/null

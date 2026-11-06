@@ -4,6 +4,7 @@
 # holding usr/bin/Xvfb, usr/bin/xkbcomp, their libraries and misc fonts — see README.md here) inside a private mount
 # namespace where xkbcomp is overlaid on /usr/bin and /tmp/.X11-unix is writable. Exit 77: no Xvfb.
 # Test isolation: everything is written only in $HAETTY_RUN (scripts/test-guard.sh).
+[ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/../../tools/heavy.sh" --label "xvfb.sh $*" -- bash "$0" "$@"   # at most two heavy jobs (tools/heavy.sh)
 here=$(cd "$(dirname "$0")" && pwd)
 . "$here/../test-guard.sh"; haetty_guard_init HAETTY_TEST_TMP || exit 3
 # A display number nobody uses — also not as an abstract socket (@/tmp/.X11-unix/X<n>): those are per network

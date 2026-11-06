@@ -5,6 +5,9 @@
 #   Required: $Exe (haetty.exe). The daemon is stopped by the PID `status --json` reports, never by name.
 $ErrorActionPreference = "Continue"
 . (Join-Path $PSScriptRoot "..\..\test-guard.ps1")
+foreach ($h in (Join-Path $PSScriptRoot "..\..\..\tools\heavy.ps1"), (Join-Path $PSScriptRoot "heavy.ps1")) { if (Test-Path $h) { . $h; break } }
+if (-not (Get-Command Enter-HaettyHeavy -ErrorAction SilentlyContinue)) { Write-Host "lib.ps1: tools\heavy.ps1 not found"; exit 2 }
+Enter-HaettyHeavy (Split-Path -Leaf $MyInvocation.PSCommandPath)   # at most two heavy jobs, Linux and Windows together (tools/heavy.ps1)
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
 using System; using System.Runtime.InteropServices;

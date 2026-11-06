@@ -2,6 +2,7 @@
 # The full gate (CLAUDE.md): fmt, both targets build, clippy clean on both, all tests; then stripped sizes and
 # linkage. Run in the haetty folder of any checkout; tests need HAETTY_TEST_TMP (default /tmp/haetty-test).
 # Prints "GATE fail=0" when everything passed (and "GATE STEP FAILED: …" for each step that did not).
+[ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/../tools/heavy.sh" --label "gate.sh $*" -- bash "$0" "$@"   # at most two heavy jobs (tools/heavy.sh)
 export HAETTY_TEST_TMP=${HAETTY_TEST_TMP:-/tmp/haetty-test}
 # Tests put Unix sockets under it (<base>/haetty-test-<pid>-<ns>/<test>/rt/haetty/daemon.sock): a long base
 # overflows the 108-byte socket path limit and a daemon test fails with "path must be shorter than SUN_LEN".

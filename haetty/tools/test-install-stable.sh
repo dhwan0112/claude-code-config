@@ -4,6 +4,7 @@
 # reinstall, cleanup and that a real prefix is refused.
 #   HAETTY_TEST_TMP=/tmp/haetty-test tools/test-install-stable.sh REF1 REF2
 set -uo pipefail
+[ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/heavy.sh" --label "test-install-stable.sh $*" -- bash "$0" "$@"   # at most two heavy jobs (tools/heavy.sh)
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/../scripts/test-guard.sh"; haetty_guard_init HAETTY_TEST_TMP
 REF1=${1:?REF1}; REF2=${2:?REF2}

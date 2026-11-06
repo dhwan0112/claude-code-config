@@ -133,6 +133,13 @@ cargo run --release -p haetty-core --example mem -- 3 67108864 10000   # anon me
 `scripts/gate.sh` is the full gate (fmt, both targets, clippy on both, all
 tests, sizes; ends with `GATE fail=0`); `tools/check-range.sh RANGE` runs the
 quick gate on every commit of a range (see Commits and reference frames).
+Heavy jobs — builds, the gate, check-range, end-to-end and soak runs,
+fuzzing, installer self-tests, WSL builds for Windows — run at most **two at
+a time**, Linux and Windows together (this machine's memory). The scripts
+above take a slot themselves (`tools/heavy.sh`; Windows `tools/heavy.ps1`);
+run any other heavy command through `tools/heavy.sh CMD` /
+`pwsh -File tools\heavy.ps1 -Label TEXT -- CMD`, and never around it.
+`tools/heavy.sh --status` shows who holds the slots.
 `scripts/zig-mode.sh` shows libghostty-vt's Zig mode per profile (all
 optimized); `scripts/e2e/measure.sh` measures the §3.4 budgets.
 End-to-end checks of the real GUI (Linux, Xvfb): `scripts/e2e/run-all.sh`

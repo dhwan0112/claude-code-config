@@ -8,6 +8,9 @@
 # own home and a dummy API key, never with your account or ~\.claude.
 $ErrorActionPreference = "Continue"
 . (Join-Path $PSScriptRoot "test-guard.ps1")
+foreach ($h in (Join-Path $PSScriptRoot "..\tools\heavy.ps1"), (Join-Path $PSScriptRoot "heavy.ps1")) { if (Test-Path $h) { . $h; break } }
+if (-not (Get-Command Enter-HaettyHeavy -ErrorAction SilentlyContinue)) { Write-Host "windows-smoke.ps1: tools\heavy.ps1 not found"; exit 2 }
+Enter-HaettyHeavy "windows-smoke.ps1 $args"   # at most two heavy jobs, Linux and Windows together (tools/heavy.ps1)
 $run = Initialize-HaettyGuard -Name HAETTY_TEST_TMP
 Write-Host "run directory: $run"
 $exe = Join-Path $PSScriptRoot "haetty-headless.exe"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # `dist` sizes (what the installers ship) and stripped release sizes of haetty, both targets.
+[ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/../tools/heavy.sh" --label "dist-sizes.sh $*" -- bash "$0" "$@"   # at most two heavy jobs (tools/heavy.sh)
 cd "$(dirname "$0")/.." || exit 2
 . "$HOME/.cargo/env" 2>/dev/null
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/target}

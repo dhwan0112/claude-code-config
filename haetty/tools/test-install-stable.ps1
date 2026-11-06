@@ -11,6 +11,9 @@ param(
     [string]$WslRepo
 )
 . (Join-Path $PSScriptRoot "..\scripts\test-guard.ps1")
+foreach ($h in (Join-Path $PSScriptRoot "heavy.ps1")) { if (Test-Path $h) { . $h; break } }
+if (-not (Get-Command Enter-HaettyHeavy -ErrorAction SilentlyContinue)) { Write-Host "test-install-stable.ps1: tools\heavy.ps1 not found"; exit 2 }
+Enter-HaettyHeavy "test-install-stable.ps1 $args"   # at most two heavy jobs, Linux and Windows together (tools/heavy.ps1)
 $run = Initialize-HaettyGuard -Name HAETTY_TEST_TMP
 $inst = Join-Path $PSScriptRoot "install-stable.ps1"
 $script:pass = 0; $script:fail = 0

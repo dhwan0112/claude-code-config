@@ -23,6 +23,7 @@
 # directory; never changes a branch, the index or history.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
+[ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/heavy.sh" --label "check-range.sh $*" -- bash "$0" "$@"   # at most two heavy jobs (tools/heavy.sh)
 . "$here/../scripts/test-guard.sh"
 haetty_guard_init HAETTY_TEST_TMP || exit 3
 windows=1 test=1 keep=0 range=

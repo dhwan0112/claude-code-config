@@ -2,6 +2,7 @@
 # (the release `haetty` and `haetty-headless`, or $HAETTY_BIN / $HAETTY_HEADLESS_BIN), PROBE, and test isolation
 # (scripts/test-guard.sh: everything is written only in $HAETTY_RUN under $HAETTY_TEST_TMP).
 E2E=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+[ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$E2E/../../tools/heavy.sh" --label "$(basename "$0") $*" -- bash "$0" "$@"   # at most two heavy jobs
 REPO=$(cd "$E2E/../.." && pwd)
 . "$REPO/scripts/test-guard.sh"
 haetty_guard_init HAETTY_TEST_TMP || exit 3

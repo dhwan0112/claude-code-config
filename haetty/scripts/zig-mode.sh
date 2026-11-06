@@ -5,6 +5,7 @@
 #   HAETTY_TEST_TMP=/tmp/haetty-test scripts/zig-mode.sh [PROFILE...]   (default: dev test release dist)
 # Takes a few minutes per profile (Zig builds Ghostty's libghostty-vt each time).
 set -u
+[ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/../tools/heavy.sh" --label "zig-mode.sh $*" -- bash "$0" "$@"   # at most two heavy jobs (tools/heavy.sh)
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 . "$REPO/scripts/test-guard.sh"; haetty_guard_init HAETTY_TEST_TMP || exit 3
 . "$HOME/.cargo/env" 2>/dev/null

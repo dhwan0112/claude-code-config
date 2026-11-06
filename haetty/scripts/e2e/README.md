@@ -90,3 +90,7 @@ test run directory (onboarding done, the project trusted), a dummy `sk-ant-api03
 `CLAUDE_CODE_*` / `CLAUDECODE` / `CLAUDE_*SESSION*` removed; it types text and opens menus but submits nothing, so
 no API call is made. It records the fullscreen and the classic renderer, then replaces the dummy key and the run
 path in the files with filler of the same length.
+
+Every script here takes one of the two heavy-job slots (`tools/heavy.sh`,
+through `lib.sh` and `xvfb.sh`; Windows through `windows/lib.ps1`) and waits
+while both are in use; nested calls share the caller's slot.
