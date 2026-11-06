@@ -51,6 +51,8 @@ from the overnight run of §6.1 item 30 (commit `63822de`):
    version is installed.
 
 
+> **In progress:** stage u5b (branch `haetty/u5b`, worktree `~/projects/claude-code-config-wt/u5b`). Remaining: review fixes: ExecutionPolicy Bypass in commands, dev-run from a stable tab test, hung-daemon recovery, U3 quote check, fresh test-build memory
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
