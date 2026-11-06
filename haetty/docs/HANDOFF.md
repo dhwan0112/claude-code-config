@@ -19,7 +19,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage t4 (branch `haetty/t4`, worktree `~/projects/claude-code-config-wt/t4`). Remaining: T4: soak v2 on the final candidate build (1 h, Linux and Windows): 4 tabs plus 200 tab open/close, 50 detach/attach, 20 tasks with worker exit and worktree removal, 10 theme changes; 5-minute samples; criteria written first
 
 ## 1. Goal
 
@@ -695,6 +694,14 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     `scripts/e2e/windows/orchestrator.ps1` (scripts/e2e/README.md,
     Windows) against the candidate's `haetty.exe`; both must end with 0
     failed. They skip by themselves when the desktop is in use.
+
+30. **Soak v2, one hour each, on the candidate's own build** (T4; needed
+    for the `haetty-v0.2.0` tag): Linux `HAETTY_TEST_TMP=/tmp/haetty-test
+    scripts/e2e/xvfb.sh bash scripts/e2e/soak.sh soak.csv` and Windows
+    `scripts/e2e/windows/soak.ps1` (idle desktop for the whole hour, do
+    not touch the computer); both print `VERDICT PASS`. Run them one at a
+    time or on a machine with enough free memory (this session's runs were
+    stopped by the tool for low memory).
 
 #### B. Linux with a real account (Claude Code logged in)
 
@@ -2093,6 +2100,59 @@ regression list, measurements), then committed, pushed and mirrored.
     (`Tab::folder`: reported, else where it started). Checked:
     `scripts/e2e/orchestrator.sh` 21/21 with the new check (a new tab next
     to the worker opens in its worktree), `tabs.sh` 20/20.
+
+- **2026-11-06 T4 — soak v2: not completed; T7 — no tag.**
+  - Scripts: `scripts/e2e/soak.sh` (Linux, Xvfb) and
+    `scripts/e2e/windows/soak.ps1`: four tabs (a burst of 500 lines every
+    10 s, a line every 0.2 s, two idle) and, spread over the hour, 200 tab
+    open/close, 50 detach/attach, 20 tasks (palette "New task", a worker
+    that ends after 3 s, its tab closed, "Remove a task's worktree"), 10
+    theme changes (config + "Reload config"); a sample every 300 s between
+    operations: threads, fds (Windows: handles), anonymous memory
+    (Windows: private working set), the daemon's descendant processes,
+    sessions, task worktrees left.
+  - Verdict, written in the scripts before any run: threads and fds the
+    same at the end as at t=0 (Windows: threads +3, handles +20 allowed for
+    the system's own pools), descendants and sessions the same, 0
+    worktrees, GUI memory at the end ≤ at 15 min + 4 MB, daemon memory at
+    the end ≤ at 45 min + 4 MB (the burst tab's scrollback fills by ~40
+    min), every operation done, window and daemon alive.
+  - Linux 6-minute trial (scaled counts: 20 tabs, 5 detach, 2 tasks, 1
+    theme): every check passed (threads 7/24, fds 17/21, descendants 6,
+    sessions 4 unchanged; worktrees 0). It found a fault in the script
+    first (the remove list needs a second Enter).
+  - Linux one-hour run on `b5ac040`: invalid — an end-to-end run at the
+    same time reached its X server (both Xvfb on `:77`; X clients use the
+    abstract socket, which `unshare -rm` does not separate) and typed into
+    it (sessions 4 → 7). Fixed in `xvfb.sh` (`63822de`); the earlier S4
+    soak may have had the same overlap with `crashrun.sh`, its figures
+    stay as recorded.
+  - Linux one-hour run on `63822de`: stopped by the tool after 10 minutes
+    (the system ran low on memory); not restarted, as the tool asks. The
+    three samples (0, 308, 609 s): GUI 7 threads, 17 fds; daemon 24
+    threads, 21 fds, 6 descendants; 4 sessions; 0 worktrees throughout;
+    memory GUI 6.7 → 7.2 MB, daemon 3.9 → 19.1 MB (scrollback filling);
+    31 tabs, 7 detach, 5 tasks, 1 theme done. Too short for the verdict.
+    `~/m4/soak2/soak2-linux-partial.csv`.
+  - Windows: not run. The desktop was in use the whole time (a game in
+    the foreground; no 180 s without input), so the waiting run never
+    started; it was then stopped with the Linux run.
+  - T7, all on `63822de`'s own build: gate passed; `check-range
+    haetty-v0.1.1..b5ac040` 34 commits, 4 failing — exactly the four of
+    T1 (`9fabc3b`, `bad5247`, `174928b`, `e9f5bee`, history not
+    rewritten), every commit since T1 passing — and `b5ac040..63822de` 0
+    failing; Linux end-to-end (`run-all.sh`): regression 27/27 (Ctrl+C
+    twice 3/3 on a second run; 2/3 in the first, the known Claude Code
+    timing case, under the soak's load), §2.3 5/5 and 5/5 integrated,
+    themes 8/8, title row 13/13, tab features 20/20, orchestrator 21/21,
+    daemon crash 9/9; installer self-tests Linux 19/19, Windows 18/18;
+    Windows natively: GUI unit tests 83 + 1 ignored, `orchestrator`,
+    `daemoncrash`, `threads` passed, guard self-test 0 failed,
+    `windows-smoke.ps1` 0 failures; `--version` `haetty 0.2.0 (commit
+    63822de98dae …)`.
+  - **No `haetty-v0.2.0` tag**: T7's conditions include the T4 soak on
+    both platforms, which did not complete. Candidate: `63822de`. §6.1
+    item 30.
 
 ### ccx comparison (milestone 3)
 
