@@ -11,6 +11,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage s4 (branch `haetty/s4`, worktree `~/projects/claude-code-config-wt/s4`). Remaining: robustness: IPC fuzz (bad length, broken postcard, unknown messages, version mismatch), VT fuzz (random + mutated Claude logs), 1-hour soaks Linux/Windows (running on e2ec468), GUI after a daemon crash (hint, tab-set restore, no orphans), fixes + regression tests (test-guard.ps1 on PowerShell 5.1)
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
