@@ -45,6 +45,7 @@ mod migrate;
 mod reftest;
 mod render;
 mod tabsets;
+mod titlebar;
 mod ui;
 
 use std::io::Write;

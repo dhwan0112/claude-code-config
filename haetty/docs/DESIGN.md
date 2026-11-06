@@ -62,6 +62,14 @@ away. Functions stay; what changes is when they are visible.
   whole share (the font's stroke: 1 px at 100 %, 2 px at 200 %), other tabs'
   text dim; no accent colour for the active tab; between the tab bar and
   the terminal no line, only space.
+- Integrated decorations (`decorations = integrated`; the default on
+  Wayland, §3.12): the tab-bar row is the title bar and stays with one tab,
+  then showing the window title in the dim colour. Window buttons (minimize
+  `–`, maximize `□` / restore `■`, close `×`) are single-colour glyphs on
+  the cell grid, dim, the normal text colour under the pointer — close
+  included, no accent — on the sides GNOME's `button-layout` names (right
+  when it cannot be read). No shadow and no rounded corners are drawn: the
+  window is a plain rectangle; what the compositor adds is its own.
 - Padding around the grid: at least 10 px left/right and 6 px top/bottom
   (logical px, times the display scale); leftover space spread evenly
   (`window-padding-balance`).
@@ -480,8 +488,31 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
     haetty) selects its dark variant; the colour is mutter's.
   - The way to a title bar in the terminal's colours on Linux is
     `decorations = integrated` (haetty draws the bar and its buttons, with
-    the tabs in it): next-task candidate, Linux first (HANDOFF §6.3); not
-    implemented.
+    the tabs in it), done 2026-11-06 (`titlebar.rs`).
+- `decorations = auto | native | integrated | none`, default `auto`
+  (`Decorations::effective`): `native` where the system can give its title
+  bar the theme's colour — Windows 11 (DWM caption/border colours,
+  `chrome.rs`) and X11 (the window manager draws it; mutter takes
+  `_GTK_THEME_VARIANT=dark`) — and `integrated` where it cannot: Wayland,
+  where winit draws an Adwaita frame with fixed colours (above). On Windows
+  `integrated` is not implemented (snap layouts would need the caption hit
+  test) and means `native`. The window system is winit's (`is_wayland`).
+- Integrated, how it works: the window has no system decorations
+  (`with_decorations(false)`); the title row is row 0 of the window grid
+  (`top()` = 1 with any number of tabs, so a second tab no longer adds a
+  row), and the window asks for one more row so the program keeps the
+  requested size. One layout function (`titlebar::layout`) places tabs and
+  buttons for drawing and for hit tests. Mouse: a press on empty title
+  space starts `drag_window` (move), two within 400 ms and 4 px toggle
+  maximize, a press on a tab selects it, a button acts on release over the
+  same button; within 6 logical px (× scale) of a window edge or corner the
+  cursor becomes a resize cursor and a press starts `drag_resize_window` —
+  not while maximized; a right click does nothing (no window menu yet).
+  Button layout: `HAETTY_TITLE_BUTTONS` (GNOME syntax) if set, else the
+  settings portal via `dbus-send` (as winit's Adwaita frame reads its own
+  settings), else `gsettings`, each ≤ 150 ms at window creation, else
+  right-side minimize/maximize/close. Taken from GNOME: `appmenu`, `menu`,
+  `spacer` entries are ignored.
 - Windows: the GUI process sets its AppUserModelID to the app id
   (`io.github.dhwan0112.haetty`, a dev instance `….haetty.dev`) before any
   window exists, so the taskbar groups haetty windows and a pinned icon

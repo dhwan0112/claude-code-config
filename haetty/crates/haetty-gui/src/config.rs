@@ -10,7 +10,7 @@
 //! | `window-padding-x`, `window-padding-y` | the same, left/right and top/bottom only | 10, 6 |
 //! | `window-padding-balance` | `true` / `false`: spread the leftover space evenly on all sides | `true` |
 //! | `window-padding-color` | `background` / `extend` / `extend-always` | `extend` |
-//! | `decorations` | `native` / `integrated` / `none` | `native` |
+//! | `decorations` | `auto` / `native` / `integrated` / `none` (auto: native on Windows and X11, integrated on Wayland) | `auto` |
 //! | `claude-integration` | `true` / `false`: hooks and status line in Claude Code tabs | `true` |
 //! | `notifications` | `true` / `false`: desktop notification when Claude Code waits and the window is unfocused (Linux `notify-send`) | `true` |
 //! | `restore-tabs` | `true` / `false`: reopen the previous run's tabs at start | `true` |
@@ -43,13 +43,41 @@ pub enum PaddingColor {
 /// Window decorations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Decorations {
+    /// `Native` where the system can colour its title bar to the theme,
+    /// `Integrated` where it cannot ([`Decorations::effective`]).
+    Auto,
     /// The platform's title bar and frame (coloured to match on Windows 11).
     Native,
-    /// Title bar drawn by haetty with tabs — not implemented (milestone 2's
-    /// optional P6 was not done); falls back to `Native`.
+    /// haetty's own title row (`titlebar.rs`): the tab bar row with the
+    /// window buttons; Linux only for now (Windows: `Native`).
     Integrated,
     /// No title bar or frame.
     None,
+}
+
+/// The window system a window runs on, for [`Decorations::effective`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowSystem {
+    Windows,
+    X11,
+    Wayland,
+}
+
+impl Decorations {
+    /// What the setting means on `ws` (DESIGN.md §3.12). `Auto`: native where
+    /// the title bar takes the theme's colour — Windows 11 (DWM caption and
+    /// border colours) and X11 (the window manager draws it; GNOME's mutter
+    /// follows `_GTK_THEME_VARIANT=dark`) — integrated on Wayland, where winit
+    /// draws its own Adwaita frame with fixed colours. `Integrated` is not
+    /// implemented on Windows yet (snap layouts): native there.
+    pub fn effective(self, ws: WindowSystem) -> Decorations {
+        match (self, ws) {
+            (Decorations::Auto, WindowSystem::Wayland) => Decorations::Integrated,
+            (Decorations::Auto, _) => Decorations::Native,
+            (Decorations::Integrated, WindowSystem::Windows) => Decorations::Native,
+            (d, _) => d,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -83,7 +111,7 @@ impl Default for Config {
             window_padding_y: 6.0,
             padding_balance: true,
             padding_color: PaddingColor::Extend,
-            decorations: Decorations::Native,
+            decorations: Decorations::Auto,
             scrollback_limit: haetty_core::DEFAULT_SCROLLBACK_LIMIT,
             restore_tabs: true,
             claude_integration: true,
@@ -153,6 +181,7 @@ impl Config {
             }
             "decorations" => {
                 self.decorations = match value {
+                    "auto" => Decorations::Auto,
                     "native" => Decorations::Native,
                     "integrated" => Decorations::Integrated,
                     "none" => Decorations::None,
@@ -307,6 +336,17 @@ mod tests {
         assert!(keys.action(&crate::keymap::Chord::parse("ctrl+shift+n").unwrap()).is_some());
         assert_eq!(bad.len(), 3, "{bad:?}");
         assert!(bad[0].starts_with("line 6:") && bad[1].starts_with("line 7:") && bad[2].starts_with("line 8:"));
+        assert_eq!(Config::default().decorations, Decorations::Auto);
+        c.set("decorations", "auto").unwrap();
+        {
+            use Decorations as D;
+            use WindowSystem as W;
+            assert_eq!(D::Auto.effective(W::Wayland), D::Integrated);
+            assert_eq!((D::Auto.effective(W::X11), D::Auto.effective(W::Windows)), (D::Native, D::Native));
+            assert_eq!(D::Integrated.effective(W::X11), D::Integrated, "Linux: integrated on request");
+            assert_eq!(D::Integrated.effective(W::Windows), D::Native, "not on Windows yet");
+            assert_eq!((D::None.effective(W::Wayland), D::Native.effective(W::Wayland)), (D::None, D::Native));
+        }
         for k in KEYS.iter().filter(|k| **k != "theme") {
             assert!(!c.clone().set(k, "?").unwrap_err().starts_with("unknown"));
         }

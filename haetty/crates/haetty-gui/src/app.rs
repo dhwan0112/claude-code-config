@@ -36,6 +36,7 @@ use crate::render::paint::{Look, Painter};
 use crate::render::soft::SoftRenderer;
 use crate::render::{PaddingStyle, Preedit, Renderer, Scene};
 use crate::tabsets::{self, SavedTab};
+use crate::titlebar;
 use crate::ui::{self, Compose, Palette, TabView};
 use crate::Options;
 
@@ -148,6 +149,17 @@ struct Win {
     start_cwd: Option<String>,
     /// Colours for new sessions and haetty's own cells.
     theme: Theme,
+    /// `decorations` resolved for this window system: haetty draws the title
+    /// row (`titlebar.rs`) — always shown, the window buttons in it.
+    integrated: bool,
+    buttons: titlebar::ButtonLayout,
+    /// Window button under the pointer; the one pressed (acts on release).
+    hover: Option<titlebar::Button>,
+    pressed_button: Option<titlebar::Button>,
+    /// Last left press on the title row's empty space (double-click).
+    last_title_press: Option<(Instant, PhysicalPosition<f64>)>,
+    /// Window edge under the pointer (integrated, not maximized).
+    edge: Option<winit::window::ResizeDirection>,
     /// The renderer's colours and `minimum-contrast` now in use.
     look: Look,
     /// Command-line settings (applied over the config file on a reload).
@@ -194,8 +206,30 @@ impl App {
         let look = Look { min_contrast: self.opts.config.minimum_contrast, ..Look::of(&theme) };
         painter.set_look(look);
         let pad0 = self.padding(scale0);
+        #[cfg(windows)]
+        let ws = crate::config::WindowSystem::Windows;
+        #[cfg(not(windows))]
+        let ws = if winit::platform::wayland::ActiveEventLoopExtWayland::is_wayland(el) {
+            crate::config::WindowSystem::Wayland
+        } else {
+            crate::config::WindowSystem::X11
+        };
+        let deco = self.opts.config.decorations.effective(ws);
+        let integrated = deco == Decorations::Integrated;
+        log::info!("decorations: {:?} on {ws:?} -> {deco:?}", self.opts.config.decorations);
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let buttons = if integrated {
+            let (b, from) = titlebar::read_system(Duration::from_millis(150));
+            log::info!("title buttons from {from}: {b:?}");
+            b
+        } else {
+            titlebar::ButtonLayout::none()
+        };
+        #[cfg(not(all(unix, not(target_os = "macos"))))]
+        let buttons = titlebar::ButtonLayout::none();
+        // The title row is one more row: the program keeps the requested rows.
         let (w, h) = Layout { cell: painter.cell_metrics(), padding: pad0.min, balance: pad0.balance }
-            .window_size(self.opts.cols, self.opts.rows);
+            .window_size(self.opts.cols, self.opts.rows + u16::from(integrated));
         let attrs = Window::default_attributes()
             .with_title(haetty_proto::product::display_name())
             .with_inner_size(PhysicalSize::new(w, h));
@@ -215,8 +249,8 @@ impl App {
             let a = winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, &id, "");
             winit::platform::x11::WindowAttributesExtX11::with_name(a, &id, &id)
         };
-        let attrs = chrome::attributes(attrs, theme.background, theme.foreground)
-            .with_decorations(decorated(self.opts.config.decorations));
+        let attrs =
+            chrome::attributes(attrs, theme.background, theme.foreground).with_decorations(deco == Decorations::Native);
         let chrome = Chrome::new(theme.background, theme.foreground);
         let window = Rc::new(el.create_window(attrs).map_err(|e| format!("window: {e}"))?);
         window.set_ime_allowed(true);
@@ -273,6 +307,12 @@ impl App {
             command,
             start_cwd: std::env::current_dir().ok().map(|d| d.to_string_lossy().into_owned()),
             theme,
+            integrated,
+            buttons,
+            hover: None,
+            pressed_button: None,
+            last_title_press: None,
+            edge: None,
             look,
             settings: self.opts.settings.clone(),
             config_mtime: crate::config::file_mtime(),
@@ -336,7 +376,7 @@ impl Win {
     /// Rows of haetty's own chrome above the terminal (the tab bar, shown
     /// from two tabs on).
     fn top(&self) -> u16 {
-        u16::from(self.tabs.len() >= 2)
+        u16::from(self.integrated || self.tabs.len() >= 2)
     }
 
     /// Columns of the status panel (with its separator), when shown: the
@@ -354,7 +394,7 @@ impl Win {
     /// status row of a Claude Code tab and the status panel.
     fn term_grid_for(&self, integrated: bool, tabs: usize) -> GridSize {
         let mut g = self.grid;
-        let top = u16::from(tabs >= 2);
+        let top = u16::from(self.integrated || tabs >= 2);
         g.rows = g.rows.saturating_sub(top + u16::from(integrated)).max(1);
         g.cols = g.cols.saturating_sub(self.panel_cols()).max(1);
         g
@@ -759,6 +799,122 @@ impl Win {
         self.window.set_title(&title);
     }
 
+    /// The window title (also shown in the integrated title row with one tab).
+    fn title_text(&self) -> String {
+        let t = self.tab().snap.as_ref().map_or("", |s| s.title.as_str());
+        if t.is_empty() {
+            haetty_proto::product::display_name()
+        } else {
+            format!("{}{t}", haetty_proto::product::title_prefix())
+        }
+    }
+
+    /// The title row's layout (no buttons unless integrated).
+    fn title_layout(&self) -> titlebar::TitleLayout {
+        titlebar::layout(self.grid.cols as usize, &self.buttons)
+    }
+
+    /// Pointer over the title row: (column, true) — `None` elsewhere.
+    fn title_col(&self) -> Option<usize> {
+        if self.top() == 0 {
+            return None;
+        }
+        let (col, row) = self.layout.cell_at(self.origin(), self.mouse.x, self.mouse.y, self.grid);
+        // Above the grid (the top padding) counts as the title row too.
+        let above = self.mouse.y < self.origin().1 as f64;
+        (row == 0 || above).then_some(col as usize)
+    }
+
+    /// Pointer moved: button hover and (integrated) the resize cursor.
+    fn title_hover(&mut self) {
+        if !self.integrated {
+            return;
+        }
+        let edge = if self.window.is_maximized() {
+            None
+        } else {
+            let border = (6.0 * self.window.scale_factor()).round().max(2.0);
+            titlebar::edge_at(self.mouse.x, self.mouse.y, self.size.width, self.size.height, border)
+        };
+        if edge != self.edge {
+            self.edge = edge;
+            self.window.set_cursor(edge.map_or(winit::window::CursorIcon::Default, |d| d.into()));
+        }
+        let hover = match self.title_col().filter(|_| edge.is_none()) {
+            Some(c) => match titlebar::hit(&self.title_layout(), c, self.tabs.len()) {
+                titlebar::Hit::Button(b) => Some(b),
+                _ => None,
+            },
+            None => None,
+        };
+        if hover != self.hover {
+            self.hover = hover;
+            self.recompose();
+        }
+    }
+
+    /// Left press on the window: an edge starts a resize, the title row
+    /// selects a tab, arms a button or moves / maximizes the window. True
+    /// when consumed (not sent to the program).
+    fn title_press(&mut self) -> bool {
+        if self.integrated {
+            if let Some(d) = self.edge {
+                log::info!("title bar: drag_resize_window {d:?}");
+                let _ = self.window.drag_resize_window(d);
+                return true;
+            }
+        }
+        let Some(col) = self.title_col() else { return false };
+        match titlebar::hit(&self.title_layout(), col, self.tabs.len()) {
+            titlebar::Hit::Tab(i) => self.select(i),
+            titlebar::Hit::Button(b) => self.pressed_button = Some(b),
+            titlebar::Hit::Empty if self.integrated => {
+                let now = Instant::now();
+                let near = |p: PhysicalPosition<f64>| {
+                    let d = 4.0 * self.window.scale_factor();
+                    (p.x - self.mouse.x).abs() <= d && (p.y - self.mouse.y).abs() <= d
+                };
+                if self.last_title_press.take().is_some_and(|(t, p)| now - t < Duration::from_millis(400) && near(p)) {
+                    let m = !self.window.is_maximized();
+                    log::info!("title bar: double click -> maximized {m}");
+                    self.window.set_maximized(m);
+                } else {
+                    self.last_title_press = Some((now, self.mouse));
+                    log::info!("title bar: drag_window");
+                    let _ = self.window.drag_window();
+                }
+            }
+            titlebar::Hit::Empty => {}
+        }
+        true
+    }
+
+    /// Left release: a button acts when the pointer is still on it. Returns
+    /// true for "close the window".
+    fn title_release(&mut self) -> bool {
+        let Some(b) = self.pressed_button.take() else { return false };
+        let still = self.title_col().map(|c| titlebar::hit(&self.title_layout(), c, self.tabs.len()));
+        if still != Some(titlebar::Hit::Button(b)) {
+            return false;
+        }
+        match b {
+            titlebar::Button::Minimize => {
+                log::info!("title bar: minimize");
+                self.window.set_minimized(true);
+            }
+            titlebar::Button::Maximize => {
+                let m = !self.window.is_maximized();
+                log::info!("title bar: maximize button -> maximized {m}");
+                self.window.set_maximized(m);
+            }
+            titlebar::Button::Close => {
+                log::info!("title bar: close");
+                return true;
+            }
+        }
+        false
+    }
+
     /// Sizes of the GUI's own heap structures, for the log (`HAETTY_LOG=info`).
     fn log_memory(&self) {
         let empty = vec![];
@@ -871,13 +1027,19 @@ impl Win {
         let screen = self.tab().snap.as_ref().unwrap_or(&empty);
         let g = ui::Greys::new(screen.default_fg, screen.default_bg, &self.theme.palette);
         let names: Vec<String> = self.tabs.iter().map(Tab::name).collect();
-        let bar = (self.tabs.len() >= 2).then(|| {
+        let bar = (self.top() > 0).then(|| {
             let views: Vec<TabView> = names
                 .iter()
                 .zip(&self.tabs)
                 .map(|(n, t)| TabView { name: n, exited: t.exited.is_some(), attention: t.attention() })
                 .collect();
-            ui::tab_bar(&views, self.active, self.grid.cols as usize, g)
+            if self.integrated {
+                let title = self.title_text();
+                let max = self.window.is_maximized();
+                titlebar::row(&views, self.active, self.grid.cols as usize, g, &title, &self.buttons, self.hover, max)
+            } else {
+                ui::tab_bar(&views, self.active, self.grid.cols as usize, g)
+            }
         });
         let tab = self.tab();
         let diff_key = self.keys.chord_for(Action::DiffView).map(|c| c.to_string()).unwrap_or_default();
@@ -939,23 +1101,6 @@ impl Win {
         m.mods = input::mods(self.mods);
         m.any_pressed = !self.held.is_empty();
         self.handle().mouse(Origin::Human, m);
-    }
-
-    /// A click on the tab bar selects the tab under the pointer.
-    fn tab_bar_click(&mut self) -> bool {
-        if self.top() == 0 {
-            return false;
-        }
-        let (col, row) = self.layout.cell_at(self.origin(), self.mouse.x, self.mouse.y, self.grid);
-        if row != 0 {
-            return false;
-        }
-        let share = (self.grid.cols as usize / self.tabs.len()).clamp(6, 32);
-        let i = col as usize / share;
-        if i < self.tabs.len() {
-            self.select(i);
-        }
-        true
     }
 
     fn keyboard(&mut self, ev: &KeyEvent) {
@@ -1332,17 +1477,11 @@ impl ApplicationHandler<UserEvent> for App {
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(win) = self.win.as_mut() else { return };
         match event {
-            WindowEvent::CloseRequested => {
-                win.log_memory();
-                // Closing the window ends its sessions; the tab set "last"
-                // keeps them for the next start. A crashed or killed GUI
-                // leaves them running.
-                win.save_last();
-                win.shutting_down = true;
-                while !win.tabs.is_empty() {
-                    win.close_tab(win.tabs.len() - 1);
+            WindowEvent::CloseRequested => close_window(win, el),
+            WindowEvent::CursorLeft { .. } => {
+                if win.hover.take().is_some() {
+                    win.recompose();
                 }
-                el.exit()
             }
             WindowEvent::RedrawRequested => win.draw(),
             WindowEvent::Resized(size) => win.resized(size),
@@ -1361,6 +1500,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::Ime(ime) => win.ime(ime),
             WindowEvent::CursorMoved { position, .. } => {
                 win.mouse = position;
+                win.title_hover();
                 if win.mouse_tracking() {
                     win.mouse_event(MouseAction::Motion, win.held.first().copied());
                 }
@@ -1369,7 +1509,11 @@ impl ApplicationHandler<UserEvent> for App {
                 let Some(b) = input::mouse_button(button) else { return };
                 let action = match state {
                     ElementState::Pressed => {
-                        if b == MouseButton::Left && win.tab_bar_click() {
+                        if b == MouseButton::Left && win.title_press() {
+                            return;
+                        }
+                        // The title row has no menu (the window menu is not done).
+                        if win.integrated && win.title_col().is_some() {
                             return;
                         }
                         win.held.retain(|x| *x != b);
@@ -1377,6 +1521,12 @@ impl ApplicationHandler<UserEvent> for App {
                         MouseAction::Press
                     }
                     ElementState::Released => {
+                        if b == MouseButton::Left && win.pressed_button.is_some() {
+                            if win.title_release() {
+                                close_window(win, el);
+                            }
+                            return;
+                        }
                         win.held.retain(|x| *x != b);
                         MouseAction::Release
                     }
@@ -1448,17 +1598,17 @@ fn log_ime(ime: &Ime) {
     }
 }
 
-/// Whether the platform draws a title bar and frame.
-fn decorated(d: Decorations) -> bool {
-    match d {
-        Decorations::Native => true,
-        Decorations::None => false,
-        Decorations::Integrated => {
-            // An own title bar with the tabs would go here (not done).
-            log::warn!("decorations = integrated is not implemented yet; using native");
-            true
-        }
+/// The window is closed (close button, title bar ×): closing the window
+/// ends its sessions; the tab set "last" keeps them for the next start. A
+/// crashed or killed GUI leaves them running.
+fn close_window(win: &mut Win, el: &ActiveEventLoop) {
+    win.log_memory();
+    win.save_last();
+    win.shutting_down = true;
+    while !win.tabs.is_empty() {
+        win.close_tab(win.tabs.len() - 1);
     }
+    el.exit()
 }
 
 /// Padding settings at a scale factor; `HAETTY_DEBUG_PADDING=1` paints it red.

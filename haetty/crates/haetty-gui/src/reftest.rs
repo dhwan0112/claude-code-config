@@ -273,6 +273,18 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
     let bar = ui::tab_bar(&tabs, 0, COLS as usize, g);
     out.push(("tabs", Compose { tab_bar: Some(bar), ..compose(&s) }.build(), None));
 
+    // decorations = integrated: the title row with one tab (the window title,
+    // dim) and with two tabs, the pointer over the close button.
+    use crate::titlebar::{self, Button, ButtonLayout};
+    let b = ButtonLayout::default();
+    let s = screen(COLS, ROWS - 1, &["$ ls", "Cargo.toml  README.md  crates  docs", "$ "], Some((2, 2)));
+    let one = [TabView { name: "bash", exited: false, attention: Attention::None }];
+    let row = titlebar::row(&one, 0, COLS as usize, g, "~/projects/haetty", &b, None, false);
+    out.push(("integrated-title", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None));
+    let two = [one[0].clone(), TabView { name: "Claude Code", exited: false, attention: Attention::Wait }];
+    let row = titlebar::row(&two, 0, COLS as usize, g, "", &b, Some(Button::Close), false);
+    out.push(("integrated-tabs", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None));
+
     let info = claude_info();
     let area = ROWS as usize - 1;
     let s = screen(

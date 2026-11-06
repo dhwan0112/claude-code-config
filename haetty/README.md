@@ -93,6 +93,18 @@ haetty statusline        (run by Claude Code)
   background and the title text its foreground; Windows 10 and Linux get
   the dark theme request (light if the background is light).
 
+### Title bar
+
+On Wayland (GNOME's default session) haetty draws its own title bar
+(`decorations = auto` → integrated): the tab row, in the terminal's colours,
+which stays with one tab and then shows the window title. The window
+buttons follow your desktop's button layout (GNOME's `button-layout`; right
+side when it cannot be read). Drag empty title space to move the window,
+double-click it to maximize or restore, drag a window edge to resize. On
+Windows 11 and X11 the system title bar is used and coloured to match;
+`decorations = integrated` forces haetty's on X11 too, `native` the system's
+everywhere.
+
 ### Tabs and keys
 
 Each tab is a daemon session. The tab bar (one row, on the terminal's own
@@ -171,7 +183,7 @@ keybind = ctrl+shift+n=new_tab
 | `window-padding-x`, `window-padding-y` | the same, left/right or top/bottom only | `10`, `6` |
 | `window-padding-balance` | `true` / `false` — spread leftover space evenly on all sides | `true` |
 | `window-padding-color` | `background` / `extend` / `extend-always` (as in Ghostty) | `extend` |
-| `decorations` | `native` / `integrated` (not implemented yet; falls back to `native`) / `none` | `native` |
+| `decorations` | `auto` / `native` / `integrated` / `none` — auto: the system's title bar where it takes the theme's colour (Windows 11, X11), haetty's own (integrated) on Wayland; integrated is Linux only (Windows: native) | `auto` |
 | `scrollback-limit` | bytes of scrollback per session, as in Ghostty (plain bytes, `_` allowed; rows of 120 columns take ~1.1 KB, the default keeps ~11 000 of them) | `12000000` |
 | `restore-tabs` | `true` / `false` — reopen the previous run's tabs at start | `true` |
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |
@@ -402,6 +414,7 @@ and RGBA files generated from it; `assets/icon/README.md` says how).
 | `HAETTY_FONT_DIR` | an extra font directory |
 | `HAETTY_CONPTY_DLL` | Windows: use this `conpty.dll` (see [Windows notes](#windows-notes)) |
 | `HAETTY_DUMP_FRAME` | write every frame to this `.ppm` file (debugging) |
+| `HAETTY_TITLE_BUTTONS` | integrated title row: window buttons in GNOME's `button-layout` syntax (`appmenu:minimize,maximize,close`, `close,minimize,maximize:`), instead of the desktop's setting |
 | `HAETTY_DEBUG_PADDING` | `1` paints everything outside the grid red, to tell haetty's padding from a window manager's frame |
 | `HAETTY_SOCKET`, `HAETTY_STATE_DIR`, `HAETTY_CONFIG_DIR` | for tests: override the daemon socket / pipe, the state directory and the config directory |
 
@@ -411,12 +424,8 @@ right daemon and tab.
 
 ### Known limits
 
-- Linux, GNOME on Wayland: the title bar is drawn by winit (Adwaita style)
-  in a fixed dark grey, not in the terminal's background colour — winit
-  offers only dark/light there. `decorations = integrated` would fix it
-  and is planned (Linux first).
-- `decorations = integrated` (own title bar with tabs) is not implemented;
-  it falls back to `native`.
+- `decorations = integrated` is Linux only; on Windows it means `native`.
+  The integrated title row has no window menu (right click does nothing).
 - Tab sets are not per window: with several haetty windows open, the last
   one to write wins the `last` set.
 - The diff view shows the last edit only (no diff against `HEAD`, no file

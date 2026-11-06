@@ -8,7 +8,6 @@ lives in `haetty/` of the `dhwan0112/claude-code-config` repository.
 Written for whoever continues the work (Claude Code included).
 
 
-> **In progress:** stage s1 (branch `haetty/s1`, worktree `~/projects/claude-code-config-wt/s1`). Remaining: integrated decorations (Linux first): decorations = auto|native|integrated|none, title row with tabs or title and min/max/close glyphs per GNOME button layout, drag/double-click/edge resize, frame dumps, §2.3 with integrated, §6.1 items
 
 ## 1. Goal
 
@@ -632,6 +631,17 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     restarted; a second window killed → palette "Attach detached sessions"
     takes its tabs.
 
+25. **Integrated title bar on GNOME** (Wayland session, `decorations`
+    unset = auto): one colour from the title row to the bottom (no `#303030`
+    bar); the window buttons where GNOME puts them (Ubuntu: minimize,
+    maximize, close on the right; change it in Tweaks → Window Titlebars and
+    restart haetty); drag empty title space to move, double-click to
+    maximize/restore, drag each edge and corner to resize — also at 200 %
+    scale; buttons dim, brighter under the pointer, no colour on ×; the
+    window's corners and shadow (mutter's, not haetty's: record what you
+    see); a right click on the title row does nothing. X11 session: the
+    system title bar again (auto = native), dark.
+
 #### B. Linux with a real account (Claude Code logged in)
 
 11. **Ctrl+C twice** right after Claude Code starts, a few times (rare
@@ -704,8 +714,8 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 - Own text selection and copy when the application does not track the
   mouse (plain shell); Shift+drag override while it does.
 - Cursor blink; font size zoom shortcuts.
-- `decorations = integrated` (own title bar with tabs) — optional P6 of
-  milestone 2, not done.
+- Integrated decorations on Windows (snap layouts need the caption hit
+  test); the title row's window menu (right click).
 - `window-padding-color = extend`: prompt-row heuristic needs shell
   integration (OSC 133).
 - Glyph shaping (ligatures, ZWJ emoji sequences are drawn as the first
@@ -716,10 +726,7 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 ### 6.3 Later milestones
 
 Done in milestones 2–3 (§6.4). Next: the orchestrator (milestone 4), MCP;
-integrated decorations — **candidate, Linux first** (on GNOME Wayland the
-title bar is winit's sctk-adwaita with fixed colours, `#303030` beside the
-terminal's `#141414`; only haetty drawing its own bar can match; DESIGN.md
-§3.12; not started); diff views against HEAD and the work tree; a
+integrated decorations on Windows (Linux done 2026-11-06, stage S1); diff views against HEAD and the work tree; a
 closed-tabs list; OpenGL renderer if needed.
 
 ### 6.4 Progress log (milestones 2–3)
@@ -1556,6 +1563,46 @@ regression list, measurements), then committed, pushed and mirrored.
   unit tests 72/72, `windows-smoke.ps1` 0 failures. Annotated tag pushed
   (the tag only). The stable install recorded for the user stays v0.1.0
   until they install this one.
+
+- **2026-11-06 Stage S1 — integrated decorations, Linux (DESIGN §2 change,
+  approved).** `decorations = auto|native|integrated|none` (default auto:
+  native on Windows and X11, integrated on Wayland; integrated on Windows
+  means native); `titlebar.rs`: the title row (tabs, or the window title dim
+  with one tab), minimize/maximize/close glyphs per GNOME's `button-layout`
+  (`HAETTY_TITLE_BUTTONS` → portal via `dbus-send` → `gsettings` → right),
+  drag to move, double-click to maximize, edge/corner resize (6 logical px ×
+  scale; off while maximized), buttons act on release, right click nothing.
+  DESIGN.md §2.2 / §3.12, README "Title bar". Evidence:
+  - Unit tests: GNOME layouts parsed (quotes, left/right, ignored and
+    duplicate entries, no colon); layout and hit tests agree with the drawn
+    row (gap, tab shares, buttons left); the row's cells (title dim, one
+    background, hovered button strong, restore glyph, greys only); edges and
+    corners; `effective` for every setting and window system.
+  - Reference frames (new scenes, same commit): `integrated-title` (one tab,
+    the title, buttons) and `integrated-tabs` (two tabs, the pointer on ×);
+    the four existing frames byte-identical; Linux and Windows written and
+    re-run identical.
+  - Xvfb (`titlerun.sh`, `--decorations integrated`, layout from
+    `HAETTY_TITLE_BUTTONS`): 13/13 — integrated chosen; the program keeps
+    60x10 (window one row taller); the × glyph dim, foreground under the
+    pointer; maximize → `set_maximized(true)`, minimize → `set_minimized`;
+    press on the title and release on × closes nothing; press on empty space
+    → `drag_window`; double click → maximize toggled; left edge →
+    `drag_resize_window West`, corner → `SouthEast`; right click → no action;
+    a second tab: still 60x10, no resize; × closes the window. (No window
+    manager under Xvfb: the calls are what is checked.)
+  - WSLg X11 (Weston's window manager): double click on the title row →
+    560x165 → 1920x1032 (maximized), again → 560x165.
+  - WSLg Wayland, `decorations` unset: log `Auto on Wayland -> Integrated`,
+    buttons from `gsettings` (this machine: `appmenu:close`, only ×).
+  - DESIGN §2.3 with integrated (`e2e3.sh --decorations integrated`): one
+    tab → the title row and the status row only, 0 non-grey; two tabs idle 0
+    non-grey; events → no layout change; 5/5. Default run: regression 27/27,
+    §2.3 5/5, theme run 8/8.
+  - Frame dumps: `docs/look/linux-x11-integrated-{one-tab,hover-close,two-tabs,buttons-left}.png`,
+    `docs/look/linux-wayland-integrated-1-start.png`.
+  - Not checkable here: a real GNOME session (mutter's shadow/corners,
+    pointer moves and resizes, HiDPI) — §6.1 item 25.
 
 ### ccx comparison (milestone 3)
 

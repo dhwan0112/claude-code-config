@@ -137,10 +137,16 @@ fn blank(fg: Rgb, bg: Rgb) -> Cell {
 }
 
 /// What the tab bar needs to know about a tab.
+#[derive(Clone)]
 pub struct TabView<'a> {
     pub name: &'a str,
     pub exited: bool,
     pub attention: Attention,
+}
+
+/// Cells per tab in a tab bar `cols` wide with `n` tabs (equal shares, 6–32).
+pub fn tab_share(cols: usize, n: usize) -> usize {
+    (cols / n.max(1)).clamp(6, 32)
 }
 
 /// The tab bar row: ` 1 name ` per tab, equal shares, all on the terminal's
@@ -154,7 +160,7 @@ pub fn tab_bar(tabs: &[TabView], active: usize, cols: usize, g: Greys) -> Vec<Ce
     if tabs.is_empty() || cols == 0 {
         return row;
     }
-    let share = (cols / tabs.len()).clamp(6, 32);
+    let share = tab_share(cols, tabs.len());
     let mut x = 0;
     for (i, t) in tabs.iter().enumerate() {
         if x >= cols {
