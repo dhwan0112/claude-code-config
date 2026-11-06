@@ -1503,6 +1503,12 @@ regression list, measurements), then committed, pushed and mirrored.
     Claude Code uses (Git Bash, PowerShell `-Command`) are the delivering
     ones; write test JSON through `cmd /c type`.
 
+- Note on history: `19d2844` (the look) alone fails the gate on the
+  reference frame "tabs"; read it together with `5292b74` (the updated
+  frames), where the gate passes again. That split followed the old rule
+  ("reference frames in a separate commit"); since then an approved §2
+  change and its frames go into one commit, and every commit passes the
+  gate on its own (CLAUDE.md). The past commits are left as they are.
 - **2026-11-06 GNOME title bar, tmux note.** DESIGN.md §3.12: on GNOME
   Wayland the title bar is winit's sctk-adwaita with constant colours
   (winit 0.30.13 maps only dark/light/auto to `FrameConfig`; dark

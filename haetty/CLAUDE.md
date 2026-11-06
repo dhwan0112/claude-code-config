@@ -78,8 +78,20 @@ the start of a session.
   key only.
 - Keep a recovery path: do not remove or break ccx (tmux) while haetty is
   not yet the proven default.
-- Reference frames: updating them is a separate commit whose message says
-  why the frames changed (`HAETTY_UPDATE_REFERENCE=1 cargo test reftest`).
+- Commits and reference frames:
+  - Every commit passes the full gate on its own (both targets, clippy 0
+    on both, all tests including the reference frames) — no commit relies
+    on a later one to become green.
+  - An approved change of the outer design (DESIGN.md §2) puts the code and
+    the updated reference frames into **one** commit whose message says
+    "DESIGN §2 change, approved".
+  - Only a reference-frame update without an intended change of the look
+    (e.g. new fonts on the reference machine, a rendering fix that moves
+    pixels) is a commit of its own, whose message says why the frames
+    changed.
+  - Update with `HAETTY_UPDATE_REFERENCE=1 cargo test reftest` (Linux) and
+    the Windows test binary with `HAETTY_REFERENCE_DIR` (Windows); a rerun
+    must report every frame identical on both.
 
 ## Environment
 
