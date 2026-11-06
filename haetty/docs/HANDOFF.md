@@ -2223,6 +2223,68 @@ regression list, measurements), then committed, pushed and mirrored.
       (private slot directory), waited and did not start: 9 bash scripts,
       6 PowerShell scripts. No process left behind.
 
+- **2026-11-07 U3 — the reap variable, memory of this machine.**
+  - `CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP` is documented, verbatim
+    from <https://code.claude.com/docs/en/env-vars>:
+    > Set to `1` to stop Claude Code from terminating background shell
+    > commands under memory pressure. By default, on macOS and Linux,
+    > Claude Code terminates background shells when the operating system
+    > reports critical memory pressure and the session has been idle for
+    > 30 minutes with no turn or subagent running. Windows has no
+    > memory-pressure signal, so this variable has no effect there.
+    > Requires Claude Code v2.1.193 or later
+  - Effective only when set before Claude Code starts. The same page says
+    a variable set in your shell before launching `claude` lasts for that
+    terminal session, and one under `"env"` in `settings.json` applies
+    every time. Setting it from a shell inside a running session has no
+    effect. PowerShell:
+    `$env:CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP = "1"; claude`.
+    The user's `~/.claude/settings.json` is not changed here.
+  - This machine: Claude Code 2.1.319 on Windows. The documentation says
+    the variable, and the reaping, do not apply on Windows; yet this
+    Windows session's background shells were stopped "because the system
+    is running low on memory" (2026-11-06, about 10 minutes after the
+    soak started, not 30 minutes idle). Docs and observation disagree, so
+    the variable cannot be relied on here. The overnight soak (U4) is
+    started by the user from a terminal, outside Claude Code, so no
+    reaper applies to it.
+  - Memory:
+    - Windows: 31.3 GB physical. During the measurements the user's
+      programs were running (a game, Firefox ~10 GB): 3.3 GB free before,
+      committed 53 of 67.5 GB.
+    - WSL 2.6.2, kernel 6.6.87.2. There is no `%USERPROFILE%\.wslconfig`,
+      so the defaults apply. In WSL: `free` 15 648 MB total (50 % of RAM),
+      swap 4 096 MB, 16 processors, `autoMemoryReclaim=dropCache`.
+  - Peaks, one job at a time (`scripts/mem-peak.sh`: WSL MemTotal −
+    MemAvailable, and the summed RSS of the job's process tree; Windows
+    sampled every 2 s):
+
+    | Job | WSL non-reclaimable | job tree RSS | vmmemWSL private | Windows available, minimum |
+    |---|---|---|---|---|
+    | gate (incremental, sources touched), 70 s | 0.68 → 1.25 GB (+0.57) | 1.7 GB | 5.1–5.7 GB | 3.1 GB |
+    | fresh `cargo build --release` incl. Zig libghostty-vt, 114 s | 0.68 → 3.20 GB (+2.52) | 3.8 GB | 5.7–8.6 GB | **0.7 GB** |
+    | Linux soak v2, 6 min (VERDICT PASS) | +0.06 GB | 0.13 GB | 5.8–8.3 GB | 1.1 GB |
+    | e2e `run-all.sh` (all passed), 5.4 min | +0.21 GB | 0.38 GB | 1.8–6.0 GB | 2.4 GB |
+
+  - What runs out is Windows memory, not WSL memory. The worst two jobs at
+    once (two fresh builds) need about 0.7 + 2 × 2.5 = 5.7 GB inside WSL,
+    but vmmemWSL also keeps WSL's page cache (build output) until it is
+    reclaimed: 8.6 GB during the build. Together with a game and a browser
+    that left 0.7 GB free on Windows, which is the low-memory state in
+    which the background shells were stopped.
+  - Proposed `%USERPROFILE%\.wslconfig` (not written; the user decides).
+    Applying it needs `wsl --shutdown`, which stops everything in WSL, so
+    only when nothing there matters:
+    ```ini
+    [wsl2]
+    memory=8GB      # two fresh builds at once need ~5.7 GB; the page cache stays inside this cap
+    swap=4GB        # as now
+    [experimental]
+    autoMemoryReclaim=dropCache   # the default; kept explicit
+    ```
+    With it, WSL holds at most ~8 GB of Windows memory instead of up to
+    15.6 GB. A machine running a game and Firefox (~12 GB) keeps ≥ 10 GB.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |
