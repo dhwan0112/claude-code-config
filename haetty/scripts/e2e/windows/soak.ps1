@@ -1,15 +1,19 @@
-# 1-hour soak on Windows (stage S4): the dev GUI with 4 tabs (a burst of 500 coloured lines every 10 s, a steady
-# line every 0.2 s, two idle); every 60 s private bytes, working set, handles and threads of the GUI and the
-# daemon go to a CSV. Test isolation: test-guard.ps1, everything under a run directory in $env:HAETTY_TEST_TMP.
-param([string]$Exe, [string]$Out, [int]$Dur = 3600)
-$ErrorActionPreference = "Continue"
-. (Join-Path $PSScriptRoot "..\..\test-guard.ps1")
-$run = Initialize-HaettyGuard -Name HAETTY_TEST_TMP
-$w = Join-Path $run "soak"; Assert-HaettyPath $w
-foreach ($d in "$w", "$w\state\tabs", "$w\cfg") { New-Item -ItemType Directory -Force $d | Out-Null }
-$env:HAETTY_INSTANCE = "dev"; $env:HAETTY_SOCKET = "\\.\pipe\haetty-soak-$PID"
-$env:HAETTY_STATE_DIR = "$w\state"; $env:HAETTY_CONFIG_DIR = "$w\cfg"; $env:HAETTY_LOG = "info"; $env:HAETTY_LOG_FILE = "$w\gui.log"
-$tab = "$w\tab.ps1"
+# Soak v2 (T4), Windows: the Linux soak.sh with the same operations — 200 x open/close a tab, 50 x detach/attach,
+# 20 x task + worker exit + worktree removal, 10 x theme change — spread over -Dur seconds (default 3600) around four
+# tabs (a burst of 500 lines every 10 s, a line every 0.2 s, two idle); a sample every 300 s between operations:
+# threads, handles, private working set of the GUI and the daemon, the daemon's descendant processes, sessions,
+# task worktrees left. Keys go through SendInput (lib.ps1): it runs only on an idle desktop and stops at once if
+# the haetty window loses the foreground. Run with pwsh:
+#   $env:HAETTY_TEST_TMP = "$env:PUBLIC\haetty-test"; pwsh -File soak.ps1 -Exe C:\...\haetty.exe -Out soak.csv
+# Verdict (written before the first run): threads last <= first + 3 (Windows' own pool threads), handles last <=
+# first + 20; descendants and sessions last = first; worktrees 0; private working set: GUI last <= GUI at 15 min +
+# 4 MB, daemon last <= daemon at 45 min + 4 MB; every operation done; window and daemon alive.
+param([Parameter(Mandatory = $true)][string]$Exe, [Parameter(Mandatory = $true)][string]$Out, [int]$Dur = 3600)
+. (Join-Path $PSScriptRoot "lib.ps1")
+$W = New-HaettyRun "soak"
+$R = "$W\proj"; New-Item -ItemType Directory $R | Out-Null
+RepoGit $R init -q -b main; Set-Content "$R\a.txt" "one" -Encoding ascii; RepoGit $R add .; RepoGit $R commit -qm one
+$ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 @'
 param([int]$Mode)
 switch ($Mode) {
@@ -17,31 +21,80 @@ switch ($Mode) {
   1 { while ($true) { Write-Host "tick $([DateTime]::Now.ToString('HH:mm:ss.fff'))"; Start-Sleep -Milliseconds 200 } }
   default { Start-Sleep 100000 }
 }
-'@ | Set-Content -Path $tab -Encoding utf8
-$ps = (Get-Command powershell.exe).Source
-$lines = foreach ($m in 1, 2, 3) {
-  $args_ = @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tab, "-Mode", "$m") | ForEach-Object { $_ -replace '\\', '\\' }
-  "tab$m`t$($w -replace '\\', '\\')`t$($ps -replace '\\', '\\')`t$($args_ -join [char]0x1f)`t`t0`t0"
+'@ | Set-Content -Path "$W\tab.ps1" -Encoding utf8
+# The worker: Claude Code's name (claude.exe = powershell), prints a line and ends after 3 s.
+"Write-Host `"worker in `$PWD`"; Start-Sleep 3" | Set-Content -Path "$W\worker.ps1" -Encoding utf8
+function Theme([string]$name) {
+    "theme = $name`nworker-command = $W\bin\claude.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $W\worker.ps1" | Set-Content "$W\cfg\config" -Encoding utf8
 }
-[IO.File]::WriteAllText("$w\state\tabs\last.tsv", (($lines -join "`n") + "`n"))
-$gui = Start-Process -FilePath $Exe -ArgumentList @("--cols", "120", "--rows", "36", $ps, "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tab, "-Mode", "0") -WorkingDirectory $w -PassThru
-Start-Sleep 5
-$st = cmd /c "`"$Exe`" status --json" | Out-String | ConvertFrom-Json
-$dp = $st.daemon_pid
-Write-Host "gui $($gui.Id) daemon $dp sessions $($st.sessions.Count)"
-"t_s,gui_private_kb,gui_ws_kb,gui_handles,gui_threads,daemon_private_kb,daemon_ws_kb,daemon_handles,daemon_threads,sessions" | Set-Content $Out
-$t0 = Get-Date
-while ($true) {
-  $t = [int]((Get-Date) - $t0).TotalSeconds
-  $g = Get-Process -Id $gui.Id -ErrorAction SilentlyContinue; $d = Get-Process -Id $dp -ErrorAction SilentlyContinue
-  if (-not $g -or -not $d) { Write-Host "DIED at $t s"; break }
-  $s = (cmd /c "`"$Exe`" status --json" | Out-String | ConvertFrom-Json).sessions | Where-Object { $_.state -eq "running" }
-  "$t,$([int]($g.PrivateMemorySize64/1KB)),$([int]($g.WorkingSet64/1KB)),$($g.HandleCount),$($g.Threads.Count),$([int]($d.PrivateMemorySize64/1KB)),$([int]($d.WorkingSet64/1KB)),$($d.HandleCount),$($d.Threads.Count),$(@($s).Count)" | Add-Content $Out
-  if ($t -ge $Dur) { break }
-  Start-Sleep 60
+Theme "IBM 5153 CGA"
+$tabArgs = @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$W\tab.ps1", "-Mode")
+$lines = foreach ($m in 0, 1, 2) {
+    $a = ($tabArgs + "$m" | ForEach-Object { $_ -replace '\\', '\\' }) -join [char]0x1f
+    "tab$m`t$($R -replace '\\', '\\')`t$($ps -replace '\\', '\\')`t$a`t`t0`t0"
 }
-Stop-Process -Id $gui.Id -ErrorAction SilentlyContinue
-Start-Sleep 2
-# The daemon by PID only (never by name).
-if (Get-Process -Id $dp -ErrorAction SilentlyContinue) { Stop-Process -Id $dp -ErrorAction SilentlyContinue }
-Write-Host "soak done: $((Get-Content $Out).Count) lines"
+[IO.File]::WriteAllText("$W\state\tabs\last.tsv", (($lines -join "`n") + "`n"))
+# Not Start-Gui (it passes --restore-tabs false): this run needs the three restored tabs.
+$script:Gui = Start-Process -FilePath $Exe -ArgumentList (@("--cols", "120", "--rows", "36", $ps) + $tabArgs + "3") -WorkingDirectory $R -PassThru
+for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 250; $script:Gui.Refresh(); if ($script:Gui.MainWindowHandle -ne 0) { break } }
+Start-Sleep 4
+$DP = (Status).daemon_pid
+function Desc([int]$root) {
+    $all = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId
+    $n = 0; $todo = @($root)
+    while ($todo.Count) { $p = $todo[0]; $todo = @($todo | Select-Object -Skip 1); foreach ($c in $all | Where-Object { $_.ParentProcessId -eq $p }) { $n++; $todo += $c.ProcessId } }
+    $n
+}
+function PWS([int]$id) { [int]((Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter "IDProcess=$id").WorkingSetPrivate / 1KB) }
+function M([int]$id) { $p = Get-Process -Id $id; "$($p.Threads.Count),$($p.HandleCount),$(PWS $id)" }
+function Wts { (@(RepoGit $R worktree list).Count - 1) + @(Get-ChildItem "$W\proj-tasks" -ErrorAction SilentlyContinue).Count }
+$script:tabs = 0; $script:dets = 0; $script:tasks = 0; $script:themes = 0; $script:fails = 0
+"t_s,gui_threads,gui_handles,gui_private_ws_kb,daemon_threads,daemon_handles,daemon_private_ws_kb,daemon_descendants,sessions,worktrees,tabs_done,detach_done,tasks_done,themes_done" | Set-Content $Out
+function Sample([int]$t) { "$t,$(M $script:Gui.Id),$(M $DP),$(Desc $DP),$((Running).Count),$(Wts),$script:tabs,$script:dets,$script:tasks,$script:themes" | Add-Content $Out }
+function Op-Tab { Keys "^+t" 1300; Keys "^+w" 300; Keys "^+w" 800; $script:tabs++ }
+function Op-Detach { Keys "%4"; Palette "detach"; Start-Sleep 0.5; Palette "attach detached"; Start-Sleep 0.8; $script:dets++ }
+function Op-Task {
+    Keys "%1"; Palette "new task"; Keys "soak task $script:tasks" 200; Keys "{ENTER}"; Keys "d" 200; Keys "{ENTER}"; Keys "{ENTER}" 2500
+    Start-Sleep 4
+    Keys "^+w"; Start-Sleep 0.5; Palette "remove a task"; Keys "{ENTER}" 1800
+    if ((Wts) -ne 0) { $script:fails++; Write-Host "task $($script:tasks): $(Wts) worktree(s) left" }
+    $script:tasks++
+}
+function Op-Theme { if ($script:themes % 2 -eq 0) { Theme "haetty classic" } else { Theme "IBM 5153 CGA" }; Palette "reload config"; $script:themes++ }
+$f = [Math]::Min(1.0, $Dur / 3600)
+$n = { param($c) [Math]::Max(1, [int][Math]::Round($c * $f)) }
+$ops = @("tab") * (& $n 200) + @("detach") * (& $n 50) + @("task") * (& $n 20) + @("theme") * (& $n 10)
+$rng = New-Object System.Random 7; $ops = $ops | Sort-Object { $rng.Next() }
+$gap = [Math]::Max(0, ($Dur - 120 - 1100 * $ops.Count / 280) / $ops.Count)
+$t0 = Get-Date; $next = 300
+Sample 0
+foreach ($op in $ops) {
+    $now = [int]((Get-Date) - $t0).TotalSeconds
+    if ($now -ge $next) { Sample $now; $next += 300 }
+    if ($script:Gui.HasExited -or -not (Get-Process -Id $DP -ErrorAction SilentlyContinue)) { Write-Host "DIED at $now s"; break }
+    switch ($op) { "tab" { Op-Tab } "detach" { Op-Detach } "task" { Op-Task } "theme" { Op-Theme } }
+    Start-Sleep -Milliseconds ([int]($gap * 1000))
+}
+while (((Get-Date) - $t0).TotalSeconds -lt $Dur) {
+    $now = [int]((Get-Date) - $t0).TotalSeconds; if ($now -ge $next) { Sample $now; $next += 300 }; Start-Sleep 5
+}
+Start-Sleep 3; Sample ([int]((Get-Date) - $t0).TotalSeconds)
+$alive = (-not $script:Gui.HasExited) -and [bool](Get-Process -Id $DP -ErrorAction SilentlyContinue)
+Stop-Gui
+Write-Host "operations: tabs $script:tabs, detach $script:dets, tasks $script:tasks, themes $script:themes; task cleanup failures $script:fails; alive at the end: $alive"
+$rows = Import-Csv $Out | ForEach-Object { $o = @{}; foreach ($p in $_.PSObject.Properties) { $o[$p.Name] = [int]$p.Value }; $o }
+$first = $rows[0]; $last = $rows[-1]
+function At([int]$t) { $rows | Sort-Object { [Math]::Abs($_.t_s - $t) } | Select-Object -First 1 }
+$ok = $true
+function Check($name, $cond, $detail) { $script:ok = $script:ok -and $cond; Write-Host "$(if ($cond) { 'PASS' } else { 'FAIL' }) ${name}: $detail" }
+Check "gui_threads" ($last.gui_threads -le $first.gui_threads + 3) "$($first.gui_threads) -> $($last.gui_threads)"
+Check "daemon_threads" ($last.daemon_threads -le $first.daemon_threads + 3) "$($first.daemon_threads) -> $($last.daemon_threads)"
+Check "gui_handles" ($last.gui_handles -le $first.gui_handles + 20) "$($first.gui_handles) -> $($last.gui_handles)"
+Check "daemon_handles" ($last.daemon_handles -le $first.daemon_handles + 20) "$($first.daemon_handles) -> $($last.daemon_handles)"
+Check "daemon_descendants" ($last.daemon_descendants -eq $first.daemon_descendants) "$($first.daemon_descendants) -> $($last.daemon_descendants)"
+Check "sessions" ($last.sessions -eq $first.sessions) "$($first.sessions) -> $($last.sessions)"
+Check "worktrees" ($last.worktrees -eq 0) "$($last.worktrees)"
+$g15 = At 900; $d45 = At 2700
+Check "gui_private_ws" ($last.gui_private_ws_kb -le $g15.gui_private_ws_kb + 4096) "$($g15.gui_private_ws_kb) kB at $($g15.t_s) s -> $($last.gui_private_ws_kb) kB"
+Check "daemon_private_ws" ($last.daemon_private_ws_kb -le $d45.daemon_private_ws_kb + 4096) "$($d45.daemon_private_ws_kb) kB at $($d45.t_s) s -> $($last.daemon_private_ws_kb) kB"
+Write-Host "VERDICT $(if ($ok -and $alive -and $script:fails -eq 0) { 'PASS' } else { 'FAIL' })"
