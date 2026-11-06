@@ -8,6 +8,8 @@ lives in `haetty/` of the `dhwan0112/claude-code-config` repository.
 Written for whoever continues the work (Claude Code included).
 
 
+> **In progress:** stage s1 (branch `haetty/s1`, worktree `~/projects/claude-code-config-wt/s1`). Remaining: integrated decorations (Linux first): decorations = auto|native|integrated|none, title row with tabs or title and min/max/close glyphs per GNOME button layout, drag/double-click/edge resize, frame dumps, §2.3 with integrated, §6.1 items
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
@@ -1545,6 +1547,15 @@ regression list, measurements), then committed, pushed and mirrored.
   19/19, Windows 18/18 (`haetty-v0.1.0` → `21505dc`, rollback, reinstall).
   The stable-release checks on the merged commit and the tag follow in the
   next entry.
+
+- **2026-11-06 Tag haetty-v0.1.1 = `d5ba833`** (approved in the stage
+  instructions). Checks on that commit's own build (`haetty 0.1.1 (commit
+  d5ba833db27b …)`): gate; regression 27/27; DESIGN §2.3 5/5; theme run
+  8/8; installer self-tests installing it after `haetty-v0.1.0` (and the
+  `haetty-v9.9.9` refusal) Linux 19/19, Windows 18/18; Windows natively: GUI
+  unit tests 72/72, `windows-smoke.ps1` 0 failures. Annotated tag pushed
+  (the tag only). The stable install recorded for the user stays v0.1.0
+  until they install this one.
 
 ### ccx comparison (milestone 3)
 
