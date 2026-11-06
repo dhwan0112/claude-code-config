@@ -1724,6 +1724,11 @@ regression list, measurements), then committed, pushed and mirrored.
   - Reference frame `workers` (new scene: worker tabs with glyphs, the
     panel's workers section), Linux and Windows, in the same commit; the
     other seven frames byte-identical. Frames: `docs/look/s3-*.png`.
+  - On 30f20db's own release build: regression 27/27, DESIGN §2.3 5/5, theme
+    run 8/8, S2 run 20/20; `orchrun.sh` then also checks §2.3 with an idle
+    worker tab showing ✓: 0 non-grey pixels (20/20). Size (`dist`): Linux
+    6 539 640 → 6 625 560 (+85 920), Windows 5 106 176 → 5 185 536
+    (+79 360); no new dependency.
   - Fixed on the way: a long palette query now keeps its end in view (the
     branch in "repository and base" was cut off).
   - Protected-area commits (approved for S3): the Stop/UserPromptSubmit
