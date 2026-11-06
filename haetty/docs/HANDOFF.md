@@ -9,6 +9,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage s2 (branch `haetty/s2`, worktree `~/projects/claude-code-config-wt/s2`). Remaining: ccx deferred features: tab rename (palette + Ctrl+Shift+R, saved in tab sets), git repo:branch tab names, closed-tabs list (20, palette reopen, resume rules), diff views vs HEAD and whole work tree (limits, timings), detach; integration tests; DESIGN §3.11 keys
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
