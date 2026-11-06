@@ -1654,6 +1654,11 @@ regression list, measurements), then committed, pushed and mirrored.
   - Measurement (release, `measure_tree_view`): 1 500 tracked files, 1 200
     changed + 300 untracked — limit 300: collect 104 ms, diff 43 ms; limit
     1 500: 966 files within 16 MiB, collect 333 ms, diff 72 ms.
+  - On 22cd266's own release build: regression 27/27, DESIGN §2.3 5/5, theme
+    run 8/8. Size (`dist`): Linux 6 465 920 → 6 539 640 (+73 720), Windows
+    5 026 304 → 5 106 176 (+79 872); no new dependency (git is a child
+    process; the palette modes, the git views and the closed list are the
+    growth).
   - Frames: `docs/look/s2-*.png` (names, rename prompt, the three diff
     views, the closed list).
 
