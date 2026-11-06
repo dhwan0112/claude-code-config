@@ -148,11 +148,13 @@ Robustness rules (stage S4, 2026-11-06):
   from the closed PTY on Linux, the pseudo console closing on Windows); the
   GUI notices (`Client::is_lost`), keeps its window and a hint, and leaves
   the tab sets as they were, so the next start reopens the tabs.
-- Builds: libghostty-vt-sys picks Zig's mode from the build script's
-  `DEBUG`; `release` keeps debug info for our crates but not for
-  `libghostty-vt-sys` (ReleaseFast — it was Zig Debug, 200-300x slower than
-  `dist`'s ReleaseSmall). `cargo test` (dev) keeps Zig Debug on purpose:
-  its safety checks run under the tests.
+- Builds: libghostty-vt-sys picks Zig's mode from its build script's
+  `DEBUG` and `OPT_LEVEL`; Cargo.toml turns debug info off for that one
+  package in `release` and `dev`, so every profile builds the optimized
+  engine — dist ReleaseSmall, release and dev/test ReleaseFast (before:
+  release and dev/test Zig Debug, 200-300x slower; T3, proven per profile by
+  `scripts/zig-mode.sh`). Zig's safety checks: a separate fuzz run with
+  `LIBGHOSTTY_VT_SYS_OPTIMIZE=ReleaseSafe`.
 
 ### 3.2 Crates
 
@@ -214,30 +216,36 @@ scrollback): 1 / 4 / 8 tabs → daemon 5.4 / 17.8 / 34.3 MB, GUI 5.5 / 6.8 /
 the GUI; a full default scrollback adds up to about 11 MB to its session
 (`examples/mem.rs`), hence the 16 MB per-session budget.
 
-Measured at the end of milestone 3 (2026-11-05; Linux under Xvfb, Windows
-11 where noted; Claude Code 2.1.318 idle with the integration on, status
-line every 3 s):
+Measured 2026-11-06 (T3) on optimized builds — `dist`, what the installers
+ship (libghostty-vt in Zig ReleaseSmall), and `release` (ReleaseFast);
+`scripts/e2e/measure.sh` under Xvfb on Linux (WSL2), 120x36 unless noted.
+The Zig mode of every profile is shown by `scripts/zig-mode.sh` (the
+`zig build -Doptimize=…` line itself). The earlier figures ("before") were
+taken with `release` builds whose engine was Zig **Debug** (see below).
 
-| Item | Target | Measured |
-|---|---|---|
-| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6 656 016 B (6.7 MB), Windows 5 210 624 B (5.2 MB), 2026-11-06 at `8d66d29` (0.2.0 candidate; 0.1.0 at `4d75fcd`: 6 437 584 / 5 014 016; each stage's step in HANDOFF.md) |
-| Idle CPU, Claude Code idle, 30 s | ~0 % | GUI 0 ticks, daemon 1 tick (10 ms) |
-| GUI + daemon, one session, default scrollback filled at 120 columns | ≤ 25 MB | 6.3 + 14.3 = 20.5 MB |
-| Per additional session, scrollback filled | ≤ 16 MB | +14.0 MB (2nd: daemon +13.1, GUI +0.9), +13.4 MB (3rd) |
-| GUI + daemon, one Claude Code tab, little scrollback | — | 5.9 + 5.1 MB |
-| Key → frame through the daemon, 120x36 | ≤ 16 ms | median 1.95 ms, p95 2.33 ms (Linux); 1.65 ms (Windows, P1) |
-| GUI draw per incremental frame, 120x36 | — | median 0.09 ms |
-| Claude Code's wait for a **synchronous** haetty hook (edit-tool PreToolUse, PermissionRequest): from Claude Code starting the process to its exit | ≤ 250 ms always (enforced by the hook's own deadline); typical ≤ 10 ms Linux, ≤ 100 ms Windows | Linux median 4.4 ms, max 5.1; Windows median 69 ms (PermissionRequest) / 76 ms (PreToolUse), max 92 ms — process start alone 57 ms there |
-| Asynchronous hooks and the status line | not waited for by Claude Code; each ends within 1 s | Linux ~3 ms, Windows ~64 ms |
-| 1 hour, 4 tabs (two writing — 500 lines every 10 s, a line every 0.2 s — two idle), stage S4 | no growth of fds / handles / threads; memory flat once scrollback is full | Linux: GUI 7.2 MB anonymous throughout, 16 fds, 7 threads; daemon 10.6 → 30.2 MB at 42 min then flat, 20 fds, 20 threads. Windows: GUI 12.4–13.2 MB private, 279–285 handles; daemon 15.3 → 46.7 MB at 40 min then flat, 189–190 handles. At `e2ec468`, before S4 (no PTY writer thread; Zig Debug engine) — not repeated; per-session thread clean-up of the final build: `tests/threads.rs` |
-| Daemon answer (`haetty status`) while one tab runs `yes` | — | avg 6 ms, max 8 ms (idle 5 / 7), `8d66d29` release |
+| Item | Target | dist (shipped) | release | before (Zig Debug engine) |
+|---|---|---|---|---|
+| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6 656 016 B, Windows 5 210 624 B (`8d66d29`, 0.2.0) | — | 0.1.0: 6 437 584 / 5 014 016 |
+| Key → frame through the daemon (`examples/latency.rs`, 300 keys) | ≤ 16 ms | median 0.96 ms, p95 1.19, max 1.50 | median 0.88, p95 1.05 | median 1.95, p95 2.33 (Linux); 1.65 (Windows, P1) |
+| Throughput through a session, `cat` in `haetty-headless`, 80x24 | — | plain lines 24 MiB/s, long wrapped lines 55 MiB/s, SGR-heavy 53 MiB/s | 34 / 72 / 66 MiB/s | 20 000 short lines in ~21 s (~5 KB/s); 3.3 M `REP` characters in 50 s |
+| Anonymous memory per session, default scrollback filled (`examples/mem.rs`) | — | 11.6–11.8 MB each (4 sessions: 47.4 MB) | 11.6–11.9 MB | — |
+| GUI + daemon, one session, default scrollback filled | ≤ 25 MB | 6.0 + 13.2 = 19.2 MB | 5.9 + 13.2 = 19.1 MB | 6.3 + 14.3 = 20.5 MB |
+| Per additional session, scrollback filled | ≤ 16 MB | +13.5 MB (2nd: GUI +1.2, daemon +12.4), 4 tabs 58.6 MB = +13.1 each | +13.8 / +13.2 | +14.0 (2nd), +13.4 (3rd) |
+| GUI + daemon, one Claude Code tab, little scrollback | — | 5.6 + 1.6 MB, 9 daemon threads | 5.6 + 1.8 MB | 5.9 + 5.1 MB |
+| Idle CPU over 30 s (all cases above) | ~0 % | GUI 0 ticks, daemon 0–1 tick | 0 / 0–1 | GUI 0, daemon 1 tick |
+| GUI draw per incremental frame while typing | — | median 0.16 ms, p95 0.29 | median 0.10, p95 0.23 | median 0.09 |
+| Claude Code's wait for a **synchronous** haetty hook (edit-tool PreToolUse, PermissionRequest): from Claude Code starting the process to its exit | ≤ 250 ms always (enforced by the hook's own deadline); typical ≤ 10 ms Linux, ≤ 100 ms Windows | not re-measured (no engine on that path) | — | Linux median 4.4 ms, max 5.1; Windows median 69 ms (PermissionRequest) / 76 ms (PreToolUse), max 92 ms — process start alone 57 ms there |
+| Asynchronous hooks and the status line | not waited for by Claude Code; each ends within 1 s | not re-measured | — | Linux ~3 ms, Windows ~64 ms |
+| 1 hour, 4 tabs (two writing — 500 lines every 10 s, a line every 0.2 s — two idle), stage S4 | no growth of fds / handles / threads; memory flat once scrollback is full | replaced by the T4 soak v2 (HANDOFF.md) | — | at `e2ec468` (Zig Debug engine, no PTY writer thread): Linux GUI 7.2 MB, daemon 10.6 → 30.2 MB then flat; Windows GUI 12.4–13.2 MB, daemon 15.3 → 46.7 MB then flat; no fd/handle/thread growth |
+| Daemon answer (`haetty status`) while one tab runs `yes` | — | — | avg 6 ms, max 8 ms (idle 5 / 7), `8d66d29` | — |
 
-Measurements above taken with `release` builds before 2026-11-06 (stage
-S4) ran libghostty-vt in Zig Debug mode (`release` kept debug info, so the
-build script chose Debug) — about 200-300x slower on scrolling output than
-the ReleaseSmall of `dist` and the ReleaseFast `release` uses now. Memory
-and key-to-frame figures are therefore upper bounds for the engine's part;
-`dist` (what is installed) was never affected.
+Key → frame and memory hardly moved: they are bound by the round trip and
+the scrollback bytes, not by the engine's speed. Throughput is where the
+Debug engine was 200–300x slower; `dist` (installed builds) always had the
+optimized engine. Before T3 the gate's `cargo test` also ran the Debug
+engine; now `dev`/`test` build it in ReleaseFast (Cargo.toml), and a fuzz
+run with Zig's safety checks is a separate command
+(`LIBGHOSTTY_VT_SYS_OPTIMIZE=ReleaseSafe`, README "Testing").
 
 ### 3.5 Local socket
 

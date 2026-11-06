@@ -43,8 +43,16 @@ codegen-units = 1
 debug = 0
 strip = true
 
-# libghostty-vt-sys picks the Zig mode from the build script's DEBUG: with
-# release's debug info it built Zig in Debug mode, 200-300x slower than dist
-# (stage S4). Release keeps debug info for our crates only.
+# libghostty-vt-sys picks the Zig optimize mode from its build script's
+# environment: DEBUG=true (any debug info) -> Debug; else OPT_LEVEL s/z ->
+# ReleaseSmall; else ReleaseFast. Without these two overrides `release`
+# (debug info for profiling) and `dev`/`test` (the gate's `cargo test`)
+# built the engine in Zig Debug, 200-300x slower than `dist` (T3,
+# scripts/zig-mode.sh). Our own crates keep their debug info.
+# dist -> ReleaseSmall (what the installers ship), release -> ReleaseFast,
+# dev/test -> ReleaseFast.
 [profile.release.package.libghostty-vt-sys]
 debug = 0
+
+[profile.dev.package.libghostty-vt-sys]
+debug = false

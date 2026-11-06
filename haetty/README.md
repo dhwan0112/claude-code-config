@@ -565,6 +565,16 @@ real GUI and daemon under Xvfb (and on Windows): see
 test directory (`HAETTY_TEST_TMP`) and use their own `HAETTY_INSTANCE=dev`
 daemon.
 
+Every profile builds libghostty-vt optimized (`scripts/zig-mode.sh` shows the
+Zig mode per profile). To run the engine fuzzing with Zig's safety checks on:
+
+```sh
+LIBGHOSTTY_VT_SYS_OPTIMIZE=ReleaseSafe CARGO_TARGET_DIR=/tmp/safe-target \
+  HAETTY_VT_FUZZ=full HAETTY_TEST_TMP=/tmp/haetty-test cargo test --release -p haetty-core --test vtfuzz
+```
+
+`scripts/e2e/measure.sh [dist|release]` measures the DESIGN.md §3.4 budgets.
+
 ## Building
 
 Needs Rust 1.90+ and Zig 0.15.2 on `PATH` (libghostty-vt is built from

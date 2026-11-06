@@ -16,7 +16,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage t3 (branch `haetty/t3`, worktree `~/projects/claude-code-config-wt/t3`). Remaining: T3: prove the Zig optimize mode per profile from the zig command line, dev/test on ReleaseFast, re-measure DESIGN §3.4 (key->frame, throughput, memory per tab) on optimized builds
 
 ## 1. Goal
 
@@ -1987,6 +1986,37 @@ regression list, measurements), then committed, pushed and mirrored.
     submitted, scrubbed) is in `scripts/e2e/README.md`. The gate needs no
     corpus: `vtfuzz`'s quick mode mutates a built-in Claude-Code-like
     stream and generated streams.
+
+- **2026-11-06 T3 — every build runs the optimized engine; budgets
+  re-measured.** Order note: T5 and T6 come before T4 (T4 must run on the
+  final candidate build, and T5/T6 change code).
+  - Cause, proven from the zig command line (`scripts/zig-mode.sh`: a `zig`
+    shim logs `zig build …` and the build script's `PROFILE`/`DEBUG`/
+    `OPT_LEVEL`; a fresh target per profile, the Ghostty checkout reused):
+
+    | Build | Build script env | Zig mode |
+    |---|---|---|
+    | `release` without the S4 override (Cargo.toml as before S4) | `DEBUG=true OPT_LEVEL=3` | **Debug** |
+    | `release` with the S4 override | `DEBUG=false OPT_LEVEL=3` | ReleaseFast |
+    | `dev`, `test` before T3 (the gate's `cargo test`) | `DEBUG=true OPT_LEVEL=0` | **Debug** |
+    | `dev`, `test` after T3 (`[profile.dev.package.libghostty-vt-sys] debug = false`) | `DEBUG=false OPT_LEVEL=0` | ReleaseFast |
+    | `dist` (installers) | `DEBUG=false OPT_LEVEL=s` | ReleaseSmall |
+
+    So yes: `release`'s `debug = 1` made the build script choose Debug; the
+    package override fixes it, and now `dev`/`test` too — the gate and every
+    measurement run an optimized engine. No measurement-only profile was
+    needed: measurements use `dist` (shipped) and `release`.
+  - Zig's safety checks are no longer in the gate's tests; instead a full
+    VT fuzz with `LIBGHOSTTY_VT_SYS_OPTIMIZE=ReleaseSafe` (48 sessions,
+    2.4 MB, recorded Claude Code output included): no safety panic, 0.6 s
+    (README "Testing").
+  - DESIGN.md §3.4 re-measured with `scripts/e2e/measure.sh` (dist and
+    release) and the table replaced, the Debug-engine values kept as
+    "before": key → frame median 1.95 → 0.96 ms (dist) / 0.88 (release);
+    throughput (plain lines) ~5 KB/s → 24 MiB/s (dist) / 34 (release);
+    one filled session GUI + daemon 20.5 → 19.2 MB; each further filled
+    session +14.0 → +13.5 / +13.1 MB; one idle Claude Code tab 5.9 + 5.1 →
+    5.6 + 1.6 MB; idle CPU 0–1 tick in 30 s. Every budget is met.
 
 ### ccx comparison (milestone 3)
 
