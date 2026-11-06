@@ -2,8 +2,11 @@
 //! daemon, the real `haetty hook` reporter, a fake `claude` that records
 //! every byte it reads, and `haetty_cc::orch::send` — the only way the
 //! orchestrator writes to a worker. Checked on the bytes that reach the
-//! program, not only on the replies. Unix only (sh, stty).
-#![cfg(unix)]
+//! program, not only on the replies. Linux (a raw `cat`) and Windows (T5: a
+//! copy of powershell.exe named claude.exe reading keys with
+//! `[Console]::ReadKey` through the pseudo console).
+
+mod common;
 
 use std::io::Write;
 use std::path::Path;
@@ -16,10 +19,8 @@ use haetty_proto::paths::Endpoint;
 use haetty_proto::wire::{Attention, ClaudeInfo, CreateSpec, Grid, Origin};
 use haetty_proto::{Client, RemoteHandle, Role};
 
-const BIN: &str = env!("CARGO_BIN_EXE_haetty");
-
 fn hook(ep: &Endpoint, session: &str, event: &str, json: &str) {
-    let mut c = Command::new(BIN)
+    let mut c = Command::new(common::bin())
         .args(["hook", event])
         .env("HAETTY_SOCKET", &ep.0)
         .env("HAETTY_SESSION_ID", session)
@@ -55,11 +56,46 @@ fn settled(p: &Path, settle: Duration) -> String {
     read(p)
 }
 
+/// Linux: raw terminal, `cat` appends every byte.
+#[cfg(unix)]
+fn fake_claude(dir: &Path, got: &Path) -> (std::path::PathBuf, Vec<String>) {
+    let fake = dir.join("bin/claude");
+    std::fs::write(&fake, format!("#!/bin/sh\nstty raw -echo\necho ready > {0}.up\nexec cat >> {0}\n", got.display()))
+        .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (fake, vec![])
+}
+
+/// Windows: powershell.exe copied as claude.exe runs a script that appends
+/// each key's character (no echo, no line editing).
+#[cfg(windows)]
+fn fake_claude(dir: &Path, got: &Path) -> (std::path::PathBuf, Vec<String>) {
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+    let ps = Path::new(&root).join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+    let fake = dir.join(r"bin\claude.exe");
+    std::fs::copy(&ps, &fake).unwrap();
+    let script = dir.join("fake.ps1");
+    let g = got.display().to_string().replace('\'', "''");
+    std::fs::write(
+        &script,
+        format!(
+            "[IO.File]::WriteAllText('{g}.up', 'ready')\r\n\
+             while ($true) {{ $k = [Console]::ReadKey($true); [IO.File]::AppendAllText('{g}', [string]$k.KeyChar) }}\r\n"
+        ),
+    )
+    .unwrap();
+    let args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"];
+    let mut v: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+    v.push(script.display().to_string());
+    (fake, v)
+}
+
 #[test]
 fn orchestrator_input_is_program_input_and_never_answers_a_question() {
     let dir = haetty_testkit::run_dir("orchestrator");
     std::fs::create_dir_all(dir.join("bin")).unwrap();
-    let ep = Endpoint(dir.join("rt").join("daemon.sock"));
+    let ep = common::endpoint(&dir, "orchestrator");
     let cfg = Config { endpoint: ep.clone(), state_dir: dir.join("state"), run_dir: dir.join("rt"), idle_exit: None };
     let _d = haetty_daemon::spawn(cfg);
     let end = Instant::now() + Duration::from_secs(5);
@@ -71,17 +107,13 @@ fn orchestrator_input_is_program_input_and_never_answers_a_question() {
         }
     };
     // A fake Claude Code (the integration applies to programs named claude):
-    // raw terminal, every byte it reads appended to a file.
+    // every byte it reads appended to a file.
     let got = dir.join("read.bin");
-    let fake = dir.join("bin/claude");
-    std::fs::write(&fake, format!("#!/bin/sh\nstty raw -echo\necho ready > {0}.up\nexec cat >> {0}\n", got.display()))
-        .unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (fake, args) = fake_claude(&dir, &got);
     let id = client
         .create(CreateSpec {
             program: fake.to_string_lossy().into_owned(),
-            args: vec![],
+            args,
             cwd: None,
             env: vec![],
             size: Grid { cols: 60, rows: 10, cell_width: 9, cell_height: 18 },
@@ -101,7 +133,7 @@ fn orchestrator_input_is_program_input_and_never_answers_a_question() {
         assert!(Instant::now() < end, "the fake claude did not start");
         std::thread::sleep(Duration::from_millis(10));
     }
-    std::thread::sleep(Duration::from_millis(100)); // past `stty`, into `cat`
+    std::thread::sleep(Duration::from_millis(300)); // past `stty` / into ReadKey
     let quiet = Duration::from_millis(300);
 
     // 1. Nothing reported yet (Claude Code may show a start-up dialog).

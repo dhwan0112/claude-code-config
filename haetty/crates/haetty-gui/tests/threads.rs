@@ -3,110 +3,87 @@
 //! process — a third whose program floods terminal queries and never reads
 //! its input (the writer may sit in a blocked `write`), a third still
 //! printing, a third already ended — and the daemon's thread count returns
-//! to where it was. Unix only (/proc, sh).
-#![cfg(unix)]
+//! to where it was. Linux and Windows (T5): on Windows the count may differ
+//! by the system's own pool threads, so up to 3 more are allowed there (a
+//! leak would be 20 or more).
 
-use std::process::{Command, Stdio};
+mod common;
+
 use std::time::{Duration, Instant};
 
-use haetty_proto::paths::Endpoint;
-use haetty_proto::wire::{CreateSpec, Grid};
-use haetty_proto::{Client, Role};
+use common::{connect, daemon, endpoint, spec, thread_names, threads};
 
-const BIN: &str = env!("CARGO_BIN_EXE_haetty");
-
-fn threads(pid: u32) -> usize {
-    std::fs::read_dir(format!("/proc/{pid}/task")).map_or(0, |d| d.count())
-}
-
-/// Thread names and how many of each.
-fn names(pid: u32) -> std::collections::BTreeMap<String, usize> {
-    let mut m = std::collections::BTreeMap::new();
-    for e in std::fs::read_dir(format!("/proc/{pid}/task")).into_iter().flatten().flatten() {
-        let n = std::fs::read_to_string(e.path().join("comm")).unwrap_or_default().trim().to_string();
-        *m.entry(n).or_insert(0) += 1;
+/// (program, args) for the three kinds of session.
+fn programs() -> [(&'static str, Vec<&'static str>); 3] {
+    #[cfg(unix)]
+    {
+        [
+            (
+                "sh",
+                vec![
+                    "-c",
+                    "stty raw -echo; i=0; while [ $i -lt 4000 ]; do printf '\\033[6n\\033[c'; i=$((i+1)); done; exec sleep 60",
+                ],
+            ),
+            ("sh", vec!["-c", "while :; do echo out; done"]),
+            ("sh", vec!["-c", "true"]),
+        ]
     }
-    m
-}
-
-fn spec(script: &str) -> CreateSpec {
-    CreateSpec {
-        program: "sh".into(),
-        args: vec!["-c".into(), script.into()],
-        cwd: None,
-        env: vec![],
-        size: Grid { cols: 40, rows: 8, cell_width: 9, cell_height: 18 },
-        scrollback_limit: 100_000,
-        default_fg: [200, 200, 200],
-        default_bg: [20, 20, 20],
-        palette: vec![],
-        cursor_color: None,
-        claude_integration: false,
+    #[cfg(windows)]
+    {
+        [
+            (
+                "powershell.exe",
+                vec![
+                    "-NoProfile",
+                    "-Command",
+                    "$e=[char]27; for($i=0;$i -lt 4000;$i++){[Console]::Out.Write(\"$e[6n$e[c\")}; Start-Sleep 60",
+                ],
+            ),
+            ("cmd.exe", vec!["/c", "for /L %i in (1,0,2) do @echo out"]),
+            ("cmd.exe", vec!["/c", "exit 0"]),
+        ]
     }
 }
 
 #[test]
 fn closed_sessions_leave_no_threads() {
     let dir = haetty_testkit::run_dir("threads");
-    let rt = dir.join("rt");
-    std::fs::create_dir_all(&rt).unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&rt, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let ep = Endpoint(rt.join("d.sock"));
-    let mut daemon = Command::new(BIN)
-        .arg("daemon")
-        .env("HAETTY_INSTANCE", "dev")
-        .env("HAETTY_SOCKET", &ep.0)
-        .env("HAETTY_STATE_DIR", dir.join("state"))
-        .env("XDG_RUNTIME_DIR", &rt)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let end = Instant::now() + Duration::from_secs(10);
-    let client = loop {
-        match Client::connect(&ep, Role::Control, "threads-test") {
-            Ok(c) => break c,
-            Err(_) if Instant::now() < end => std::thread::sleep(Duration::from_millis(20)),
-            Err(e) => panic!("daemon: {e}"),
-        }
-    };
-    let pid = daemon.id();
+    let ep = endpoint(&dir, "threads");
+    let mut d = daemon(&dir, &ep);
+    let client = connect(&ep, "threads-test");
+    let pid = d.id();
+    let slack = if cfg!(windows) { 3 } else { 0 };
     // One session opened and closed first: lazily started threads count in
     // the baseline.
-    let warm = client.create(spec("sleep 60")).unwrap();
+    let (wp, wa) = &programs()[2];
+    let warm = client.create(spec(wp, wa)).unwrap();
     client.close(&warm).unwrap();
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(800));
     let base = threads(pid);
-    let scripts = [
-        // Floods queries (the answers fill its input) and never reads.
-        "stty raw -echo; i=0; while [ $i -lt 4000 ]; do printf '\\033[6n\\033[c'; i=$((i+1)); done; exec sleep 60",
-        "while :; do echo out; done",
-        "true",
-    ];
+    let progs = programs();
     for round in 0..20 {
-        let ids: Vec<String> = scripts.iter().map(|s| client.create(spec(s)).unwrap()).collect();
+        let ids: Vec<String> = progs.iter().map(|(p, a)| client.create(spec(p, a)).unwrap()).collect();
         std::thread::sleep(Duration::from_millis(if round % 5 == 0 { 300 } else { 50 }));
         for id in &ids {
             let _ = client.close(id);
         }
     }
-    let end = Instant::now() + Duration::from_secs(15);
+    let end = Instant::now() + Duration::from_secs(30);
     loop {
         let now = threads(pid);
         let live = client.list_sessions().unwrap().len();
-        if now <= base && live == 0 {
+        if now <= base + slack && live == 0 {
             break;
         }
         assert!(
             Instant::now() < end,
-            "daemon threads {base} before, {now} after 60 sessions ({live} still listed): {:?}",
-            names(pid)
+            "daemon threads {base} before, {now} after 60 sessions ({live} still listed): {}",
+            thread_names(pid)
         );
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(200));
     }
-    let _ = daemon.kill();
-    let _ = daemon.wait();
+    let _ = d.kill();
+    let _ = d.wait();
     haetty_testkit::remove_dir_all(&dir);
 }

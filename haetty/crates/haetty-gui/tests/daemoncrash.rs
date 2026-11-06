@@ -1,94 +1,71 @@
-//! A daemon that dies (SIGKILL, by PID — stage S4): the client notices
-//! (`is_lost`, then `Exited` for every session it shows) and the sessions'
-//! programs end with it — the child and a background grandchild — so no
+//! A daemon that dies (killed by its own PID — stage S4): the client
+//! notices (`is_lost`, then `Exited` for every session it shows) and the
+//! sessions' programs end with it — the child and a grandchild — so no
 //! orphan keeps running. The real `haetty daemon` binary in a test run
-//! directory. Unix only (sh, /proc).
-#![cfg(unix)]
+//! directory. Linux (SIGKILL; the closed PTY hangs the programs up) and
+//! Windows (TerminateProcess; the pseudo console closes) — T5.
 
-use std::path::Path;
-use std::process::{Command, Stdio};
+mod common;
+
 use std::time::{Duration, Instant};
 
-use haetty_proto::paths::Endpoint;
-use haetty_proto::wire::{CreateSpec, Grid};
-use haetty_proto::{Client, Role};
+use common::{alive, children, connect, daemon, endpoint, spec};
 
-const BIN: &str = env!("CARGO_BIN_EXE_haetty");
-
-fn running(pid: u32) -> bool {
-    // A zombie is not running (state Z); its parent was the daemon.
-    std::fs::read_to_string(format!("/proc/{pid}/stat"))
-        .is_ok_and(|s| s.rsplit(')').next().is_some_and(|r| !r.trim_start().starts_with('Z')))
+/// (program, args) of a session whose program starts a grandchild, and the
+/// grandchild's PID once it runs.
+#[cfg(unix)]
+fn session(dir: &std::path::Path) -> (String, Vec<String>, std::path::PathBuf) {
+    let gpid = dir.join("grandchild.pid");
+    let script = format!("sleep 600 & echo $! > '{}'; wait", gpid.display());
+    ("sh".into(), vec!["-c".into(), script], gpid)
 }
 
-fn wait_file(p: &Path) -> String {
-    let end = Instant::now() + Duration::from_secs(5);
+#[cfg(windows)]
+fn session(dir: &std::path::Path) -> (String, Vec<String>, std::path::PathBuf) {
+    ("cmd.exe".into(), vec!["/c".into(), "ping -n 600 127.0.0.1 > nul".into()], dir.join("unused"))
+}
+
+fn grandchild(child: u32, _gpid: &std::path::Path) -> u32 {
+    let end = Instant::now() + Duration::from_secs(10);
     loop {
-        if let Ok(s) = std::fs::read_to_string(p) {
+        #[cfg(unix)]
+        if let Ok(s) = std::fs::read_to_string(_gpid) {
             if s.ends_with('\n') {
-                return s.trim().to_string();
+                return s.trim().parse().unwrap();
             }
         }
-        assert!(Instant::now() < end, "{} did not appear", p.display());
-        std::thread::sleep(Duration::from_millis(10));
+        #[cfg(windows)]
+        if let Some(p) = children(child).into_iter().next() {
+            return p;
+        }
+        let _ = child;
+        assert!(Instant::now() < end, "the grandchild did not start");
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
 
 #[test]
 fn a_killed_daemon_is_noticed_and_leaves_no_orphans() {
     let dir = haetty_testkit::run_dir("daemoncrash");
-    let rt = dir.join("rt");
-    std::fs::create_dir_all(&rt).unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&rt, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let ep = Endpoint(rt.join("d.sock"));
-    let mut daemon = Command::new(BIN)
-        .arg("daemon")
-        .env("HAETTY_INSTANCE", "dev")
-        .env("HAETTY_SOCKET", &ep.0)
-        .env("HAETTY_STATE_DIR", dir.join("state"))
-        .env("XDG_RUNTIME_DIR", &rt)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let end = Instant::now() + Duration::from_secs(10);
-    let client = loop {
-        match Client::connect(&ep, Role::Control, "crash-test") {
-            Ok(c) => break c,
-            Err(_) if Instant::now() < end => std::thread::sleep(Duration::from_millis(20)),
-            Err(e) => panic!("daemon: {e}"),
-        }
-    };
-    assert_eq!(client.daemon_pid, daemon.id());
-    let gpid = dir.join("grandchild.pid");
-    let script = format!("sleep 600 & echo $! > '{}'; wait", gpid.display());
-    let id = client
-        .create(CreateSpec {
-            program: "sh".into(),
-            args: vec!["-c".into(), script],
-            cwd: None,
-            env: vec![],
-            size: Grid { cols: 40, rows: 8, cell_width: 9, cell_height: 18 },
-            scrollback_limit: 100_000,
-            default_fg: [200, 200, 200],
-            default_bg: [20, 20, 20],
-            palette: vec![],
-            cursor_color: None,
-            claude_integration: false,
-        })
-        .unwrap();
+    let ep = endpoint(&dir, "daemoncrash");
+    let mut d = daemon(&dir, &ep);
+    let client = connect(&ep, "crash-test");
+    assert_eq!(client.daemon_pid, d.id());
+    let (prog, args, gpid) = session(&dir);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let id = client.create(spec(&prog, &args)).unwrap();
     let s = client.attach(&id, None).unwrap();
     let child = client.list_sessions().unwrap()[0].pid.expect("child pid");
-    let grandchild: u32 = wait_file(&gpid).parse().unwrap();
-    assert!(running(child) && running(grandchild));
+    let grandchild = grandchild(child, &gpid);
+    assert!(alive(child) && alive(grandchild));
     assert!(!client.is_lost());
+    // Everything the daemon started (Windows: also the console host).
+    let started: Vec<u32> = children(d.id());
 
-    daemon.kill().unwrap(); // SIGKILL, this daemon's own PID
-    let _ = daemon.wait();
+    d.kill().unwrap(); // this daemon's own PID
+    let _ = d.wait();
 
-    let end = Instant::now() + Duration::from_secs(5);
+    let end = Instant::now() + Duration::from_secs(10);
     let mut exited = false;
     while !exited {
         assert!(Instant::now() < end, "no Exited after the daemon died");
@@ -97,15 +74,11 @@ fn a_killed_daemon_is_noticed_and_leaves_no_orphans() {
         }
     }
     assert!(client.is_lost(), "the client knows the daemon is gone");
-    let end = Instant::now() + Duration::from_secs(5);
-    while running(child) || running(grandchild) {
-        assert!(
-            Instant::now() < end,
-            "orphans: child {child} running {}, grandchild {grandchild} running {}",
-            running(child),
-            running(grandchild)
-        );
-        std::thread::sleep(Duration::from_millis(20));
+    let end = Instant::now() + Duration::from_secs(10);
+    let left = || -> Vec<u32> { started.iter().chain([&child, &grandchild]).copied().filter(|p| alive(*p)).collect() };
+    while !left().is_empty() {
+        assert!(Instant::now() < end, "orphans still running: {:?} (child {child}, grandchild {grandchild})", left());
+        std::thread::sleep(Duration::from_millis(100));
     }
     haetty_testkit::remove_dir_all(&dir);
 }

@@ -17,7 +17,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage t5 (branch `haetty/t5`, worktree `~/projects/claude-code-config-wt/t5`). Remaining: T5: Windows coverage: Rust integration tests daemoncrash/threads/orchestrator on Windows where possible, Windows GUI e2e for S2 (tab features) and S3 (orchestrator) via SendKeys
 
 ## 1. Goal
 
@@ -684,6 +683,13 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     `claude` process of those tabs is left (`ps` / Task Manager); start haetty
     again — both conversations resume. On Windows also check that no
     `node`/`claude` or `OpenConsole` process of those tabs stays.
+
+29. **Windows GUI end-to-end runs** (T5; need a desktop nobody uses): with
+    the computer idle (no input for 2 minutes; do not touch it while they
+    run), run `scripts/e2e/windows/tabs.ps1` and
+    `scripts/e2e/windows/orchestrator.ps1` (scripts/e2e/README.md,
+    Windows) against the candidate's `haetty.exe`; both must end with 0
+    failed. They skip by themselves when the desktop is in use.
 
 #### B. Linux with a real account (Claude Code logged in)
 
@@ -2019,6 +2025,50 @@ regression list, measurements), then committed, pushed and mirrored.
     one filled session GUI + daemon 20.5 → 19.2 MB; each further filled
     session +14.0 → +13.5 / +13.1 MB; one idle Claude Code tab 5.9 + 5.1 →
     5.6 + 1.6 MB; idle CPU 0–1 tick in 30 s. Every budget is met.
+
+- **2026-11-06 T5 — Windows test coverage.**
+  - Moved to Windows (one source for both platforms,
+    `crates/haetty-gui/tests/common/mod.rs`: the binary from
+    `HAETTY_TEST_BIN`, a named pipe instead of a socket, process queries
+    through `tasklist` / PowerShell instead of `/proc`):
+    - `orchestrator` — the safety boundary on the bytes that reach the
+      program: on Windows the fake Claude Code is `powershell.exe` copied
+      as `claude.exe`, reading keys with `[Console]::ReadKey` through the
+      pseudo console. Passed natively (Windows 11): held before a turn,
+      while busy and while asking; no program byte while asking; the
+      person's key and one paste + Enter after the turn arrive exactly.
+    - `daemoncrash` — `cmd /c ping -n 600 …` as child and grandchild; the
+      daemon killed by its PID (TerminateProcess): `is_lost`, `Exited`,
+      no orphan (child, grandchild, console host). Passed natively.
+    - `threads` — 60 sessions (PowerShell flooding queries without
+      reading, `cmd` printing in a loop, `cmd /c exit 0`): the daemon's
+      thread count back to its baseline (+3 allowed for Windows' own pool
+      threads; a leak is 20+). Passed natively.
+    - Found while porting: the test helper did not create the run folder
+      the daemon writes Claude Code's settings into on Windows, so the
+      integration was silently off — fixed in the helper (the daemon logs
+      the failed write; no product change).
+  - Not moved (outside T5's three; reason): `instances` (Unix default
+    socket and XDG directories by design), `permission` (could be ported
+    like `orchestrator`; not asked), `ipcfuzz` (raw Unix socket client;
+    a named-pipe client would need `\\.\pipe` opened as a file — possible
+    later), `vtfuzz` and the core session tests (sh, `cat`, python3
+    helpers), `daemon` tests (sh).
+  - Windows GUI end-to-end for S2 and S3: `scripts/e2e/windows/tabs.ps1`
+    and `orchestrator.ps1` (+ `lib.ps1`: isolated dev instance, the fake
+    Claude Code, keys through SendKeys only while the haetty window is in
+    the foreground, hook/status calls as hidden processes — `cmd /c` console
+    windows took the foreground and keys went missing). `tabs.ps1` ran 13/14
+    (repo:branch names, branch follow, session name first, typed name not
+    logged, empty name → automatic, diff vs HEAD and working tree, closed
+    tab with its conversation, reopen with `--resume`, never twice, detach,
+    the only tab kept, attach); the one failure (rename) was lost keys: the
+    foreground was taken by another application the person was using
+    (a game, seen as the foreground process). Because SendInput types into
+    whatever window is in front, the scripts now SKIP unless the desktop
+    had no input for 120 s and stop at once when haetty loses the
+    foreground; `orchestrator.ps1` was therefore not run (the desktop was in
+    use) — §6.1 item 29.
 
 ### ccx comparison (milestone 3)
 

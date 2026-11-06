@@ -23,9 +23,40 @@ HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/xvfb.sh bash scripts/e2e/tabs.sh /t
 | `look.sh`, `dump-sample.sh` | frame dumps for looking at by hand |
 | `firehose.sh` | daemon answer time while a tab runs `yes` |
 | `record-claude.sh DIR` | records Claude Code's terminal output for the VT fuzz corpus (see below) |
-| `windows/*.ps1` | Windows: `daemon-crash.ps1`, `soak.ps1` (copy with `scripts/test-guard.ps1`, see each header) |
+| `windows/*.ps1` | Windows: `tabs.ps1` (the S2 tab features), `orchestrator.ps1` (S3), `daemon-crash.ps1`, `soak.ps1`; see below |
 
 `run-all.sh` and `scripts/gate.sh` use nothing outside the repository.
+
+## Windows
+
+The integration tests `orchestrator`, `daemoncrash` and `threads` run on Windows too. Build the test executables in
+WSL and run them natively, pointing them at a Windows `haetty.exe` (the path cargo compiled into them is a WSL
+path):
+
+```sh
+cargo test -p haetty-gui --target x86_64-pc-windows-gnu --no-run --test orchestrator --test daemoncrash --test threads
+cargo build -p haetty-gui --target x86_64-pc-windows-gnu
+# copy target/x86_64-pc-windows-gnu/debug/deps/{orchestrator,daemoncrash,threads}-*.exe and debug/haetty.exe to Windows
+```
+
+```powershell
+$env:HAETTY_TEST_TMP = "$env:PUBLIC\haetty-test"; $env:HAETTY_TEST_BIN = "C:\path\to\haetty.exe"
+.\orchestrator.exe; .\daemoncrash.exe; .\threads.exe
+```
+
+The GUI scripts (`windows/tabs.ps1`, `windows/orchestrator.ps1`) drive a real haetty window with SendInput
+(`SendKeys`). Copy `scripts/test-guard.ps1` and `scripts/e2e/windows/` keeping that layout, then run with pwsh
+(they are UTF-8):
+
+```powershell
+$env:HAETTY_TEST_TMP = "$env:PUBLIC\haetty-test"; pwsh -File scripts\e2e\windows\tabs.ps1 -Exe C:\path\to\haetty.exe
+```
+
+SendInput types into whatever window is in front, so these scripts only run on a desktop nobody is using: they
+SKIP (exit 77) unless there was no keyboard or mouse input for 120 s, and they stop at once (exit 2) when the
+haetty window is not in the foreground — they never keep typing elsewhere. Do not use the computer while they run.
+The fake Claude Code they use is `powershell.exe` copied as `claude.exe` (the integration applies to programs of
+that name) running a script that logs its folder and arguments and records each key it reads.
 
 ## Xvfb without root
 
