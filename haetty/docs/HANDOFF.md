@@ -1818,7 +1818,12 @@ regression list, measurements), then committed, pushed and mirrored.
     40 min, then flat, handles 189–190, threads 23 → 20. No growth in
     handles, fds or threads; memory flat once scrollback is full. CSVs:
     `~/m4/soak/soak-linux.csv`, `C:\Users\Public\haetty-smoke\soak\`.
-  - Gate on the final S4 commit: see the next entry's line.
+  - On 9fabc3b's own release build: regression 27/27, DESIGN §2.3 5/5, theme
+    run 8/8, S1 title run 13/13, S2 run 20/20, S3 run 20/20, crash run 9/9,
+    full VT fuzz 48 sessions 0.39 s; Windows GUI unit tests 83 + 1 ignored.
+    Size (`dist`): Linux 6 625 560 → 6 645 256 (+19 696), Windows
+    5 185 536 → 5 202 432 (+16 896); `postcard` added as a dev-dependency of
+    haetty-daemon only (the IPC fuzz test; not in any binary).
 
 ### ccx comparison (milestone 3)
 
