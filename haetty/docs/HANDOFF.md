@@ -13,6 +13,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage s5b (branch `haetty/s5b`, worktree `~/projects/claude-code-config-wt/s5b`). Remaining: follow-up: thread-lifetime regression test for the S4 PTY writer thread, corrected soak notes and CSV path, DESIGN §3.4 budget figures
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
