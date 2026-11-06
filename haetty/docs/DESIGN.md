@@ -129,6 +129,11 @@ Robustness rules (stage S4, 2026-11-06):
 - Grid sizes are clamped to 1..=4096 columns and 1..=2048 rows (a 65535 x
   65535 resize from any Control client ended the engine thread).
 - A dropped session stops without processing queued output first.
+- Frontend commands (snapshots, input, resizes, shutdown) have their own
+  unbounded channel, read before the bounded output channel and again
+  after at most 16 output chunks: a busy session answers a snapshot at
+  once, and no sender waits for it (the daemon's main loop asks for
+  snapshots; with a slow engine a firehose session had held it up).
 - A session that ends while bytes still wait for a child that does not
   read: the writer stops after its current 4 KiB chunk, and the child gets
   what closing the terminal would give it — SIGHUP and the terminal's
@@ -215,7 +220,7 @@ line every 3 s):
 
 | Item | Target | Measured |
 |---|---|---|
-| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6 437 584 B (6.4 MB), Windows 5 014 016 B (5.0 MB), 2026-11-06 at `4d75fcd` (themes, theme change while running, `--version`; see HANDOFF.md §6.4 for each step) |
+| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6 656 016 B (6.7 MB), Windows 5 210 624 B (5.2 MB), 2026-11-06 at `8d66d29` (0.2.0 candidate; 0.1.0 at `4d75fcd`: 6 437 584 / 5 014 016; each stage's step in HANDOFF.md) |
 | Idle CPU, Claude Code idle, 30 s | ~0 % | GUI 0 ticks, daemon 1 tick (10 ms) |
 | GUI + daemon, one session, default scrollback filled at 120 columns | ≤ 25 MB | 6.3 + 14.3 = 20.5 MB |
 | Per additional session, scrollback filled | ≤ 16 MB | +14.0 MB (2nd: daemon +13.1, GUI +0.9), +13.4 MB (3rd) |
@@ -224,6 +229,15 @@ line every 3 s):
 | GUI draw per incremental frame, 120x36 | — | median 0.09 ms |
 | Claude Code's wait for a **synchronous** haetty hook (edit-tool PreToolUse, PermissionRequest): from Claude Code starting the process to its exit | ≤ 250 ms always (enforced by the hook's own deadline); typical ≤ 10 ms Linux, ≤ 100 ms Windows | Linux median 4.4 ms, max 5.1; Windows median 69 ms (PermissionRequest) / 76 ms (PreToolUse), max 92 ms — process start alone 57 ms there |
 | Asynchronous hooks and the status line | not waited for by Claude Code; each ends within 1 s | Linux ~3 ms, Windows ~64 ms |
+| 1 hour, 4 tabs (two writing — 500 lines every 10 s, a line every 0.2 s — two idle), stage S4 | no growth of fds / handles / threads; memory flat once scrollback is full | Linux: GUI 7.2 MB anonymous throughout, 16 fds, 7 threads; daemon 10.6 → 30.2 MB at 42 min then flat, 20 fds, 20 threads. Windows: GUI 12.4–13.2 MB private, 279–285 handles; daemon 15.3 → 46.7 MB at 40 min then flat, 189–190 handles. At `e2ec468`, before S4 (no PTY writer thread; Zig Debug engine) — not repeated; per-session thread clean-up of the final build: `tests/threads.rs` |
+| Daemon answer (`haetty status`) while one tab runs `yes` | — | avg 6 ms, max 8 ms (idle 5 / 7), `8d66d29` release |
+
+Measurements above taken with `release` builds before 2026-11-06 (stage
+S4) ran libghostty-vt in Zig Debug mode (`release` kept debug info, so the
+build script chose Debug) — about 200-300x slower on scrolling output than
+the ReleaseSmall of `dist` and the ReleaseFast `release` uses now. Memory
+and key-to-frame figures are therefore upper bounds for the engine's part;
+`dist` (what is installed) was never affected.
 
 ### 3.5 Local socket
 

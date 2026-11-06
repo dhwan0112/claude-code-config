@@ -13,7 +13,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage s5b (branch `haetty/s5b`, worktree `~/projects/claude-code-config-wt/s5b`). Remaining: follow-up: thread-lifetime regression test for the S4 PTY writer thread, corrected soak notes and CSV path, DESIGN §3.4 budget figures
 
 ## 1. Goal
 
@@ -1820,7 +1819,7 @@ regression list, measurements), then committed, pushed and mirrored.
     MB, handles 285 → 279, threads 13 → 7; daemon private 15.3 → 46.7 MB at
     40 min, then flat, handles 189–190, threads 23 → 20. No growth in
     handles, fds or threads; memory flat once scrollback is full. CSVs:
-    `~/m4/soak/soak-linux.csv`, `C:\Users\Public\haetty-smoke\soak\`.
+    `~/m4/soak/soak-linux.csv`, `~/m4/soak/soak-win.csv` (WSL home).
   - On 9fabc3b's own release build: regression 27/27, DESIGN §2.3 5/5, theme
     run 8/8, S1 title run 13/13, S2 run 20/20, S3 run 20/20, crash run 9/9,
     full VT fuzz 48 sessions 0.39 s; Windows GUI unit tests 83 + 1 ignored.
@@ -1853,13 +1852,57 @@ regression list, measurements), then committed, pushed and mirrored.
     0 failures (ConPTY 1.25 embedded, cmd, PowerShell input, resize, Claude
     Code fullscreen modes and multi-line input); `test-guard-selftest.ps1`
     0 failures under PowerShell 5.1 and 7;
-  - S4's soaks (1 hour, Linux and Windows) ran on `e2ec468`, before the S4
-    fixes; nothing S4 changed affects their result (no leak of fds,
-    handles, threads; memory flat after scrollback filled).
+  - S4's soaks (1 hour, Linux and Windows) ran on `e2ec468`, before S4
+    (no per-session PTY writer thread; the Zig Debug engine) and were not
+    repeated on the candidate. (Corrected in the next entry, which also
+    replaces this candidate.)
   - Size (`dist`): Linux 6 645 264, Windows 5 202 944 (0.1.1: 6 438 512 /
     5 014 016).
   The stable install recorded for the user stays v0.1.0 (they install
   0.1.1 / 0.2.0 themselves).
+
+- **2026-11-06 After S5 — a thread leak found and fixed; candidate
+  `haetty-v0.2.0` is now `8d66d29`** (replaces `22dcba9`; not tagged).
+  - Checked every code commit of S0–S5 with the corrected gate method
+    (sources touched, one clippy run per target, throwaway worktrees):
+    `47cb67f`, `21505dc`, `d5ba833` (tagged 0.1.1), `e997d00`, `22cd266`,
+    `30f20db`, `22dcba9` clean; `9fabc3b` 4 warning lines (Linux; the two
+    test warnings) — so `9fabc3b`, `bad5247`, `174928b`, `e9f5bee` do not
+    pass the gate alone. No history rewritten.
+  - New `tests/threads.rs` (60 sessions opened and closed in a real daemon
+    process): the daemon went 4 → 84 threads. 20 sessions — a child that
+    floods queries and never reads — kept their child, PTY reader, child
+    waiter, PTY writer and the daemon's event forwarder: S4's writer thread
+    sat in a blocked `write`, holding the terminal open, so the child never
+    got its hangup (a regression from S4). Fix: at the end of a session
+    with bytes still queued the writer stops after its current 4 KiB chunk
+    and the engine calls `PtyControl::hangup` (Unix: SIGHUP through
+    portable-pty's `ChildKiller`, then `tcflush` on the master — Linux does
+    not wake the blocked write when the child's side closes; Windows:
+    nothing needed). Now 4 → 4.
+  - The same test inside the parallel gate (dev build, Zig Debug engine)
+    showed the daemon not answering: its main loop waited for a snapshot
+    from a session printing in a loop, queued behind up to 1024 output
+    chunks. Frontend commands now have their own unbounded channel read
+    first, at most 16 output chunks between looks. Measured (release,
+    Xvfb): `haetty status` during a `yes` tab avg 6 ms / max 8 ms, idle 5 /
+    7 ms. `cargo test` three times in a row: 0 failures.
+  - `libc` is now a direct (Unix) dependency of haetty-pty — already in the
+    tree through portable-pty, same version.
+  - Checks on `8d66d29`'s own build (`haetty 0.2.0 (commit 8d66d298e46c …)`):
+    gate (corrected script); regression 27/27; DESIGN §2.3 5/5 and 5/5
+    integrated; theme run 8/8; title 13/13, tab features 20/20,
+    orchestrator 20/20, crash 9/9; IPC fuzz 915 connections; full VT fuzz
+    48 sessions; `threads` and `daemoncrash` (release) passed; installer
+    self-tests (`haetty-v0.1.1` then `8d66d29`) Linux 19/19, Windows 18/18;
+    Windows natively: GUI unit tests 83 + 1 ignored, `windows-smoke.ps1` 0
+    failures, guard self-test 0 failures, `crash-win.ps1` (no orphans,
+    window stays, `last` unchanged, logged). Size (`dist`): Linux
+    6 656 016, Windows 5 210 624 (S5: 6 645 264 / 5 202 944).
+  - The 1-hour soaks were not repeated on `8d66d29` (they ran on
+    `e2ec468`, before S4); DESIGN §3.4 now records them with that note,
+    and that `release`-build measurements before S4 ran the Zig Debug
+    engine.
 
 ### ccx comparison (milestone 3)
 
