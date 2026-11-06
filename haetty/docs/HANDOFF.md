@@ -14,6 +14,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage t1 (branch `haetty/t1`, worktree `~/projects/claude-code-config-wt/t1`). Remaining: T1: table of commits that fail the gate alone (no history rewrite), tools/check-range.sh/.ps1, CLAUDE.md pre-push procedure, run on haetty-v0.1.1..HEAD
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
