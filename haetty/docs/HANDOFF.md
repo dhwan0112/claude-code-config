@@ -16,6 +16,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage t3 (branch `haetty/t3`, worktree `~/projects/claude-code-config-wt/t3`). Remaining: T3: prove the Zig optimize mode per profile from the zig command line, dev/test on ReleaseFast, re-measure DESIGN §3.4 (key->frame, throughput, memory per tab) on optimized builds
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
