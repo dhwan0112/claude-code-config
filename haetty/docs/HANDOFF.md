@@ -51,7 +51,6 @@ from the overnight run of §6.1 item 30 (commit `63822de`):
    version is installed.
 
 
-> **In progress:** stage u5b (branch `haetty/u5b`, worktree `~/projects/claude-code-config-wt/u5b`). Remaining: review fixes: ExecutionPolicy Bypass in commands, dev-run from a stable tab test, hung-daemon recovery, U3 quote check, fresh test-build memory
 
 ## 1. Goal
 
@@ -733,9 +732,12 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     need (nothing else heavy may run) and start, **from a PowerShell
     window — not from Claude Code**:
     ```powershell
-    pwsh -File \\wsl.localhost\<distro>\home\<user>\projects\claude-code-config\haetty\tools\overnight-soak.ps1
+    pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<user>\projects\claude-code-config\haetty\tools\overnight-soak.ps1
     ```
-    (this machine: `<distro>` = `Ubuntu`). It checks that no heavy job runs
+    (this machine: `<distro>` = `Ubuntu`). `-ExecutionPolicy Bypass` is
+    needed: the script on `\\wsl.localhost` is unsigned, and this
+    machine's policy (RemoteSigned, LocalMachine) refuses it in a new
+    window — checked 2026-11-07. It checks that no heavy job runs
     and holds both heavy-job slots. It builds `63822de` for Linux and
     Windows, runs the Linux soak v2 alone in WSL for an hour, then waits up
     to 4 hours for a desktop untouched for 120 s and runs the Windows soak
@@ -2273,7 +2275,8 @@ regression list, measurements), then committed, pushed and mirrored.
 
 - **2026-11-07 U3 — the reap variable, memory of this machine.**
   - `CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP` is documented, verbatim
-    from <https://code.claude.com/docs/en/env-vars>:
+    from <https://code.claude.com/docs/en/env-vars> (checked against the
+    raw page `env-vars.md`, line 240; the link in its text left out):
     > Set to `1` to stop Claude Code from terminating background shell
     > commands under memory pressure. By default, on macOS and Linux,
     > Claude Code terminates background shells when the operating system
@@ -2285,7 +2288,12 @@ regression list, measurements), then committed, pushed and mirrored.
     a variable set in your shell before launching `claude` lasts for that
     terminal session, and one under `"env"` in `settings.json` applies
     every time. Setting it from a shell inside a running session has no
-    effect. PowerShell:
+    effect. The page goes on (line 75): "A running session applies new and
+    changed values to its environment when you save the file, but a
+    feature that reads its variables once at startup … keeps its startup
+    values until you relaunch." **On this machine (Windows) the variable
+    does nothing, per the same documentation.** The advice in the T4
+    report, to start Claude Code with it, does not apply here. PowerShell:
     `$env:CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP = "1"; claude`.
     The user's `~/.claude/settings.json` is not changed here.
   - This machine: Claude Code 2.1.319 on Windows. The documentation says
@@ -2331,7 +2339,10 @@ regression list, measurements), then committed, pushed and mirrored.
     autoMemoryReclaim=dropCache   # the default; kept explicit
     ```
     With it, WSL holds at most ~8 GB of Windows memory instead of up to
-    15.6 GB. A machine running a game and Firefox (~12 GB) keeps ≥ 10 GB.
+    15.6 GB. Also measured afterwards: a fresh `cargo test --no-run`
+    (dev profile, every test binary) +2.19 GB (tree 3.3 GB, 93 s), a fresh
+    Windows `cargo clippy --all-targets` +1.04 GB, both below the fresh
+    release build, which stays the worst case. A machine running a game and Firefox (~12 GB) keeps ≥ 10 GB.
 
 - **2026-11-07 U4 — overnight soak script, 5-minute trials.**
   - `tools/overnight-soak.ps1` (run by the user from PowerShell, outside
@@ -2409,6 +2420,40 @@ regression list, measurements), then committed, pushed and mirrored.
       `APPDATA`).
     - Not run on Windows: the build path and a real start. The start would
       open a window on a desktop that was in use.
+
+- **2026-11-07 U5b — fixes after reviewing U1–U5.**
+  - The overnight command needs `-ExecutionPolicy Bypass`. This
+    machine's policy is RemoteSigned (LocalMachine), and a new PowerShell
+    window refused the unsigned `heavy.ps1` on `\\wsl.localhost` ("디지털
+    서명이 없습니다"). The session's own runs had worked only because they
+    inherited Bypass. With the flag, a fresh process (inherited preference
+    removed) ran it. Fixed in §6.1 item 30, in SELF-HOSTING.md and in the
+    `overnight-soak.ps1` / `dev-run.ps1` headers.
+  - `overnight-soak.ps1` logs whether `SetThreadExecutionState` was
+    accepted.
+  - `tools/test-dev-run.sh` 15/15, with a new case: dev-run from a stable
+    tab. A fake stable haetty (fake HOME, no instance) ran `dev-run
+    --check` as its tab's program. The tab's environment
+    (`HAETTY_INSTANCE=` empty, `HAETTY_SESSION_ID`) passed, and dev-run
+    chose the dev socket next to the fake stable one. The daemon passes
+    sessions only the GUI's environment plus those two variables
+    (`haetty-daemon` `create`), so nothing in a tab points at the stable
+    paths.
+  - SELF-HOSTING.md: a hung daemon cannot answer `haetty status`, so find
+    its PID with `ss -xlpn` (Linux) or Task Manager (Windows).
+  - U3 quote checked against the raw `env-vars.md` (line 240); line 75 on
+    settings-file values in a running session added. The variable does
+    nothing on Windows, so the T4 report's advice does not apply here.
+    Also measured: a fresh `cargo test --no-run` +2.19 GB, a fresh
+    Windows clippy +1.04 GB; the fresh release build (+2.52 GB) stays the
+    worst case, and the 8 GB proposal holds.
+  - check-range over the full `haetty-v0.1.1..HEAD` was not run again
+    with the KNOWN/FAIL tool. Every commit since T7 was checked when it
+    was pushed (0 failing each time); the next session runs the full
+    range (U6 step 2).
+  - The crates are unchanged since `63822de` (`git diff --stat 63822de
+    HEAD -- haetty/crates haetty/Cargo.*` empty): no new dependency, the
+    dist sizes are those of `63822de`.
 
 ### ccx comparison (milestone 3)
 

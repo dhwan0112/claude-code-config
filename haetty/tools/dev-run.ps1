@@ -1,6 +1,6 @@
 # Builds this working tree for Windows (in WSL, in a heavy-job slot) and starts it as the dev instance
 # (HAETTY_INSTANCE=dev) beside the stable one (docs/SELF-HOSTING.md). Run with pwsh from the WSL checkout:
-#   pwsh -File \\wsl.localhost\<distro>\…\haetty\tools\dev-run.ps1 [-Debug] [-NoBuild] [-Check] [-- HAETTY-ARGS…]
+#   pwsh -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\…\haetty\tools\dev-run.ps1 [-Debug] [-NoBuild] [-Check] [-- HAETTY-ARGS…]
 # Every run prints what the dev instance uses next to the stable one — pipe, state and config directories, app
 # id, window title prefix, binary — and refuses to start when anything would be shared: an override
 # (HAETTY_SOCKET / _STATE_DIR / _CONFIG_DIR / _LOG_FILE or the old CCTERM_* names) or a path in the dev config

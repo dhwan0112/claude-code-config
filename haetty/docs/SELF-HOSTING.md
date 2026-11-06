@@ -32,8 +32,9 @@ path.
 2. **Try a change in dev.** In a stable tab, in the worktree:
    - Linux: `tools/dev-run.sh` (`--debug` builds faster, `--no-build` starts
      the last build);
-   - Windows: `pwsh -File \\wsl.localhost\<distro>\…\haetty\tools\dev-run.ps1`
-     (`-Debug`, `-NoBuild`).
+   - Windows: `pwsh -ExecutionPolicy Bypass -File
+     \\wsl.localhost\<distro>\…\haetty\tools\dev-run.ps1` (`-Debug`,
+     `-NoBuild`; Bypass because scripts on `\\wsl.localhost` are unsigned).
 
    It builds the tree in a heavy-job slot and prints the dev and stable
    endpoint, state, config, app id and title side by side. It starts a
@@ -109,8 +110,11 @@ nothing in haetty's development may remove or break it (`CLAUDE.md`).
    tab, `claude --resume` (or `/resume`) continues a session that ran in a
    haetty tab.
 3. If the stable binary is at fault: roll back (above) from that terminal.
-   If its daemon hangs: `haetty status --json` gives `daemon_pid`; stop that
-   PID. Then start haetty again.
+   If its daemon hangs, `haetty status` cannot answer. Find its PID
+   without it: Linux `ss -xlpn | grep '/haetty/daemon.sock'` (the stable
+   socket; not `haetty-dev`); Windows Task Manager → Details, the
+   `haetty.exe` whose command line ends in `daemon` and whose path is the
+   stable install. Stop that PID, then start haetty again.
 4. If haetty's state is at fault (a broken tab set): move
    `~/.local/state/haetty/tabs/last.tsv` (Windows
    `%LOCALAPPDATA%\haetty\tabs\last.tsv`) aside before starting; do not

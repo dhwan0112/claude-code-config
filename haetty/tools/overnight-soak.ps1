@@ -1,6 +1,7 @@
 # Overnight soak v2 (HANDOFF.md §6.1 item 30): start it once before going to bed, from a PowerShell window — not
 # from Claude Code — with nothing else heavy running:
-#   pwsh -File \\wsl.localhost\<distro>\<repo>\haetty\tools\overnight-soak.ps1
+#   pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\<repo>\haetty\tools\overnight-soak.ps1
+# (-ExecutionPolicy Bypass: the script on \\wsl.localhost is unsigned, and the default RemoteSigned refuses it.)
 # It
 #   1. checks that no other heavy job runs (heavy-job slots, cargo/rustc/zig/Xvfb in WSL) and then holds both
 #      slots for the whole night, so nothing else can start next to it;
@@ -57,8 +58,8 @@ try {
     $env:HAETTY_HEAVY_SLOT = "overnight"
     $env:WSLENV = (@(($env:WSLENV -split ':') | Where-Object { $_ -and $_ -ne 'HAETTY_HEAVY_SLOT' }) + "HAETTY_HEAVY_SLOT") -join ':'
     # 0x80000000 continuous | 0x1 system required (no sleep) | 0x2 display required (no screen off or lock)
-    [void][OvernightPower]::SetThreadExecutionState([uint32]"0x80000003")
-    Say "slots held; sleep and screen lock prevented while this runs"
+    $prev = [OvernightPower]::SetThreadExecutionState([uint32]"0x80000003")
+    Say "slots held; sleep and screen lock prevented while this runs (SetThreadExecutionState: $(if ($prev -ne 0) { 'accepted' } else { 'FAILED' }))"
 
     # 2. The build of the commit.
     Say "building $Commit (Linux and Windows)"
