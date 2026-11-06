@@ -12,7 +12,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage s5 (branch `haetty/s5`, worktree `~/projects/claude-code-config-wt/s5`). Remaining: version 0.2.0 and full verification on its own build (gate, regression, §2.3, themes, installer self-tests both platforms, Windows unit tests and smoke, S4 summary); report as the haetty-v0.2.0 candidate, no tag
 
 ## 1. Goal
 
@@ -1826,6 +1825,39 @@ regression list, measurements), then committed, pushed and mirrored.
     Size (`dist`): Linux 6 625 560 → 6 645 256 (+19 696), Windows
     5 185 536 → 5 202 432 (+16 896); `postcard` added as a dev-dependency of
     haetty-daemon only (the IPC fuzz test; not in any binary).
+
+- **2026-11-06 Stage S5 — version 0.2.0, candidate `haetty-v0.2.0` =
+  `22dcba9`** (not tagged: the tag waits for approval). Checks on that
+  commit's own build (`haetty 0.2.0 (commit 22dcba95021a, built
+  2026-11-06, instance stable)`, Linux and Windows):
+  - first candidate `e9f5bee` (the version bump) failed a gate re-run:
+    two clippy warnings in the S4 fuzz tests (Unix-only test files) that
+    the gate script had missed — it ran clippy twice and judged the second
+    run, which does not always replay cached warnings — so `9fabc3b` and
+    `e9f5bee` were not clippy-clean. Fixed in `22dcba9`; the gate script
+    now judges one run after touching the sources, and its test step fails
+    on `FAILED` / `panicked` / compile errors (before, only when no test
+    ran at all). Every check below was repeated on `22dcba9`.
+  - gate (both targets, clippy 0, all tests); regression 27/27; DESIGN §2.3
+    5/5, and 5/5 with `--decorations integrated`; theme run 8/8;
+  - stage runs: title row 13/13, tab features 20/20, orchestrator 20/20
+    (incl. §2.3 with a worker tab), daemon crash 9/9; IPC fuzz 915
+    connections; full VT fuzz 48 sessions / 2.4 MB (recorded Claude Code
+    output included);
+  - installer self-tests installing `haetty-v0.1.1` then `22dcba9`
+    (mismatched `haetty-v9.9.9` refused before building, rollback,
+    reinstall, real install folders untouched): Linux 19/19, Windows 18/18;
+  - Windows natively: GUI unit tests 83 + 1 ignored; `windows-smoke.ps1`
+    0 failures (ConPTY 1.25 embedded, cmd, PowerShell input, resize, Claude
+    Code fullscreen modes and multi-line input); `test-guard-selftest.ps1`
+    0 failures under PowerShell 5.1 and 7;
+  - S4's soaks (1 hour, Linux and Windows) ran on `e2ec468`, before the S4
+    fixes; nothing S4 changed affects their result (no leak of fds,
+    handles, threads; memory flat after scrollback filled).
+  - Size (`dist`): Linux 6 645 264, Windows 5 202 944 (0.1.1: 6 438 512 /
+    5 014 016).
+  The stable install recorded for the user stays v0.1.0 (they install
+  0.1.1 / 0.2.0 themselves).
 
 ### ccx comparison (milestone 3)
 
