@@ -39,6 +39,10 @@ the start of a session.
   separate instance (`HAETTY_INSTANCE=dev`: own daemon, socket, state and
   config directories, app id, window title prefix). Never replace the
   stable binary yourself; promotion to stable needs the user's approval.
+  Start the dev instance with `tools/dev-run.sh` (Windows `tools/dev-run.ps1`):
+  it builds the tree, shows dev beside stable and refuses anything shared.
+  `docs/SELF-HOSTING.md` has the day, dev → stable, rollback and the way
+  back to ccx.
   - Never signal, stop or restart the stable instance or its daemon (it
     hosts this very session).
   - Manage processes of dev builds and tests only by PID or by their own

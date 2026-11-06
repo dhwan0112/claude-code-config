@@ -2370,6 +2370,45 @@ regression list, measurements), then committed, pushed and mirrored.
   - §6.1 item 30 rewritten (start command, what happens, result file); the
     next session's steps (U6) are at the top of this file.
 
+- **2026-11-07 U5 — dev-run and SELF-HOSTING.md.**
+  - `tools/dev-run.sh` builds this tree (release, or `--debug`) in a
+    heavy-job slot and starts it as `HAETTY_INSTANCE=dev`, detached, with
+    its log in the dev state directory.
+  - Before starting it prints dev and stable side by side: socket or
+    runtime directory, state, config, app id, window title prefix, binary,
+    and `--version`, which must say `instance dev`.
+  - It refuses to start (exit 3) when the dev instance would share
+    anything with stable:
+    - `HAETTY_SOCKET`, `_STATE_DIR`, `_CONFIG_DIR` or `_LOG_FILE`, or the
+      old `CCTERM_*` names, inside a stable directory: haetty, the former
+      ccterm ones, or the installed `~/.local/opt/haetty` /
+      `~/.local/bin/haetty`, symlinks resolved;
+    - a non-comment line of the dev config naming one;
+    - the same socket as stable.
+  - It drops `HAETTY_SESSION_ID` and Claude Code's markers inherited from
+    a stable tab. `--check` only prints and checks.
+  - `tools/dev-run.ps1`: the same for Windows (pipe
+    `\\.\pipe\haetty-dev-<SID>`, `%LOCALAPPDATA%` / `%APPDATA%\haetty-dev`).
+    It builds in WSL through `tools/heavy.sh` and copies the binary to
+    `%LOCALAPPDATA%\haetty-dev\bin`, never to the stable
+    `Programs\haetty`.
+  - `docs/SELF-HOSTING.md`: the two instances in a table, a day (work in
+    stable, try in dev, stop dev by PID, heavy jobs, push rules), dev →
+    stable (candidate checks → the user's approval → tag → the user
+    installs), rollback (`--list` / `--activate`), back to ccx when stable
+    fails. It agrees with CLAUDE.md, which now points to both.
+  - Tests:
+    - `tools/test-dev-run.sh` 13/13, under Xvfb, with a fake HOME and
+      runtime directory: both instances shown; four overrides refused; a
+      stable path in the dev config refused, a commented one not; a real
+      start gave a dev daemon on the dev socket, nothing at the stable
+      one; its daemon PID from `status --json`, stopped by PID, nothing
+      left.
+    - `tools/test-dev-run.ps1` 8/8 (`-Check`, fake `LOCALAPPDATA` /
+      `APPDATA`).
+    - Not run on Windows: the build path and a real start. The start would
+      open a window on a desktop that was in use.
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |
