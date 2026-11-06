@@ -17,6 +17,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage t5 (branch `haetty/t5`, worktree `~/projects/claude-code-config-wt/t5`). Remaining: T5: Windows coverage: Rust integration tests daemoncrash/threads/orchestrator on Windows where possible, Windows GUI e2e for S2 (tab features) and S3 (orchestrator) via SendKeys
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
