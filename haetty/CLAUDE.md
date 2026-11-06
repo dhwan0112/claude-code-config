@@ -82,6 +82,15 @@ the start of a session.
   - Every commit passes the full gate on its own (both targets, clippy 0
     on both, all tests including the reference frames) — no commit relies
     on a later one to become green.
+  - Before every push, check each new commit on its own:
+    `HAETTY_TEST_TMP=/tmp/haetty-test tools/check-range.sh origin/main..HEAD`
+    (Windows: `tools/check-range.ps1 origin/main..HEAD`) must end with
+    "0 failing". It builds each commit that changes `haetty/` in a
+    temporary worktree and runs fmt, clippy on both targets (sources
+    touched, one run per target) and `cargo test`. A failing commit is
+    fixed before the push (the branch is not pushed yet, so it may be
+    rewritten); pushed history is never rewritten — a commit found failing
+    later is recorded in HANDOFF.md instead.
   - An approved change of the outer design (DESIGN.md §2) puts the code and
     the updated reference frames into **one** commit whose message says
     "DESIGN §2 change, approved".
@@ -114,6 +123,9 @@ cargo build --profile dist --target <triple>   # size-optimised, stripped
 cargo fmt                                    # rustfmt.toml: max_width 120
 cargo run --release -p haetty-core --example mem -- 3 67108864 10000   # anon memory per session (Linux)
 ```
+
+`tools/check-range.sh RANGE` runs the quick gate on every commit of a range
+(see Commits and reference frames).
 
 Stable installs (the user runs them; `docs/DESIGN.md` §3.15, README):
 `tools/install-stable.sh REF` / `tools/install-stable.ps1 REF`, rollback

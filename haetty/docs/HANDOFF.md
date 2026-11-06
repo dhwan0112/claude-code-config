@@ -14,7 +14,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage t1 (branch `haetty/t1`, worktree `~/projects/claude-code-config-wt/t1`). Remaining: T1: table of commits that fail the gate alone (no history rewrite), tools/check-range.sh/.ps1, CLAUDE.md pre-push procedure, run on haetty-v0.1.1..HEAD
 
 ## 1. Goal
 
@@ -1905,6 +1904,39 @@ regression list, measurements), then committed, pushed and mirrored.
     `e2ec468`, before S4); DESIGN §3.4 now records them with that note,
     and that `release`-build measurements before S4 ran the Zig Debug
     engine.
+
+- **2026-11-06 T1 — commits that fail the gate on their own; `tools/check-range.sh`.**
+  History is not rewritten; these commits stay as they are.
+
+  | Commit | Subject | Failing gate step | Why |
+  |---|---|---|---|
+  | `9fabc3b` | Robustness: IPC and VT fuzzing, daemon-crash handling, four defects fixed | clippy (Linux, `--all-targets`) | `crates/haetty-daemon/tests/ipcfuzz.rs:109:21` `unusual_byte_groupings` (`0x0dd_b1a5_e5`); `crates/haetty-core/tests/vtfuzz.rs:245:44` `needless_borrows_for_generic_args`. Both files are `#![cfg(unix)]`, so the Windows clippy, fmt, the build and every test pass. |
+  | `bad5247` | HANDOFF: stage S4 results on its own build, size | clippy (Linux) | same code as `9fabc3b` (HANDOFF only) |
+  | `174928b` | HANDOFF: in progress - stage s5 | clippy (Linux) | same code as `9fabc3b` (HANDOFF only) |
+  | `e9f5bee` | Version 0.2.0 | clippy (Linux) | the version bump on top of `9fabc3b`'s code; the same two warnings |
+
+  Fixed in `22dcba9`. How they got through: the gate script of the time
+  (session harness, not in the repository) ran clippy twice and judged the
+  second run, which does not always replay cached warnings; it also
+  failed the test step only when no test ran at all. Fixed in the script,
+  and now in the repository's tooling:
+  - `tools/check-range.sh RANGE` (and `tools/check-range.ps1`, which runs
+    it in WSL): every commit of the range that changes `haetty/` is checked
+    out in a temporary worktree (test run directory) and gets fmt, clippy
+    for Linux and `x86_64-pc-windows-gnu` (all `.rs` touched first, one run
+    per target, judged on its own output) and `cargo test`; a commit with
+    the same code as the last one checked (only docs changed) reuses its
+    result. One line per commit, exit code = failing commits. CLAUDE.md:
+    run it on `origin/main..HEAD` before every push.
+  - Run on `haetty-v0.1.1..HEAD` (`a293541`, 20 commits changing
+    `haetty/`): **4 failing — exactly the four above**, with the same
+    reason; the other 16 pass (`bef5e22` … `be3fcd0`, `22dcba9` …
+    `a293541`). `check-range.ps1 9fabc3b^..9fabc3b --no-test` from
+    Windows: the same failure, exit code 1.
+  - Found on the way: a fresh target directory failed every commit
+    (`zig` not on a non-login shell's PATH); the script now adds
+    `~/.local/bin` when `zig` is missing and stops with a clear message if
+    it is still missing, and it uses the usual target directory.
 
 ### ccx comparison (milestone 3)
 
