@@ -23,7 +23,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage u3 (branch `haetty/u3`, worktree `~/projects/claude-code-config-wt/u3`). Remaining: U3 reap variable and WSL memory, U4 overnight soak, U5 dev-run and SELF-HOSTING.md, U6 next-day tag steps
+
+> **In progress:** stage u4 (branch `haetty/u4`, worktree `~/projects/claude-code-config-wt/u4`). Remaining: U4 overnight soak, U5 dev-run and SELF-HOSTING.md, U6 next-day tag steps
 
 ## 1. Goal
 
