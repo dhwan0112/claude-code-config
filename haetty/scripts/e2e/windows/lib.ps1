@@ -28,10 +28,15 @@ function Total($name) { Write-Host "TOTAL ${name}: $script:P passed, $script:F f
 # for good — window and daemon closed, exit 2 — the moment the haetty window is not in the foreground.
 $script:MinIdle = 120
 function Idle-Seconds { $l = New-Object HW+LII; $l.cbSize = 8; [void][HW]::GetLastInputInfo([ref]$l); [int](([Environment]::TickCount - $l.dwTime) / 1000) }
+function Last-Input { $l = New-Object HW+LII; $l.cbSize = 8; [void][HW]::GetLastInputInfo([ref]$l); $l.dwTime }
 function Require-Idle {
     $i = Idle-Seconds
     if ($i -lt $script:MinIdle) { Write-Host "SKIP: the desktop is in use (last input $i s ago; needs $script:MinIdle s idle)"; exit 77 }
+    $script:LastSent = Last-Input
 }
+# Input since our own last keys (GetLastInputInfo counts SendInput too: only what came after it, plus a margin):
+# somebody uses the computer — stop before sending anything more.
+function Someone-Active { [int64](Last-Input) - [int64]$script:LastSent -gt 1500 }
 
 function New-HaettyRun([string]$Name) {
     Require-Idle
@@ -69,6 +74,7 @@ function Front {
     for ($i = 0; $i -lt 10; $i++) {
         if (Ours) { return $true }
         [HW]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [HW]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)  # Alt: allows SetForegroundWindow
+        $script:LastSent = Last-Input
         [void][HW]::ShowWindow($script:Gui.MainWindowHandle, 9); [void][HW]::SetForegroundWindow($script:Gui.MainWindowHandle)
         Start-Sleep -Milliseconds 300
     }
@@ -76,11 +82,15 @@ function Front {
 }
 # SendKeys syntax: ^ Ctrl, + Shift, % Alt, {ENTER}, {BS}; literal text must not contain + ^ % ~ ( ) { } [ ].
 function Keys([string]$k, [int]$WaitMs = 600) {
+    if (Someone-Active) {
+        Write-Host "STOP: keyboard or mouse input from somebody else; no more keys are sent"
+        Stop-Gui; Total "aborted"; exit 2
+    }
     if (-not (Front)) {
         Bad "focus" "the haetty window is not in the foreground: stopping without sending more keys ($k)"
         Stop-Gui; Total "aborted"; exit 2
     }
-    [System.Windows.Forms.SendKeys]::SendWait($k); Start-Sleep -Milliseconds $WaitMs
+    [System.Windows.Forms.SendKeys]::SendWait($k); $script:LastSent = Last-Input; Start-Sleep -Milliseconds $WaitMs
 }
 function Palette([string]$Filter) { Keys "^+p"; Keys $Filter 300; Keys "{ENTER}" }
 
