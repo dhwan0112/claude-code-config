@@ -110,8 +110,10 @@ everywhere.
 Each tab is a daemon session. The tab bar (one row, on the terminal's own
 background; the active tab in the text colour with a thin line under it,
 the others dim) appears from two tabs on; click a tab to select it. A new tab runs the program the window was
-started with, in the active tab's folder. Tab names come from Claude Code's
-session name, else the title (without Claude Code's leading state glyph),
+started with, in the active tab's folder. Tab names: your own (Ctrl+Shift+R;
+an empty name brings the automatic one back), else Claude Code's session
+name, else for Claude Code tabs `repo:branch` of the tab's folder, else the
+title (without Claude Code's leading state glyph),
 else the program name. When a tab's program exits, the tab stays, dimmed
 and marked `[exited N]`, until you close it. With one tab, the window closes
 when its program exits and `haetty` returns the program's exit code.
@@ -128,7 +130,11 @@ Ctrl+letter keys go to the program.
 | Go to tab N | Alt+1 … Alt+9 | `goto_tab:N` (1–9) |
 | Command palette | Ctrl+Shift+P | `command_palette` |
 | Paste | Ctrl+Shift+V, Shift+Insert, Paste key; Windows also Ctrl+V | `paste` |
-| Diff of the last edit (Claude Code tabs) | Ctrl+Shift+D | `diff_view` |
+| Diff view (Claude Code tabs): last edit, `m` → vs HEAD → working tree | Ctrl+Shift+D | `diff_view` |
+| Rename tab | Ctrl+Shift+R | `rename_tab` |
+| Reopen a closed tab (last 20) | — (palette) | `reopen_closed_tab` |
+| Detach tab (keeps running) | — (palette) | `detach_tab` |
+| Attach detached sessions | — (palette) | `attach_detached` |
 | Status panel (Claude Code tabs) | Ctrl+Shift+S | `status_panel` |
 | Status panel wider / narrower | — (palette) | `status_panel_wider` / `status_panel_narrower` |
 | Save tabs as the set "saved" | — (palette) | `save_tabs` |
@@ -279,6 +285,7 @@ environment variables.
 | `last` | whenever the open tabs change | — |
 | `previous` | at start, from `last` | automatically at start; palette "Open the previous run's tabs" |
 | `saved` | palette "Save tabs" | palette "Open saved tabs" |
+| `closed` | a tab closed on purpose (newest first, 20 at most) | palette "Reopen a closed tab" (one at a time) |
 
 - At start, haetty first takes back the daemon's running sessions that no
   window shows, then `last` becomes `previous` and only its tabs that the
@@ -290,6 +297,11 @@ environment variables.
   resumed) a second time.
 - A reopened tab is a new session: the program is started again. For
   Claude Code tabs see [Resume](#resume).
+- A renamed tab keeps its name in tab sets; automatic names are worked out
+  again.
+- Palette "Detach tab" takes the active tab out of the window and leaves
+  its program running; "Attach detached sessions" brings it back (also in
+  another window). Closing the window instead ends its tabs.
 
 ### Claude Code integration
 
@@ -370,7 +382,11 @@ columns, palette "Status panel wider/narrower") and open state are kept in
 active tab, drawn over its screen; the program is not resized and keeps
 running. Side by side from 110 columns, unified below; header
 `[last edit] path · +A -R · by agent`. Keys: j/k, Space/b, g/G, wheel to
-scroll; Esc or q (or Ctrl+Shift+D again) to close. Files that look like
+scroll; `m` or Tab for the next view — that file against git `HEAD`, then
+the whole working tree against `HEAD` with untracked files (so changes made
+by Bash show too) — `r` to read again; Esc or q (or Ctrl+Shift+D again) to
+close. The git views read at most 300 files, 2 MiB each and 16 MiB in all,
+within 3 s, and say what they left out. Files that look like
 credentials or keys (`.ssh`, `.aws`, `.env*`, `*.pem`, `*.key`, `*token*`,
 `*secret*`, `.credentials.json`, …) are never read, and files over 2 MiB
 or not UTF-8 are not copied; for those the diff view says why instead of

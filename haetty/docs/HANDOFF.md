@@ -9,7 +9,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage s2 (branch `haetty/s2`, worktree `~/projects/claude-code-config-wt/s2`). Remaining: ccx deferred features: tab rename (palette + Ctrl+Shift+R, saved in tab sets), git repo:branch tab names, closed-tabs list (20, palette reopen, resume rules), diff views vs HEAD and whole work tree (limits, timings), detach; integration tests; DESIGN §3.11 keys
 
 ## 1. Goal
 
@@ -643,6 +642,18 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     window's corners and shadow (mutter's, not haetty's: record what you
     see); a right click on the title row does nothing. X11 session: the
     system title bar again (auto = native), dark.
+
+26. **Tab features with a real Claude Code** (stage S2): in a git
+    repository a new Claude Code tab is named `repo:branch` until Claude
+    Code names the session; `git checkout` elsewhere renames it within a
+    few seconds; Ctrl+Shift+R with Korean typed through the IME (fcitx5 /
+    ibus) renames the tab and the name survives closing and reopening the
+    window; close a Claude Code tab after a few turns, "Reopen a closed tab"
+    resumes the same conversation (the earlier messages are there); choose
+    it twice quickly — only one tab; "Detach tab", then "Attach detached
+    sessions" (also from a second window); Ctrl+Shift+D, `m`, `m` in a real
+    repository — the working tree view lists what Claude Code changed with
+    Bash too, and returns within a moment.
 
 #### B. Linux with a real account (Claude Code logged in)
 
@@ -1606,6 +1617,46 @@ regression list, measurements), then committed, pushed and mirrored.
   - Not checkable here: a real GNOME session (mutter's shadow/corners,
     pointer moves and resizes, HiDPI) — §6.1 item 25.
 
+- **2026-11-06 Stage S2 — ccx features that were deferred.** Rename tab
+  (Ctrl+Shift+R / palette; own name first, saved in tab sets with a new
+  `custom` column, empty = automatic; never typed into Claude Code, not
+  logged); `repo:branch` names for Claude Code tabs (`gitview.rs`, from
+  `.git` files, after Claude Code's session name); closed-tabs list (set
+  `closed`, 20, palette "Reopen a closed tab" with folder/program/resume,
+  same rules as tab sets); diff view `m`/Tab cycles last edit → vs HEAD →
+  working tree, `r` rereads (git with time/size/file limits); palette
+  "Detach tab". DESIGN.md §3.8 / §3.11 / §3.13, README. Evidence:
+  - Unit tests (82 + 1 ignored measurement): branch names from real
+    repositories (subfolder, branch switch, linked worktree, detached
+    HEAD, outside a repository); vs HEAD and tree with a modified, deleted,
+    untracked, binary and `.env` file and the file-count and size limits;
+    the git views' rows, file headers and reasons; key `m`/Tab/`r`; closed
+    list order, cap 20, one entry per conversation, removal; tab-set files
+    without the new column; palette modes (rename query, closed filter, a
+    long folder cut at the start so the name stays); every action name
+    parses back; Ctrl+Shift+R bound, Ctrl+R free. Windows native (the test
+    executable): 80 + 1 ignored, the git tests run with Git for Windows
+    (`CREATE_NO_WINDOW`).
+  - Integration (Linux, Xvfb, `tabsrun.sh`, a fake `claude` logging its
+    arguments, isolated HOME and `CLAUDE_CONFIG_DIR`): 20/20 — `proj:feat/x`,
+    then `proj:other` after `git checkout` (3 s); session name first; own
+    name (with Hangul) saved with custom=1, not in the debug log, kept over
+    the session name, empty → automatic; diff view `m` → vs HEAD (3.7 ms, 4
+    rows) → working tree (5.5 ms, 8 rows: a.txt, the Bash-made file, `.env`
+    "never read") → `r` → last edit, Esc; closed tab kept with folder,
+    command, conversation; reopened with `--resume` and removed from the
+    list; a second entry for the same conversation right after → not
+    resumed again (**defect found and fixed**: the check knew only reported
+    conversation ids, and Claude Code reports its id after starting — now a
+    live session started with `--resume ID` counts too); detach → 1 tab,
+    the session unattached and running; the only tab not detached; attach →
+    back.
+  - Measurement (release, `measure_tree_view`): 1 500 tracked files, 1 200
+    changed + 300 untracked — limit 300: collect 104 ms, diff 43 ms; limit
+    1 500: 966 files within 16 MiB, collect 333 ms, diff 72 ms.
+  - Frames: `docs/look/s2-*.png` (names, rename prompt, the three diff
+    views, the closed list).
+
 ### ccx comparison (milestone 3)
 
 | ccx | haetty | |
@@ -1618,11 +1669,11 @@ regression list, measurements), then committed, pushed and mirrored.
 | panel: context bar, limits with reset, cost, cache, lines, workers, updated, model·effort, key rows | panel without bar graph, model·effort and key rows (Claude Code / palette show those) | ported with changes |
 | status row in Claude's status line | haetty's own bottom row incl. "esc to interrupt" | ported with changes |
 | pre/post snapshots, apply_edit, 2 MiB, 20 newest | same in Rust; the copy is taken in the synchronous hook; credential-like paths never read | ported with changes |
-| diff views: last edit / vs HEAD / git diff tree; keys j/k space/b g/G r m Tab | last edit only, same scroll keys | ported (edit view); HEAD and tree views deferred |
+| diff views: last edit / vs HEAD / git diff tree; keys j/k space/b g/G r m Tab | last edit, vs HEAD, working tree with untracked files; same keys; limits 300 files / 2 MiB / 16 MiB / 3 s | ported (2026-11-06, stage S2) |
 | orchestration hooks (Agent pre/post, STATUS: verified/blocked/needs_review) | SubagentStart/Stop durations only | deferred to M4 (orchestrator) |
-| tab sets per server socket, last/previous, auto restore, `CCX_RESTORE=0`, closed.tsv (20) | last/previous/saved, `restore-tabs = false`; skip missing folders and open conversations; `--resume` when the transcript exists | ported; closed-tabs list deferred |
-| tab name: git top-level:branch, then session_name | session_name, else title without Claude's state glyph, else program | ported with changes (branch naming deferred) |
-| tmux prefix keys (c, C, S, n/p, arrows, hjkl, d, w, W, `,`, D) | Ctrl+Shift shortcuts + palette (P2); panel width actions; automatic size/state persistence | replaced; rename (`,`) and detach (D) deferred |
+| tab sets per server socket, last/previous, auto restore, `CCX_RESTORE=0`, closed.tsv (20) | last/previous/saved/closed (20, palette reopen), `restore-tabs = false`; skip missing folders and open conversations; `--resume` when the transcript exists | ported (closed list 2026-11-06, stage S2) |
+| tab name: git top-level:branch, then session_name | own name, session_name, `repo:branch` (Claude Code tabs), title without Claude's state glyph, program | ported with changes (session name first, as asked; 2026-11-06) |
+| tmux prefix keys (c, C, S, n/p, arrows, hjkl, d, w, W, `,`, D) | Ctrl+Shift shortcuts + palette (P2); panel width actions; automatic size/state persistence; rename Ctrl+Shift+R, detach (palette) | replaced (rename and detach 2026-11-06); renaming does not type `/rename` into Claude Code |
 | tab bar drag, `+` and safe buttons | click to select | deferred |
 
 ## 7. Long-term direction (constrains current work)

@@ -317,7 +317,34 @@ line every 3 s):
   the content changes); at start it becomes `previous` and is reopened
   after the requested tab; `restore-tabs = false` (config or
   `--restore-tabs false`) turns that off; palette: save as `saved`, open
-  `saved`, open `previous`. Decision: restore *after* the requested tab
+  `saved`, open `previous`. A seventh column `custom` (1: the person named
+  the tab; files without it read as 0) keeps a renamed tab's name across
+  restores; automatic names are stored for display only and recomputed.
+  Closed tabs (2026-11-06, ccx's `closed.tsv`): a tab closed on purpose —
+  Ctrl+Shift+W, an exited tab closed, the last tab — goes first into the
+  set `closed` (20 at most, one entry per conversation); closing the window
+  adds nothing (that is `last`). Palette "Reopen a closed tab" lists name,
+  folder, program and "resume"; Enter opens it like a tab-set entry (the
+  same rules: missing folder skipped, a running conversation never opened
+  twice, `--resume` when the transcript exists) and removes it from the
+  list. A conversation counts as running when a live session reports its id
+  *or* was started with `--resume ID` (Claude Code reports its id a moment
+  after starting; found by the stage S2 test reopening twice in a row).
+- Tab names (first that applies): the name the person gave (Rename tab,
+  Ctrl+Shift+R or the palette; up to 64 characters, control characters
+  removed; empty puts the automatic name back; nothing is sent to the
+  program and the text is not logged); Claude Code's session name;
+  Claude Code tabs only: `repo:branch` of the tab's folder (`gitview.rs`,
+  read from `.git/HEAD` — linked worktrees and submodules followed, a
+  detached HEAD as 7 hex digits — no process, again when the folder changes
+  or after 3 s); a restored name while the program has no title; the title
+  without Claude Code's state glyph; the program. Decision: `repo:branch`
+  only for Claude Code tabs — a shell's title (user, host, folder, the
+  running command) says more than the branch.
+- Detach (palette "Detach tab"): the active tab leaves the window, its
+  session keeps running unattached in the daemon (not in `last`, not in
+  `closed`); "Attach detached sessions" shows it again. The only tab is not
+  detached (the window would close); a hint says so. Decision: restore *after* the requested tab
   rather than instead of it, so `haetty PROGRAM` always runs `PROGRAM` and
   nothing is lost when a set is broken; tabs whose folder is gone are
   skipped with a log line. Alternatives not taken: reattaching the
@@ -434,6 +461,9 @@ Alt+M/P/T/O/Y/B/F/D/V.
 | Command palette | Ctrl+Shift+P | free (Claude Code: Ctrl+P = previous history line) |
 | Paste | Ctrl+Shift+V, Shift+Insert, Paste key; Windows also Ctrl+V | Linux plain Ctrl+V stays with Claude Code (image paste) |
 | Diff pane / status panel (milestone 3) | Ctrl+Shift+D / Ctrl+Shift+S | free (Claude Code: Ctrl+D exit, Ctrl+S stash) |
+| Rename tab | Ctrl+Shift+R | free (Claude Code: Ctrl+R history search) |
+| Reopen a closed tab, detach tab, attach detached sessions | palette only | — (no chord: rarely used; detach is easy to mistake for close) |
+| In the diff view: next view / read again | m or Tab / r | the view has the keyboard while open; nothing reaches the program |
 
 Linux: GNOME/KDE terminals use the same Ctrl+Shift family inside their own
 windows only; haetty's window gets the keys first. Windows: Windows
@@ -642,6 +672,26 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
     · by agent`; keys j/k, Space/b, g/G, Esc/q, wheel. Decision: an
     overlay rather than a split, so Claude Code is never reflowed by
     looking at a diff and the full width is available for side by side.
+  - Diff views vs HEAD and working tree (2026-11-06, ccx's `m` cycle): `m`
+    or Tab cycles last edit → the last edited file against `HEAD` → every
+    changed and untracked file of its repository (else the tab's folder's)
+    against `HEAD` (changes made by Bash show here); `r` reads again,
+    keeping the scroll position. `gitview.rs` runs `git` (`status
+    --porcelain=v1 -z --untracked-files=all --no-renames`, one `cat-file
+    --batch` for all `HEAD` blobs) with `GIT_OPTIONAL_LOCKS=0` (never
+    rewrites the index while Claude Code works), no pager, no external
+    diff, `CREATE_NO_WINDOW` on Windows. Limits (`gitview::Limits`): 300
+    files read (more are counted, the first 300 by path shown), 2 MiB per
+    file side (as for edits), 16 MiB in all, 3 s wall time for every `git`
+    call together — over it the child is killed and the view says what was
+    cut; each file's line diff gives up exactness after 500 ms. Credential-
+    like paths are listed with "never read"; binary and over-size files
+    with the reason. Measured (release, WSL2, 1 500 tracked files of 400
+    lines, 1 200 changed, 300 untracked): limit 300 → collect 104 ms, diff
+    43 ms, 120 301 rows; limit 1 500 → 966 files read before 16 MiB,
+    collect 333 ms, diff 72 ms. Synchronous on the GUI thread (a key
+    press): within the 3 s limit it stays on demand only; a background
+    thread is the alternative if real repositories need more.
   - Resume: tab sets store the Claude Code session id; a restored
     Claude Code tab gets `--resume ID` when Claude Code still has the
     transcript (`<CLAUDE_CONFIG_DIR or ~/.claude>/projects/<folder with

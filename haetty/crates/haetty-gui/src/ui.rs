@@ -89,6 +89,25 @@ pub fn width(s: &str) -> usize {
 }
 
 /// `s` cut to `w` cells, with "…" when it was longer.
+/// `s` in `w` cells, cut at the start with `…` when longer.
+pub fn fit_left(s: &str, w: usize) -> String {
+    if width(s) <= w {
+        return s.to_string();
+    }
+    let mut out: Vec<char> = vec![];
+    let mut used = 0;
+    for c in s.chars().rev() {
+        let cw = crate::text_width(c);
+        if used + cw + 1 > w {
+            break;
+        }
+        out.push(c);
+        used += cw;
+    }
+    out.push('…');
+    out.iter().rev().collect()
+}
+
 pub fn fit(s: &str, w: usize) -> String {
     if width(s) <= w {
         return s.to_string();
@@ -202,27 +221,72 @@ pub fn tab_bar(tabs: &[TabView], active: usize, cols: usize, g: Greys) -> Vec<Ce
 pub struct Palette {
     pub query: String,
     pub selected: usize,
+    pub mode: PaletteMode,
+}
+
+/// What the palette offers.
+#[derive(Default, Debug)]
+pub enum PaletteMode {
+    /// Every action (the command palette).
+    #[default]
+    Actions,
+    /// The query is the active tab's new name; `now` is its name now.
+    Rename { now: String },
+    /// Closed tabs: (name, details) each.
+    Closed(Vec<(String, String)>),
+}
+
+/// What Enter picks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Pick {
+    Action(Action),
+    /// Index into the closed list given to [`Palette::closed`].
+    Closed(usize),
+    Rename(String),
+}
+
+fn words_match(q: &str, text: &str) -> bool {
+    let l = text.to_lowercase();
+    q.to_lowercase().split_whitespace().all(|w| l.contains(w))
 }
 
 impl Palette {
-    /// Actions whose label contains every word of the query (any case).
-    pub fn matches(&self) -> Vec<Action> {
-        let q = self.query.to_lowercase();
-        Action::all()
-            .into_iter()
-            .filter(|a| {
-                let l = a.label().to_lowercase();
-                q.split_whitespace().all(|w| l.contains(w))
-            })
-            .collect()
+    pub fn rename(now: String, custom: Option<String>) -> Palette {
+        Palette { query: custom.unwrap_or_default(), selected: 0, mode: PaletteMode::Rename { now } }
     }
 
-    pub fn current(&self) -> Option<Action> {
-        self.matches().get(self.selected).copied()
+    pub fn closed(items: Vec<(String, String)>) -> Palette {
+        Palette { query: String::new(), selected: 0, mode: PaletteMode::Closed(items) }
+    }
+
+    /// Actions whose label contains every word of the query (any case).
+    pub fn matches(&self) -> Vec<Action> {
+        if !matches!(self.mode, PaletteMode::Actions) {
+            return vec![];
+        }
+        Action::all().into_iter().filter(|a| words_match(&self.query, &a.label())).collect()
+    }
+
+    /// Closed tabs matching the query (indices).
+    fn closed_matches(&self) -> Vec<usize> {
+        let PaletteMode::Closed(items) = &self.mode else { return vec![] };
+        (0..items.len()).filter(|&i| words_match(&self.query, &format!("{} {}", items[i].0, items[i].1))).collect()
+    }
+
+    pub fn current(&self) -> Option<Pick> {
+        match &self.mode {
+            PaletteMode::Actions => self.matches().get(self.selected).copied().map(Pick::Action),
+            PaletteMode::Rename { .. } => Some(Pick::Rename(self.query.clone())),
+            PaletteMode::Closed(_) => self.closed_matches().get(self.selected).copied().map(Pick::Closed),
+        }
     }
 
     pub fn move_by(&mut self, d: isize) {
-        let n = self.matches().len();
+        let n = match self.mode {
+            PaletteMode::Actions => self.matches().len(),
+            PaletteMode::Rename { .. } => 0,
+            PaletteMode::Closed(_) => self.closed_matches().len(),
+        };
         if n == 0 {
             self.selected = 0;
             return;
@@ -239,7 +303,30 @@ impl Palette {
         }
         let w = (cols - 4).min(64);
         let x0 = (cols - w) / 2;
-        let items = self.matches();
+        // (label, right-hand text) per row; `None` for "choose": an info row.
+        let items: Vec<(String, String, bool)> = match &self.mode {
+            PaletteMode::Actions => self
+                .matches()
+                .into_iter()
+                .map(|a| (a.label(), keys.chord_for(a).map(|c| c.to_string()).unwrap_or_default(), true))
+                .collect(),
+            PaletteMode::Rename { now } => {
+                vec![(format!("Enter renames · empty: automatic name · now: {now}"), String::new(), false)]
+            }
+            PaletteMode::Closed(list) => {
+                let m = self.closed_matches();
+                if list.is_empty() {
+                    vec![("No closed tabs.".into(), String::new(), false)]
+                } else {
+                    m.into_iter().map(|i| (list[i].0.clone(), list[i].1.clone(), true)).collect()
+                }
+            }
+        };
+        let prompt = match self.mode {
+            PaletteMode::Actions => "> ",
+            PaletteMode::Rename { .. } => "Rename tab: ",
+            PaletteMode::Closed(_) => "Reopen: ",
+        };
         let h = (items.len() + 1).min(rows.saturating_sub(1)).max(2);
         let panel = g.bar;
         // Query line.
@@ -247,26 +334,34 @@ impl Palette {
         for c in &mut r[x0..x0 + w] {
             *c = blank(g.strong, panel);
         }
-        let end = put(r, x0 + 1, "> ", g.dim, panel, false);
-        let cursor_x = put(r, end, &fit(&self.query, w - 4), g.strong, panel, false);
-        for (i, a) in items.iter().take(h - 1).enumerate() {
-            let sel = i == self.selected;
+        let end = put(r, x0 + 1, prompt, g.dim, panel, false);
+        let cursor_x = put(r, end, &fit(&self.query, w.saturating_sub(end - x0 + 2)), g.strong, panel, false);
+        for (i, (label, key, pickable)) in items.iter().take(h - 1).enumerate() {
+            let sel = *pickable && i == self.selected;
             let bg = if sel { mix(panel, g.strong, 40) } else { panel };
             let row = &mut grid[top + 1 + i];
             for c in &mut row[x0..x0 + w] {
                 *c = blank(g.normal, bg);
             }
-            let key = keys.chord_for(*a).map(|c| c.to_string()).unwrap_or_default();
-            let kw = width(&key);
+            // The right-hand text takes at most half; a long one keeps its end
+            // (a folder's last parts).
+            let key = &fit_left(key, (w / 2).saturating_sub(2));
+            let kw = width(key);
             put(
                 row,
                 x0 + 2,
-                &fit(&a.label(), w.saturating_sub(kw + 5)),
-                if sel { g.strong } else { g.normal },
+                &fit(label, w.saturating_sub(kw + 5)),
+                if sel {
+                    g.strong
+                } else if *pickable {
+                    g.normal
+                } else {
+                    g.dim
+                },
                 bg,
                 sel,
             );
-            put(row, x0 + w - 1 - kw, &key, g.dim, bg, false);
+            put(row, x0 + w - 1 - kw, key, g.dim, bg, false);
         }
         Some((cursor_x as u16, top as u16))
     }
@@ -667,6 +762,34 @@ mod tests {
         assert_eq!(p.selected, n - 1);
         p.query = "zzz".into();
         assert_eq!(p.current(), None);
+        p.query = "rename".into();
+        p.selected = 0;
+        assert_eq!(p.current(), Some(Pick::Action(Action::RenameTab)));
+        // Rename: the query is the name; Closed: indices into the list.
+        let mut r = Palette::rename("repo:main".into(), Some("mine".into()));
+        assert_eq!(r.current(), Some(Pick::Rename("mine".into())));
+        r.move_by(1);
+        assert_eq!(r.selected, 0);
+        let mut c =
+            Palette::closed(vec![("a".into(), "~/x · claude · resume".into()), ("b".into(), "~/y · bash".into())]);
+        assert_eq!(c.current(), Some(Pick::Closed(0)));
+        c.query = "bash".into();
+        assert_eq!(c.current(), Some(Pick::Closed(1)));
+        let g = Greys::from(FG, BG);
+        let mut grid = vec![vec![Cell::default(); 70]; 6];
+        c.query.clear();
+        c.draw(&mut grid, 0, &Keymap::default(), g);
+        let line = |r: &Vec<Cell>| r.iter().map(|c| c.text.clone()).collect::<String>();
+        assert!(line(&grid[0]).contains("Reopen:"), "{}", line(&grid[0]));
+        assert!(line(&grid[2]).contains("~/y · bash"), "{}", line(&grid[2]));
+        // A long folder: the name stays, the folder keeps its end.
+        let mut c = Palette::closed(vec![("my tab".into(), format!("/{} · claude · resume", "deep/".repeat(30)))]);
+        c.query.clear();
+        let mut grid = vec![vec![Cell::default(); 70]; 4];
+        c.draw(&mut grid, 0, &Keymap::default(), g);
+        let l = line(&grid[1]);
+        assert!(l.contains("my tab") && l.contains("…") && l.contains("claude · resume"), "{l}");
+        assert_eq!(fit_left("abcdef", 4), "…def");
     }
 
     #[test]

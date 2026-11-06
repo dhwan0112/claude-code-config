@@ -1,6 +1,7 @@
 //! Tab sets (after ccx's `savetabs.sh`): the window's tabs as a file in
 //! the state directory, `tabs/<NAME>.tsv`. One line per tab in order:
-//! `name  cwd  program  args  claude_session_id  active`, tab-separated;
+//! `name  cwd  program  args  claude_session_id  active  custom`, tab-separated
+//! (`custom` 1: the name was given by the person — older files lack it);
 //! args are joined with U+001F; tabs, newlines and backslashes in fields are
 //! escaped. A `#` header line says what the file is.
 //!
@@ -23,6 +24,33 @@ pub struct SavedTab {
     /// Claude Code session id (UUID), for `--resume` (milestone 3).
     pub claude_session: String,
     pub active: bool,
+    /// `name` was given by the person (Rename tab), not made up by haetty.
+    pub custom: bool,
+}
+
+/// Closed tabs kept for "Reopen a closed tab" (newest first).
+pub const CLOSED: &str = "closed";
+pub const CLOSED_MAX: usize = 20;
+
+/// Puts a tab closed on purpose first in the set [`CLOSED`] (at most
+/// [`CLOSED_MAX`]; an older entry for the same conversation goes).
+pub fn push_closed(dir: &Path, mut tab: SavedTab) -> io::Result<()> {
+    tab.active = false;
+    let mut v = load(dir, CLOSED).unwrap_or_default();
+    v.retain(|t| tab.claude_session.is_empty() || t.claude_session != tab.claude_session);
+    v.insert(0, tab);
+    v.truncate(CLOSED_MAX);
+    save(dir, CLOSED, &v)
+}
+
+/// Removes `tab` (reopened) from [`CLOSED`].
+pub fn remove_closed(dir: &Path, tab: &SavedTab) -> io::Result<()> {
+    let mut v = load(dir, CLOSED).unwrap_or_default();
+    if let Some(i) = v.iter().position(|t| t == tab) {
+        v.remove(i);
+        save(dir, CLOSED, &v)?;
+    }
+    Ok(())
 }
 
 fn esc(s: &str) -> String {
@@ -58,19 +86,20 @@ pub fn path(dir: &Path, name: &str) -> PathBuf {
 
 pub fn format(name: &str, tabs: &[SavedTab]) -> String {
     let mut s = format!(
-        "# haetty tabs \"{name}\": {} tab(s). Columns: name, folder, program, args (U+001F-separated), Claude Code session id, active\n",
+        "# haetty tabs \"{name}\": {} tab(s). Columns: name, folder, program, args (U+001F-separated), Claude Code session id, active, custom name\n",
         tabs.len()
     );
     for t in tabs {
         let args: Vec<String> = t.args.iter().map(|a| esc(a)).collect();
         s.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             esc(&t.name),
             esc(&t.cwd),
             esc(&t.program),
             args.join("\u{1f}"),
             esc(&t.claude_session),
-            u8::from(t.active)
+            u8::from(t.active),
+            u8::from(t.custom)
         ));
     }
     s
@@ -91,6 +120,7 @@ pub fn parse(text: &str) -> Vec<SavedTab> {
                 args: if f[3].is_empty() { vec![] } else { f[3].split('\u{1f}').map(unesc).collect() },
                 claude_session: unesc(f[4]),
                 active: f[5] == "1",
+                custom: f.get(6) == Some(&"1"),
             })
         })
         .collect()
@@ -173,6 +203,7 @@ mod tests {
             args: vec!["--model".into(), "x\ty".into()],
             claude_session: "0f0fc5c9-9b5a-4538-81fb-def23b2a894b".into(),
             active,
+            custom: name.starts_with("two"),
         }
     }
 
@@ -187,6 +218,10 @@ mod tests {
         assert!(text.starts_with("# haetty tabs \"last\": 3 tab(s)"));
         assert_eq!(parse(&text), tabs);
         assert!(parse("# x\nbad line\n\t\t\t\t\t1\n").is_empty());
+        // Files written before the `custom` column: automatic names.
+        let old = "n\t/p\tclaude\t\tsid\t1\n";
+        assert!(!parse(old)[0].custom);
+        assert!(parse(&text)[1].custom);
         let d = haetty_testkit::run_dir("tabsets");
         save(&d, "last", &tabs).unwrap();
         assert_eq!(rotate_last(&d), tabs);
@@ -223,6 +258,7 @@ mod tests {
             args: vec![],
             claude_session: sid.into(),
             active: false,
+            custom: false,
         };
         let saved = vec![
             tab("claude", "/p", "aaa"),
@@ -243,5 +279,29 @@ mod tests {
             [("claude", "bbb"), ("bash", "")]
         );
         assert_eq!(not_live(&saved, &[]).len(), 4);
+    }
+
+    #[test]
+    fn closed_tabs_newest_first_twenty_one_per_conversation() {
+        let d = haetty_testkit::run_dir("tabsets-closed");
+        for i in 0..25 {
+            let mut x = t(&format!("t{i}"), true);
+            x.claude_session = if i % 2 == 0 { format!("s{i}") } else { String::new() };
+            push_closed(&d, x).unwrap();
+        }
+        let v = load(&d, CLOSED).unwrap();
+        assert_eq!(v.len(), CLOSED_MAX);
+        assert_eq!((v[0].name.as_str(), v[19].name.as_str()), ("t24", "t5"));
+        assert!(v.iter().all(|t| !t.active));
+        // The same conversation closed again: one entry, first.
+        let mut again = t("t10 again", false);
+        again.claude_session = "s10".into();
+        push_closed(&d, again.clone()).unwrap();
+        let v = load(&d, CLOSED).unwrap();
+        assert_eq!(v[0].name, "t10 again");
+        assert_eq!(v.iter().filter(|t| t.claude_session == "s10").count(), 1);
+        remove_closed(&d, &v[0]).unwrap();
+        assert!(load(&d, CLOSED).unwrap().iter().all(|t| t.claude_session != "s10"));
+        haetty_testkit::remove_dir_all(&d);
     }
 }

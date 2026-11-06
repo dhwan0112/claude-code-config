@@ -33,6 +33,13 @@ pub enum Action {
     /// Read the config file again and apply its theme and colours to every
     /// tab (also done when the window gets focus and the file changed).
     ReloadConfig,
+    /// Give the active tab a name of one's own (empty: the automatic name).
+    RenameTab,
+    /// Pick one of the last 20 closed tabs to open again.
+    ReopenClosedTab,
+    /// Take the active tab out of the window; its session keeps running
+    /// (`AttachDetached` brings it back).
+    DetachTab,
 }
 
 impl Action {
@@ -55,6 +62,9 @@ impl Action {
             Action::StatusPanelNarrower => "status_panel_narrower".into(),
             Action::AttachDetached => "attach_detached".into(),
             Action::ReloadConfig => "reload_config".into(),
+            Action::RenameTab => "rename_tab".into(),
+            Action::ReopenClosedTab => "reopen_closed_tab".into(),
+            Action::DetachTab => "detach_tab".into(),
         }
     }
 
@@ -77,6 +87,9 @@ impl Action {
             Action::StatusPanelNarrower => "Status panel narrower".into(),
             Action::AttachDetached => "Attach detached sessions".into(),
             Action::ReloadConfig => "Reload config (theme and colours)".into(),
+            Action::RenameTab => "Rename tab".into(),
+            Action::ReopenClosedTab => "Reopen a closed tab".into(),
+            Action::DetachTab => "Detach tab (keeps running)".into(),
         }
     }
 
@@ -97,6 +110,9 @@ impl Action {
             "status_panel_narrower" => Action::StatusPanelNarrower,
             "attach_detached" => Action::AttachDetached,
             "reload_config" => Action::ReloadConfig,
+            "rename_tab" => Action::RenameTab,
+            "reopen_closed_tab" => Action::ReopenClosedTab,
+            "detach_tab" => Action::DetachTab,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -109,7 +125,15 @@ impl Action {
 
     /// Every action, in palette order.
     pub fn all() -> Vec<Action> {
-        let mut v = vec![Action::NewTab, Action::CloseTab, Action::NextTab, Action::PreviousTab];
+        let mut v = vec![
+            Action::NewTab,
+            Action::CloseTab,
+            Action::NextTab,
+            Action::PreviousTab,
+            Action::RenameTab,
+            Action::ReopenClosedTab,
+            Action::DetachTab,
+        ];
         v.extend((1..=9).map(Action::GotoTab));
         v.extend([
             Action::DiffView,
@@ -208,6 +232,8 @@ impl Default for Keymap {
         // Claude Code binds Ctrl+D (exit) and Ctrl+S (stash), not these.
         b("ctrl+shift+d", Action::DiffView);
         b("ctrl+shift+s", Action::StatusPanel);
+        // Claude Code binds Ctrl+R (history search), not this.
+        b("ctrl+shift+r", Action::RenameTab);
         b("ctrl+shift+v", Action::Paste);
         b("shift+insert", Action::Paste);
         b("paste", Action::Paste); // a keyboard's Paste key
@@ -258,6 +284,11 @@ mod tests {
         assert_eq!(k.action(&ch("ctrl+shift+tab")), Some(Action::PreviousTab));
         // Claude Code's own keys stay free.
         assert_eq!(k.action(&ch("ctrl+shift+d")), Some(Action::DiffView));
+        assert_eq!(k.action(&ch("ctrl+shift+r")), Some(Action::RenameTab));
+        assert_eq!(k.action(&ch("ctrl+r")), None);
+        for a in Action::all() {
+            assert_eq!(Action::parse(&a.name()), Some(a), "{a:?}");
+        }
         for s in
             ["ctrl+c", "ctrl+d", "ctrl+s", "ctrl+t", "ctrl+r", "alt+p", "alt+m", "alt+t", "shift+tab", "tab", "escape"]
         {

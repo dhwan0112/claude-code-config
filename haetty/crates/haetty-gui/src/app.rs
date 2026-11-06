@@ -28,8 +28,10 @@ use crate::clipboard::Clipboard;
 use crate::config::Decorations;
 use crate::damage;
 use crate::diffview::DiffView;
+use crate::diffview::{self, Mode as DiffMode};
 use crate::font::Fonts;
 use crate::geom::Layout;
+use crate::gitview;
 use crate::input::{self, RawKey, Wheel};
 use crate::keymap::{Action, Chord, Keymap};
 use crate::render::paint::{Look, Painter};
@@ -37,7 +39,7 @@ use crate::render::soft::SoftRenderer;
 use crate::render::{PaddingStyle, Preedit, Renderer, Scene};
 use crate::tabsets::{self, SavedTab};
 use crate::titlebar;
-use crate::ui::{self, Compose, Palette, TabView};
+use crate::ui::{self, Compose, Palette, Pick, TabView};
 use crate::Options;
 
 /// How long a close request waits for its confirming second press, and how
@@ -67,6 +69,8 @@ struct TabSpec {
     args: Vec<String>,
     cwd: Option<String>,
     name: Option<String>,
+    /// `name` was given by the person (kept over automatic names).
+    custom: bool,
 }
 
 struct Tab {
@@ -81,9 +85,38 @@ struct Tab {
     /// Claude Code with haetty's integration: a status row is reserved.
     integrated: bool,
     claude: Option<Arc<ClaudeInfo>>,
+    /// The person's name for the tab (Rename tab).
+    custom_name: Option<String>,
+    /// Claude Code tabs: `repo:branch` of the tab's folder, and which folder
+    /// and when that was read.
+    git_name: Option<String>,
+    git_read: Option<(String, Instant)>,
 }
 
 impl Tab {
+    /// The folder the tab's program works in (as far as haetty knows).
+    fn folder(&self) -> Option<String> {
+        let pwd = self.snap.as_ref().map(|s| osc7_path(&s.pwd)).filter(|p| !p.is_empty());
+        pwd.or_else(|| self.spec.cwd.clone())
+    }
+
+    /// Reads `repo:branch` again when the folder changed or 3 s passed
+    /// (files under `.git` only; Claude Code tabs). True when it changed.
+    fn refresh_git(&mut self) -> bool {
+        if !haetty_cc::settings::is_claude(&self.spec.program) {
+            return false;
+        }
+        let Some(dir) = self.folder() else { return false };
+        if self.git_read.as_ref().is_some_and(|(d, t)| *d == dir && t.elapsed() < Duration::from_secs(3)) {
+            return false;
+        }
+        let name = gitview::repo_branch(std::path::Path::new(&dir));
+        self.git_read = Some((dir, Instant::now()));
+        let changed = name != self.git_name;
+        self.git_name = name;
+        changed
+    }
+
     fn attention(&self) -> Attention {
         self.claude.as_ref().map_or(Attention::None, |c| c.attention)
     }
@@ -96,8 +129,13 @@ impl Tab {
             .as_ref()
             .map(|c| c.name.chars().filter(|c| !c.is_control()).collect::<String>().trim().to_string())
             .unwrap_or_default();
+        // The person's name; Claude Code's session name; `repo:branch`
+        // (Claude Code tabs); a restored name while the program has no title;
+        // the title.
         let name = match (&self.spec.name, title.trim().is_empty()) {
+            _ if self.custom_name.is_some() => self.custom_name.clone().unwrap_or_default(),
             _ if !session_name.is_empty() => session_name,
+            _ if self.git_name.is_some() => self.git_name.clone().unwrap_or_default(),
             (Some(n), true) => n.clone(),
             _ => ui::tab_name(title, &self.program),
         };
@@ -139,6 +177,8 @@ struct Win {
     chrome: Chrome,
     keys: Keymap,
     palette: Option<Palette>,
+    /// The closed tabs the palette lists (Reopen a closed tab).
+    closed: Vec<SavedTab>,
     hint: Option<(String, Instant)>,
     /// A close request waiting for its second press: (session id, time).
     pending_close: Option<(String, Instant)>,
@@ -301,6 +341,7 @@ impl App {
             chrome,
             keys: self.opts.keymap.clone(),
             palette: None,
+            closed: vec![],
             hint: None,
             pending_close: None,
             swallowed: HashSet::new(),
@@ -411,7 +452,8 @@ impl Win {
     /// Opens a tab running the window's command in the active tab's
     /// directory (else where haetty started) and selects it.
     fn open_tab(&mut self, cwd: Option<String>) -> Result<(), String> {
-        let spec = TabSpec { program: self.command.0.clone(), args: self.command.1.clone(), cwd, name: None };
+        let spec =
+            TabSpec { program: self.command.0.clone(), args: self.command.1.clone(), cwd, name: None, custom: false };
         self.open_spec(spec)
     }
 
@@ -421,8 +463,13 @@ impl Win {
 
     /// Shows a session of the daemon that no window shows, as a new tab.
     fn reattach(&mut self, s: &SessionInfo) -> Result<(), String> {
-        let spec =
-            TabSpec { program: s.program.clone(), args: s.args.clone(), cwd: Some(osc7_path(&s.cwd)), name: None };
+        let spec = TabSpec {
+            program: s.program.clone(),
+            args: s.args.clone(),
+            cwd: Some(osc7_path(&s.cwd)),
+            name: None,
+            custom: false,
+        };
         let integrated = self.is_integrated(&s.program);
         let size = self.term_grid_for(integrated, self.tabs.len() + 1);
         log::info!("reattaching session {} ({})", s.id, s.program);
@@ -498,11 +545,22 @@ impl Win {
             }
             let mut args = t.args.clone();
             if haetty_cc::settings::is_claude(&t.program) && !t.claude_session.is_empty() {
-                // The conversation is already open: do not open it twice.
-                let running =
-                    live.iter().any(|s| s.claude_session == t.claude_session && s.state == SessionState::Running);
+                // The conversation is already open: do not open it twice. A
+                // session started with `--resume ID` counts before Claude Code
+                // has reported its id (a second reopen right after the first).
+                let id = t.claude_session.as_str();
+                let resumes = |args: &[String]| {
+                    args.windows(2).any(|w| matches!(w[0].as_str(), "--resume" | "-r") && w[1] == id)
+                        || args.iter().any(|a| a.strip_prefix("--resume=") == Some(id))
+                };
+                let running = live
+                    .iter()
+                    .any(|s| s.state == SessionState::Running && (s.claude_session == id || resumes(&s.args)));
                 if running
-                    || self.tabs.iter().any(|x| x.claude.as_ref().is_some_and(|c| c.claude_session == t.claude_session))
+                    || self.tabs.iter().any(|x| {
+                        x.exited.is_none()
+                            && (x.claude.as_ref().is_some_and(|c| c.claude_session == id) || resumes(&x.spec.args))
+                    })
                 {
                     log::info!("tab set: conversation of {:?} is already open; skipped", t.name);
                     continue;
@@ -518,6 +576,7 @@ impl Win {
                 args,
                 cwd: (!t.cwd.is_empty()).then(|| t.cwd.clone()),
                 name: (!t.name.is_empty()).then(|| t.name.clone()),
+                custom: t.custom && !t.name.is_empty(),
             };
             match self.open_spec(spec) {
                 Ok(()) => n += 1,
@@ -529,23 +588,29 @@ impl Win {
 
     /// The open tabs as a tab set.
     fn saved_tabs(&self) -> Vec<SavedTab> {
-        self.tabs
-            .iter()
-            .enumerate()
-            .filter(|(_, t)| t.exited.is_none())
-            .map(|(i, t)| {
-                let pwd = t.snap.as_ref().map(|s| osc7_path(&s.pwd)).filter(|p| !p.is_empty());
-                SavedTab {
-                    name: t.name(),
-                    cwd: pwd.or_else(|| t.spec.cwd.clone()).unwrap_or_default(),
-                    program: t.spec.program.clone(),
-                    // Without an earlier --resume: the session id below says which.
-                    args: haetty_cc::resume::without_resume(&t.spec.args),
-                    claude_session: t.claude.as_ref().map(|c| c.claude_session.clone()).unwrap_or_default(),
-                    active: i == self.active,
+        (0..self.tabs.len()).filter(|&i| self.tabs[i].exited.is_none()).map(|i| self.saved_tab(i)).collect()
+    }
+
+    fn saved_tab(&self, i: usize) -> SavedTab {
+        let t = &self.tabs[i];
+        SavedTab {
+            // An exited tab's name without " [exited …]".
+            name: t.custom_name.clone().unwrap_or_else(|| {
+                let n = t.name();
+                if t.exited.is_some() {
+                    n.rsplit_once(" [exited").map_or(n.clone(), |(a, _)| a.to_string())
+                } else {
+                    n
                 }
-            })
-            .collect()
+            }),
+            cwd: t.folder().unwrap_or_default(),
+            program: t.spec.program.clone(),
+            // Without an earlier --resume: the session id below says which.
+            args: haetty_cc::resume::without_resume(&t.spec.args),
+            claude_session: t.claude.as_ref().map(|c| c.claude_session.clone()).unwrap_or_default(),
+            active: i == self.active,
+            custom: t.custom_name.is_some(),
+        }
     }
 
     /// Keeps the tab set "last" equal to the open tabs.
@@ -615,7 +680,22 @@ impl Win {
             t.session.handle.focus(false);
         }
         let program = spec.program.clone();
-        self.tabs.push(Tab { session, snap: None, spec, program, exited: None, size, integrated, claude: None });
+        let custom_name = spec.name.clone().filter(|_| spec.custom);
+        let mut tab = Tab {
+            session,
+            snap: None,
+            spec,
+            program,
+            exited: None,
+            size,
+            integrated,
+            claude: None,
+            custom_name,
+            git_name: None,
+            git_read: None,
+        };
+        tab.refresh_git();
+        self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
         if self.focused {
             self.handle().focus(true);
@@ -661,6 +741,13 @@ impl Win {
     }
 
     fn close_tab(&mut self, i: usize) {
+        // Closed on purpose (not the window closing): kept for "Reopen a
+        // closed tab".
+        if !self.shutting_down {
+            if let Err(e) = tabsets::push_closed(&tabsets::dir(), self.saved_tab(i)) {
+                log::warn!("tab set closed: {e}");
+            }
+        }
         let t = self.tabs.remove(i);
         if let Err(e) = self.client.close(&t.session.id) {
             log::warn!("close session {}: {e}", t.session.id);
@@ -671,15 +758,104 @@ impl Win {
             self.save_last();
             return;
         }
+        self.after_removal(i);
+    }
+
+    /// A tab left the window (closed or detached): the next one is active.
+    fn after_removal(&mut self, i: usize) {
         if self.active >= self.tabs.len() || self.active > i {
             self.active = self.active.saturating_sub(1).min(self.tabs.len() - 1);
         }
         if self.focused {
             self.handle().focus(true);
         }
+        self.diff = None;
         self.update_title();
         self.relayout();
         self.save_last();
+    }
+
+    /// Takes the active tab out of the window; the daemon keeps its session
+    /// ("Attach detached sessions" shows it again). Not the only tab: the
+    /// window would close.
+    fn detach_tab(&mut self) {
+        if self.tabs.len() < 2 {
+            self.show_hint("the only tab cannot be detached: open another tab first".into());
+            return;
+        }
+        let i = self.active;
+        let t = self.tabs.remove(i);
+        if let Err(e) = self.client.detach(&t.session.id) {
+            log::warn!("detach session {}: {e}", t.session.id);
+        }
+        log::info!("tab {} detached: session {} keeps running in the daemon", i + 1, t.session.id);
+        self.after_removal(i);
+        let key = Action::AttachDetached.label();
+        self.show_hint(format!("tab detached; \"{key}\" in the palette shows it again"));
+    }
+
+    /// Opens the diff view `mode` for the active tab (`old`: the view it
+    /// replaces, for a reread keeping its place).
+    fn open_diff(&mut self, mode: DiffMode, old: Option<&diffview::DiffView>) {
+        let id = self.tab().session.id.clone();
+        let edit = match self.client.get_edit(&id) {
+            Ok(e) => e,
+            Err(e) => {
+                self.show_hint(format!("diff: {e}"));
+                return;
+            }
+        };
+        let limits = gitview::Limits::default();
+        let mut v = match mode {
+            DiffMode::Edit => diffview::DiffView::new(edit.as_deref()),
+            DiffMode::Head => match edit.as_deref() {
+                Some(e) => diffview::DiffView::git(mode, gitview::head(&e.meta.path, &limits)),
+                None => diffview::DiffView::note_only(
+                    mode,
+                    "[vs HEAD] no edit yet".into(),
+                    "Claude Code has not edited a file in this tab yet: no file to compare (m: the working tree)."
+                        .into(),
+                ),
+            },
+            DiffMode::Tree => {
+                // The repository of the last edit, else of the tab's folder.
+                let dir = edit
+                    .as_deref()
+                    .and_then(|e| std::path::Path::new(&e.meta.path).parent().map(|p| p.to_string_lossy().into_owned()))
+                    .or_else(|| self.tab().folder());
+                match dir {
+                    Some(d) => diffview::DiffView::git(mode, gitview::tree(&d, &limits)),
+                    None => diffview::DiffView::note_only(mode, "[working tree]".into(), "No folder known.".into()),
+                }
+            }
+        };
+        if let Some(t) = v.collect_time() {
+            let cols = (self.grid.cols - self.panel_cols()) as usize;
+            log::info!("diff view {}: {:?} to collect, {} rows", mode.label(), t, v.row_count(cols));
+        }
+        if let Some(o) = old {
+            let area = self.grid.rows.saturating_sub(self.top() + u16::from(self.tab().integrated)) as usize;
+            v.keep_scroll(o, area, (self.grid.cols - self.panel_cols()) as usize);
+        }
+        self.diff = Some(v);
+    }
+
+    /// The closed tabs, for the palette: (name, folder · program · resume).
+    fn closed_items(list: &[SavedTab]) -> Vec<(String, String)> {
+        let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).ok();
+        list.iter()
+            .map(|t| {
+                let cwd = match &home {
+                    Some(h) if !h.is_empty() && t.cwd.starts_with(h.as_str()) => format!("~{}", &t.cwd[h.len()..]),
+                    _ => t.cwd.clone(),
+                };
+                let prog = std::path::Path::new(&t.program)
+                    .file_name()
+                    .map_or(t.program.clone(), |n| n.to_string_lossy().into_owned());
+                let resume = if t.claude_session.is_empty() { "" } else { " · resume" };
+                (t.name.clone(), format!("{cwd} · {prog}{resume}"))
+            })
+            .collect()
     }
 
     /// Close needs the same shortcut twice within [`CONFIRM`] while the
@@ -740,15 +916,23 @@ impl Win {
                     if !self.tab().integrated {
                         self.show_hint("the diff view is for Claude Code tabs".into());
                     } else {
-                        match self.client.get_edit(&self.tab().session.id) {
-                            Ok(e) => self.diff = Some(DiffView::new(e.as_deref())),
-                            Err(e) => self.show_hint(format!("diff: {e}")),
-                        }
+                        self.open_diff(DiffMode::Edit, None);
                     }
                 }
                 self.full = true;
                 self.recompose();
             }
+            Action::RenameTab => {
+                let now = self.tab().name();
+                self.palette = Some(Palette::rename(now, self.tab().custom_name.clone()));
+                self.recompose();
+            }
+            Action::ReopenClosedTab => {
+                self.closed = tabsets::load(&tabsets::dir(), tabsets::CLOSED).unwrap_or_default();
+                self.palette = Some(Palette::closed(Self::closed_items(&self.closed)));
+                self.recompose();
+            }
+            Action::DetachTab => self.detach_tab(),
             Action::StatusPanel => {
                 self.panel_open = !self.panel_open;
                 save_ui_state(self.panel_open, self.panel_width);
@@ -941,6 +1125,9 @@ impl Win {
         let Some(next) = self.tabs[i].session.handle.snapshot() else { return };
         let title_changed = self.tabs[i].snap.as_ref().is_none_or(|s| s.title != next.title);
         self.tabs[i].snap = Some(next);
+        if self.tabs[i].refresh_git() && i != self.active {
+            self.recompose(); // tab bar: name
+        }
         let claude = self.tabs[i].session.handle.claude();
         let claude_changed = match (&claude, &self.tabs[i].claude) {
             (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
@@ -1140,10 +1327,24 @@ impl Win {
                 if let Some(chord) = chord_of(ev, self.mods) {
                     let area = self.grid.rows.saturating_sub(self.top() + u16::from(self.tab().integrated)) as usize;
                     let cols = (self.grid.cols - self.panel_cols()) as usize;
-                    let close = self.diff.as_mut().is_some_and(|d| d.key(&chord.key, chord.shift, area, cols));
-                    if close {
-                        self.diff = None;
-                        self.full = true;
+                    let key = self.diff.as_mut().map(|d| d.key(&chord.key, chord.shift, area, cols));
+                    match key {
+                        Some(diffview::Key::Close) => {
+                            self.diff = None;
+                            self.full = true;
+                        }
+                        Some(diffview::Key::Next) => {
+                            let mode = self.diff.as_ref().map_or(DiffMode::Edit, |d| d.mode.next());
+                            self.open_diff(mode, None);
+                            self.full = true;
+                        }
+                        Some(diffview::Key::Refresh) => {
+                            if let Some(old) = self.diff.take() {
+                                self.open_diff(old.mode, Some(&old));
+                            }
+                            self.full = true;
+                        }
+                        _ => {}
                     }
                     if let Some(c) = code {
                         self.swallowed.insert(c);
@@ -1175,14 +1376,46 @@ impl Win {
         match chord.key.as_str() {
             "escape" => self.palette = None,
             "enter" => {
-                let a = p.current();
+                let pick = p.current();
                 self.palette = None;
-                if let Some(a) = a {
-                    self.recompose();
-                    // Chosen in haetty's own UI: what it sends is made up by
-                    // haetty, not typed into the program (DESIGN.md §3.7).
-                    self.run(a, Origin::Program);
-                    return;
+                match pick {
+                    Some(Pick::Action(a)) => {
+                        self.recompose();
+                        // Chosen in haetty's own UI: what it sends is made up by
+                        // haetty, not typed into the program (DESIGN.md §3.7).
+                        self.run(a, Origin::Program);
+                        return;
+                    }
+                    Some(Pick::Rename(name)) => {
+                        // haetty's own label: nothing reaches the program.
+                        let clean: String = name.chars().filter(|c| !c.is_control()).collect();
+                        let clean: String = clean.trim().chars().take(64).collect();
+                        let auto = clean.is_empty();
+                        self.tabs[self.active].custom_name = (!auto).then_some(clean);
+                        log::info!(
+                            "tab {} renamed ({})",
+                            self.active + 1,
+                            if auto { "automatic name" } else { "own name" }
+                        );
+                        self.save_last();
+                        self.update_title();
+                        self.show_hint(if auto { "automatic tab name".into() } else { "tab renamed".into() });
+                        return;
+                    }
+                    Some(Pick::Closed(i)) => {
+                        if let Some(t) = self.closed.get(i).cloned() {
+                            let n = self.open_saved(std::slice::from_ref(&t));
+                            if n == 1 {
+                                if let Err(e) = tabsets::remove_closed(&tabsets::dir(), &t) {
+                                    log::warn!("tab set closed: {e}");
+                                }
+                            } else {
+                                self.show_hint("not reopened: its conversation is open or its folder is gone".into());
+                                return;
+                            }
+                        }
+                    }
+                    None => {}
                 }
             }
             "up" => p.move_by(-1),

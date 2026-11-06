@@ -36,6 +36,7 @@ mod diffview;
 mod emoji;
 mod font;
 mod geom;
+mod gitview;
 mod icon;
 mod input;
 mod install;
