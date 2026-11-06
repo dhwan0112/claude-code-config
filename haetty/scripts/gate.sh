@@ -3,6 +3,10 @@
 # linkage. Run in the haetty folder of any checkout; tests need HAETTY_TEST_TMP (default /tmp/haetty-test).
 # Prints "GATE fail=0" when everything passed (and "GATE STEP FAILED: …" for each step that did not).
 export HAETTY_TEST_TMP=${HAETTY_TEST_TMP:-/tmp/haetty-test}
+# Tests put Unix sockets under it (<base>/haetty-test-<pid>-<ns>/<test>/rt/haetty/daemon.sock): a long base
+# overflows the 108-byte socket path limit and a daemon test fails with "path must be shorter than SUN_LEN".
+[ ${#HAETTY_TEST_TMP} -le 32 ] || { echo "gate.sh: HAETTY_TEST_TMP is ${#HAETTY_TEST_TMP} characters; use a short base (at most 32), e.g. /tmp/haetty-test"; echo "GATE fail=1"; exit 1; }
+command -v zig > /dev/null || PATH=$HOME/.local/bin:$PATH
 cd "$(dirname "$0")/.." || exit 2
 . "$HOME/.cargo/env" 2>/dev/null
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/target}
