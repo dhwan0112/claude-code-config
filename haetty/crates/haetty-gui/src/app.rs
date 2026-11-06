@@ -665,9 +665,10 @@ impl Win {
     }
 
     fn open_spec(&mut self, spec: TabSpec) -> Result<(), String> {
-        let cwd = spec.cwd.clone().or_else(|| {
-            self.tabs.get(self.active).and_then(|t| t.snap.as_ref()).map(|s| s.pwd.clone()).filter(|p| !p.is_empty())
-        });
+        // The active tab's folder: what its program reported (OSC 7), else
+        // where the tab started — Claude Code reports no folder, so a new tab
+        // next to a worker opens in the worker's worktree (T6).
+        let cwd = spec.cwd.clone().or_else(|| self.tabs.get(self.active).and_then(Tab::folder));
         let cwd = cwd.or_else(|| self.start_cwd.clone()).map(|p| osc7_path(&p));
         // Size it for the grid it will have (the tab bar may appear with it).
         let integrated = self.is_integrated(&spec.program);

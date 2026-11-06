@@ -52,6 +52,11 @@ hk $S SessionStart '{"session_id":"cc-1"}'; hk $S UserPromptSubmit '{"session_id
 key alt+1; key alt+2
 lastw | cut -f1 | grep -qx '… Fix the parser' && ok "tab name: … Fix the parser" || bad "tab name running" "$(lastw | cut -f1)"
 [ -z "$(lastw | cut -f4)" ] && ok "tab set stores no task prompt as arguments" || bad "saved args" "$(lastw | cut -f4 | head -c 80)"
+# A new tab next to the worker opens in its worktree (Claude Code reports no folder; the tab's own one counts).
+key alt+2; key ctrl+shift+t; sleep 1.5
+ncwd=$(J | python3 -Ic "import json,sys; s=json.load(sys.stdin)['sessions']; print(max(s, key=lambda x: x['created_ms'])['cwd'].rstrip('/'))")
+[ "$ncwd" = "$WT" ] && ok "a new tab next to the worker opens in its worktree" || bad "new tab folder" "$ncwd"
+key ctrl+shift+w; key ctrl+shift+w; sleep 0.8; key alt+2
 # 3. A question: the orchestrator holds; the person's keys are not touched.
 hk $S PermissionRequest '{"session_id":"cc-1","tool_name":"Bash"}'; sleep 0.4
 pal "message"; sleep 0.3

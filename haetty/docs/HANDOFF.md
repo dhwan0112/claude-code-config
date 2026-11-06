@@ -18,7 +18,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage t6 (branch `haetty/t6`, worktree `~/projects/claude-code-config-wt/t6`). Remaining: T6: README orchestrator guide for people (so §6.1 item 27 can be done from it alone); a new tab opens in the active tab's folder (also a worker's worktree)
 
 ## 1. Goal
 
@@ -665,7 +664,9 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     repository — the working tree view lists what Claude Code changed with
     Bash too, and returns within a moment.
 
-27. **Orchestrator with a real Claude Code** (stage S3): palette "New task"
+27. **Orchestrator with a real Claude Code** (stage S3; follow README
+    "Orchestrator: tasks and workers" — steps 1–5 and the safety boundary
+    are written for exactly this check): palette "New task"
     in a real repository — the worktree appears beside it on
     `task/t1-…`; the worker tab shows Claude Code's folder-trust question
     and the task is submitted only after you answer it (a positional prompt
@@ -2071,6 +2072,25 @@ regression list, measurements), then committed, pushed and mirrored.
     had no input for 120 s and stop at once when haetty loses the
     foreground; `orchestrator.ps1` was therefore not run (the desktop was in
     use) — §6.1 item 29.
+
+- **2026-11-06 T6 — the orchestrator explained for people.** README
+  "Orchestrator: tasks and workers" replaces the short section: what a
+  task and a worker are; before you start (`worker-command`, permission
+  mode = your own settings); step 1 making a task (the three questions,
+  what haetty creates, refusals, the trust/bypass questions answered by
+  you), step 2 the states (table of marks and meanings, never guessed, the
+  workers panel), the report format with an example and where to read it
+  (`status --json`), step 3 looking at the work, step 4 sending more
+  (when it is sent and when it is held, with the hint), step 5 finishing
+  (merge yourself, close, remove without `--force`, branch kept), the
+  safety boundary, restarting. §6.1 item 27 points to it.
+  - Found while writing it: a new tab opened in haetty's start folder, not
+    the active tab's, when the program reports no folder (Claude Code does
+    not send OSC 7) — so "a shell next to the worker" did not open in the
+    worktree. `open_spec` now falls back to the active tab's own folder
+    (`Tab::folder`: reported, else where it started). Checked:
+    `scripts/e2e/orchestrator.sh` 21/21 with the new check (a new tab next
+    to the worker opens in its worktree), `tabs.sh` 20/20.
 
 ### ccx comparison (milestone 3)
 

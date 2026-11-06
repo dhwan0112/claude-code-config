@@ -408,38 +408,117 @@ names the tab and says that Claude Code is waiting or asks something; never
 session content. `notifications = false` turns off the `notify-send`
 notification; the taskbar/urgency hint stays.
 
-### Orchestrator (first step)
+### Orchestrator: tasks and workers
 
-A *task* is one piece of work for one Claude Code *worker*
-(DESIGN.md §8). Palette "New task" asks three things — a title, a one-line
-description, and the repository and base branch (prefilled from the active
-tab: its repository and current branch) — then:
+A *task* is one piece of work you hand to one Claude Code *worker*. haetty
+gives the worker its own copy of the repository (a git worktree on a new
+branch), starts Claude Code there in a new tab with the task as its first
+prompt, and shows how the worker is doing. It does not split work, merge
+results or answer questions for you (DESIGN.md §8).
 
-- makes a git worktree beside the repository,
-  `<parent>/<repo>-tasks/t1-<title-words>`, on a new branch
-  `task/t1-<title-words>` from the base (it refuses an existing branch or
-  folder);
-- opens a tab running `worker-command` (config, default `claude`) there,
-  with the task as Claude Code's first prompt. haetty adds no permission
-  flags, so your own Claude Code settings decide what it may do. Claude Code
-  asks you to trust the new folder; only you answer that;
-- asks the worker to end with a report: `STATUS: verified | blocked |
-  needs_review`, `ARTIFACT:`, `EVIDENCE:`, `BLOCKERS:`, `NEXT_ACTION:`.
+**Before you start.** Open a tab whose folder is inside the repository you
+want to work on, on the branch the work should start from. The worker runs
+`worker-command` from the config file (default `claude`, i.e. the Claude
+Code on your `PATH`); add arguments there if you always want them, e.g.
+`worker-command = claude --model opus`. haetty adds no permission flags:
+what the worker may do without asking is what your own Claude Code
+settings say (`~/.claude/settings.json`, including bypass mode or not).
 
-The worker's tab name starts with its state: `…` running, `✓` verified
-(with evidence), `✗` blocked, `◇` needs review, `–` no report. The state is
-read from the final message of the latest turn and never guessed; verified
-without evidence counts as needs review. The status panel (Ctrl+Shift+S)
-has a "workers" section, and `haetty status --json` lists `workers` with
-the report's fields.
+**1. Make a task.** Ctrl+Shift+P, type `new task`, Enter. Three questions
+follow, each ended with Enter (Esc cancels):
 
-"Message the worker" sends a line to the active worker as program input,
-only when it is ready: it has finished a turn, it is not working, and no
-question is waiting. haetty never answers Claude Code's questions or
-permission prompts for you. "Remove a task's worktree" runs `git worktree
-remove` (without `--force`: a worktree with changes is kept, with git's
-reason) once its tab is closed; the branch stays. Nothing is cleaned up on
-its own, and nothing is merged.
+1. *Task title* — short; it names the tab and the branch, e.g.
+   `Fix the CRLF parser`.
+2. *Description* — one line with what "done" means, e.g. `Handle \r\n in
+   parser.rs; add a test; cargo test must pass.` More can be sent later
+   (step 4).
+3. *Repository and base* — prefilled with the active tab's repository and
+   its current branch, e.g. `/home/you/src/proj main`. Change the branch at
+   the end of the line if needed.
+
+haetty then:
+
+- creates the branch `task/t1-fix-the-crlf-parser` from the base and a
+  worktree for it **beside** the repository:
+  `/home/you/src/proj-tasks/t1-fix-the-crlf-parser` (your repository's own
+  folder and files are not touched). It refuses when that branch or folder
+  already exists, the base is not a branch or commit, or the folder is not
+  in a git repository — the hint at the bottom says which;
+- opens a tab running the worker in that folder, with the task text as
+  Claude Code's first prompt;
+- asks the worker, in that prompt, to end its final message with a report
+  (below).
+
+Claude Code may first ask whether you trust the new folder, and in bypass
+mode whether you accept it — **answer these yourself**; the task is
+submitted only after that, by Claude Code itself. haetty never types into
+these questions.
+
+**2. Watch the state.** The worker's tab name starts with a mark:
+
+| Mark | State | Meaning |
+|---|---|---|
+| `…` | running | the worker is in a turn (between your/its prompt and its final message) |
+| `✓` | verified | the final message's report says `STATUS: verified` **and** lists evidence |
+| `✗` | blocked | the report says `STATUS: blocked` (it could not finish; `BLOCKERS` says why) |
+| `◇` | needs review | the report says `needs_review`, or `verified` without any evidence |
+| `–` | no report | no turn finished yet, or the last final message had no valid report |
+
+The state comes only from the latest turn's final message (Claude Code's
+Stop hook); haetty never guesses. A red `?` on the tab is Claude Code's own
+question mark, as in any Claude Code tab: it waits for you. The status
+panel (Ctrl+Shift+S, in a Claude Code tab) has a **workers** section: one
+line per task (mark, id, title, state) and, for the active worker, the
+first line of its `BLOCKERS` and `NEXT_ACTION`.
+
+**The report** the worker is asked for, at the end of its final message:
+
+```text
+STATUS: verified
+ARTIFACT: src/parser.rs, tests/crlf.rs (commit 3f2a1c0 on task/t1-fix-the-crlf-parser)
+EVIDENCE: cargo test -> 41 passed; cargo clippy -> 0 warnings
+BLOCKERS: none
+NEXT_ACTION: review the branch and merge it into main
+```
+
+`STATUS` is exactly one of `verified`, `blocked`, `needs_review`. The full
+report is in `haetty status --json` under `workers` (`state`, `status`,
+`artifact`, `evidence`, `blockers`, `next_action`, the worktree, the
+branch and the session).
+
+**3. Look at the work.** In the worker tab, Ctrl+Shift+D shows its last
+edit; `m` switches to that file against `HEAD` and to the whole working
+tree. Or open a shell in the worktree folder (Ctrl+Shift+T in the worker
+tab starts a tab there) and use git as usual.
+
+**4. Send more instructions.** In the worker tab: Ctrl+Shift+P, `message
+the worker`, type one line, Enter. It is sent as program input (one paste
+and Enter) **only when the worker is ready**: it has finished a turn, it is
+not working, and no question is waiting. Otherwise nothing is sent and the
+hint says why (e.g. "the worker waits for your answer — the orchestrator
+never answers"). You can always type into the worker tab yourself, as in
+any Claude Code tab.
+
+**5. Finish.** haetty merges nothing. Review the branch and merge it
+yourself (e.g. `git merge task/t1-fix-the-crlf-parser` in your repository),
+or leave it. To clean up: close the worker tab (Ctrl+Shift+W twice), then
+Ctrl+Shift+P, `remove a task`, pick the task, Enter. haetty runs `git
+worktree remove` **without** `--force`: a worktree with uncommitted or
+untracked files is kept and the hint shows git's reason. The branch is never
+deleted. While the worker tab is open, removing is refused.
+
+**Safety boundary.** Everything the orchestrator sends to a worker is
+marked as program input, never as yours. The daemon refuses program input
+while Claude Code waits for a permission answer, and the orchestrator does
+not even try until the worker has finished a turn and is idle. So the
+orchestrator never answers a permission prompt, a folder-trust question or
+any other dialog — those stay with you. It does not change Claude Code's
+settings or trust records either.
+
+**Restarting.** Worker tabs are saved in tab sets like other tabs; after a
+restart the worker's conversation is resumed (`--resume`) without the task
+being submitted again. Tasks are files in the `tasks` folder of the state
+directory (`haetty status --json` lists them even when no window is open).
 
 ### Desktop integration
 
