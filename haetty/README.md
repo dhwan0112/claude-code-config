@@ -476,6 +476,11 @@ right daemon and tab.
 
 ### Known limits
 
+- If haetty's daemon dies (killed, crashed), its programs end with it (on
+  Linux they get SIGHUP from the closed terminal, on Windows the pseudo
+  console closes); the window stays with a hint, the tab sets are not
+  touched, and the next start reopens the tabs (Claude Code conversations
+  resumed).
 - `decorations = integrated` is Linux only; on Windows it means `native`.
   The integrated title row has no window menu (right click does nothing).
 - Tab sets are not per window: with several haetty windows open, the last
@@ -534,13 +539,18 @@ Inside the daemon, per session:
 
 ```
 PTY reader thread ──Output──▶ engine thread ──Wakeup/Title/Notification/Exited──▶ frontend
-child waiter thread ─Exited─▶   (Terminal, RenderState, encoders, PTY writer)
+child waiter thread ─Exited─▶   (Terminal, RenderState, encoders)
 frontend ──Key/Mouse/Paste/Resize/Snapshot──▶ engine ──Snapshot (plain data)──▶ frontend
+engine ──bytes for the child (in order)──▶ PTY writer thread
 ```
 
 libghostty-vt objects are `!Send`, so they never leave the engine thread.
-Every byte to the child (query replies and user input) is written from that
-thread, in order. A frontend receives `SessionEvent::Wakeup` at most once until
+Every byte to the child (query replies and user input) leaves the engine in
+order through one queue to the PTY writer thread, so the engine never waits
+for a program that does not read its input: query replies beyond 64 KiB
+waiting are dropped, input beyond 64 MiB is dropped with an error event.
+Grid sizes are clamped to 4096 x 2048. A dropped session stops without
+working through queued output. A frontend receives `SessionEvent::Wakeup` at most once until
 it takes a snapshot, and no wakeup is sent while the application holds
 synchronized output (mode 2026), up to `sync_timeout` (500 ms default).
 Over the socket the daemon sends a window the rows that changed since its

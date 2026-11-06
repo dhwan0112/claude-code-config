@@ -11,7 +11,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage s4 (branch `haetty/s4`, worktree `~/projects/claude-code-config-wt/s4`). Remaining: robustness: IPC fuzz (bad length, broken postcard, unknown messages, version mismatch), VT fuzz (random + mutated Claude logs), 1-hour soaks Linux/Windows (running on e2ec468), GUI after a daemon crash (hint, tab-set restore, no orphans), fixes + regression tests (test-guard.ps1 on PowerShell 5.1)
 
 ## 1. Goal
 
@@ -671,6 +670,13 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     tab, "Remove a task's worktree" removes it (and refuses while there are
     uncommitted files); restore the tab set — the worker resumes without
     getting the task again.
+
+28. **Daemon crash with real Claude Code tabs** (stage S4): with two Claude
+    Code tabs in a dev instance, end the dev daemon by its PID (`haetty
+    status --json` → `daemon_pid`); the window stays with the hint, no
+    `claude` process of those tabs is left (`ps` / Task Manager); start haetty
+    again — both conversations resume. On Windows also check that no
+    `node`/`claude` or `OpenConsole` process of those tabs stays.
 
 #### B. Linux with a real account (Claude Code logged in)
 
@@ -1737,6 +1743,82 @@ regression list, measurements), then committed, pushed and mirrored.
     report handling in `haetty-cc/src/state.rs` and the `SessionInfo`
     fields in `haetty-daemon` (no change to `Daemon::input`'s check, the
     permission-prompt path, `report.rs` or the injected settings).
+
+- **2026-11-06 Stage S4 — robustness.** Four defects found and fixed, each
+  with a regression test:
+  1. **A query flood froze every tab**: a program that writes terminal
+     queries (`ESC [6n`, DA, OSC 11 ?) without reading its input (e.g.
+     `cat` of a binary file) filled the PTY's input buffer; the engine
+     blocked in `write`, and every `snapshot()` — the daemon's main loop
+     calls it — waited for ever. Now a PTY writer thread per session takes
+     the bytes in order from a queue; replies are dropped beyond 64 KiB
+     waiting, input beyond 64 MiB (error event). Test
+     `vtfuzz::query_flood_with_a_child_that_never_reads` (60 000 queries,
+     child never reads): hung before, 0.18 s after.
+  2. **A huge resize ended the session's engine**: a 65535 x 65535 `Resize`
+     from a Control client; sizes are clamped to 4096 x 2048 (engine start
+     and every resize). Test `ipcfuzz` (extreme sizes then output).
+  3. **A daemon crash lost the tab set and the window**: every tab got
+     `Exited`; with one tab the window closed without a word, and the next
+     save dropped the exited tabs from `last`, so a restart reopened
+     nothing. Now the client marks the connection lost before the
+     `Exited`s, the GUI keeps the window with a hint that does not expire,
+     freezes `last` and `closed`. Tests `daemoncrash` (cargo: real daemon
+     process killed by PID; `is_lost`; child and background grandchild
+     gone) and `crashrun.sh` (Xvfb, 9/9: window stays, log line, `last`
+     byte-identical, closed list empty, no orphans, hint after 4 s, restart
+     reopens both tabs and resumes the conversation). Windows
+     (`crash-win.ps1`, the dev GUI, daemon stopped by PID): no orphan —
+     both sessions' programs and their console hosts ended — the window
+     stays, `last` unchanged, logged.
+  4. **`test-guard.ps1` did not work under Windows PowerShell 5.1** (what
+     `windows-smoke.ps1` is run with): `[IO.Path]::IsPathFullyQualified`
+     does not exist on .NET Framework, so the absolute-path check failed and
+     a script without try/catch went on. Now a regex check (drive or UNC).
+     New `scripts/test-guard-selftest.ps1`: 8 bases x powershell 5.1 and
+     pwsh 7 — old guard 7/8 wrong under 5.1, new 16/16.
+  Also: a dropped `Session` stops without working through queued output
+  (it waited behind the backlog), and `release` builds libghostty in
+  ReleaseFast instead of Zig Debug (found while fuzzing: release 20 000
+  lines 21 s and 3.3 M REP characters 50 s, `dist` 0.11 s / 0.16 s; after
+  the profile override release 0.11 s / 0.11 s — users of `dist` builds
+  were never affected; earlier release-build measurements and the soak
+  below ran the slow engine).
+  Evidence:
+  - IPC fuzz (`crates/haetty-daemon/tests/ipcfuzz.rs`, fixed seed): 915
+    connections — length prefixes 0xFFFFFFFF, over 32 MiB, 0, short;
+    magic/version mismatches (each answered `Refused`); 300 random first
+    frames and frames after Hello; unknown variants 23–255; truncated
+    frames; 600 mutated Paste/Write/Resize/Focus/Attach/Detach/GetEdit/
+    ListSessions/Sync frames (variant byte kept: no made-up Create or
+    Close) as Control and Observe; extreme sizes. After each group a new
+    client lists the session and the attached client still gets output;
+    9.5 s.
+  - VT fuzz (`crates/haetty-core/tests/vtfuzz.rs`, fixed seed, real PTY):
+    a generated grammar (CSI with huge and many parameters, OSC/DCS/APC/PM
+    strings with random payloads and missing terminators, invalid UTF-8,
+    modes, big moves, REP, queries), random bytes, and mutations (flips,
+    inserts, deletions, duplications, splices, huge numbers, truncation)
+    of a Claude-Code-like stream and of recorded Claude Code output
+    (`HAETTY_VT_CORPUS`; `recclaude.sh`: haetty-headless with
+    `--raw-log`, isolated HOME and `CLAUDE_CONFIG_DIR`, a fake key, nothing
+    submitted, no API call; the key and run path scrubbed; kept outside
+    the repository): full run (`HAETTY_VT_FUZZ=full`, release) 48 sessions,
+    2.4 MB, no panic, no hang, 0.48 s; the gate's quick run (dev, Zig
+    Debug with safety checks) 4 sessions, 1 s. After each stream a reset and
+    an end marker show and a resize answers.
+  - Soak, 1 hour, 4 tabs (a burst of 500 coloured lines every 10 s, a
+    line every 0.2 s, two idle; Linux also switching tabs every 30 s), the
+    e2ec468 build (release, so the Zig Debug engine), sampled every minute:
+    Linux (Xvfb, 59 samples): GUI anonymous memory 7 168 KB from start to
+    end, 16 fds, 7 threads; daemon anonymous 10.6 MB → 30.2 MB at 42 min,
+    then flat to the end (scrollback of the two output tabs full), 20 fds,
+    20 threads. Windows (the desktop, 61 samples): GUI private 12.4–13.2
+    MB, handles 285 → 279, threads 13 → 7; daemon private 15.3 → 46.7 MB at
+    40 min, then flat, handles 189–190, threads 23 → 20. No growth in
+    handles, fds or threads; memory flat once scrollback is full. CSVs:
+    `~/m4/soak/soak-linux.csv`, `C:\Users\Public\haetty-smoke\soak\`.
+  - Gate on the final S4 commit: see the next entry's line.
 
 ### ccx comparison (milestone 3)
 

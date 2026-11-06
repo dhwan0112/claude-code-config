@@ -120,6 +120,27 @@ claude (in PTY) ──hook command──▶ `<bin> hook <event>` ───▶ �
   commands through bash).
 - `haetty-headless` keeps running sessions in-process (tests, scripts).
 
+Robustness rules (stage S4, 2026-11-06):
+- The engine never blocks on the child: bytes for the child go through one
+  queue to a PTY writer thread; query replies are dropped while more than
+  64 KiB wait, input while more than 64 MiB wait. (A program flooding
+  terminal queries without reading its input had blocked the engine in
+  `write`, and with it every `snapshot()` — the daemon's main loop too.)
+- Grid sizes are clamped to 1..=4096 columns and 1..=2048 rows (a 65535 x
+  65535 resize from any Control client ended the engine thread).
+- A dropped session stops without processing queued output first.
+- A malformed connection (bad length, broken postcard, unknown message,
+  wrong magic or version) ends only that connection.
+- The daemon dies → its sessions' programs end with it (no orphans: SIGHUP
+  from the closed PTY on Linux, the pseudo console closing on Windows); the
+  GUI notices (`Client::is_lost`), keeps its window and a hint, and leaves
+  the tab sets as they were, so the next start reopens the tabs.
+- Builds: libghostty-vt-sys picks Zig's mode from the build script's
+  `DEBUG`; `release` keeps debug info for our crates but not for
+  `libghostty-vt-sys` (ReleaseFast — it was Zig Debug, 200-300x slower than
+  `dist`'s ReleaseSmall). `cargo test` (dev) keeps Zig Debug on purpose:
+  its safety checks run under the tests.
+
 ### 3.2 Crates
 
 | Crate | Responsibility |

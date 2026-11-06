@@ -205,6 +205,10 @@ struct Win {
     /// The worker program and its arguments (`worker-command`).
     worker_command: Vec<String>,
     hint: Option<(String, Instant)>,
+    /// The daemon's connection broke: the tabs' programs ended with it. The
+    /// tab sets stay as they were (a restart reopens them), the window stays
+    /// open with a hint that does not expire (stage S4).
+    daemon_lost: bool,
     /// A close request waiting for its second press: (session id, time).
     pending_close: Option<(String, Instant)>,
     /// Keys whose press was a shortcut: their release is not sent either.
@@ -370,6 +374,7 @@ impl App {
             tasks: tasks::load_all(&tasks::dir()),
             worker_command: self.opts.config.worker_command.split_whitespace().map(str::to_string).collect(),
             hint: None,
+            daemon_lost: false,
             pending_close: None,
             swallowed: HashSet::new(),
             command,
@@ -651,7 +656,7 @@ impl Win {
 
     /// Keeps the tab set "last" equal to the open tabs.
     fn save_last(&self) {
-        if self.shutting_down {
+        if self.shutting_down || self.daemon_lost {
             return;
         }
         if let Err(e) = tabsets::save(&tabsets::dir(), "last", &self.saved_tabs()) {
@@ -786,7 +791,7 @@ impl Win {
     fn close_tab(&mut self, i: usize) {
         // Closed on purpose (not the window closing): kept for "Reopen a
         // closed tab".
-        if !self.shutting_down {
+        if !self.shutting_down && !self.daemon_lost {
             if let Err(e) = tabsets::push_closed(&tabsets::dir(), self.saved_tab(i)) {
                 log::warn!("tab set closed: {e}");
             }
@@ -1723,11 +1728,11 @@ impl Win {
         if self.pending_close.as_ref().is_some_and(|(_, t)| now.duration_since(*t) >= CONFIRM) {
             self.pending_close = None;
         }
-        if self.hint.as_ref().is_some_and(|(_, t)| now.duration_since(*t) >= CONFIRM) {
+        if self.hint.as_ref().is_some_and(|(_, t)| now.duration_since(*t) >= CONFIRM) && !self.daemon_lost {
             self.hint = None;
             self.recompose();
         }
-        self.hint.as_ref().map(|(_, t)| *t + CONFIRM)
+        self.hint.as_ref().filter(|_| !self.daemon_lost).map(|(_, t)| *t + CONFIRM)
     }
 }
 
@@ -1870,6 +1875,26 @@ impl ApplicationHandler<UserEvent> for App {
             SessionEvent::Title(_) => {}
             SessionEvent::Exited(status) => {
                 log::info!("tab {} ({sid}) exited: {status:?}", i + 1);
+                if win.client.is_lost() {
+                    // Not the program's own end: the daemon is gone. Keep
+                    // the window and the tab sets; say what happened.
+                    if !win.daemon_lost {
+                        log::error!(
+                            "the daemon (pid {}) is gone; tab sets kept for the next start",
+                            win.client.daemon_pid
+                        );
+                        win.save_last(); // the last state while tabs still count as running
+                        win.daemon_lost = true;
+                    }
+                    win.tabs[i].exited = Some(None);
+                    win.hint = Some((
+                        "haetty's daemon stopped and its programs ended — start haetty again to reopen these tabs"
+                            .into(),
+                        Instant::now(),
+                    ));
+                    win.recompose();
+                    return;
+                }
                 if win.tabs.len() == 1 {
                     // One tab: the window ends with its program, as before tabs.
                     win.log_memory();

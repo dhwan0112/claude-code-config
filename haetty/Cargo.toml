@@ -42,3 +42,9 @@ lto = "thin"
 codegen-units = 1
 debug = 0
 strip = true
+
+# libghostty-vt-sys picks the Zig mode from the build script's DEBUG: with
+# release's debug info it built Zig in Debug mode, 200-300x slower than dist
+# (stage S4). Release keeps debug info for our crates only.
+[profile.release.package.libghostty-vt-sys]
+debug = 0

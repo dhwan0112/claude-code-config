@@ -164,6 +164,9 @@ pub enum SessionEvent {
 #[derive(Clone)]
 pub struct SessionHandle {
     tx: Sender<Cmd>,
+    /// Set when the session is dropped: the engine stops without working
+    /// through queued output first (stage S4).
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     backend: String,
     pid: Option<u32>,
 }
@@ -192,7 +195,7 @@ impl Session {
             command.env = env;
         }
 
-        let gs = cfg.size;
+        let gs = cfg.size.clamped();
         let pty_size = PtySize {
             cols: gs.cols.max(1),
             rows: gs.rows.max(1),
@@ -255,16 +258,19 @@ impl Session {
         };
         let writer = spawned.writer;
         let control = spawned.control;
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop_e = stop.clone();
         let engine = thread::Builder::new()
             .name("haetty-engine".into())
-            .spawn(move || engine::run(ecfg, rx, ev_tx, writer, control))?;
+            .spawn(move || engine::run(ecfg, rx, ev_tx, writer, control, stop_e))?;
 
-        Ok(Session { handle: SessionHandle { tx, backend, pid }, events: ev_rx, engine: Some(engine) })
+        Ok(Session { handle: SessionHandle { tx, backend, pid, stop }, events: ev_rx, engine: Some(engine) })
     }
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
+        self.handle.stop.store(true, std::sync::atomic::Ordering::SeqCst);
         let _ = self.handle.tx.send(Cmd::Shutdown);
         if let Some(j) = self.engine.take() {
             let _ = j.join();

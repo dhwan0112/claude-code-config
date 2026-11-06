@@ -36,10 +36,17 @@ function Test-HaettyInside([string]$path, [string]$dir) {
     ($p -eq $d) -or $p.StartsWith($d + '\')
 }
 
+# A drive-qualified (C:\...) or UNC (\\server\share) path. Not [IO.Path]::
+# IsPathFullyQualified: Windows PowerShell 5.1 (.NET Framework) lacks it, and
+# there the failed call let a relative base through (stage S4).
+function Test-HaettyAbsolute([string]$p) {
+    ($p -match '^[A-Za-z]:[\\/]') -or ($p -match '^[\\/]{2}[^\\/]')
+}
+
 function Initialize-HaettyGuard([string]$Name) {
     $base = [Environment]::GetEnvironmentVariable($Name)
     if (-not $base) { throw "test-guard: refusing: `$env:$Name is unset or empty" }
-    if (-not [System.IO.Path]::IsPathFullyQualified($base)) { throw "test-guard: refusing: `$env:$Name=$base is not an absolute path" }
+    if (-not (Test-HaettyAbsolute $base)) { throw "test-guard: refusing: `$env:$Name=$base is not an absolute path" }
     foreach ($d in Get-HaettyProtected) {
         if (Test-HaettyInside $base $d) { throw "test-guard: refusing: `$env:$Name=$base is (inside) the real $d" }
     }

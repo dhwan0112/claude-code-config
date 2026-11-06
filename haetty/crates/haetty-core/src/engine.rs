@@ -1,7 +1,10 @@
-//! The engine thread. It owns the libghostty-vt `Terminal` (which is `!Send`)
-//! and the PTY writer, so every byte written to the child — replies to
-//! terminal queries and encoded user input alike — leaves from one thread in
-//! the order it was produced.
+//! The engine thread. It owns the libghostty-vt `Terminal` (which is `!Send`).
+//! Every byte for the child — replies to terminal queries and encoded user
+//! input alike — goes, in the order it was produced, through one queue to
+//! the session's PTY writer thread ([`Out`]): the engine never blocks on a
+//! child that does not read its input (stage S4: a query flood from such a
+//! child filled the PTY's input buffer, the engine blocked in `write`, and
+//! every snapshot request — the daemon's too — waited for ever).
 
 use std::cell::RefCell;
 use std::fs::File;
@@ -28,6 +31,96 @@ use crate::types::*;
 use crate::{ColorSchemePref, SessionEvent};
 
 const EXIT_GRACE: Duration = Duration::from_millis(500);
+
+/// Replies to terminal queries waiting for the child beyond this are
+/// dropped (a child that floods queries and does not read gets no more
+/// answers until it reads).
+pub(crate) const REPLY_CAP: usize = 64 << 10;
+/// Input (keys, paste, mouse) waiting for the child beyond this is dropped,
+/// with an error event.
+pub(crate) const INPUT_CAP: usize = 64 << 20;
+
+/// The queue to the PTY writer thread.
+struct Out {
+    tx: Option<Sender<Vec<u8>>>,
+    queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    events: Sender<SessionEvent>,
+    dropped_replies: u64,
+    dropped_input: u64,
+}
+
+impl Out {
+    fn new(mut writer: Box<dyn Write + Send>, events: Sender<SessionEvent>) -> Out {
+        use std::sync::atomic::Ordering;
+        let (tx, rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+        let queued = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (q, ev) = (queued.clone(), events.clone());
+        let spawned = std::thread::Builder::new().name("haetty-pty-writer".into()).spawn(move || {
+            let mut failed = false;
+            for b in rx {
+                if !failed {
+                    if let Err(e) = writer.write_all(&b).and_then(|_| writer.flush()) {
+                        failed = true; // the child is gone; drain the rest
+                        let _ = ev.send(SessionEvent::Error(format!("pty write: {e}")));
+                    }
+                }
+                q.fetch_sub(b.len(), Ordering::Relaxed);
+            }
+        });
+        let tx = match spawned {
+            Ok(_) => Some(tx),
+            Err(e) => {
+                let _ = events.send(SessionEvent::Error(format!("pty writer thread: {e}")));
+                None
+            }
+        };
+        Out { tx, queued, events, dropped_replies: 0, dropped_input: 0 }
+    }
+
+    fn queued(&self) -> usize {
+        self.queued.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn push(&self, bytes: &[u8]) {
+        if let Some(tx) = &self.tx {
+            self.queued.fetch_add(bytes.len(), std::sync::atomic::Ordering::Relaxed);
+            let _ = tx.send(bytes.to_vec());
+        }
+    }
+
+    /// Encoded user input: in order, up to [`INPUT_CAP`] waiting.
+    fn input(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        if self.queued() + bytes.len() > INPUT_CAP {
+            self.dropped_input += 1;
+            let _ = self.events.send(SessionEvent::Error(format!(
+                "input dropped ({} bytes): the program has not read {} bytes",
+                bytes.len(),
+                self.queued()
+            )));
+            return;
+        }
+        self.push(bytes);
+    }
+
+    /// Answers to the child's queries: dropped while more than
+    /// [`REPLY_CAP`] bytes wait (it is not reading).
+    fn reply(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        if self.queued() + bytes.len() > REPLY_CAP {
+            self.dropped_replies += 1;
+            if self.dropped_replies.is_power_of_two() {
+                log::debug!("{} query replies dropped: the program is not reading its input", self.dropped_replies);
+            }
+            return;
+        }
+        self.push(bytes);
+    }
+}
 
 pub(crate) enum Cmd {
     Output(Vec<u8>),
@@ -75,10 +168,13 @@ pub(crate) fn run(
     cfg: EngineConfig,
     rx: Receiver<Cmd>,
     events: Sender<SessionEvent>,
-    mut writer: Box<dyn Write + Send>,
+    writer: Box<dyn Write + Send>,
     control: Box<dyn PtyControl>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
+    let mut out = Out::new(writer, events.clone());
     let mut cfg = cfg;
+    cfg.size = cfg.size.clamped();
     let pending = Rc::new(RefCell::new(Pending::default()));
     let size = Rc::new(std::cell::Cell::new(cfg.size));
     let scheme = Rc::new(std::cell::Cell::new(cfg.color_scheme));
@@ -168,6 +264,11 @@ pub(crate) fn run(
 
         let mut shutdown = false;
         for cmd in batch {
+            // Dropped: no more work on queued output.
+            if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                shutdown = true;
+                break;
+            }
             match cmd {
                 Cmd::Output(data) => {
                     if let Some(f) = cfg.raw_log.as_mut() {
@@ -181,20 +282,20 @@ pub(crate) fn run(
                     }
                     term.vt_write(&data);
                     st.dirty = true;
-                    flush_pending(&pending, &mut writer, &events, cfg.trace_replies);
+                    flush_pending(&pending, &mut out, &events, cfg.trace_replies);
                 }
                 Cmd::OutputClosed => output_closed = true,
                 Cmd::ChildExited(s) => {
                     exit = Some(s);
                     exit_seen = Some(Instant::now());
                 }
-                Cmd::Input(bytes) => write_all(&mut writer, &bytes, &events),
+                Cmd::Input(bytes) => out.input(&bytes),
                 Cmd::Key(k) => {
                     st.out_buf.clear();
                     if encode_key(&mut st, &term, &k).is_ok() {
                         let buf = std::mem::take(&mut st.out_buf);
                         log_key_bytes(&k, &buf);
-                        write_all(&mut writer, &buf, &events);
+                        out.input(&buf);
                         st.out_buf = buf;
                     }
                     // Typing returns the viewport to the live screen.
@@ -207,7 +308,7 @@ pub(crate) fn run(
                     let gs = size.get();
                     if encode_mouse(&mut st, &term, &m, gs).is_ok() && !st.out_buf.is_empty() {
                         let buf = std::mem::take(&mut st.out_buf);
-                        write_all(&mut writer, &buf, &events);
+                        out.input(&buf);
                         st.out_buf = buf;
                     }
                 }
@@ -225,7 +326,7 @@ pub(crate) fn run(
                             let _ = encode_mouse_append(&mut st, &term, &m, gs);
                         }
                         let buf = std::mem::take(&mut st.out_buf);
-                        write_all(&mut writer, &buf, &events);
+                        out.input(&buf);
                         st.out_buf = buf;
                     } else {
                         term.scroll_viewport(ScrollViewport::Delta(lines as isize));
@@ -235,7 +336,7 @@ pub(crate) fn run(
                 Cmd::Paste(text) => {
                     let bracketed = term.mode(Mode::BRACKETED_PASTE).unwrap_or(false);
                     let bytes = encode_paste(&text, bracketed);
-                    write_all(&mut writer, &bytes, &events);
+                    out.input(&bytes);
                     term.scroll_viewport(ScrollViewport::Bottom);
                 }
                 Cmd::Focus(focused) => {
@@ -247,12 +348,12 @@ pub(crate) fn run(
                         };
                         let mut buf = [0u8; 8];
                         if let Ok(n) = ev.encode(&mut buf) {
-                            write_all(&mut writer, &buf[..n], &events);
+                            out.input(&buf[..n]);
                         }
                     }
                 }
                 Cmd::Resize(gs) => {
-                    let gs = GridSize { cols: gs.cols.max(1), rows: gs.rows.max(1), ..gs };
+                    let gs = gs.clamped();
                     if gs != size.get() {
                         size.set(gs);
                         let _ = term.resize(gs.cols, gs.rows, gs.cell_width as u32, gs.cell_height as u32);
@@ -264,7 +365,7 @@ pub(crate) fn run(
                         });
                         st.dirty = true;
                         // A resize may answer an in-band size report (mode 2048).
-                        flush_pending(&pending, &mut writer, &events, cfg.trace_replies);
+                        flush_pending(&pending, &mut out, &events, cfg.trace_replies);
                     }
                 }
                 Cmd::Scroll(to) => {
@@ -295,7 +396,7 @@ pub(crate) fn run(
                         if let Some(cs) = to_scheme(s) {
                             let mut buf = [0u8; 16];
                             if let Ok(n) = cs.encode_report(&mut buf) {
-                                write_all(&mut writer, &buf[..n], &events);
+                                out.input(&buf[..n]);
                             }
                         }
                     }
@@ -458,33 +559,19 @@ fn install_callbacks(
     Ok(())
 }
 
-fn flush_pending(
-    pending: &Rc<RefCell<Pending>>,
-    writer: &mut Box<dyn Write + Send>,
-    events: &Sender<SessionEvent>,
-    trace: bool,
-) {
+fn flush_pending(pending: &Rc<RefCell<Pending>>, out: &mut Out, events: &Sender<SessionEvent>, trace: bool) {
     let (replies, evs) = {
         let mut p = pending.borrow_mut();
         (std::mem::take(&mut p.replies), std::mem::take(&mut p.events))
     };
     if !replies.is_empty() {
-        write_all(writer, &replies, events);
+        out.reply(&replies);
         if trace {
             let _ = events.send(SessionEvent::Reply(replies));
         }
     }
     for e in evs {
         let _ = events.send(e);
-    }
-}
-
-fn write_all(writer: &mut Box<dyn Write + Send>, bytes: &[u8], events: &Sender<SessionEvent>) {
-    if bytes.is_empty() {
-        return;
-    }
-    if let Err(e) = writer.write_all(bytes).and_then(|_| writer.flush()) {
-        let _ = events.send(SessionEvent::Error(format!("pty write: {e}")));
     }
 }
 

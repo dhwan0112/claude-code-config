@@ -5,6 +5,9 @@
 pub use libghostty_vt::key::{Action as KeyAction, Key, KittyKeyFlags, Mods};
 pub use libghostty_vt::mouse::{Action as MouseAction, Button as MouseButton};
 
+pub const MAX_COLS: u16 = 4096;
+pub const MAX_ROWS: u16 = 2048;
+
 /// Grid size plus the cell size in pixels the frontend draws with. The pixel
 /// values feed size reports (CSI 14/16/18 t), mouse pixel→cell conversion and
 /// the PTY's winsize.
@@ -20,6 +23,11 @@ impl GridSize {
     pub fn new(cols: u16, rows: u16) -> Self {
         // A nominal cell for headless use; GUI frontends pass real metrics.
         Self { cols, rows, cell_width: 9, cell_height: 18 }
+    }
+    /// Within what a session accepts: 1..=[`MAX_COLS`] by 1..=[`MAX_ROWS`]
+    /// (stage S4: a 65535 x 65535 resize from a client ended the engine).
+    pub fn clamped(self) -> Self {
+        Self { cols: self.cols.clamp(1, MAX_COLS), rows: self.rows.clamp(1, MAX_ROWS), ..self }
     }
     pub fn with_cell(mut self, w: u16, h: u16) -> Self {
         self.cell_width = w.max(1);

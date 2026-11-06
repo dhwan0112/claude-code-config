@@ -59,6 +59,8 @@ struct Mirror {
 struct Shared {
     mirrors: Mutex<HashMap<SessionId, Mirror>>,
     writer: Mutex<Stream>,
+    /// The daemon's connection broke (the daemon ended or crashed).
+    lost: std::sync::atomic::AtomicBool,
 }
 
 impl Shared {
@@ -77,6 +79,12 @@ pub struct Client {
 }
 
 impl Client {
+    /// Whether the connection to the daemon broke (set before the sessions'
+    /// `Exited` events are sent).
+    pub fn is_lost(&self) -> bool {
+        self.shared.lost.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// Connects and says hello. `NotRunning` when nobody listens.
     pub fn connect(ep: &Endpoint, role: Role, name: &str) -> Result<Client, ConnectError> {
         Client::connect_with(ep, role, name, Duration::from_secs(2))
@@ -96,7 +104,11 @@ impl Client {
             _ => return Err(ConnectError::Refused("unexpected answer to Hello".into())),
         };
         let reader = stream.try_clone()?;
-        let shared = Arc::new(Shared { mirrors: Mutex::new(HashMap::new()), writer: Mutex::new(stream) });
+        let shared = Arc::new(Shared {
+            mirrors: Mutex::new(HashMap::new()),
+            writer: Mutex::new(stream),
+            lost: std::sync::atomic::AtomicBool::new(false),
+        });
         let (rtx, rrx) = unbounded();
         let sh = shared.clone();
         std::thread::Builder::new().name("haetty-client-reader".into()).spawn(move || reader_loop(reader, sh, rtx))?;
@@ -247,6 +259,7 @@ fn reader_loop(mut r: Stream, sh: Arc<Shared>, replies: Sender<DaemonMsg>) {
             Ok(m) => m,
             Err(e) => {
                 log::info!("daemon connection closed: {e}");
+                sh.lost.store(true, std::sync::atomic::Ordering::SeqCst);
                 let mut ms = sh.mirrors.lock().unwrap_or_else(|p| p.into_inner());
                 for m in ms.values() {
                     let _ = m.tx.send(SessionEvent::Error("lost the connection to the daemon".into()));
