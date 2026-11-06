@@ -465,6 +465,23 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   nothing to install.
 - Wayland `app_id` = X11 `WM_CLASS` (instance and class) = the app id, so
   docks match the window to the desktop entry.
+- Title bar colours, Linux (checked in the sources, 2026-11-06):
+  - GNOME on Wayland gives Wayland clients no server-side decorations, so
+    winit draws its own: sctk-adwaita 0.10.1 (winit 0.30.13
+    `platform_impl/linux/wayland/window/state.rs`, `into_sctk_adwaita_config`).
+    winit passes only a theme — `Theme::Dark`/`Light`/`None` →
+    `FrameConfig::dark()`/`light()`/`auto()` — and the colours are constants
+    in sctk-adwaita (`theme.rs`: dark header bar `#303030` active, `#242424`
+    inactive; light `#ebebeb` / `#fafafa`). haetty asks for dark or light
+    from the theme background (`chrome.rs`), so the bar is dark, but its
+    colour cannot be the terminal's `#141414`: winit has no call for
+    colours.
+  - GNOME on X11: mutter draws the frame; `_GTK_THEME_VARIANT=dark` (set by
+    haetty) selects its dark variant; the colour is mutter's.
+  - The way to a title bar in the terminal's colours on Linux is
+    `decorations = integrated` (haetty draws the bar and its buttons, with
+    the tabs in it): next-task candidate, Linux first (HANDOFF §6.3); not
+    implemented.
 - Windows: the GUI process sets its AppUserModelID to the app id
   (`io.github.dhwan0112.haetty`, a dev instance `….haetty.dev`) before any
   window exists, so the taskbar groups haetty windows and a pinned icon

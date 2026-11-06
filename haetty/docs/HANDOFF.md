@@ -713,7 +713,10 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 ### 6.3 Later milestones
 
 Done in milestones 2–3 (§6.4). Next: the orchestrator (milestone 4), MCP;
-integrated decorations; diff views against HEAD and the work tree; a
+integrated decorations — **candidate, Linux first** (on GNOME Wayland the
+title bar is winit's sctk-adwaita with fixed colours, `#303030` beside the
+terminal's `#141414`; only haetty drawing its own bar can match; DESIGN.md
+§3.12; not started); diff views against HEAD and the work tree; a
 closed-tabs list; OpenGL renderer if needed.
 
 ### 6.4 Progress log (milestones 2–3)
@@ -1499,6 +1502,18 @@ regression list, measurements), then committed, pushed and mirrored.
     statusline"`, `… | pwsh -Command …` deliver (state updated). The paths
     Claude Code uses (Git Bash, PowerShell `-Command`) are the delivering
     ones; write test JSON through `cmd /c type`.
+
+- **2026-11-06 GNOME title bar, tmux note.** DESIGN.md §3.12: on GNOME
+  Wayland the title bar is winit's sctk-adwaita with constant colours
+  (winit 0.30.13 maps only dark/light/auto to `FrameConfig`; dark
+  `#303030`/`#242424`), so it cannot take the theme background;
+  `decorations = integrated`, Linux first, is now the named candidate in
+  §6.3 (not implemented). README: a shell that starts tmux by itself puts
+  Claude Code inside tmux (256 colours because of `TMUX`; no synchronized
+  output — measured with tmux 3.4 through `haetty-headless`: DECRQM 2026
+  `\e[?2026;2$y` directly, no reply inside tmux; inside it `TERM=tmux-256color`,
+  `TERM_PROGRAM=tmux`), with a `.bashrc` example that skips tmux when
+  `TERM_PROGRAM=haetty`.
 
 ### ccx comparison (milestone 3)
 

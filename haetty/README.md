@@ -281,6 +281,21 @@ environment variables.
 
 ### Claude Code integration
 
+**tmux started by your shell.** If your shell starts tmux on its own (an
+`exec tmux` in `~/.bashrc` / `~/.zshrc`), Claude Code in a haetty tab runs
+inside tmux and loses what haetty gives it: it sees `TMUX` and lowers its
+colours to 256, and tmux does not support synchronized output (checked with
+tmux 3.4: haetty answers the mode-2026 query, inside tmux it gets no answer),
+so Claude Code's redraws can flicker. tmux also replaces `TERM_PROGRAM` with
+`tmux` inside, so test it before tmux starts — skip tmux in haetty:
+
+```sh
+# ~/.bashrc or ~/.zshrc
+if [ -z "$TMUX" ] && [ "$TERM_PROGRAM" != haetty ] && command -v tmux >/dev/null; then
+  exec tmux new-session -A -s main
+fi
+```
+
 Applies to tabs whose program is `claude` (`claude.exe`, `claude.cmd`) while
 `claude-integration` is on (default). `claude-integration = false` (or
 `--claude-integration false`) turns it off: Claude Code then runs exactly
@@ -396,6 +411,10 @@ right daemon and tab.
 
 ### Known limits
 
+- Linux, GNOME on Wayland: the title bar is drawn by winit (Adwaita style)
+  in a fixed dark grey, not in the terminal's background colour — winit
+  offers only dark/light there. `decorations = integrated` would fix it
+  and is planned (Linux first).
 - `decorations = integrated` (own title bar with tabs) is not implemented;
   it falls back to `native`.
 - Tab sets are not per window: with several haetty windows open, the last
