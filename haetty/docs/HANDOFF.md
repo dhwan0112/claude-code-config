@@ -10,6 +10,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage s3 (branch `haetty/s3`, worktree `~/projects/claude-code-config-wt/s3`). Remaining: orchestrator first step: DESIGN §8 first (own commit), then tasks -> worker Claude Code tabs in git worktrees on task branches, report parsing (STATUS/ARTIFACT/EVIDENCE/BLOCKERS/NEXT_ACTION), WORKERS panel section, tab marks, status --json workers, Origin::Program boundary integration test
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
