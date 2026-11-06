@@ -50,7 +50,6 @@ from the overnight run of §6.1 item 30 (commit `63822de`):
 5. Do not touch the "current stable" section until the user says the new
    version is installed.
 
-> **In progress:** stage u5 (branch `haetty/u5`, worktree `~/projects/claude-code-config-wt/u5`). Remaining: U5 dev-run and SELF-HOSTING.md (U6 steps are in HANDOFF)
 
 ## 1. Goal
 
