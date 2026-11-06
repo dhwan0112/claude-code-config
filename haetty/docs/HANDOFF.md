@@ -15,6 +15,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage t2 (branch `haetty/t2`, worktree `~/projects/claude-code-config-wt/t2`). Remaining: T2: test harness into the repository (scripts/e2e, scripts/gate.sh, scripts/dist-sizes.sh), personal paths removed, gate from a fresh clone, VT corpus procedure documented
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
