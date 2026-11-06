@@ -10,6 +10,8 @@ rust-version.workspace = true
 log.workspace = true
 
 [target.'cfg(unix)'.dependencies]
+# Already in the tree through portable-pty (same version): tcflush for hangup().
+libc = "0.2"
 portable-pty.workspace = true
 
 [target.'cfg(windows)'.dependencies]

@@ -42,13 +42,15 @@ pub(crate) fn spawn(spec: &CommandSpec, size: PtySize) -> io::Result<Spawned> {
     Ok(Spawned {
         reader,
         writer,
-        control: Box::new(UnixControl { master: pair.master }),
+        control: Box::new(UnixControl { master: pair.master, killer: std::sync::Mutex::new(child.clone_killer()) }),
         child: Box::new(UnixChild { inner: child }),
     })
 }
 
 struct UnixControl {
     master: Box<dyn MasterPty + Send>,
+    /// Sends the child SIGHUP (portable-pty's `ChildKiller`).
+    killer: std::sync::Mutex<Box<dyn portable_pty::ChildKiller + Send + Sync>>,
 }
 
 impl PtyControl for UnixControl {
@@ -57,6 +59,17 @@ impl PtyControl for UnixControl {
     }
     fn describe(&self) -> String {
         "unix-pty".into()
+    }
+    fn hangup(&self) {
+        let mut k = self.killer.lock().unwrap_or_else(|p| p.into_inner());
+        let _ = k.kill();
+        // Discard what the child never read: a `write` blocked on a full
+        // input queue returns (Linux does not wake it when the child's side
+        // closes).
+        if let Some(fd) = self.master.as_raw_fd() {
+            // SAFETY: tcflush on our own open master descriptor.
+            unsafe { libc::tcflush(fd, libc::TCIOFLUSH) };
+        }
     }
 }
 

@@ -129,6 +129,14 @@ Robustness rules (stage S4, 2026-11-06):
 - Grid sizes are clamped to 1..=4096 columns and 1..=2048 rows (a 65535 x
   65535 resize from any Control client ended the engine thread).
 - A dropped session stops without processing queued output first.
+- A session that ends while bytes still wait for a child that does not
+  read: the writer stops after its current 4 KiB chunk, and the child gets
+  what closing the terminal would give it — SIGHUP and the terminal's
+  queues flushed (`PtyControl::hangup`; Windows: closing the pseudo console
+  does it) — because the blocked `write` holds the terminal open and Linux
+  does not wake it when the child's side closes. Without this, such a
+  session kept its child and four threads (found after S4 by
+  `tests/threads.rs`).
 - A malformed connection (bad length, broken postcard, unknown message,
   wrong magic or version) ends only that connection.
 - The daemon dies → its sessions' programs end with it (no orphans: SIGHUP

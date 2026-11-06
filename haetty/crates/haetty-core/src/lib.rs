@@ -211,12 +211,15 @@ impl Session {
             None => None,
         };
 
-        let (tx, rx) = bounded::<Cmd>(1024);
+        // Frontends' commands (unbounded: a sender never waits for a busy
+        // engine) and the PTY's output (bounded: the reader waits).
+        let (tx, rx) = unbounded::<Cmd>();
+        let (dtx, drx) = bounded::<Cmd>(1024);
         let (ev_tx, ev_rx) = unbounded::<SessionEvent>();
 
         // Reader: PTY output -> engine.
         let mut reader = spawned.reader;
-        let tx_r = tx.clone();
+        let tx_r = dtx.clone();
         thread::Builder::new().name("haetty-pty-reader".into()).spawn(move || {
             let mut buf = vec![0u8; 64 * 1024];
             loop {
@@ -237,7 +240,7 @@ impl Session {
 
         // Waiter: child exit -> engine.
         let mut child = spawned.child;
-        let tx_w = tx.clone();
+        let tx_w = dtx;
         thread::Builder::new().name("haetty-child-waiter".into()).spawn(move || {
             let status = child.wait().unwrap_or(ExitStatus { code: None, signal: None });
             let _ = tx_w.send(Cmd::ChildExited(status));
@@ -262,7 +265,7 @@ impl Session {
         let stop_e = stop.clone();
         let engine = thread::Builder::new()
             .name("haetty-engine".into())
-            .spawn(move || engine::run(ecfg, rx, ev_tx, writer, control, stop_e))?;
+            .spawn(move || engine::run(ecfg, rx, drx, ev_tx, writer, control, stop_e))?;
 
         Ok(Session { handle: SessionHandle { tx, backend, pid, stop }, events: ev_rx, engine: Some(engine) })
     }

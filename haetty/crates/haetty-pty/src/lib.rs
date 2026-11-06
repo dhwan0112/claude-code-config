@@ -138,6 +138,11 @@ pub trait PtyControl: Send {
     /// Description of the backend actually in use, for logs and the status
     /// panel, e.g. `"unix-pty"` or `"conpty embedded 1.25.260930003 flags=0x8"`.
     fn describe(&self) -> String;
+    /// What closing the terminal does to the child, without closing it:
+    /// SIGHUP (Unix). For a session that ends while a write to its child is
+    /// blocked (the child does not read), which keeps the terminal open.
+    /// Windows: nothing (closing the pseudo console ends the child).
+    fn hangup(&self) {}
 }
 
 pub trait ChildProcess: Send {

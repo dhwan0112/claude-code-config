@@ -606,6 +606,7 @@ name = "haetty-pty"
 version = "0.2.0"
 dependencies = [
  "conpty-bin-vendored",
+ "libc",
  "log",
  "portable-pty",
  "windows-sys 0.59.0",

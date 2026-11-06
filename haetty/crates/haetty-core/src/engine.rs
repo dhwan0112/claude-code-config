@@ -12,7 +12,7 @@ use std::io::Write;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use crossbeam_channel::{Receiver, Select, Sender, TryRecvError};
 use libghostty_vt::fmt::{Format as FmtFormat, Formatter, FormatterOptions};
 use libghostty_vt::key;
 use libghostty_vt::mouse;
@@ -32,6 +32,10 @@ use crate::{ColorSchemePref, SessionEvent};
 
 const EXIT_GRACE: Duration = Duration::from_millis(500);
 
+/// Output chunks (each up to 64 KiB) taken between looks at the frontends'
+/// commands.
+const DATA_PER_TURN: usize = 16;
+
 /// Replies to terminal queries waiting for the child beyond this are
 /// dropped (a child that floods queries and does not read gets no more
 /// answers until it reads).
@@ -44,6 +48,8 @@ pub(crate) const INPUT_CAP: usize = 64 << 20;
 struct Out {
     tx: Option<Sender<Vec<u8>>>,
     queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// The session ends: the writer discards what is left.
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     events: Sender<SessionEvent>,
     dropped_replies: u64,
     dropped_input: u64,
@@ -54,12 +60,20 @@ impl Out {
         use std::sync::atomic::Ordering;
         let (tx, rx) = crossbeam_channel::unbounded::<Vec<u8>>();
         let queued = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let (q, ev) = (queued.clone(), events.clone());
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (q, ev, st) = (queued.clone(), events.clone(), stop.clone());
         let spawned = std::thread::Builder::new().name("haetty-pty-writer".into()).spawn(move || {
             let mut failed = false;
             for b in rx {
-                if !failed {
-                    if let Err(e) = writer.write_all(&b).and_then(|_| writer.flush()) {
+                // At most 4 KiB per write, the stop flag checked between
+                // them: once the session ends and the terminal's queues are
+                // flushed (`PtyControl::hangup`), a blocked write completes
+                // and nothing more is written.
+                for chunk in b.chunks(4096) {
+                    if failed || st.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    if let Err(e) = writer.write_all(chunk).and_then(|_| writer.flush()) {
                         failed = true; // the child is gone; drain the rest
                         let _ = ev.send(SessionEvent::Error(format!("pty write: {e}")));
                     }
@@ -74,7 +88,7 @@ impl Out {
                 None
             }
         };
-        Out { tx, queued, events, dropped_replies: 0, dropped_input: 0 }
+        Out { tx, queued, stop, events, dropped_replies: 0, dropped_input: 0 }
     }
 
     fn queued(&self) -> usize {
@@ -167,6 +181,7 @@ struct Pending {
 pub(crate) fn run(
     cfg: EngineConfig,
     rx: Receiver<Cmd>,
+    data: Receiver<Cmd>,
     events: Sender<SessionEvent>,
     writer: Box<dyn Write + Send>,
     control: Box<dyn PtyControl>,
@@ -232,6 +247,10 @@ pub(crate) fn run(
     let mut exit: Option<ExitStatus> = None;
     let mut exit_seen: Option<Instant> = None;
     let mut output_closed = false;
+    // The child's exit was seen (its pid may be reused after that).
+    let mut child_gone = false;
+    // The PTY reader and the child waiter still send.
+    let mut data_open = true;
 
     loop {
         // While the application holds synchronized output, wait no longer
@@ -241,24 +260,63 @@ pub(crate) fn run(
             .into_iter()
             .flatten()
             .min();
-        let first = match deadline {
-            Some(d) => match rx.recv_deadline(d) {
-                Ok(c) => Some(c),
-                Err(RecvTimeoutError::Timeout) => None,
-                Err(RecvTimeoutError::Disconnected) => break,
-            },
-            None => match rx.recv() {
-                Ok(c) => Some(c),
-                Err(_) => break,
-            },
+        // Commands from frontends (snapshots, input, resizes, shutdown) come
+        // before queued output: a session busy with output (a firehose, or a
+        // slow stream) answers a snapshot after at most DATA_PER_TURN output
+        // chunks, and nobody blocks sending to it (stage S4 follow-up).
+        let first = match rx.try_recv() {
+            Ok(c) => Some(c),
+            Err(TryRecvError::Disconnected) => break,
+            Err(TryRecvError::Empty) => {
+                let mut sel = Select::new_biased();
+                let i_ctl = sel.recv(&rx);
+                if data_open {
+                    sel.recv(&data);
+                }
+                let op = match deadline {
+                    Some(d) => sel.select_deadline(d).ok(),
+                    None => Some(sel.select()),
+                };
+                match op {
+                    None => None,
+                    Some(op) if op.index() == i_ctl => match op.recv(&rx) {
+                        Ok(c) => Some(c),
+                        Err(_) => break,
+                    },
+                    Some(op) => match op.recv(&data) {
+                        Ok(c) => Some(c),
+                        Err(_) => {
+                            data_open = false; // reader and waiter are done
+                            None
+                        }
+                    },
+                }
+            }
         };
 
         let mut batch: Vec<Cmd> = first.into_iter().collect();
-        // Drain whatever else is queued so a burst of output costs one wakeup.
+        // Drain what is queued: all commands, and output so a burst costs one
+        // wakeup — at most DATA_PER_TURN chunks before commands are looked at
+        // again.
+        let mut data_taken = 0;
         while batch.len() < 256 {
-            match rx.try_recv() {
-                Ok(c) => batch.push(c),
-                Err(_) => break,
+            if let Ok(c) = rx.try_recv() {
+                batch.push(c);
+                continue;
+            }
+            if !data_open || data_taken >= DATA_PER_TURN {
+                break;
+            }
+            match data.try_recv() {
+                Ok(c) => {
+                    data_taken += 1;
+                    batch.push(c);
+                }
+                Err(TryRecvError::Disconnected) => {
+                    data_open = false;
+                    break;
+                }
+                Err(TryRecvError::Empty) => break,
             }
         }
 
@@ -286,6 +344,7 @@ pub(crate) fn run(
                 }
                 Cmd::OutputClosed => output_closed = true,
                 Cmd::ChildExited(s) => {
+                    child_gone = true;
                     exit = Some(s);
                     exit_seen = Some(Instant::now());
                 }
@@ -440,6 +499,15 @@ pub(crate) fn run(
         if shutdown {
             break;
         }
+    }
+    // Bytes still wait for a child that does not read: the PTY writer
+    // thread may be blocked in `write`, holding the terminal open, so the
+    // child would never get its hangup. Give it the hangup directly (stage
+    // S4 follow-up: closed sessions had kept their child and four threads).
+    out.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    if !child_gone && out.queued() > 0 {
+        log::debug!("session ends with {} bytes unread by the child: hangup", out.queued());
+        control.hangup();
     }
 }
 
