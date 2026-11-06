@@ -24,8 +24,8 @@ function Get-HaettyHeavySh {
     throw "heavy.ps1: tools/heavy.sh not found (run from the WSL checkout, or set HAETTY_HEAVY_SH=<distro>:<path>)"
 }
 
-function Enter-HaettyHeavy([string]$Text) {
-    if ($env:HAETTY_HEAVY_SLOT) { return }
+# A slot held by a `heavy.sh --hold` process (waits for it); the slot ends when that process's stdin is closed.
+function Start-HaettyHeavyHold([string]$Text) {
     $d, $sh = Get-HaettyHeavySh
     $psi = New-Object System.Diagnostics.ProcessStartInfo "wsl.exe"
     # One argument string (Windows PowerShell 5.1 has no ArgumentList); quotes are taken out of the label.
@@ -40,7 +40,13 @@ function Enter-HaettyHeavy([string]$Text) {
     $line = $p.StandardOutput.ReadLine()   # blocks while every slot is in use
     if ($line -notmatch '^SLOT (\d+) WAITED (\d+)$') { throw "heavy.ps1: no slot from heavy.sh ($line)" }
     if ([int]$Matches[2] -gt 0) { Write-Host "heavy: slot $($Matches[1]) after $($Matches[2]) s: $Text" }
-    $env:HAETTY_HEAVY_SLOT = $Matches[1]
+    $p | Add-Member -NotePropertyName Slot -NotePropertyValue $Matches[1] -PassThru
+}
+
+function Enter-HaettyHeavy([string]$Text) {
+    if ($env:HAETTY_HEAVY_SLOT) { return }
+    $p = Start-HaettyHeavyHold $Text
+    $env:HAETTY_HEAVY_SLOT = $p.Slot
     if (($env:WSLENV -split ':') -notcontains "HAETTY_HEAVY_SLOT") { $env:WSLENV = (@(($env:WSLENV -split ':') | Where-Object { $_ }) + "HAETTY_HEAVY_SLOT") -join ':' }
     $global:HaettyHeavyHold = $p
 }

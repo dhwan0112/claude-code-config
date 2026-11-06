@@ -26,6 +26,31 @@ Written for whoever continues the work (Claude Code included).
 
 > **In progress:** stage u4 (branch `haetty/u4`, worktree `~/projects/claude-code-config-wt/u4`). Remaining: U4 overnight soak, U5 dev-run and SELF-HOSTING.md, U6 next-day tag steps
 
+## Next session: the `haetty-v0.2.0` tag after the overnight soak (U6)
+
+The user approved this conditional tag in advance (instruction U6,
+2026-11-07). When `C:\Users\Public\haetty-overnight\latest.txt` exists
+from the overnight run of §6.1 item 30 (commit `63822de`):
+
+1. Read it. Note both `RESULT` lines and each `VERDICT`. Record the
+   results and the time-series summary in §6.4. That HANDOFF commit, call
+   it R, goes through the gate and the push as usual.
+2. Tag only if all of these hold:
+   - `RESULT LINUX PASS` and `RESULT WINDOWS PASS`;
+   - `tools/check-range.sh haetty-v0.1.1..R` ends with **0 failing** (U1:
+     KNOWN entries of `tools/known-gate-failures` do not count);
+   - `git diff --stat 63822de R -- haetty/crates haetty/Cargo.toml
+     haetty/Cargo.lock` is empty, so R's program is the code that was
+     soaked (only tools, scripts and docs changed after `63822de`).
+3. If they all hold: `git tag -a haetty-v0.2.0 R -m "haetty 0.2.0"` with
+   the user's identity, then `git push origin haetty-v0.2.0` (the tag
+   only).
+4. If any one fails, a NOT-RUN included: no tag. Find the cause in the
+   result file (which check failed, the CSV series, the soak's
+   `gui.log`) and report it.
+5. Do not touch the "current stable" section until the user says the new
+   version is installed.
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
@@ -701,13 +726,33 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     Windows) against the candidate's `haetty.exe`; both must end with 0
     failed. They skip by themselves when the desktop is in use.
 
-30. **Soak v2, one hour each, on the candidate's own build** (T4; needed
-    for the `haetty-v0.2.0` tag): Linux `HAETTY_TEST_TMP=/tmp/haetty-test
-    scripts/e2e/xvfb.sh bash scripts/e2e/soak.sh soak.csv` and Windows
-    `scripts/e2e/windows/soak.ps1` (idle desktop for the whole hour, do
-    not touch the computer); both print `VERDICT PASS`. Run them one at a
-    time or on a machine with enough free memory (this session's runs were
-    stopped by the tool for low memory).
+30. **Overnight soak v2 on the 0.2.0 candidate** (`63822de`; needed for
+    the `haetty-v0.2.0` tag). Before going to bed, close what you do not
+    need (nothing else heavy may run) and start, **from a PowerShell
+    window — not from Claude Code**:
+    ```powershell
+    pwsh -File \\wsl.localhost\<distro>\home\<user>\projects\claude-code-config\haetty\tools\overnight-soak.ps1
+    ```
+    (this machine: `<distro>` = `Ubuntu`). It checks that no heavy job runs
+    and holds both heavy-job slots. It builds `63822de` for Linux and
+    Windows, runs the Linux soak v2 alone in WSL for an hour, then waits up
+    to 4 hours for a desktop untouched for 120 s and runs the Windows soak
+    v2 for an hour.
+    - Any key or mouse movement of yours stops the Windows part at once (it
+      then counts as not passed). Leave the computer alone until the
+      morning.
+    - Sleep and the screen lock are prevented while it runs, so the screen
+      stays on. Normal power settings return when it ends.
+    - It takes about 2 h 10 min when the desktop is idle at once.
+    - Result: `C:\Users\Public\haetty-overnight\latest.txt` (a copy of
+      `result-<date-time>.txt` there). The first two lines are `RESULT
+      LINUX PASS|FAIL|NOT-RUN …` and `RESULT WINDOWS …`, then the builds'
+      `--version`, both soak outputs (operations, every check, `VERDICT`)
+      and both CSV time series (a sample every 5 min). Progress:
+      `progress.log` in the same folder.
+    - Options: `-Minutes`, `-IdleWaitMinutes`, `-Commit`, `-OutDir`.
+    - The steps for the next session are under "Next session" at the top
+      of this file.
 
 #### B. Linux with a real account (Claude Code logged in)
 
@@ -2285,6 +2330,44 @@ regression list, measurements), then committed, pushed and mirrored.
     ```
     With it, WSL holds at most ~8 GB of Windows memory instead of up to
     15.6 GB. A machine running a game and Firefox (~12 GB) keeps ≥ 10 GB.
+
+- **2026-11-07 U4 — overnight soak script, 5-minute trials.**
+  - `tools/overnight-soak.ps1` (run by the user from PowerShell, outside
+    Claude Code) with its WSL half `tools/overnight-soak-linux.sh`. It
+    checks that nothing heavy runs: both heavy-job slots free, and no
+    cargo, rustc, zig, Xvfb, cc1 or ld in WSL. Then it holds both slots
+    for the whole night.
+  - Build: `63822de` in its own checkout `/tmp/haetty-overnight/wt`, with
+    its own target kept for the next night and the Ghostty source reused,
+    no network. Built for Linux and Windows; `haetty.exe` goes to
+    `-OutDir\bin`.
+  - Linux soak v2 (that commit's `scripts/e2e/soak.sh` under Xvfb), then
+    the Windows soak v2 (that commit's `soak.ps1`, staged to
+    `-OutDir\scripts`). The Windows part starts only after 120 s without
+    input and an unlocked screen, waiting up to `-IdleWaitMinutes`; input
+    from the user stops it with exit 2, which counts as FAIL.
+    `SetThreadExecutionState` (system and display required) keeps the
+    machine awake and the screen unlocked only while it runs. One result
+    file, `RESULT LINUX …` / `RESULT WINDOWS …` first.
+    `tools/heavy.ps1` got `Start-HaettyHeavyHold` (one hold per call)
+    for this.
+  - Trial 1 (`-Minutes 5 -IdleWaitMinutes 3`) found two faults:
+    - PowerShell 7 expands a leading `~` in native command arguments to the
+      Windows home (`~/m2/xroot` reached WSL as `C:\Users\…/m2/xroot`), so
+      the Linux soak had no Xvfb. `-XRoot` is now relative to the WSL home
+      (`m2/xroot`).
+    - The two `--version` lines were joined into one string.
+    The flow itself ended correctly: result file written, slots free,
+    checkout removed.
+  - Trial 2, after the fixes: build (cached) 27 s; Linux 5 min, VERDICT PASS
+    (17 tabs, 4 detach, 2 tasks, 1 theme; threads 7/24, fds 17/21,
+    descendants 6, sessions 4 unchanged; worktrees 0; memory GUI 7.4 MB,
+    daemon 17.6 MB flat); Windows NOT-RUN ("the desktop was in use for 3
+    min": the user was at the computer). Both slots free afterwards,
+    nothing left running. The Windows soak script itself has therefore
+    still not run end to end; its first full run is the overnight one.
+  - §6.1 item 30 rewritten (start command, what happens, result file); the
+    next session's steps (U6) are at the top of this file.
 
 ### ccx comparison (milestone 3)
 
