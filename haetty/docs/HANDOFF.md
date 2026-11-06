@@ -12,6 +12,8 @@ Written for whoever continues the work (Claude Code included).
 
 
 
+> **In progress:** stage s5 (branch `haetty/s5`, worktree `~/projects/claude-code-config-wt/s5`). Remaining: version 0.2.0 and full verification on its own build (gate, regression, §2.3, themes, installer self-tests both platforms, Windows unit tests and smoke, S4 summary); report as the haetty-v0.2.0 candidate, no tag
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
