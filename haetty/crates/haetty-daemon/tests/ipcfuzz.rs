@@ -106,7 +106,7 @@ fn malformed_connections_drop_alone_and_the_daemon_keeps_serving() {
     };
     let id = victim.create(spec()).unwrap();
     let s = victim.attach(&id, None).unwrap();
-    let mut r = Rng(0x0dd_b1a5_e5);
+    let mut r = Rng(0x0000_ddb1_a5e5);
     let t0 = Instant::now();
 
     // 1. Length prefixes: huge, over the cap, zero, short then close.

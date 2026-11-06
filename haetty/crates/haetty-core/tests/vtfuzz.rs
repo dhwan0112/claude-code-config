@@ -242,7 +242,7 @@ fn mutate(r: &mut Rng, seed: &[u8], other: &[u8]) -> Vec<u8> {
 }
 
 fn spawn(script: &str, cols: u16, rows: u16) -> Session {
-    let spec = CommandSpec::new("sh").args(&["-c", script]);
+    let spec = CommandSpec::new("sh").args(["-c", script]);
     let mut cfg = SessionConfig::new(spec);
     cfg.size = GridSize::new(cols, rows);
     cfg.scrollback_limit = 2_000_000;
