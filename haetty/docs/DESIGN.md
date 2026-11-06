@@ -463,6 +463,7 @@ Alt+M/P/T/O/Y/B/F/D/V.
 | Diff pane / status panel (milestone 3) | Ctrl+Shift+D / Ctrl+Shift+S | free (Claude Code: Ctrl+D exit, Ctrl+S stash) |
 | Rename tab | Ctrl+Shift+R | free (Claude Code: Ctrl+R history search) |
 | Reopen a closed tab, detach tab, attach detached sessions | palette only | — (no chord: rarely used; detach is easy to mistake for close) |
+| New task, message the worker, remove a task's worktree (§8) | palette only | — (no chord: each makes or sends something; a chord pressed by mistake must not) |
 | In the diff view: next view / read again | m or Tab / r | the view has the keyboard while open; nothing reaches the program |
 
 Linux: GNOME/KDE terminals use the same Ctrl+Shift family inside their own

@@ -46,6 +46,7 @@ mod migrate;
 mod reftest;
 mod render;
 mod tabsets;
+mod tasks;
 mod titlebar;
 mod ui;
 

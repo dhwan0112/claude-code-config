@@ -246,6 +246,9 @@ mod tests {
             attached: 0,
             claude_session: claude.into(),
             attention: Default::default(),
+            busy: false,
+            turns: 0,
+            report: None,
         }
     }
 

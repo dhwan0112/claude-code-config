@@ -135,6 +135,9 @@ Ctrl+letter keys go to the program.
 | Reopen a closed tab (last 20) | — (palette) | `reopen_closed_tab` |
 | Detach tab (keeps running) | — (palette) | `detach_tab` |
 | Attach detached sessions | — (palette) | `attach_detached` |
+| New task (a worker in a git worktree) | — (palette) | `new_task` |
+| Message the worker | — (palette) | `message_worker` |
+| Remove a task's worktree | — (palette) | `remove_task_worktree` |
 | Status panel (Claude Code tabs) | Ctrl+Shift+S | `status_panel` |
 | Status panel wider / narrower | — (palette) | `status_panel_wider` / `status_panel_narrower` |
 | Save tabs as the set "saved" | — (palette) | `save_tabs` |
@@ -404,6 +407,39 @@ on Linux `notify-send` shows a notification when it is installed. The text
 names the tab and says that Claude Code is waiting or asks something; never
 session content. `notifications = false` turns off the `notify-send`
 notification; the taskbar/urgency hint stays.
+
+### Orchestrator (first step)
+
+A *task* is one piece of work for one Claude Code *worker*
+(DESIGN.md §8). Palette "New task" asks three things — a title, a one-line
+description, and the repository and base branch (prefilled from the active
+tab: its repository and current branch) — then:
+
+- makes a git worktree beside the repository,
+  `<parent>/<repo>-tasks/t1-<title-words>`, on a new branch
+  `task/t1-<title-words>` from the base (it refuses an existing branch or
+  folder);
+- opens a tab running `worker-command` (config, default `claude`) there,
+  with the task as Claude Code's first prompt. haetty adds no permission
+  flags, so your own Claude Code settings decide what it may do. Claude Code
+  asks you to trust the new folder; only you answer that;
+- asks the worker to end with a report: `STATUS: verified | blocked |
+  needs_review`, `ARTIFACT:`, `EVIDENCE:`, `BLOCKERS:`, `NEXT_ACTION:`.
+
+The worker's tab name starts with its state: `…` running, `✓` verified
+(with evidence), `✗` blocked, `◇` needs review, `–` no report. The state is
+read from the final message of the latest turn and never guessed; verified
+without evidence counts as needs review. The status panel (Ctrl+Shift+S)
+has a "workers" section, and `haetty status --json` lists `workers` with
+the report's fields.
+
+"Message the worker" sends a line to the active worker as program input,
+only when it is ready: it has finished a turn, it is not working, and no
+question is waiting. haetty never answers Claude Code's questions or
+permission prompts for you. "Remove a task's worktree" runs `git worktree
+remove` (without `--force`: a worktree with changes is kept, with git's
+reason) once its tab is closed; the branch stays. Nothing is cleaned up on
+its own, and nothing is merged.
 
 ### Desktop integration
 

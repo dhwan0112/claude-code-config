@@ -38,9 +38,11 @@ use crate::render::paint::{Look, Painter};
 use crate::render::soft::SoftRenderer;
 use crate::render::{PaddingStyle, Preedit, Renderer, Scene};
 use crate::tabsets::{self, SavedTab};
+use crate::tasks::{self, Task};
 use crate::titlebar;
 use crate::ui::{self, Compose, Palette, Pick, TabView};
 use crate::Options;
+use haetty_cc::orch::{self, WorkerState};
 
 /// How long a close request waits for its confirming second press, and how
 /// long a hint stays.
@@ -71,6 +73,9 @@ struct TabSpec {
     name: Option<String>,
     /// `name` was given by the person (kept over automatic names).
     custom: bool,
+    /// Arguments for the first start only, never saved (a worker's task
+    /// prompt, DESIGN.md §8.1).
+    once: Vec<String>,
 }
 
 struct Tab {
@@ -91,6 +96,8 @@ struct Tab {
     /// and when that was read.
     git_name: Option<String>,
     git_read: Option<(String, Instant)>,
+    /// An orchestrator worker: its task's id and title.
+    task: Option<(String, String)>,
 }
 
 impl Tab {
@@ -121,7 +128,21 @@ impl Tab {
         self.claude.as_ref().map_or(Attention::None, |c| c.attention)
     }
 
+    /// A worker's state (DESIGN.md §8.2).
+    fn worker_state(&self) -> WorkerState {
+        let c = self.claude.as_deref();
+        WorkerState::of(self.exited.is_none(), c.is_some_and(|c| c.busy), c.and_then(|c| c.report.as_ref()))
+    }
+
     fn name(&self) -> String {
+        if let Some((_, title)) = &self.task {
+            // The state glyph stays; an own name replaces the task title.
+            let name = format!("{} {}", self.worker_state().glyph(), self.custom_name.as_deref().unwrap_or(title));
+            return match self.exited {
+                Some(code) => format!("{name} [exited{}]", code.map(|c| format!(" {c}")).unwrap_or_default()),
+                None => name,
+            };
+        }
         let title = self.snap.as_ref().map_or("", |s| s.title.as_str());
         // Claude Code's session name (`--name`, /rename or its own title) first.
         let session_name: String = self
@@ -179,6 +200,10 @@ struct Win {
     palette: Option<Palette>,
     /// The closed tabs the palette lists (Reopen a closed tab).
     closed: Vec<SavedTab>,
+    /// Orchestrator tasks (DESIGN.md §8), from `tasks/` in the state directory.
+    tasks: Vec<Task>,
+    /// The worker program and its arguments (`worker-command`).
+    worker_command: Vec<String>,
     hint: Option<(String, Instant)>,
     /// A close request waiting for its second press: (session id, time).
     pending_close: Option<(String, Instant)>,
@@ -342,6 +367,8 @@ impl App {
             keys: self.opts.keymap.clone(),
             palette: None,
             closed: vec![],
+            tasks: tasks::load_all(&tasks::dir()),
+            worker_command: self.opts.config.worker_command.split_whitespace().map(str::to_string).collect(),
             hint: None,
             pending_close: None,
             swallowed: HashSet::new(),
@@ -452,8 +479,14 @@ impl Win {
     /// Opens a tab running the window's command in the active tab's
     /// directory (else where haetty started) and selects it.
     fn open_tab(&mut self, cwd: Option<String>) -> Result<(), String> {
-        let spec =
-            TabSpec { program: self.command.0.clone(), args: self.command.1.clone(), cwd, name: None, custom: false };
+        let spec = TabSpec {
+            program: self.command.0.clone(),
+            args: self.command.1.clone(),
+            cwd,
+            name: None,
+            custom: false,
+            once: vec![],
+        };
         self.open_spec(spec)
     }
 
@@ -465,10 +498,12 @@ impl Win {
     fn reattach(&mut self, s: &SessionInfo) -> Result<(), String> {
         let spec = TabSpec {
             program: s.program.clone(),
-            args: s.args.clone(),
+            // A worker's task prompt is given once (DESIGN.md §8.1).
+            args: s.args.iter().filter(|a| !tasks::is_prompt_arg(a)).cloned().collect(),
             cwd: Some(osc7_path(&s.cwd)),
             name: None,
             custom: false,
+            once: vec![],
         };
         let integrated = self.is_integrated(&s.program);
         let size = self.term_grid_for(integrated, self.tabs.len() + 1);
@@ -577,6 +612,7 @@ impl Win {
                 cwd: (!t.cwd.is_empty()).then(|| t.cwd.clone()),
                 name: (!t.name.is_empty()).then(|| t.name.clone()),
                 custom: t.custom && !t.name.is_empty(),
+                once: vec![],
             };
             match self.open_spec(spec) {
                 Ok(()) => n += 1,
@@ -633,7 +669,7 @@ impl Win {
         let size = self.term_grid_for(integrated, self.tabs.len() + 1);
         let create = CreateSpec {
             program: spec.program.clone(),
-            args: spec.args.clone(),
+            args: spec.args.iter().chain(&spec.once).cloned().collect(),
             cwd: cwd.clone(),
             // The daemon may run in an older environment: the child gets ours
             // (never stored, DESIGN.md §3.6).
@@ -649,7 +685,7 @@ impl Win {
             claude_integration: self.claude_integration,
         };
         let id = self.client.create(create).map_err(|e| e.to_string())?;
-        let spec = TabSpec { cwd, ..spec };
+        let spec = TabSpec { cwd, once: vec![], ..spec };
         self.add_tab(id, spec, size, integrated)
     }
 
@@ -693,7 +729,14 @@ impl Win {
             custom_name,
             git_name: None,
             git_read: None,
+            task: None,
         };
+        tab.task = tab
+            .spec
+            .cwd
+            .as_deref()
+            .and_then(|c| self.tasks.iter().find(|k| k.is_folder(c)))
+            .map(|k| (k.id.clone(), k.title.clone()));
         tab.refresh_git();
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
@@ -773,6 +816,76 @@ impl Win {
         self.update_title();
         self.relayout();
         self.save_last();
+    }
+
+    /// A task's worker state, from its open tab (no tab: no report known).
+    fn task_state(&self, t: &Task) -> WorkerState {
+        self.tabs
+            .iter()
+            .filter(|x| x.task.as_ref().is_some_and(|(id, _)| *id == t.id))
+            .map(Tab::worker_state)
+            .next()
+            .unwrap_or(WorkerState::NoReport)
+    }
+
+    /// The WORKERS section of the status panel.
+    fn worker_lines(&self) -> Vec<ui::WorkerLine> {
+        let active = self.tab().task.as_ref().map(|(id, _)| id.clone());
+        let first = |s: &str| s.lines().next().unwrap_or("").to_string();
+        self.tasks
+            .iter()
+            .map(|t| {
+                let st = self.task_state(t);
+                let report = (active.as_deref() == Some(t.id.as_str()))
+                    .then(|| self.tab().claude.as_ref().and_then(|c| c.report.clone()))
+                    .flatten();
+                ui::WorkerLine {
+                    text: format!("{} {} {} · {}", st.glyph(), t.id, t.title, st.name()),
+                    blockers: report.as_ref().map(|r| first(&r.blockers.0)).filter(|s| !s.is_empty()),
+                    next: report.as_ref().map(|r| first(&r.next_action.0)).filter(|s| !s.is_empty()),
+                }
+            })
+            .collect()
+    }
+
+    /// Makes a task and opens its worker (DESIGN.md §8.1). `place` is
+    /// "repository [base]" (no base: the repository's current branch).
+    fn start_task(&mut self, title: &str, description: &str, place: &str) {
+        let place = place.trim();
+        let (repo, base) = match place.rsplit_once(char::is_whitespace) {
+            Some((r, b)) if !b.trim().is_empty() && !r.trim().is_empty() => {
+                (r.trim().to_string(), b.trim().to_string())
+            }
+            _ => {
+                let b = gitview::repo_branch(std::path::Path::new(place))
+                    .and_then(|n| n.split_once(':').map(|x| x.1.to_string()))
+                    .unwrap_or_default();
+                (place.to_string(), b)
+            }
+        };
+        let t = match tasks::create(&tasks::dir(), title, description, &repo, &base) {
+            Ok(t) => t,
+            Err(e) => {
+                self.show_hint(format!("task not made: {e}"));
+                return;
+            }
+        };
+        // Ids and counts only: titles and descriptions are typed text.
+        log::info!("orchestrator: task {} made (worktree and branch created)", t.id);
+        self.tasks = tasks::load_all(&tasks::dir());
+        let Some((program, args)) = self.worker_command.split_first() else { return };
+        let spec = TabSpec {
+            program: program.clone(),
+            args: args.to_vec(),
+            cwd: Some(t.worktree.clone()),
+            name: Some(t.title.clone()),
+            custom: false,
+            once: vec![t.prompt()],
+        };
+        match self.open_spec(spec) {
+            Ok(()) => self.show_hint(format!("task {} started on {}", t.id, t.branch)),
+            Err(e) => self.show_hint(format!("task {} made, worker not started: {e}", t.id)),
+        }
     }
 
     /// Takes the active tab out of the window; the daemon keeps its session
@@ -933,6 +1046,40 @@ impl Win {
                 self.recompose();
             }
             Action::DetachTab => self.detach_tab(),
+            Action::NewTask => {
+                // Prefilled: the active tab's repository and its branch.
+                let prefill = self
+                    .tab()
+                    .folder()
+                    .and_then(|f| gitview::find_top(std::path::Path::new(&f)))
+                    .map(|(top, _)| {
+                        let b = gitview::repo_branch(&top).and_then(|n| n.split_once(':').map(|x| x.1.to_string()));
+                        format!("{} {}", top.display(), b.unwrap_or_default())
+                    })
+                    .unwrap_or_default();
+                self.palette = Some(Palette::new_task(prefill));
+                self.recompose();
+            }
+            Action::MessageWorker => {
+                if self.tab().task.is_none() {
+                    self.show_hint("not a worker tab (palette: New task)".into());
+                } else if let Err(h) = orch::ready(self.tab().claude.as_deref()) {
+                    self.show_hint(format!("not now: {}", h.reason()));
+                } else {
+                    self.palette = Some(Palette::message());
+                    self.recompose();
+                }
+            }
+            Action::RemoveTaskWorktree => {
+                self.tasks = tasks::load_all(&tasks::dir());
+                let items = self
+                    .tasks
+                    .iter()
+                    .map(|t| (format!("{} {}", t.id, t.title), format!("{} · {}", t.branch, self.task_state(t).name())))
+                    .collect();
+                self.palette = Some(Palette::tasks(items));
+                self.recompose();
+            }
             Action::StatusPanel => {
                 self.panel_open = !self.panel_open;
                 save_ui_state(self.panel_open, self.panel_width);
@@ -1234,7 +1381,8 @@ impl Win {
             tab.integrated.then(|| ui::status_row(tab.claude.as_deref(), self.grid.cols as usize, g, &diff_key));
         let pc = self.panel_cols() as usize;
         let area = (self.grid.rows as usize).saturating_sub(self.top() as usize + usize::from(status.is_some()));
-        let panel = (pc > 0).then(|| ui::panel(tab.claude.as_deref(), pc, area, g, now_ms()));
+        let workers = if pc > 0 { self.worker_lines() } else { vec![] };
+        let panel = (pc > 0).then(|| ui::panel(tab.claude.as_deref(), &workers, pc, area, g, now_ms()));
         let next = Compose {
             screen,
             accents: &self.theme.palette,
@@ -1375,6 +1523,7 @@ impl Win {
         let plain = !chord.ctrl && !chord.alt && !chord.sup;
         match chord.key.as_str() {
             "escape" => self.palette = None,
+            "enter" if p.task_step() => {}
             "enter" => {
                 let pick = p.current();
                 self.palette = None;
@@ -1401,6 +1550,52 @@ impl Win {
                         self.update_title();
                         self.show_hint(if auto { "automatic tab name".into() } else { "tab renamed".into() });
                         return;
+                    }
+                    Some(Pick::NewTask(title, description, place)) => {
+                        self.recompose();
+                        self.start_task(&title, &description, &place);
+                        return;
+                    }
+                    Some(Pick::Message(text)) => {
+                        let id = self.tab().task.as_ref().map(|(id, _)| id.clone()).unwrap_or_default();
+                        let t = self.tab();
+                        // Always as a program (orch::send has no origin to choose).
+                        let r = orch::send(&t.session.handle, t.claude.as_deref(), &text);
+                        match r {
+                            Ok(()) => {
+                                log::info!(
+                                    "orchestrator: message to worker {id} sent ({} chars)",
+                                    text.chars().count()
+                                );
+                                self.show_hint(format!("sent to worker {id}"));
+                            }
+                            Err(h) => {
+                                log::info!("orchestrator: message to worker {id} held: {h:?}");
+                                self.show_hint(format!("not sent: {}", h.reason()));
+                            }
+                        }
+                        return;
+                    }
+                    Some(Pick::Task(i)) => {
+                        if let Some(t) = self.tasks.get(i).cloned() {
+                            let open = self
+                                .tabs
+                                .iter()
+                                .any(|x| x.exited.is_none() && x.task.as_ref().is_some_and(|(id, _)| *id == t.id));
+                            if open {
+                                self.show_hint(format!("close worker {} first", t.id));
+                                return;
+                            }
+                            match tasks::remove(&tasks::dir(), &t) {
+                                Ok(()) => {
+                                    log::info!("orchestrator: worktree of task {} removed", t.id);
+                                    self.tasks = tasks::load_all(&tasks::dir());
+                                    self.show_hint(format!("worktree of {} removed; branch {} kept", t.id, t.branch));
+                                }
+                                Err(e) => self.show_hint(format!("not removed: {e}")),
+                            }
+                            return;
+                        }
                     }
                     Some(Pick::Closed(i)) => {
                         if let Some(t) = self.closed.get(i).cloned() {
@@ -1609,7 +1804,7 @@ fn save_ui_state(open: bool, width: u16) {
 }
 
 /// A directory from OSC 7 (`file://host/path`) or a plain path.
-fn osc7_path(p: &str) -> String {
+pub(crate) fn osc7_path(p: &str) -> String {
     match p.strip_prefix("file://") {
         Some(r) => r.find('/').map_or(r.to_string(), |i| r[i..].to_string()),
         None => p.to_string(),

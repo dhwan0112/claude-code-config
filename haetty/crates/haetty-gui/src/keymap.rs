@@ -40,6 +40,12 @@ pub enum Action {
     /// Take the active tab out of the window; its session keeps running
     /// (`AttachDetached` brings it back).
     DetachTab,
+    /// Orchestrator (DESIGN.md §8): a task → a worker tab in a worktree.
+    NewTask,
+    /// Send a message to the active worker (as a program, when it is ready).
+    MessageWorker,
+    /// `git worktree remove` for a task whose worker is closed.
+    RemoveTaskWorktree,
 }
 
 impl Action {
@@ -65,6 +71,9 @@ impl Action {
             Action::RenameTab => "rename_tab".into(),
             Action::ReopenClosedTab => "reopen_closed_tab".into(),
             Action::DetachTab => "detach_tab".into(),
+            Action::NewTask => "new_task".into(),
+            Action::MessageWorker => "message_worker".into(),
+            Action::RemoveTaskWorktree => "remove_task_worktree".into(),
         }
     }
 
@@ -90,6 +99,9 @@ impl Action {
             Action::RenameTab => "Rename tab".into(),
             Action::ReopenClosedTab => "Reopen a closed tab".into(),
             Action::DetachTab => "Detach tab (keeps running)".into(),
+            Action::NewTask => "New task (a worker in a git worktree)".into(),
+            Action::MessageWorker => "Message the worker".into(),
+            Action::RemoveTaskWorktree => "Remove a task's worktree".into(),
         }
     }
 
@@ -113,6 +125,9 @@ impl Action {
             "rename_tab" => Action::RenameTab,
             "reopen_closed_tab" => Action::ReopenClosedTab,
             "detach_tab" => Action::DetachTab,
+            "new_task" => Action::NewTask,
+            "message_worker" => Action::MessageWorker,
+            "remove_task_worktree" => Action::RemoveTaskWorktree,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -141,6 +156,9 @@ impl Action {
             Action::StatusPanelWider,
             Action::StatusPanelNarrower,
             Action::AttachDetached,
+            Action::NewTask,
+            Action::MessageWorker,
+            Action::RemoveTaskWorktree,
             Action::ReloadConfig,
             Action::SaveTabs,
             Action::OpenSavedTabs,

@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 6;
+pub const VERSION: u32 = 7;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -151,6 +151,12 @@ pub struct SessionInfo {
     /// Claude Code's session id, once a hook or the status line said it.
     pub claude_session: String,
     pub attention: Attention,
+    /// Claude Code: between UserPromptSubmit and Stop.
+    pub busy: bool,
+    /// Claude Code: turns finished.
+    pub turns: u32,
+    /// Claude Code: the latest turn's worker report (DESIGN.md §8.2).
+    pub report: Option<WorkerReport>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -383,6 +389,27 @@ pub struct ClaudeInfo {
     pub cache_hit_pct: Option<f32>,
     /// Last status-line update, Unix ms.
     pub updated_ms: u64,
+    /// Turns finished (Stop / StopFailure) since the session started.
+    pub turns: u32,
+    /// The worker report of the latest finished turn (DESIGN.md §8.2);
+    /// cleared when a new turn starts.
+    pub report: Option<WorkerReport>,
+}
+
+/// A worker's report (`STATUS:` … `NEXT_ACTION:` at the end of its final
+/// message). The texts never reach a log.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct WorkerReport {
+    /// `verified`, `blocked` or `needs_review`.
+    pub status: String,
+    pub artifact: Secret<String>,
+    pub evidence: Secret<String>,
+    pub blockers: Secret<String>,
+    pub next_action: Secret<String>,
+    /// When the turn ended, Unix ms.
+    pub at_ms: u64,
+    /// Read from the transcript (the Stop hook had no final message).
+    pub from_transcript: bool,
 }
 
 /// The last edit with its text before and after.

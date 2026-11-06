@@ -99,7 +99,7 @@ fn git(top: &Path, args: &[&str], input: Option<Vec<u8>>, deadline: Instant, cap
     c.arg("-C").arg(top).args(["-c", "core.quotepath=off", "--no-pager"]).args(args);
     c.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0");
     c.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() });
-    c.stdout(Stdio::piped()).stderr(Stdio::null());
+    c.stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -112,6 +112,14 @@ fn git(top: &Path, args: &[&str], input: Option<Vec<u8>>, deadline: Instant, cap
         });
     }
     let mut out = child.stdout.take().ok_or("git: no output")?;
+    // git's reason, for a refusal (first line, at most 4 KiB read).
+    let err_reader = child.stderr.take().map(|mut e| {
+        std::thread::spawn(move || {
+            let mut b = vec![];
+            let _ = e.by_ref().take(4096).read_to_end(&mut b);
+            String::from_utf8_lossy(&b).lines().next().unwrap_or_default().trim().to_string()
+        })
+    });
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = vec![];
@@ -125,10 +133,12 @@ fn git(top: &Path, args: &[&str], input: Option<Vec<u8>>, deadline: Instant, cap
         let _ = child.kill();
     }
     let status = child.wait().map_err(|e| format!("git: {e}"))?;
+    let why = err_reader.and_then(|t| t.join().ok()).unwrap_or_default();
     match r {
         Err(_) => Err("time limit".into()),
         Ok(Err(e)) => Err(format!("git: {e}")),
         Ok(Ok(b)) if b.len() as u64 > cap => Err("size limit".into()),
+        Ok(Ok(_)) if !status.success() && !why.is_empty() => Err(format!("git {}: {why}", args[0])),
         Ok(Ok(_)) if !status.success() => Err(format!("git {} failed ({status})", args[0])),
         Ok(Ok(b)) => Ok(b),
     }
@@ -181,6 +191,11 @@ fn head_blobs(
         res.push(Some(if size as u64 > l.file_bytes { Err("larger than 2 MiB") } else { text_of(body) }));
     }
     Ok(res)
+}
+
+/// A git command for the orchestrator's worktrees (output up to 1 MiB).
+pub fn run_git(top: &Path, args: &[&str], deadline: Instant) -> Result<Vec<u8>, String> {
+    git(top, args, None, deadline, 1 << 20)
 }
 
 fn has_head(top: &Path, deadline: Instant) -> bool {

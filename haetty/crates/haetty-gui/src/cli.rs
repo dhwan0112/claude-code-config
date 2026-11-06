@@ -37,12 +37,25 @@ pub fn status(json: bool) -> (String, i32) {
     let client = match Client::connect(&ep, Role::Observe, "status") {
         Ok(c) => c,
         Err(ConnectError::NotRunning) => {
-            return (if json { r#"{"daemon_pid":null,"sessions":[]}"#.into() } else { "no daemon running".into() }, 0)
+            let w = workers_json(&crate::tasks::load_all(&crate::tasks::dir()), &[]);
+            return (
+                if json {
+                    format!(r#"{{"daemon_pid":null,"sessions":[],"workers":{w}}}"#)
+                } else {
+                    "no daemon running".into()
+                },
+                0,
+            );
         }
         Err(e) => return (format!("haetty status: {e}"), 1),
     };
     match client.list_sessions() {
-        Ok(list) if json => (status_json(client.daemon_pid, &list), 0),
+        Ok(list) if json => {
+            let mut s = status_json(client.daemon_pid, &list);
+            let w = workers_json(&crate::tasks::load_all(&crate::tasks::dir()), &list);
+            s.truncate(s.len() - 1);
+            (format!("{s},\"workers\":{w}}}"), 0)
+        }
         Ok(list) => (status_text(client.daemon_pid, &list), 0),
         Err(e) => (format!("haetty status: {e}"), 1),
     }
@@ -118,6 +131,43 @@ pub fn status_json(pid: u32, list: &[SessionInfo]) -> String {
     format!(r#"{{"daemon_pid":{pid},"sessions":[{}]}}"#, sessions.join(","))
 }
 
+/// The orchestrator's tasks with their workers (DESIGN.md §8.3): the
+/// session in the task's worktree (a running one first), its state and its
+/// latest report.
+pub fn workers_json(tasks: &[crate::tasks::Task], list: &[SessionInfo]) -> String {
+    let items: Vec<String> = tasks
+        .iter()
+        .map(|t| {
+            let mut mine: Vec<&SessionInfo> =
+                list.iter().filter(|s| t.is_folder(&crate::app::osc7_path(&s.cwd))).collect();
+            mine.sort_by_key(|s| (s.state != SessionState::Running, std::cmp::Reverse(s.created_ms)));
+            let s = mine.first();
+            let alive = s.is_some_and(|s| s.state == SessionState::Running);
+            let report = s.and_then(|s| s.report.as_ref());
+            let state = haetty_cc::orch::WorkerState::of(alive, s.is_some_and(|s| s.busy), report);
+            let r = |f: fn(&haetty_proto::wire::WorkerReport) -> &str| report.map_or("null".into(), |x| json_str(f(x)));
+            format!(
+                r#"{{"id":{},"title":{},"repository":{},"base":{},"branch":{},"worktree":{},"session":{},"state":{},"status":{},"artifact":{},"evidence":{},"blockers":{},"next_action":{},"report_from_transcript":{}}}"#,
+                json_str(&t.id),
+                json_str(&t.title),
+                json_str(&t.repo),
+                json_str(&t.base),
+                json_str(&t.branch),
+                json_str(&t.worktree),
+                s.map_or("null".into(), |s| json_str(&s.id)),
+                json_str(state.name()),
+                r(|x| &x.status),
+                r(|x| &x.artifact.0),
+                r(|x| &x.evidence.0),
+                r(|x| &x.blockers.0),
+                r(|x| &x.next_action.0),
+                report.map_or("null".into(), |x| x.from_transcript.to_string()),
+            )
+        })
+        .collect();
+    format!("[{}]", items.join(","))
+}
+
 /// A JSON string literal.
 pub fn json_str(s: &str) -> String {
     let mut o = String::with_capacity(s.len() + 2);
@@ -178,9 +228,54 @@ mod tests {
             attached: 0,
             claude_session: String::new(),
             attention: Default::default(),
+            busy: false,
+            turns: 0,
+            report: None,
         };
         let j = status_json(7, &[s]);
         assert!(j.starts_with(r#"{"daemon_pid":7,"sessions":[{"id":"x-1","title":"✳ Claude Code","cwd":"/tmp/p","state":"exited","exit_code":3,"#), "{j}");
         assert!(j.ends_with(r#""program":"claude","pid":42,"cols":120,"rows":36,"attached":0,"claude_session":"","attention":"None"}]}"#), "{j}");
+    }
+
+    #[test]
+    fn workers_in_status_json() {
+        use haetty_proto::wire::{Secret, WorkerReport};
+        let t = crate::tasks::Task {
+            id: "t1".into(),
+            title: "Fix \"it\"".into(),
+            repo: "/r".into(),
+            base: "main".into(),
+            branch: "task/t1-fix-it".into(),
+            worktree: "/r-tasks/t1-fix-it".into(),
+            ..Default::default()
+        };
+        let none = workers_json(std::slice::from_ref(&t), &[]);
+        assert!(none.contains(r#""session":null,"state":"no report","status":null"#), "{none}");
+        let s = SessionInfo {
+            id: "x-1".into(),
+            program: "claude".into(),
+            title: String::new(),
+            cwd: "/r-tasks/t1-fix-it".into(),
+            state: SessionState::Running,
+            created_ms: 1,
+            pid: None,
+            cols: 80,
+            rows: 24,
+            args: vec![],
+            attached: 1,
+            claude_session: "c".into(),
+            attention: Default::default(),
+            busy: false,
+            turns: 1,
+            report: Some(WorkerReport {
+                status: "verified".into(),
+                evidence: Secret("cargo test: ok".into()),
+                ..Default::default()
+            }),
+        };
+        let j = workers_json(&[t], &[s]);
+        assert!(j.starts_with(r#"[{"id":"t1","title":"Fix \"it\"","repository":"/r""#), "{j}");
+        assert!(j.contains(r#""session":"x-1","state":"verified","status":"verified""#), "{j}");
+        assert!(j.contains(r#""evidence":"cargo test: ok""#), "{j}");
     }
 }

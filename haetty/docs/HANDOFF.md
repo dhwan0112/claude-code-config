@@ -10,7 +10,6 @@ Written for whoever continues the work (Claude Code included).
 
 
 
-> **In progress:** stage s3 (branch `haetty/s3`, worktree `~/projects/claude-code-config-wt/s3`). Remaining: orchestrator first step: DESIGN §8 first (own commit), then tasks -> worker Claude Code tabs in git worktrees on task branches, report parsing (STATUS/ARTIFACT/EVIDENCE/BLOCKERS/NEXT_ACTION), WORKERS panel section, tab marks, status --json workers, Origin::Program boundary integration test
 
 ## 1. Goal
 
@@ -656,6 +655,20 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     sessions" (also from a second window); Ctrl+Shift+D, `m`, `m` in a real
     repository — the working tree view lists what Claude Code changed with
     Bash too, and returns within a moment.
+
+27. **Orchestrator with a real Claude Code** (stage S3): palette "New task"
+    in a real repository — the worktree appears beside it on
+    `task/t1-…`; the worker tab shows Claude Code's folder-trust question
+    and the task is submitted only after you answer it (a positional prompt
+    with haetty's `--settings` after it must reach Claude Code as the first
+    prompt); with your bypass setting on or off, the worker asks or does not
+    ask as your own Claude Code does; the final message ends with the report
+    and the tab turns `✓` / `✗` / `◇`; "Message the worker" while it asks
+    for a permission is refused with a hint, and after the turn it arrives
+    as one message; `haetty status --json` shows the report; close the
+    tab, "Remove a task's worktree" removes it (and refuses while there are
+    uncommitted files); restore the tab set — the worker resumes without
+    getting the task again.
 
 #### B. Linux with a real account (Claude Code logged in)
 
@@ -1663,6 +1676,60 @@ regression list, measurements), then committed, pushed and mirrored.
     growth).
   - Frames: `docs/look/s2-*.png` (names, rename prompt, the three diff
     views, the closed list).
+
+- **2026-11-06 Stage S3 — orchestrator, first step (DESIGN.md §8, written
+  and committed first: 6faa4dd).** One task → one Claude Code worker in a
+  worktree (`git worktree add -b task/<id>-<slug>` beside the repository),
+  the task as the worker's positional prompt (never typed: start-up dialogs
+  stay with the person; the prompt is kept out of tab sets, the closed list
+  and re-attach), reports from the Stop hook's `last_assistant_message`
+  parsed in the daemon (transcript fallback limited to this turn), states
+  running / verified / blocked / needs review / no report, grey state
+  glyphs in tab names, a "workers" panel section, `status --json` workers,
+  palette "Message the worker" (`haetty_cc::orch::send`: Program origin
+  only, only after a finished turn, not busy, no question) and "Remove a
+  task's worktree" (no `--force`, branch kept). Protocol 7 (`SessionInfo`:
+  busy, turns, report; `ClaudeInfo`: turns, report). Config
+  `worker-command`. Evidence:
+  - Boundary (cargo integration test `tests/orchestrator.rs`, real daemon,
+    real `haetty hook`, a fake `claude` in raw mode recording every byte):
+    nothing reported → held; after SessionStart (hooks can run before the
+    trust dialog) → held; busy → held; a permission question → held, and
+    with a stale "ready" view the orchestrator's paste + Enter and a raw
+    Program paste and "y\r" reach nothing (0 bytes); the person's key
+    arrives; answered + Stop with a report → one paste + Enter arrives
+    whole, control characters dropped; next turn → held, old report gone;
+    `orch.rs` has no `Origin::Human`, and no `orch::send` call in `app.rs`
+    passes an origin. Passed.
+  - Unit tests: grammar (markdown around keys, last STATUS wins, the
+    template line and prose are not reports, multi-line fields, 2 000-char
+    cap), states (busy wins, verified without evidence → needs review,
+    exited → not running), readiness order, transcript fallback (only this
+    turn, main chain, only `projects/*.jsonl`), the daemon's Stop/
+    UserPromptSubmit handling and that report text never shows in Debug,
+    task files, worktree create/refuse/remove (dirty → refused, branch
+    kept), `status --json` workers, the WORKERS panel lines. GUI 85 + 1
+    ignored, cc 17; Windows native 83 + 1 ignored (git worktrees with Git
+    for Windows).
+  - GUI end to end (Linux, Xvfb, `orchrun.sh`): 19/19 — the palette's three
+    steps make `proj-tasks/t1-fix-the-parser` on `task/t1-fix-the-parser`
+    and `tasks/t1.task`; the worker runs there with the prompt and only
+    haetty's own `--settings` (no permission flag); `status --json` t1 →
+    no report → running (UserPromptSubmit) → verified with evidence (Stop)
+    → blocked; tab names `… Fix the parser` / `✓ Fix the parser`; the tab
+    set stores no prompt; a question waiting → "Message the worker" does
+    not open, 0 bytes; after the turn the message arrives with Enter; no
+    title, description or message in the debug log; remove refused while
+    the worker is open and with an untracked file, done after, branch kept.
+  - Reference frame `workers` (new scene: worker tabs with glyphs, the
+    panel's workers section), Linux and Windows, in the same commit; the
+    other seven frames byte-identical. Frames: `docs/look/s3-*.png`.
+  - Fixed on the way: a long palette query now keeps its end in view (the
+    branch in "repository and base" was cut off).
+  - Protected-area commits (approved for S3): the Stop/UserPromptSubmit
+    report handling in `haetty-cc/src/state.rs` and the `SessionInfo`
+    fields in `haetty-daemon` (no change to `Daemon::input`'s check, the
+    permission-prompt path, `report.rs` or the injected settings).
 
 ### ccx comparison (milestone 3)
 

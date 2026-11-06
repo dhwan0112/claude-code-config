@@ -34,6 +34,8 @@ struct EditRec {
 pub struct Claude {
     pub info: ClaudeInfo,
     ask_ts: u64,
+    /// When the running turn started (UserPromptSubmit), Unix ms.
+    turn_ts: u64,
     pending: HashMap<String, PreSnapshot>,
     edits: VecDeque<EditRec>,
     files: BTreeSet<String>,
@@ -66,6 +68,9 @@ impl Claude {
             }
             "UserPromptSubmit" => {
                 i.busy = true;
+                // A new turn: the last report is no longer the latest.
+                i.report = None;
+                self.turn_ts = ts_ms;
                 if i.attention != Attention::Ask || later_than_ask {
                     i.attention = Attention::None;
                 }
@@ -113,6 +118,18 @@ impl Claude {
             }
             "Stop" | "StopFailure" => {
                 i.busy = false;
+                i.turns = i.turns.saturating_add(1);
+                // The final message (DESIGN.md §8.2): the hook's own copy,
+                // else this turn's text in the transcript.
+                let last = j.get("last_assistant_message").and_then(Json::str).map(str::to_string);
+                i.report = match last {
+                    Some(t) => crate::orch::parse_report(&t, ts_ms, false),
+                    None => j
+                        .get("transcript_path")
+                        .and_then(Json::str)
+                        .and_then(|p| crate::orch::transcript_text(p, self.turn_ts))
+                        .and_then(|t| crate::orch::parse_report(&t, ts_ms, true)),
+                };
                 if i.attention != Attention::Ask || later_than_ask {
                     i.attention = Attention::Wait;
                 }
@@ -245,6 +262,36 @@ mod tests {
 
     fn j(t: &str) -> Json {
         Json::parse(t).unwrap()
+    }
+
+    #[test]
+    fn worker_report_from_the_stop_hook_and_only_for_this_turn() {
+        let mut c = Claude::default();
+        c.hook("UserPromptSubmit", &j(r#"{"session_id":"s"}"#), 10, None);
+        assert_eq!((c.info.turns, c.info.busy), (0, true));
+        let stop = r#"{"session_id":"s","last_assistant_message":"Done.\nSTATUS: blocked\nBLOCKERS: no network"}"#;
+        assert!(c.hook("Stop", &j(stop), 20, None));
+        let r = c.info.report.clone().unwrap();
+        assert_eq!(
+            (r.status.as_str(), r.blockers.0.as_str(), r.at_ms, r.from_transcript),
+            ("blocked", "no network", 20, false)
+        );
+        assert_eq!((c.info.turns, c.info.busy), (1, false));
+        // A new turn: the old report is not the latest any more.
+        c.hook("UserPromptSubmit", &j(r#"{"session_id":"s"}"#), 30, None);
+        assert!(c.info.report.is_none());
+        // A final message without a report: none (no guess from the old one).
+        c.hook("Stop", &j(r#"{"session_id":"s","last_assistant_message":"I fixed it."}"#), 40, None);
+        assert!(c.info.report.is_none());
+        assert_eq!(c.info.turns, 2);
+        // No final message and a transcript that is not one: none.
+        c.hook("UserPromptSubmit", &j("{}"), 50, None);
+        c.hook("Stop", &j(r#"{"transcript_path":"/etc/passwd"}"#), 60, None);
+        assert!(c.info.report.is_none());
+        // The payload never shows in Debug output.
+        let mut c = Claude::default();
+        c.hook("Stop", &j(r#"{"last_assistant_message":"STATUS: verified\nEVIDENCE: secret-ish"}"#), 1, None);
+        assert!(!format!("{:?}", c.info).contains("secret-ish"));
     }
 
     #[test]

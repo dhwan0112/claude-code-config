@@ -5,6 +5,7 @@
 
 pub mod edit;
 pub mod json;
+pub mod orch;
 pub mod report;
 pub mod resume;
 pub mod settings;

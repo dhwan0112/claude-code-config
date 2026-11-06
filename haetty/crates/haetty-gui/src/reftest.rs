@@ -304,8 +304,37 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
         Some((2, 8)),
     );
     let status = ui::status_row(Some(&info), COLS as usize, g, "ctrl+shift+d");
-    let panel = ui::panel(Some(&info), PANEL_COLS, area, g, NOW_MS);
+    let panel = ui::panel(Some(&info), &[], PANEL_COLS, area, g, NOW_MS);
     out.push(("claude-panel", Compose { status: Some(status), panel: Some(panel), ..compose(&s) }.build(), None));
+
+    // Orchestrator (DESIGN.md §8.3, stage S3): worker tabs with their state
+    // glyphs and the panel's WORKERS section for the active worker.
+    use haetty_cc::orch::WorkerState as W;
+    let tabs = [
+        TabView { name: &format!("{} Fix the parser", W::Verified.glyph()), exited: false, attention: Attention::None },
+        TabView { name: &format!("{} Port the tests", W::Running.glyph()), exited: false, attention: Attention::None },
+        TabView { name: &format!("{} Update docs", W::Blocked.glyph()), exited: false, attention: Attention::None },
+    ];
+    let bar = ui::tab_bar(&tabs, 0, COLS as usize, g);
+    let lines = [
+        ui::WorkerLine {
+            text: format!("{} t1 Fix the parser · verified", W::Verified.glyph()),
+            blockers: Some("none".into()),
+            next: Some("review and merge task/t1-fix-the-parser".into()),
+        },
+        ui::WorkerLine { text: format!("{} t2 Port the tests · running", W::Running.glyph()), ..Default::default() },
+        ui::WorkerLine { text: format!("{} t3 Update docs · blocked", W::Blocked.glyph()), ..Default::default() },
+    ];
+    let area = ROWS as usize - 2;
+    let s = screen(COLS - PANEL_COLS as u16, area as u16, &["● Done.", "", "STATUS: verified", "", "> "], Some((2, 4)));
+    let info = ClaudeInfo { turns: 1, updated_ms: NOW_MS - 2_000, ..Default::default() };
+    let status = ui::status_row(Some(&info), COLS as usize, g, "ctrl+shift+d");
+    let panel = ui::panel(Some(&info), &lines, PANEL_COLS, area, g, NOW_MS);
+    out.push((
+        "workers",
+        Compose { tab_bar: Some(bar), status: Some(status), panel: Some(panel), ..compose(&s) }.build(),
+        None,
+    ));
     out
 }
 

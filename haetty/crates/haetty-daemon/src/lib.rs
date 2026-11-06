@@ -449,6 +449,9 @@ impl Daemon {
                         if let Some(cl) = &s.claude {
                             i.claude_session.clone_from(&cl.info.claude_session);
                             i.attention = cl.info.attention;
+                            i.busy = cl.info.busy;
+                            i.turns = cl.info.turns;
+                            i.report.clone_from(&cl.info.report);
                         }
                         i
                     })
@@ -709,6 +712,9 @@ impl Daemon {
                     attached: 0,
                     claude_session: String::new(),
                     attention: Attention::None,
+                    busy: false,
+                    turns: 0,
+                    report: None,
                 };
                 let events = session.events.clone();
                 let tx = self.tx.clone();

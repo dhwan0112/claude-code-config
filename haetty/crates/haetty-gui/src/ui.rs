@@ -234,6 +234,13 @@ pub enum PaletteMode {
     Rename { now: String },
     /// Closed tabs: (name, details) each.
     Closed(Vec<(String, String)>),
+    /// New task, three questions: title, description, repository and base
+    /// (`prefill` is the third answer's start).
+    NewTask { step: u8, title: String, description: String, prefill: String },
+    /// A message for the active worker.
+    Message,
+    /// Tasks whose worktree can be removed: (task, details) each.
+    Tasks(Vec<(String, String)>),
 }
 
 /// What Enter picks.
@@ -243,6 +250,11 @@ pub enum Pick {
     /// Index into the closed list given to [`Palette::closed`].
     Closed(usize),
     Rename(String),
+    /// Title, description, "repository base".
+    NewTask(String, String, String),
+    Message(String),
+    /// Index into the list given to [`Palette::tasks`].
+    Task(usize),
 }
 
 fn words_match(q: &str, text: &str) -> bool {
@@ -259,6 +271,40 @@ impl Palette {
         Palette { query: String::new(), selected: 0, mode: PaletteMode::Closed(items) }
     }
 
+    pub fn new_task(prefill: String) -> Palette {
+        let mode = PaletteMode::NewTask { step: 0, title: String::new(), description: String::new(), prefill };
+        Palette { query: String::new(), selected: 0, mode }
+    }
+
+    pub fn message() -> Palette {
+        Palette { query: String::new(), selected: 0, mode: PaletteMode::Message }
+    }
+
+    pub fn tasks(items: Vec<(String, String)>) -> Palette {
+        Palette { query: String::new(), selected: 0, mode: PaletteMode::Tasks(items) }
+    }
+
+    /// New task: Enter on the first two questions moves on (true); the
+    /// third is a pick. An empty title stays.
+    pub fn task_step(&mut self) -> bool {
+        let PaletteMode::NewTask { step, title, description, prefill } = &mut self.mode else { return false };
+        match *step {
+            0 if !self.query.trim().is_empty() => {
+                *title = std::mem::take(&mut self.query);
+                *step = 1;
+                true
+            }
+            0 => true,
+            1 => {
+                *description = std::mem::take(&mut self.query);
+                self.query = prefill.clone();
+                *step = 2;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Actions whose label contains every word of the query (any case).
     pub fn matches(&self) -> Vec<Action> {
         if !matches!(self.mode, PaletteMode::Actions) {
@@ -269,7 +315,7 @@ impl Palette {
 
     /// Closed tabs matching the query (indices).
     fn closed_matches(&self) -> Vec<usize> {
-        let PaletteMode::Closed(items) = &self.mode else { return vec![] };
+        let (PaletteMode::Closed(items) | PaletteMode::Tasks(items)) = &self.mode else { return vec![] };
         (0..items.len()).filter(|&i| words_match(&self.query, &format!("{} {}", items[i].0, items[i].1))).collect()
     }
 
@@ -278,14 +324,20 @@ impl Palette {
             PaletteMode::Actions => self.matches().get(self.selected).copied().map(Pick::Action),
             PaletteMode::Rename { .. } => Some(Pick::Rename(self.query.clone())),
             PaletteMode::Closed(_) => self.closed_matches().get(self.selected).copied().map(Pick::Closed),
+            PaletteMode::Tasks(_) => self.closed_matches().get(self.selected).copied().map(Pick::Task),
+            PaletteMode::NewTask { step: 2, title, description, .. } => {
+                Some(Pick::NewTask(title.clone(), description.clone(), self.query.clone()))
+            }
+            PaletteMode::NewTask { .. } => None,
+            PaletteMode::Message => Some(Pick::Message(self.query.clone())),
         }
     }
 
     pub fn move_by(&mut self, d: isize) {
         let n = match self.mode {
             PaletteMode::Actions => self.matches().len(),
-            PaletteMode::Rename { .. } => 0,
-            PaletteMode::Closed(_) => self.closed_matches().len(),
+            PaletteMode::Rename { .. } | PaletteMode::NewTask { .. } | PaletteMode::Message => 0,
+            PaletteMode::Closed(_) | PaletteMode::Tasks(_) => self.closed_matches().len(),
         };
         if n == 0 {
             self.selected = 0;
@@ -313,19 +365,39 @@ impl Palette {
             PaletteMode::Rename { now } => {
                 vec![(format!("Enter renames · empty: automatic name · now: {now}"), String::new(), false)]
             }
-            PaletteMode::Closed(list) => {
+            PaletteMode::Closed(list) | PaletteMode::Tasks(list) => {
                 let m = self.closed_matches();
                 if list.is_empty() {
-                    vec![("No closed tabs.".into(), String::new(), false)]
+                    let none =
+                        if matches!(self.mode, PaletteMode::Closed(_)) { "No closed tabs." } else { "No tasks." };
+                    vec![(none.into(), String::new(), false)]
                 } else {
                     m.into_iter().map(|i| (list[i].0.clone(), list[i].1.clone(), true)).collect()
                 }
+            }
+            PaletteMode::NewTask { step, .. } => vec![(
+                match step {
+                    0 => "1/3 Enter: next · Esc: cancel".to_string(),
+                    1 => "2/3 one line (more later with \"Message the worker\") · Enter: next".to_string(),
+                    _ => "3/3 folder and base branch · Enter: worktree on a new branch task/…, beside the repository"
+                        .to_string(),
+                },
+                String::new(),
+                false,
+            )],
+            PaletteMode::Message => {
+                vec![("Enter sends it as a program, only when the worker is ready".to_string(), String::new(), false)]
             }
         };
         let prompt = match self.mode {
             PaletteMode::Actions => "> ",
             PaletteMode::Rename { .. } => "Rename tab: ",
             PaletteMode::Closed(_) => "Reopen: ",
+            PaletteMode::Tasks(_) => "Remove worktree: ",
+            PaletteMode::NewTask { step: 0, .. } => "Task title: ",
+            PaletteMode::NewTask { step: 1, .. } => "Description: ",
+            PaletteMode::NewTask { .. } => "Repository and base: ",
+            PaletteMode::Message => "To the worker: ",
         };
         let h = (items.len() + 1).min(rows.saturating_sub(1)).max(2);
         let panel = g.bar;
@@ -335,7 +407,8 @@ impl Palette {
             *c = blank(g.strong, panel);
         }
         let end = put(r, x0 + 1, prompt, g.dim, panel, false);
-        let cursor_x = put(r, end, &fit(&self.query, w.saturating_sub(end - x0 + 2)), g.strong, panel, false);
+        // A long query keeps its end (where the cursor is) in view.
+        let cursor_x = put(r, end, &fit_left(&self.query, w.saturating_sub(end - x0 + 2)), g.strong, panel, false);
         for (i, (label, key, pickable)) in items.iter().take(h - 1).enumerate() {
             let sel = *pickable && i == self.selected;
             let bg = if sel { mix(panel, g.strong, 40) } else { panel };
@@ -484,7 +557,24 @@ fn when(unix_s: i64) -> String {
 /// own screen does not show — limits with their reset times, subagents,
 /// the last edit, cache, lines, session id. `w` columns, `h` rows; the
 /// first column is the separator.
-pub fn panel(info: Option<&ClaudeInfo>, w: usize, h: usize, g: Greys, now_ms: u64) -> Vec<Vec<Cell>> {
+/// One orchestrator task in the status panel's WORKERS section.
+#[derive(Clone, Debug, Default)]
+pub struct WorkerLine {
+    /// Glyph, id, title, state.
+    pub text: String,
+    /// The active worker's report: BLOCKERS and NEXT_ACTION first lines.
+    pub blockers: Option<String>,
+    pub next: Option<String>,
+}
+
+pub fn panel(
+    info: Option<&ClaudeInfo>,
+    workers: &[WorkerLine],
+    w: usize,
+    h: usize,
+    g: Greys,
+    now_ms: u64,
+) -> Vec<Vec<Cell>> {
     let bg = g.bar;
     let mut rows = vec![vec![blank(g.normal, bg); w]; h];
     for r in rows.iter_mut() {
@@ -494,8 +584,24 @@ pub fn panel(info: Option<&ClaudeInfo>, w: usize, h: usize, g: Greys, now_ms: u6
     }
     let mut lines: Vec<(String, String, Rgb)> = vec![];
     let mut add = |k: &str, v: String, c: Rgb| lines.push((k.to_string(), v, c));
+    let add_workers = |add: &mut dyn FnMut(&str, String, Rgb)| {
+        if workers.is_empty() {
+            return;
+        }
+        add("workers", format!("{} task(s)", workers.len()), g.normal);
+        for wl in workers {
+            add("", wl.text.clone(), g.normal);
+            if let Some(b) = &wl.blockers {
+                add("blockers", b.clone(), g.normal);
+            }
+            if let Some(n) = &wl.next {
+                add("next", n.clone(), g.normal);
+            }
+        }
+    };
     let Some(i) = info else {
         add("", "No Claude Code status yet.".into(), g.dim);
+        add_workers(&mut add);
         draw_lines(&mut rows, &lines, g);
         return rows;
     };
@@ -547,6 +653,7 @@ pub fn panel(info: Option<&ClaudeInfo>, w: usize, h: usize, g: Greys, now_ms: u6
         };
         add("", format!("{mark} {} {t}", if wk.kind.is_empty() { "agent" } else { &wk.kind }), g.normal);
     }
+    add_workers(&mut add);
     if i.updated_ms > 0 {
         add("updated", format!("{} ago", duration(now_ms.saturating_sub(i.updated_ms))), g.dim);
     }
@@ -973,7 +1080,7 @@ mod tests {
             ended_ms: None,
         });
         i.updated_ms = 5000;
-        let p = panel(Some(&i), 40, 12, g, 66_000);
+        let p = panel(Some(&i), &[], 40, 12, g, 66_000);
         let all: Vec<String> = p.iter().map(|r| text(r)).collect();
         let joined = all.join("\n");
         assert!(joined.contains("context   42% of 200k"), "{joined}");
@@ -981,6 +1088,18 @@ mod tests {
         assert!(joined.contains("● Explore 1m05s"), "{joined}");
         assert!(joined.contains("updated   1m01s ago"), "{joined}");
         assert!(all.iter().all(|r| r.starts_with('│')));
+        // The WORKERS section, also before Claude Code has said anything.
+        let wl = [
+            WorkerLine {
+                text: "✓ t1 Fix · verified".into(),
+                blockers: Some("none".into()),
+                next: Some("merge".into()),
+            },
+            WorkerLine { text: "… t2 Port · running".into(), ..Default::default() },
+        ];
+        let joined = panel(None, &wl, 40, 12, g, 0).iter().map(|r| text(r)).collect::<Vec<_>>().join("\n");
+        assert!(joined.contains("workers   2 task(s)"), "{joined}");
+        assert!(joined.contains("✓ t1 Fix · verified") && joined.contains("next      merge"), "{joined}");
         assert_eq!(when(0), "01-01 00:00 UTC");
         assert_eq!(human(1_234_567), "1.2M");
     }

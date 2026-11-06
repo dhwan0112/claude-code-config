@@ -14,6 +14,7 @@
 //! | `claude-integration` | `true` / `false`: hooks and status line in Claude Code tabs | `true` |
 //! | `notifications` | `true` / `false`: desktop notification when Claude Code waits and the window is unfocused (Linux `notify-send`) | `true` |
 //! | `restore-tabs` | `true` / `false`: reopen the previous run's tabs at start | `true` |
+//! | `worker-command` | the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1) | `claude` |
 //! | `scrollback-limit` | bytes of scrollback per session (as Ghostty; ~1.1 KB per 120-column row) | 12000000 |
 //! | `theme` | a built-in theme name, a theme file's name in `<config dir>/themes/`, or a path (with `/` or `\`; relative to the config directory) | [`haetty_core::theme::DEFAULT_THEME`] |
 //! | `palette` | `N=COLOR` (N 0–15; repeatable), on top of the theme | the theme's |
@@ -94,6 +95,8 @@ pub struct Config {
     pub restore_tabs: bool,
     /// Claude Code tabs get haetty's hooks and status line.
     pub claude_integration: bool,
+    /// The orchestrator's worker command (DESIGN.md §8.1).
+    pub worker_command: String,
     pub notifications: bool,
     /// `theme =`: a name or a path ([`theme::find`]).
     pub theme: String,
@@ -115,6 +118,7 @@ impl Default for Config {
             scrollback_limit: haetty_core::DEFAULT_SCROLLBACK_LIMIT,
             restore_tabs: true,
             claude_integration: true,
+            worker_command: "claude".into(),
             notifications: true,
             theme: theme::DEFAULT_THEME.to_string(),
             colors: vec![],
@@ -133,6 +137,7 @@ pub const KEYS: &[&str] = &[
     "scrollback-limit",
     "restore-tabs",
     "claude-integration",
+    "worker-command",
     "notifications",
     "theme",
     "palette",
@@ -163,6 +168,12 @@ impl Config {
             }
             "restore-tabs" => self.restore_tabs = parse_bool(value).ok_or_else(bad)?,
             "claude-integration" => self.claude_integration = parse_bool(value).ok_or_else(bad)?,
+            "worker-command" => {
+                if value.trim().is_empty() {
+                    return Err(bad());
+                }
+                self.worker_command = value.trim().to_string();
+            }
             "notifications" => self.notifications = parse_bool(value).ok_or_else(bad)?,
             "window-padding-balance" => {
                 self.padding_balance = match value {
@@ -347,7 +358,10 @@ mod tests {
             assert_eq!(D::Integrated.effective(W::Windows), D::Native, "not on Windows yet");
             assert_eq!((D::None.effective(W::Wayland), D::Native.effective(W::Wayland)), (D::None, D::Native));
         }
-        for k in KEYS.iter().filter(|k| **k != "theme") {
+        assert!(c.set("worker-command", " ").is_err());
+        c.set("worker-command", "/opt/claude --model x").unwrap();
+        assert_eq!(c.worker_command, "/opt/claude --model x");
+        for k in KEYS.iter().filter(|k| !matches!(**k, "theme" | "worker-command")) {
             assert!(!c.clone().set(k, "?").unwrap_err().starts_with("unknown"));
         }
     }
