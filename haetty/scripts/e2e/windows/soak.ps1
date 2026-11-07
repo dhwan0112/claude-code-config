@@ -8,7 +8,9 @@
 # Verdict (written before the first run; the baseline moved from t=0 to 5 min in V6, see below): threads last <=
 # base + 3 (Windows' own pool threads), handles last <=
 # first + 20; descendants and sessions last = first; worktrees 0; private working set: GUI last <= GUI at 15 min +
-# 4 MB, daemon last <= daemon at 45 min + 4 MB; every operation done; window and daemon alive.
+# 4 MB, daemon last <= daemon when the scrollback is full + 4 MB (E5c, as scripts/e2e/soak.sh: the first sample at
+# which the largest session scrollback stopped growing, at least 15 min before the end, else FAIL; a build that
+# does not report it is judged at 45 min); every operation done; window and daemon alive.
 param([Parameter(Mandatory = $true)][string]$Exe, [Parameter(Mandatory = $true)][string]$Out, [int]$Dur = 3600)
 . (Join-Path $PSScriptRoot "lib.ps1")
 $W = New-HaettyRun "soak"
@@ -51,8 +53,10 @@ function PWS([int]$id) { [int]((Get-CimInstance Win32_PerfFormattedData_PerfProc
 function M([int]$id) { $p = Get-Process -Id $id; "$($p.Threads.Count),$($p.HandleCount),$(PWS $id)" }
 function Wts { (@(RepoGit $R worktree list).Count - 1) + @(Get-ChildItem "$W\proj-tasks" -ErrorAction SilentlyContinue).Count }
 $script:tabs = 0; $script:dets = 0; $script:tasks = 0; $script:themes = 0; $script:fails = 0
-"t_s,gui_threads,gui_handles,gui_private_ws_kb,daemon_threads,daemon_handles,daemon_private_ws_kb,daemon_descendants,sessions,worktrees,tabs_done,detach_done,tasks_done,themes_done" | Set-Content $Out
-function Sample([int]$t) { "$t,$(M $script:Gui.Id),$(M $DP),$(Desc $DP),$((Running).Count),$(Wts),$script:tabs,$script:dets,$script:tasks,$script:themes" | Add-Content $Out }
+# The largest scrollback of a session in rows (-1: the build does not report it).
+function SbMax { $v = @((Status).sessions | Where-Object { $null -ne $_.scrollback } | ForEach-Object { [int64]$_.scrollback }); if ($v.Count) { ($v | Measure-Object -Maximum).Maximum } else { -1 } }
+"t_s,gui_threads,gui_handles,gui_private_ws_kb,daemon_threads,daemon_handles,daemon_private_ws_kb,daemon_descendants,sessions,worktrees,tabs_done,detach_done,tasks_done,themes_done,scrollback_rows" | Set-Content $Out
+function Sample([int]$t) { "$t,$(M $script:Gui.Id),$(M $DP),$(Desc $DP),$((Running).Count),$(Wts),$script:tabs,$script:dets,$script:tasks,$script:themes,$(SbMax)" | Add-Content $Out }
 function Op-Tab { Keys "^+t" 1300; Keys "^+w" 300; Keys "^+w" 800; $script:tabs++ }
 function Op-Detach { Keys "%4"; Palette "detach"; Start-Sleep 0.5; Palette "attach detached"; Start-Sleep 0.8; $script:dets++ }
 function Op-Task {
@@ -100,7 +104,20 @@ Check "daemon_handles" ($last.daemon_handles -le $base.daemon_handles + 20) "$($
 Check "daemon_descendants" ($last.daemon_descendants -eq $first.daemon_descendants) "$($first.daemon_descendants) -> $($last.daemon_descendants)"
 Check "sessions" ($last.sessions -eq $first.sessions) "$($first.sessions) -> $($last.sessions)"
 Check "worktrees" ($last.worktrees -eq 0) "$($last.worktrees)"
-$g15 = At 900; $d45 = At 2700
+$g15 = At 900
 Check "gui_private_ws" ($last.gui_private_ws_kb -le $g15.gui_private_ws_kb + 4096) "$($g15.gui_private_ws_kb) kB at $($g15.t_s) s -> $($last.gui_private_ws_kb) kB"
-Check "daemon_private_ws" ($last.daemon_private_ws_kb -le $d45.daemon_private_ws_kb + 4096) "$($d45.daemon_private_ws_kb) kB at $($d45.t_s) s -> $($last.daemon_private_ws_kb) kB"
+$sb = @($rows | ForEach-Object { if ($_.ContainsKey('scrollback_rows')) { $_.scrollback_rows } else { -1 } })
+if (($sb | Measure-Object -Minimum).Minimum -lt 0) {
+    $d = At 2700
+    Check "daemon_private_ws" ($last.daemon_private_ws_kb -le $d.daemon_private_ws_kb + 4096) "$($d.daemon_private_ws_kb) kB at $($d.t_s) s -> $($last.daemon_private_ws_kb) kB (at 45 min: this build reports no scrollback)"
+} else {
+    $full = $null
+    for ($i = 1; $i -lt $rows.Count; $i++) { if ($rows[$i].scrollback_rows -gt 0 -and $rows[$i].scrollback_rows -le $rows[$i - 1].scrollback_rows * 1.01) { $full = $rows[$i]; break } }
+    if (-not $full -or $last.t_s - $full.t_s -lt 900) {
+        $when = if ($full) { "only at $($full.t_s) s" } else { "never" }
+        Check "daemon_private_ws" $false "scrollback full $when ($($sb[-1]) rows at the end): less than 15 min after it to judge"
+    } else {
+        Check "daemon_private_ws" ($last.daemon_private_ws_kb -le $full.daemon_private_ws_kb + 4096) "$($full.daemon_private_ws_kb) kB when the scrollback was full ($($full.scrollback_rows) rows, $($full.t_s) s) -> $($last.daemon_private_ws_kb) kB"
+    }
+}
 Write-Host "VERDICT $(if ($ok -and $alive -and $script:fails -eq 0) { 'PASS' } else { 'FAIL' })"

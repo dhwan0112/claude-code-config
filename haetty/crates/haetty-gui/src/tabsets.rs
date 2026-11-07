@@ -250,6 +250,7 @@ mod tests {
             turns: 0,
             report: None,
             observable: false,
+            scrollback: 0,
         }
     }
 

@@ -556,6 +556,8 @@ impl Daemon {
                             .values()
                             .filter(|c| c.role == Role::Control && c.subs.contains_key(id))
                             .count() as u32;
+                        i.scrollback =
+                            s.latest.as_ref().map_or(0, |l| l.scrollbar.total.saturating_sub(l.scrollbar.len));
                         if let Some(cl) = &s.claude {
                             i.claude_session.clone_from(&cl.info.claude_session);
                             i.attention = cl.info.attention;
@@ -832,6 +834,7 @@ impl Daemon {
                     turns: 0,
                     report: None,
                     observable: false,
+                    scrollback: 0,
                 };
                 let events = session.events.clone();
                 let tx = self.tx.clone();

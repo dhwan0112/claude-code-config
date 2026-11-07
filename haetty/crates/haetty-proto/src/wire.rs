@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 10;
+pub const VERSION: u32 = 11;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -163,6 +163,10 @@ pub struct SessionInfo {
     /// The person allowed observe-only readers (`haetty screen`, `haetty
     /// events`) to see this session (DESIGN.md §6.1; default off). Version 8.
     pub observable: bool,
+    /// Rows of scrollback above the screen, as of the latest screen
+    /// change (version 11): the soak tells from it when the scrollback is
+    /// full (it stops growing).
+    pub scrollback: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

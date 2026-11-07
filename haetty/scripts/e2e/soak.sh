@@ -11,8 +11,13 @@
 # Verdict (written before the first run; "no growth"):
 #   threads, fds: the last sample equals the first one (t=0, the four tabs open), GUI and daemon (± 0);
 #   descendants of the daemon and sessions: the last sample equals the first one; task worktrees: 0 at the end;
-#   anonymous memory: GUI last <= GUI at 15 min + 4 MB; daemon last <= daemon at 45 min + 4 MB (the burst tab's
-#   scrollback fills in ~40 min; the slow tab keeps adding ~30 KB a minute, within its limit);
+#   anonymous memory: GUI last <= GUI at 15 min + 4 MB; daemon last <= daemon when the scrollback is full + 4 MB.
+#   "Full" (E5c): the first sample at which the largest session scrollback (`status --json` "scrollback", the
+#   burst tab's) has stopped growing (no more than 1 % over the sample before); there must be at least 15 min of
+#   samples after it, else the check FAILS (not judged is not passed). How long filling takes depends on the
+#   engine (libghostty ~40 min; haetty's engine keeps more rows in the same bytes). A build without the field
+#   (protocol < 11) is judged at 45 min, as before E5c, and says so. The slow tab keeps adding ~30 KB a minute,
+#   within its limit;
 #   and every operation done (counts printed), the window and the daemon alive throughout.
 . "$(dirname "$0")/lib.sh"
 OUT=$1; DUR=${2:-3600}
@@ -52,8 +57,10 @@ desc() { # descendants of the daemon
   done; echo $n; }
 m() { echo "$(ls /proc/$1/task | wc -l),$(ls /proc/$1/fd | wc -l),$(awk '/^RssAnon/{print $2}' /proc/$1/status)"; }
 wts() { echo $(( $($G worktree list | wc -l) - 1 + $(ls $W/proj-tasks 2>/dev/null | wc -l) )); }
-echo "t_s,gui_threads,gui_fds,gui_anon_kb,daemon_threads,daemon_fds,daemon_anon_kb,daemon_descendants,sessions,worktrees,tabs_done,detach_done,tasks_done,themes_done" > $OUT
-sample() { echo "$1,$(m $GP),$(m $DP),$(desc $DP),$(nsess),$(wts),$tabs,$dets,$tasks,$themes" >> $OUT; }
+# The largest scrollback of a session in rows (-1: the build does not report it).
+sbmax() { J | python3 -Ic 'import json,sys; v=[s["scrollback"] for s in json.load(sys.stdin)["sessions"] if "scrollback" in s]; print(max(v) if v else -1)'; }
+echo "t_s,gui_threads,gui_fds,gui_anon_kb,daemon_threads,daemon_fds,daemon_anon_kb,daemon_descendants,sessions,worktrees,tabs_done,detach_done,tasks_done,themes_done,scrollback_rows" > $OUT
+sample() { echo "$1,$(m $GP),$(m $DP),$(desc $DP),$(nsess),$(wts),$tabs,$dets,$tasks,$themes,$(sbmax)" >> $OUT; }
 tabs=0 dets=0 tasks=0 themes=0 fails=0
 op_tab() { key ctrl+shift+t; sleep 0.8; KW=0.3 key ctrl+shift+w; KW=0.8 key ctrl+shift+w; tabs=$((tabs+1)); }
 op_detach() { key alt+4; pal "detach"; sleep 0.5; pal "attach detached"; sleep 0.8; dets=$((dets+1)); }
@@ -96,8 +103,18 @@ def check(name, cond, detail):
 for k in ["gui_threads", "gui_fds", "daemon_threads", "daemon_fds", "daemon_descendants", "sessions"]:
     check(k, last[k] == first[k], f"{first[k]} -> {last[k]}")
 check("worktrees", last["worktrees"] == 0, str(last["worktrees"]))
-g15, d45 = at(900), at(2700)
+g15 = at(900)
 check("gui_anon", last["gui_anon_kb"] <= g15["gui_anon_kb"] + 4096, f"{g15['gui_anon_kb']} kB at {g15['t_s']} s -> {last['gui_anon_kb']} kB")
-check("daemon_anon", last["daemon_anon_kb"] <= d45["daemon_anon_kb"] + 4096, f"{d45['daemon_anon_kb']} kB at {d45['t_s']} s -> {last['daemon_anon_kb']} kB")
+sb = [r.get("scrollback_rows", -1) for r in rows]
+if min(sb) < 0:
+    d = at(2700)
+    check("daemon_anon", last["daemon_anon_kb"] <= d["daemon_anon_kb"] + 4096, f"{d['daemon_anon_kb']} kB at {d['t_s']} s -> {last['daemon_anon_kb']} kB (at 45 min: this build reports no scrollback)")
+else:
+    full = next((r for p, r in zip(rows, rows[1:]) if r["scrollback_rows"] > 0 and r["scrollback_rows"] <= p["scrollback_rows"] * 1.01), None)
+    if full is None or last["t_s"] - full["t_s"] < 900:
+        when = "never" if full is None else f"only at {full['t_s']} s"
+        check("daemon_anon", False, f"scrollback full {when} ({sb[-1]} rows at the end): less than 15 min after it to judge")
+    else:
+        check("daemon_anon", last["daemon_anon_kb"] <= full["daemon_anon_kb"] + 4096, f"{full['daemon_anon_kb']} kB when the scrollback was full ({full['scrollback_rows']} rows, {full['t_s']} s) -> {last['daemon_anon_kb']} kB")
 print("VERDICT", "PASS" if ok else "FAIL")
 PY
