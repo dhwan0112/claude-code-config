@@ -9,7 +9,6 @@ measurements, solved defects, milestone 1's record — is in
 New progress records go to the newest file in `docs/history/`, not here.
 
 
-> **In progress:** stage v4 (branch `haetty/v4`, worktree `~/projects/claude-code-config-wt/v4`). Remaining: V4 DESIGN 9 stable update design, V5 CLI and config table, V6 overnight GUI e2e, then V7 and E0-E3
 
 ## 1. Current state
 
@@ -22,8 +21,14 @@ New progress records go to the newest file in `docs/history/`, not here.
   T7 passed on its own build ([history](history/2026-11-06-07-stages-t-u-v.md),
   T7). Still missing: the overnight soak on both platforms (§6.1 item 30).
   The tag is approved in advance on the conditions in "Next session" below.
-- After `63822de`, `main` changed only tools, scripts and docs: no crate,
-  `Cargo.toml` or `Cargo.lock` change (checked 2026-11-07, V1).
+- Until V2, `main` after `63822de` changed only tools, scripts and docs.
+  **V3 (`3fcbfec`, `58994a4`) changed the crates** (observe-only
+  interface, protocol 8). So U6's third condition (no crate change between
+  `63822de` and the recording commit R) can no longer hold for any later
+  R, and the steps below would refuse the tag even after a passing night.
+  **The user decides** where `haetty-v0.2.0` goes: on `63822de` itself
+  (the soaked code), or a new candidate that includes V3 and is checked
+  and soaked again.
 - Last stages: T1–T7 (check-range, harness in the repository, optimized
   engine, Windows tests, orchestrator guide, soak v2 scripts), U1–U5 (known
   gate failures, heavy-job slots, memory, overnight script, dev-run,
