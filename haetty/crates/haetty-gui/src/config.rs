@@ -4,23 +4,9 @@
 //! `#` comments; the command line wins. `keybind = CHORD=ACTION` (file only)
 //! changes shortcuts (`crate::keymap`). Bad lines are skipped and logged.
 //!
-//! | key | values | default |
-//! |---|---|---|
-//! | `window-padding` | logical pixels around the grid (minimum), both axes | — |
-//! | `window-padding-x`, `window-padding-y` | the same, left/right and top/bottom only | 10, 6 |
-//! | `window-padding-balance` | `true` / `false`: spread the leftover space evenly on all sides | `true` |
-//! | `window-padding-color` | `background` / `extend` / `extend-always` | `extend` |
-//! | `decorations` | `auto` / `native` / `integrated` / `none` (auto: native on Windows and X11, integrated on Wayland) | `auto` |
-//! | `claude-integration` | `true` / `false`: hooks and status line in Claude Code tabs | `true` |
-//! | `notifications` | `true` / `false`: desktop notification when Claude Code waits and the window is unfocused (Linux `notify-send`) | `true` |
-//! | `restore-tabs` | `true` / `false`: reopen the previous run's tabs at start | `true` |
-//! | `observe-new-tabs` | `true` / `false`: new tabs start observable (`haetty screen`, `haetty events`; DESIGN.md §6.1) | `false` |
-//! | `worker-command` | the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1) | `claude` |
-//! | `scrollback-limit` | bytes of scrollback per session (as Ghostty; ~1.1 KB per 120-column row) | 12000000 |
-//! | `theme` | a built-in theme name, a theme file's name in `<config dir>/themes/`, or a path (with `/` or `\`; relative to the config directory) | [`haetty_core::theme::DEFAULT_THEME`] |
-//! | `palette` | `N=COLOR` (N 0–15; repeatable), on top of the theme | the theme's |
-//! | `minimum-contrast` | 1–21, as Ghostty: text below this WCAG contrast with its background turns white or black | 1 (off) |
-//! | `background`, `foreground`, `cursor-color`, `cursor-text`, `selection-background`, `selection-foreground` | a colour (Ghostty syntax), on top of the theme | the theme's |
+//! The keys, their values and defaults are [`SETTINGS`] — the one place they
+//! are described: `haetty --help` and README.md's table are generated from it
+//! (a unit test fails when README.md differs).
 //!
 //! The colour keys and theme files use Ghostty's theme file format; they are
 //! applied after the theme wherever they stand in the file.
@@ -129,6 +115,116 @@ impl Default for Config {
             minimum_contrast: 1.0,
         }
     }
+}
+
+/// One row of the settings table: keys that share a description, their
+/// values and the default.
+pub struct Setting {
+    pub keys: &'static [&'static str],
+    pub values: &'static str,
+    pub default: &'static str,
+    /// Only in the config file (not `--KEY` on the command line).
+    pub file_only: bool,
+}
+
+const fn row(keys: &'static [&'static str], values: &'static str, default: &'static str) -> Setting {
+    Setting { keys, values, default, file_only: false }
+}
+
+/// Every setting (README.md "Config file" and `haetty --help` come from here).
+pub const SETTINGS: &[Setting] = &[
+    row(&["window-padding"], "minimum padding around the grid on all sides, logical px (0–200)", "—"),
+    row(&["window-padding-x", "window-padding-y"], "the same, left/right or top/bottom only", "`10`, `6`"),
+    row(&["window-padding-balance"], "`true` / `false` — spread leftover space evenly on all sides", "`true`"),
+    row(&["window-padding-color"], "`background` / `extend` / `extend-always` (as in Ghostty)", "`extend`"),
+    row(
+        &["decorations"],
+        "`auto` / `native` / `integrated` / `none` — auto: the system's title bar where it takes the theme's colour (Windows 11, X11), haetty's own (integrated) on Wayland; integrated is Linux only (Windows: native)",
+        "`auto`",
+    ),
+    row(
+        &["scrollback-limit"],
+        "bytes of scrollback per session, as in Ghostty (plain bytes, `_` allowed; rows of 120 columns take ~1.1 KB, the default keeps ~11 000 of them)",
+        "`12000000`",
+    ),
+    row(&["restore-tabs"], "`true` / `false` — reopen the previous run's tabs at start", "`true`"),
+    row(&["claude-integration"], "`true` / `false` — hooks and status line in Claude Code tabs", "`true`"),
+    row(
+        &["worker-command"],
+        "the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1)",
+        "`claude`",
+    ),
+    row(
+        &["notifications"],
+        "`true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused",
+        "`true`",
+    ),
+    row(
+        &["observe-new-tabs"],
+        "`true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only))",
+        "`false`",
+    ),
+    Setting {
+        keys: &["keybind"],
+        values: "`CHORD=ACTION` or `CHORD=unbind` (file only, may repeat)",
+        default: "see [Tabs and keys](#tabs-and-keys)",
+        file_only: true,
+    },
+    row(
+        &["theme"],
+        "a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes))",
+        "`IBM 5153 CGA`",
+    ),
+    row(&["palette"], "`N=COLOR`, N 0–15 (may repeat) — on top of the theme", "the theme's"),
+    row(
+        &["minimum-contrast"],
+        "1–21, as in Ghostty: text whose WCAG contrast with its background is lower turns white (dark background) or black (light)",
+        "`1` (off)",
+    ),
+    row(
+        &["background", "foreground", "cursor-color", "cursor-text", "selection-background", "selection-foreground"],
+        "a colour (`#rrggbb`, `rrggbb`, an X11 name) — on top of the theme",
+        "the theme's",
+    ),
+];
+
+/// The settings as README.md's Markdown table (checked by a test).
+#[cfg(test)]
+pub fn markdown_table() -> String {
+    let mut s = String::from("| Key | Values | Default |\n|---|---|---|\n");
+    for r in SETTINGS {
+        let keys: Vec<String> = r.keys.iter().map(|k| format!("`{k}`")).collect();
+        s.push_str(&format!("| {} | {} | {} |\n", keys.join(", "), r.values, r.default));
+    }
+    s
+}
+
+/// The settings for `haetty --help`: `--KEY` and the values, one per line.
+pub fn help_lines() -> String {
+    // No Markdown in a terminal: no backticks, links as their text.
+    let plain = |t: &str| {
+        let mut o = String::new();
+        let mut rest = t;
+        while let Some(i) = rest.find('[') {
+            match rest[i..].find("](").and_then(|j| rest[i + j..].find(')').map(|k| (j, j + k))) {
+                Some((j, k)) => {
+                    o.push_str(&rest[..i]);
+                    o.push_str(&rest[i + 1..i + j]);
+                    rest = &rest[i + k + 1..];
+                }
+                None => break,
+            }
+        }
+        o.push_str(rest);
+        o.replace('`', "")
+    };
+    let mut s = String::new();
+    for r in SETTINGS {
+        let keys: Vec<String> =
+            r.keys.iter().map(|k| if r.file_only { format!("{k} (file only)") } else { format!("--{k}") }).collect();
+        s.push_str(&format!("  {}\n      {} (default {})\n", keys.join(", "), plain(r.values), plain(r.default)));
+    }
+    s
 }
 
 pub const KEYS: &[&str] = &[
@@ -307,6 +403,63 @@ fn parse_bool(v: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// SETTINGS and the parser know the same keys.
+    #[test]
+    fn settings_table_and_parser_agree() {
+        let table: Vec<&str> = SETTINGS.iter().filter(|r| !r.file_only).flat_map(|r| r.keys.iter().copied()).collect();
+        let mut a = table.clone();
+        let mut b = KEYS.to_vec();
+        a.sort_unstable();
+        b.sort_unstable();
+        assert_eq!(a, b, "SETTINGS (without file-only keys) and KEYS");
+        let mut c = Config::default();
+        for k in &table {
+            assert!(!matches!(c.set(k, "\u{1}"), Err(e) if e.starts_with("unknown setting")), "{k}: unknown to set()");
+        }
+        assert!(c.set("keybind", "x").unwrap_err().starts_with("unknown setting"), "keybind is the file's own");
+        let h = help_lines();
+        assert!(
+            h.contains("--worker-command")
+                && h.contains("keybind (file only)")
+                && !h.contains('`')
+                && !h.contains("](#"),
+            "{h}"
+        );
+        let d = Config::default();
+        let default_of = |k: &str| SETTINGS.iter().find(|r| r.keys.contains(&k)).unwrap().default;
+        assert_eq!(default_of("theme"), format!("`{}`", theme::DEFAULT_THEME));
+        assert_eq!(default_of("scrollback-limit"), format!("`{}`", d.scrollback_limit));
+        assert_eq!(default_of("worker-command"), format!("`{}`", d.worker_command));
+        assert_eq!(default_of("restore-tabs"), format!("`{}`", d.restore_tabs));
+        assert_eq!(default_of("observe-new-tabs"), format!("`{}`", d.observe_new_tabs));
+        assert_eq!(default_of("notifications"), format!("`{}`", d.notifications));
+        assert_eq!(default_of("claude-integration"), format!("`{}`", d.claude_integration));
+    }
+
+    /// README.md's table is generated from SETTINGS; a difference fails here
+    /// (the gate). `HAETTY_UPDATE_README=1 cargo test -p haetty-gui config_table`
+    /// writes it.
+    #[test]
+    fn readme_config_table_is_generated() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md");
+        let readme = std::fs::read_to_string(path).unwrap();
+        let (a, b) = ("<!-- config-table:start", "<!-- config-table:end -->");
+        let i = readme.find(a).expect("README.md: config-table:start marker");
+        let i = i + readme[i..].find("-->\n").unwrap() + 4;
+        let j = readme.find(b).expect("README.md: config-table:end marker");
+        let want = markdown_table();
+        if readme[i..j] != want {
+            if std::env::var_os("HAETTY_UPDATE_README").is_some() {
+                std::fs::write(path, format!("{}{want}{}", &readme[..i], &readme[j..])).unwrap();
+                return;
+            }
+            panic!(
+                "README.md's config table differs from config::SETTINGS; run\n  HAETTY_UPDATE_README=1 cargo test -p haetty-gui config_table\n--- README\n{}--- SETTINGS\n{want}",
+                &readme[i..j]
+            );
+        }
+    }
 
     #[test]
     fn keys_parse_and_reject_bad_values() {

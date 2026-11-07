@@ -37,6 +37,7 @@ mod emoji;
 mod font;
 mod geom;
 mod gitview;
+mod help;
 mod icon;
 mod input;
 mod install;
@@ -87,10 +88,21 @@ fn default_shell() -> CommandSpec {
 /// in [`IMPLEMENTED`] and must be the first word; the others are reserved:
 /// as a first word they end with an error instead of running a program of
 /// that name, so adding them later does not change what a command line does.
-pub const SUBCOMMANDS: &[&str] =
-    &["gui", "daemon", "hook", "statusline", "run", "headless", "install-desktop", "status", "events", "screen"];
+pub const SUBCOMMANDS: &[&str] = &[
+    "gui",
+    "daemon",
+    "hook",
+    "statusline",
+    "run",
+    "headless",
+    "install-desktop",
+    "status",
+    "events",
+    "screen",
+    "completions",
+];
 pub const IMPLEMENTED: &[&str] =
-    &["gui", "daemon", "status", "install-desktop", "hook", "statusline", "events", "screen"];
+    &["gui", "daemon", "status", "install-desktop", "hook", "statusline", "events", "screen", "completions"];
 
 /// What the command line asks for.
 #[derive(Debug)]
@@ -117,9 +129,19 @@ pub enum Command {
         id: String,
         json: bool,
     },
+    /// `completions SHELL`: a completion script (`help.rs`).
+    Completions {
+        shell: String,
+    },
 }
 
 fn parse_command(args: Vec<String>) -> Result<Command, String> {
+    // `haetty SUBCOMMAND --help` (the same texts as `haetty --help`).
+    if let (Some(sub), Some(h)) = (args.first(), args.get(1)) {
+        if (h == "--help" || h == "-h") && IMPLEMENTED.contains(&sub.as_str()) {
+            return Err(help::sub_help(sub).unwrap_or_else(help::main_help));
+        }
+    }
     match args.first().map(String::as_str) {
         Some("daemon") => match args.len() {
             1 => Ok(Command::Daemon),
@@ -153,6 +175,10 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
             }
             _ => Err("usage: haetty screen [--json] SESSION".into()),
         },
+        Some("completions") => match &args[1..] {
+            [sh] if help::SHELLS.contains(&sh.as_str()) => Ok(Command::Completions { shell: sh.clone() }),
+            _ => Err(format!("usage: haetty completions {}", help::SHELLS.join("|"))),
+        },
         Some("install-desktop") => match args.len() {
             1 => Ok(Command::InstallDesktop),
             _ => Err("usage: haetty install-desktop".into()),
@@ -161,19 +187,6 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
         _ => parse_args(args).map(|o| Command::Gui(Box::new(o))),
     }
 }
-
-const USAGE: &str =
-    "usage: haetty [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]\n\
-     settings (KEY): window-padding N (window-padding-x N, window-padding-y N; default 10, 6), window-padding-balance true|false,\n\
-     window-padding-color background|extend|extend-always, decorations native|integrated|none,\n\
-     scrollback-limit BYTES (default 12000000, ~1.1 KB per 120-column row),\n\
-     restore-tabs true|false, claude-integration true|false, notifications true|false (default true),\n\
-     theme NAME|FILE (Ghostty theme format), palette N=COLOR, background/foreground/cursor-color/cursor-text/\n\
-     selection-background/selection-foreground COLOR, minimum-contrast 1-21 (default 1 = off)\n\
-     subcommands: haetty gui [OPTIONS] [PROGRAM...], haetty daemon, haetty status [--json | --screen ID],\n\
-     haetty events [--follow] [--json] [--since CURSOR], haetty screen [--json] SESSION (observable tabs only),\n\
-     haetty install-desktop; run by Claude Code: hook EVENT, statusline; reserved: run, headless;\n\
-     to run a program with a subcommand's name: haetty [OPTIONS] -- NAME [ARGS...]";
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
     let mut o = Options {
@@ -203,7 +216,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
             }
             "--cols" => o.cols = val("--cols")?.parse().map_err(|_| "bad --cols")?,
             "--rows" => o.rows = val("--rows")?.parse().map_err(|_| "bad --rows")?,
-            "-h" | "--help" => return Err(USAGE.into()),
+            "-h" | "--help" => return Err(help::main_help()),
             "--version" | "-V" => return Err(version_line()),
             "--" => {
                 program.extend(it.by_ref());
@@ -215,7 +228,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
                     None => (&s[2..], None),
                 };
                 if !config::KEYS.contains(&key) {
-                    return Err(format!("unknown option {s}\n{USAGE}"));
+                    return Err(format!("unknown option {s} (haetty --help lists them)"));
                 }
                 let value = match inline {
                     Some(v) => v,
@@ -451,7 +464,12 @@ fn main() {
     // Claude Code's hooks and status line: first, before any setup (they
     // must end within milliseconds and never print; DESIGN.md §3.13).
     let mut argv = std::env::args().skip(1);
+    let help = std::env::args().nth(2).is_some_and(|a| a == "--help" || a == "-h");
     match argv.next().as_deref() {
+        Some(s @ ("hook" | "statusline")) if help => {
+            init_log(None);
+            exit_with(&help::sub_help(s).unwrap_or_default(), 0)
+        }
         Some("hook") => haetty_cc::report::main(haetty_cc::report::Kind::Hook(argv.next().unwrap_or_default())),
         Some("statusline") => haetty_cc::report::main(haetty_cc::report::Kind::StatusLine),
         _ => {}
@@ -488,6 +506,10 @@ fn main() {
             init_log(None);
             let (text, code) = cli::screen(&id);
             exit_with(&text, code)
+        }
+        Command::Completions { shell } => {
+            init_log(None);
+            exit_with(help::completions(&shell).unwrap_or_default().trim_end(), 0)
         }
         Command::Observe { id, json } => {
             init_log(None);
@@ -589,6 +611,13 @@ mod tests {
         assert!(matches!(v(&["screen", "--json", "a-1"]), Ok(Command::Observe { id, json: true }) if id == "a-1"));
         assert!(matches!(v(&["screen", "a-1"]), Ok(Command::Observe { id, json: false }) if id == "a-1"));
         assert!(v(&["screen"]).is_err() && v(&["screen", "--json"]).is_err());
+        assert!(matches!(v(&["completions", "fish"]), Ok(Command::Completions { shell }) if shell == "fish"));
+        assert!(v(&["completions", "tcsh"]).is_err());
+        for sub in IMPLEMENTED {
+            let h = v(&[sub, "--help"]).unwrap_err();
+            assert!(h.starts_with("usage: "), "{sub} --help: {h}");
+        }
+        assert!(v(&["--help"]).unwrap_err().starts_with("usage: haetty"));
         assert!(parse_command(vec!["daemon".into(), "x".into()]).is_err());
         assert!(
             matches!(parse_command(vec!["status".into(), "--screen".into(), "a-1".into()]), Ok(Command::Screen { id }) if id == "a-1")

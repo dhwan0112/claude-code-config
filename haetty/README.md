@@ -39,6 +39,7 @@ haetty status [--json | --screen ID]
 haetty events [--follow] [--json] [--since CURSOR]   (observable tabs only)
 haetty screen [--json] SESSION                       (observable tabs only)
 haetty install-desktop
+haetty completions bash|zsh|fish|powershell
 haetty hook EVENT        (run by Claude Code)
 haetty statusline        (run by Claude Code)
 ```
@@ -47,10 +48,19 @@ haetty statusline        (run by Claude Code)
   else `cmd.exe`); `haetty claude` runs a program directly. `haetty gui ...`
   is the same as `haetty ...`.
 - Subcommands must be the first word. The names `gui`, `daemon`, `status`,
-  `events`, `screen`, `install-desktop`, `hook`, `statusline` are subcommands, and `run` and
+  `events`, `screen`, `install-desktop`, `completions`, `hook`, `statusline` are subcommands, and `run` and
   `headless` are reserved (they end with "not implemented yet", exit code 2).
   To run a program with one of these names, put it after `--`:
   `haetty -- status`.
+- `haetty --help` lists the options, every setting and the subcommands;
+  `haetty SUBCOMMAND --help` explains one. Both come from the same tables as
+  the shell completions:
+  - bash: `eval "$(haetty completions bash)"` in `~/.bashrc`;
+  - zsh: `haetty completions zsh > "${fpath[1]}/_haetty"` (or `eval` it after
+    `compinit`);
+  - fish: `haetty completions fish > ~/.config/fish/completions/haetty.fish`;
+  - PowerShell: `haetty completions powershell | Out-String |
+    Invoke-Expression` in `$PROFILE`.
 - `--font`, `--font-size` (points, 4–96), `--cols` and `--rows` (default
   120x36) exist on the command line only. Every other option is a setting
   (`--KEY VALUE` or `--KEY=VALUE`, see [Config file](#config-file)).
@@ -191,6 +201,7 @@ restore-tabs = false
 keybind = ctrl+shift+n=new_tab
 ```
 
+<!-- config-table:start: generated from config::SETTINGS (crates/haetty-gui/src/config.rs); HAETTY_UPDATE_README=1 cargo test -p haetty-gui config_table -->
 | Key | Values | Default |
 |---|---|---|
 | `window-padding` | minimum padding around the grid on all sides, logical px (0–200) | — |
@@ -201,6 +212,7 @@ keybind = ctrl+shift+n=new_tab
 | `scrollback-limit` | bytes of scrollback per session, as in Ghostty (plain bytes, `_` allowed; rows of 120 columns take ~1.1 KB, the default keeps ~11 000 of them) | `12000000` |
 | `restore-tabs` | `true` / `false` — reopen the previous run's tabs at start | `true` |
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |
+| `worker-command` | the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1) | `claude` |
 | `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
 | `observe-new-tabs` | `true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only)) | `false` |
 | `keybind` | `CHORD=ACTION` or `CHORD=unbind` (file only, may repeat) | see [Tabs and keys](#tabs-and-keys) |
@@ -208,6 +220,7 @@ keybind = ctrl+shift+n=new_tab
 | `palette` | `N=COLOR`, N 0–15 (may repeat) — on top of the theme | the theme's |
 | `minimum-contrast` | 1–21, as in Ghostty: text whose WCAG contrast with its background is lower turns white (dark background) or black (light) | `1` (off) |
 | `background`, `foreground`, `cursor-color`, `cursor-text`, `selection-background`, `selection-foreground` | a colour (`#rrggbb`, `rrggbb`, an X11 name) — on top of the theme | the theme's |
+<!-- config-table:end -->
 
 ### Themes
 
