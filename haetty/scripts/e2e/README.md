@@ -20,6 +20,7 @@ HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/xvfb.sh bash scripts/e2e/tabs.sh /t
 | `tabs.sh` | rename, `repo:branch` names, closed tabs with `--resume`, diff views, detach/attach |
 | `orchestrator.sh` | tasks, worker tabs in worktrees, reports and states, message gating, worktree removal |
 | `daemon-crash.sh` | the GUI when its daemon is killed: window, hint, tab sets kept, no orphans, restore |
+| `scale.sh` | the first window at 100, 125, 150 and 200 % (`WINIT_X11_SCALE_FACTOR`): the program sees the asked 80x24, the window has the pixels asked for that grid (A7) |
 | `look.sh`, `dump-sample.sh` | frame dumps for looking at by hand |
 | `firehose.sh` | daemon answer time while a tab runs `yes` |
 | `record-claude.sh DIR` | records Claude Code's terminal output for the VT fuzz corpus (see below) |

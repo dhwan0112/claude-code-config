@@ -466,6 +466,18 @@ daemons.
 
 ### 3.10 Layout rules derived from §2
 
+- The grid asked for (`--cols` × `--rows`, plus the title row) is what the
+  first session gets, at the scale of the monitor the window is on, not the
+  primary monitor's (A7, 2026-11-07). Wayland reports the scale only after
+  the surface is shown on an output, so a Wayland window first shows a
+  blank frame and opens its tabs on the first `ScaleFactorChanged`, or
+  300 ms after its first frame when none comes: no PTY is sized from a
+  guess, and Claude Code does not draw once at a wrong size. On every scale
+  change — the first one, or a move to a monitor with another scale — the
+  grid stays and the window asks for the pixels that grid needs at the new
+  scale (winit's `inner_size_writer`). Before, the window kept its pixels:
+  `--cols 80 --rows 24` gave 64x19 at 125 % (kramers, 2026-11-06).
+
 - A tab whose program exits stays, dimmed with its exit status, until the
   user closes it; with one tab, the window closes when its program exits
   (as in milestone 1). So an event never removes a tab or the tab bar.

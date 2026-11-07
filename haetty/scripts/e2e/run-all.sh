@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Every end-to-end check of a release build, Linux (Xvfb): the regression run, DESIGN §2.3 (system and integrated
-# decorations), theme change, the integrated title row, tab features, the orchestrator, the GUI after a daemon crash.
+# decorations), theme change, the integrated title row, tab features, the orchestrator, the GUI after a daemon crash,
+# the first window at 100–200 % scale.
 #   HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/run-all.sh [--no-build]
 # Prints each check's FAIL lines and TOTAL; exits with the number of scripts that had a failure (77: no Xvfb).
 [ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/../../tools/heavy.sh" --label "run-all.sh $*" -- bash "$0" "$@"   # at most two heavy jobs (tools/heavy.sh)
@@ -26,5 +27,6 @@ run bash "$here/titlebar.sh"
 run bash "$here/tabs.sh"
 run bash "$here/orchestrator.sh"
 run bash "$here/daemon-crash.sh"
+run bash "$here/scale.sh"
 echo "E2E scripts with a failure: $bad"
 exit $bad

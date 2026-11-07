@@ -146,9 +146,10 @@ Windows, WSL and the dev machine:
 - The S4 soak may have shared an X server with `crashrun.sh` (T4); its
   figures are kept as recorded.
 - **A7 (kramers 2026-11-06): on Wayland at a fractional scale the first
-  window is about 1/scale of the requested grid** (`--cols 80 --rows 24`
-  gave 64x19 at 125 %). The size came from `primary_monitor()`, which
-  Wayland does not report. Fix and tests: V7.
+  window was about 1/scale of the requested grid** (`--cols 80 --rows 24`
+  gave 64x19 at 125 %). Fixed in V7 (DESIGN §3.10); tested at 100–200 % on
+  X11 (`scale.sh`) and in a unit test. The Wayland case itself waits for
+  §6.1 item 32.
 - winit#4746 workaround to remove once winit has the fix (§4).
 - A test daemon can outlive an abnormally ended test run: a `threads`
   test daemon ran 12 h with its folder gone (found in V5). Tests should
@@ -252,17 +253,12 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     again — both conversations resume. On Windows also check that no
     `node`/`claude` or `OpenConsole` process of those tabs stays.
 
-29. **Windows GUI end-to-end runs** (`tabs.ps1`, `orchestrator.ps1`; T5).
-    They need a desktop nobody uses, so they now run at night with item
-    30: add `-GuiE2E` to its command. They report `RESULT GUI-TABS` and
-    `RESULT GUI-ORCHESTRATOR`, each run after 120 s without input and
-    stopped at once by any input.
-    - Expect `GUI-TABS FAIL` (rename) for `63822de`: the Hangul-rename
-      defect found in V6 is fixed only after it (`6a67b22`). With today's
-      `main` build both passed, 14/14 and 17/17 (V6).
-    - By hand instead: `pwsh -ExecutionPolicy Bypass -File
-      scripts\e2e\windows\tabs.ps1 -Exe <haetty.exe>` (and
-      `orchestrator.ps1`), on an idle desktop.
+29. **Windows GUI end-to-end runs** (`tabs.ps1`, `orchestrator.ps1`; need
+    a desktop nobody uses): at night with item 30's `-GuiE2E` (`RESULT
+    GUI-TABS` / `GUI-ORCHESTRATOR`), or by hand (`pwsh -ExecutionPolicy
+    Bypass -File scripts\e2e\windows\tabs.ps1 -Exe <haetty.exe>`). Expect
+    GUI-TABS FAIL for `63822de` (the Hangul rename fix is `6a67b22`);
+    `main` passed 14/14 and 17/17 (V6).
 
 30. **Overnight soak v2 on the 0.2.0 candidate** (`63822de`; needed for the
     `haetty-v0.2.0` tag — see "Next session" and §1 about where the tag can
@@ -292,6 +288,15 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     screen --json <id>` (id from `haetty status`) shows that tab and refuses
     another one; `haetty events --follow` prints its events while you work
     in it (never what you type). Linux and Windows.
+
+32. **A7 again on kramers** (fixed after `b442fff`): Wayland, lid closed,
+    the external monitor at 125 % (then 100 % and 200 %):
+    - `haetty --cols 80 --rows 24 bash -c 'sleep 3; tput cols; tput lines;
+      sleep 2'` prints 80 and 24;
+    - with `HAETTY_LOG=debug` the log has `scale 1.25: keeping the 80x24
+      grid` and `opening tabs at a 80x24 grid`, and no `grid 64x19`;
+    - moving the window between monitors of different scales keeps 80x24;
+      Windows likewise at 125 %/150 %.
 
 #### B. Linux with a real account (Claude Code logged in)
 

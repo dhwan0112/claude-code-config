@@ -170,6 +170,19 @@ impl Tab {
     }
 }
 
+/// What the window opens once its scale is known (A7): on Wayland the scale
+/// arrives only after the surface is shown on an output, and a session's PTY
+/// size (cells and their pixels) must not be set from a guess.
+struct PendingStart {
+    previous: Vec<tabsets::SavedTab>,
+    explicit: bool,
+    first_hint: Option<String>,
+}
+
+/// How long a Wayland window waits after its first frame for a scale event
+/// before it opens its tabs at the scale it has (1.0: no event comes).
+const SCALE_WAIT: Duration = Duration::from_millis(300);
+
 /// Everything that exists once the window is up.
 struct Win {
     window: Rc<Window>,
@@ -250,6 +263,13 @@ struct Win {
     panel_width: u16,
     diff: Option<DiffView>,
     last_slow_draw: Option<Instant>,
+    /// Tabs not opened yet: waiting for the scale (Wayland; A7).
+    pending_start: Option<PendingStart>,
+    /// When the waiting window drew its first (blank) frame.
+    pending_since: Option<Instant>,
+    /// The grid asked for (`--cols`, `--rows`, the title row), kept when
+    /// the scale becomes known.
+    requested_grid: GridSize,
     /// Set when the last tab is gone: the window closes.
     quit: Option<i32>,
     /// The window is closing: closing its tabs must not shrink `last`.
@@ -302,8 +322,14 @@ impl App {
         #[cfg(not(all(unix, not(target_os = "macos"))))]
         let buttons = titlebar::ButtonLayout::none();
         // The title row is one more row: the program keeps the requested rows.
+        let requested_grid = GridSize::new(self.opts.cols, self.opts.rows + u16::from(integrated));
         let (w, h) = Layout { cell: painter.cell_metrics(), padding: pad0.min, balance: pad0.balance }
-            .window_size(self.opts.cols, self.opts.rows + u16::from(integrated));
+            .window_size(requested_grid.cols, requested_grid.rows);
+        log::info!(
+            "window: {w}x{h} px asked for a {}x{} grid at scale {scale0}",
+            requested_grid.cols,
+            requested_grid.rows
+        );
         let attrs = Window::default_attributes()
             .with_title(haetty_proto::product::display_name())
             .with_inner_size(PhysicalSize::new(w, h));
@@ -404,35 +430,59 @@ impl App {
             last_slow_draw: None,
             quit: None,
             shutting_down: false,
+            pending_start: None,
+            pending_since: None,
+            requested_grid,
         };
         // "last" becomes "previous" before the first tab rewrites "last".
         let previous = if self.opts.config.restore_tabs { tabsets::rotate_last(&tabsets::dir()) } else { vec![] };
+        let start =
+            PendingStart { previous, explicit: self.opts.explicit_program, first_hint: self.opts.first_hint.take() };
+        if ws == crate::config::WindowSystem::Wayland {
+            // A7: Wayland reports the scale only once the surface is on an
+            // output. Show a blank frame of the requested grid and open the
+            // tabs when the scale is known, so no session starts at a guessed size.
+            win.pending_start = Some(start);
+            win.blank_frame();
+            win.window.request_redraw();
+        } else {
+            win.start_tabs(start)?;
+        }
+        self.win = Some(win);
+        Ok(())
+    }
+}
+
+impl Win {
+    /// Opens the window's first tabs: sessions a gone window left in the
+    /// daemon, the previous run's tabs, the requested program (DESIGN.md §3.8).
+    fn start_tabs(&mut self, mut p: PendingStart) -> Result<(), String> {
         // Sessions of a window that is gone (crashed or killed) are still in
         // the daemon: take them back first; restore only the saved tabs the
         // daemon does not have (DESIGN.md §3.8).
-        let live = win.client.list_sessions().unwrap_or_default();
+        let live = self.client.list_sessions().unwrap_or_default();
         for s in live.iter().filter(|s| s.attached == 0 && s.state != SessionState::Running) {
-            let _ = win.client.close(&s.id); // exited, and no window shows it
+            let _ = self.client.close(&s.id); // exited, and no window shows it
         }
         let detached: Vec<SessionInfo> =
             live.iter().filter(|s| s.attached == 0 && s.state == SessionState::Running).cloned().collect();
-        let missing = tabsets::not_live(&previous, &live);
-        if self.opts.explicit_program || (detached.is_empty() && missing.is_empty()) {
-            win.open_tab(None)?;
+        let missing = tabsets::not_live(&p.previous, &live);
+        if p.explicit || (detached.is_empty() && missing.is_empty()) {
+            self.open_tab(None)?;
         }
         let mut back = 0;
         for s in &detached {
-            match win.reattach(s) {
+            match self.reattach(s) {
                 Ok(()) => back += 1,
                 Err(e) => log::warn!("reattach {}: {e}", s.id),
             }
         }
-        let reopened = win.open_saved(&missing);
-        if win.tabs.is_empty() {
-            win.open_tab(None)?;
+        let reopened = self.open_saved(&missing);
+        if self.tabs.is_empty() {
+            self.open_tab(None)?;
         }
         if back + reopened > 0 {
-            win.select(0);
+            self.select(0);
             let mut parts = vec![];
             if back > 0 {
                 parts.push(format!("reattached {back} running session(s)"));
@@ -440,18 +490,67 @@ impl App {
             if reopened > 0 {
                 parts.push(format!("reopened {reopened} tab(s) of the previous run"));
             }
-            win.show_hint(parts.join(", "));
+            self.show_hint(parts.join(", "));
         }
-        if let Some(h) = self.opts.first_hint.take() {
-            win.show_hint(h);
+        if let Some(h) = p.first_hint.take() {
+            self.show_hint(h);
         }
-        win.save_last();
-        self.win = Some(win);
+        self.save_last();
         Ok(())
     }
-}
 
-impl Win {
+    /// A frame of the requested grid with nothing in it (a Wayland window
+    /// waiting for its scale must be shown to get one).
+    fn blank_frame(&mut self) {
+        let (cols, rows) = (self.grid.cols.max(1), self.grid.rows.max(1));
+        let blank = haetty_core::Cell {
+            text: String::new(),
+            fg: None,
+            bg: None,
+            flags: haetty_core::CellFlags(0),
+            width: haetty_core::Width::Narrow,
+        };
+        self.composed = Some(Snapshot {
+            cols,
+            rows,
+            cells: vec![blank; cols as usize * rows as usize],
+            default_fg: self.theme.foreground,
+            default_bg: self.theme.background,
+            ..Default::default()
+        });
+        self.dirty = vec![true; rows as usize];
+        self.full = true;
+    }
+
+    /// The waiting window was resized (no tabs to tell yet).
+    fn pending_resized(&mut self, size: PhysicalSize<u32>) {
+        self.renderer.resize(size.width, size.height);
+        self.size = size;
+        if size.width > 0 && size.height > 0 {
+            self.grid = self.layout.grid(size.width, size.height);
+        }
+        self.blank_frame();
+        self.window.request_redraw();
+    }
+
+    /// The scale is known (or did not come): open the tabs now.
+    fn start_pending(&mut self) {
+        let Some(p) = self.pending_start.take() else { return };
+        log::info!(
+            "scale {} known: opening tabs at a {}x{} grid",
+            self.window.scale_factor(),
+            self.grid.cols,
+            self.grid.rows
+        );
+        self.composed = None;
+        if let Err(e) = self.start_tabs(p) {
+            log::error!("first tab: {e}");
+            self.quit = Some(1);
+            return;
+        }
+        self.window.request_redraw();
+    }
+
     /// Rows of haetty's own chrome above the terminal (the tab bar, shown
     /// from two tabs on).
     fn top(&self) -> u16 {
@@ -1780,6 +1879,13 @@ impl Win {
     /// Expires hints and close requests; returns the next deadline.
     fn tick(&mut self) -> Option<Instant> {
         let now = Instant::now();
+        if self.pending_start.is_some() {
+            match self.pending_since {
+                Some(t) if now.duration_since(t) >= SCALE_WAIT => self.start_pending(),
+                Some(t) => return Some(t + SCALE_WAIT),
+                None => return None,
+            }
+        }
         if self.pending_close.as_ref().is_some_and(|(_, t)| now.duration_since(*t) >= CONFIRM) {
             self.pending_close = None;
         }
@@ -1984,6 +2090,18 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(win) = self.win.as_mut() else { return };
+        if win.pending_start.is_some() && !matches!(event, WindowEvent::ScaleFactorChanged { .. }) {
+            match event {
+                WindowEvent::CloseRequested => win.quit = Some(0),
+                WindowEvent::RedrawRequested => {
+                    win.draw();
+                    win.pending_since.get_or_insert_with(Instant::now);
+                }
+                WindowEvent::Resized(size) => win.pending_resized(size),
+                _ => {}
+            }
+            return;
+        }
         match event {
             WindowEvent::CloseRequested => close_window(win, el),
             WindowEvent::CursorLeft { .. } => {
@@ -1993,15 +2111,32 @@ impl ApplicationHandler<UserEvent> for App {
             }
             WindowEvent::RedrawRequested => win.draw(),
             WindowEvent::Resized(size) => win.resized(size),
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+            WindowEvent::ScaleFactorChanged { scale_factor, mut inner_size_writer } => {
                 let px = (self.opts.font_size * 96.0 / 72.0 * scale_factor) as f32;
                 win.renderer.set_font_px(px);
                 let pad = padding_style(&self.opts.config, scale_factor);
                 win.renderer.set_padding(pad);
                 win.layout = Layout { cell: win.renderer.cell_metrics(), padding: pad.min, balance: pad.balance };
-                let size = win.window.inner_size();
-                win.grid = GridSize::new(0, 0);
-                win.resized(size);
+                // A7: the grid stays (the one asked for, while the tabs wait;
+                // else the current one — also when the window moves to a
+                // monitor of another scale); the window gets the pixels it
+                // needs at this scale. Keeping the window's pixels instead gave
+                // a 64x19 grid for --cols 80 --rows 24 at 125 % (kramers).
+                let keep =
+                    if win.pending_start.is_some() || win.grid.cols == 0 { win.requested_grid } else { win.grid };
+                let (w, h) = win.layout.window_size(keep.cols, keep.rows);
+                log::info!("scale {scale_factor}: keeping the {}x{} grid, window {w}x{h} px", keep.cols, keep.rows);
+                if let Err(e) = inner_size_writer.request_inner_size(PhysicalSize::new(w, h)) {
+                    log::debug!("window size {w}x{h}: {e}");
+                }
+                let size = PhysicalSize::new(w, h);
+                if win.pending_start.is_some() {
+                    win.pending_resized(size);
+                    win.start_pending();
+                } else {
+                    win.grid = GridSize::new(0, 0);
+                    win.resized(size);
+                }
             }
             WindowEvent::ModifiersChanged(m) => win.mods = m.state(),
             WindowEvent::KeyboardInput { event, is_synthetic: false, .. } => win.keyboard(&event),
@@ -2143,6 +2278,48 @@ fn preedit_cursor(cursor: Option<(usize, usize)>) -> Option<(usize, usize)> {
 
 #[cfg(test)]
 mod tests {
+    /// A7: the window size asked for a grid gives that grid back at 100, 125,
+    /// 150 and 200 % with the real font and padding; after a provisional
+    /// scale of 1.0 the scale change keeps the grid, where keeping the
+    /// window's pixels (the old way) changed it.
+    #[test]
+    fn grid_kept_across_scales() {
+        use super::{padding_style, GridSize, Layout};
+        use crate::font::Fonts;
+        use crate::render::paint::Painter;
+        let Ok(fonts) = Fonts::load(None) else { return };
+        let mut painter = Painter::new(fonts, 1.0);
+        let c = crate::config::Config::default();
+        let layout_at = |p: &mut Painter, s: f64| {
+            p.set_px((11.0 * 96.0 / 72.0 * s) as f32);
+            let pad = padding_style(&c, s);
+            Layout { cell: p.cell_metrics(), padding: pad.min, balance: pad.balance }
+        };
+        let want = GridSize::new(80, 24);
+        let first = layout_at(&mut painter, 1.0);
+        let (w0, h0) = first.window_size(want.cols, want.rows);
+        for s in [1.0, 1.25, 1.5, 2.0] {
+            let l = layout_at(&mut painter, s);
+            let (w, h) = l.window_size(want.cols, want.rows);
+            let g = l.grid(w, h);
+            assert_eq!((g.cols, g.rows), (80, 24), "scale {s}: {w}x{h} px");
+            assert_eq!(
+                (w, h),
+                (80 * l.cell.width + 2 * l.padding.0, 24 * l.cell.height + 2 * l.padding.1),
+                "scale {s}"
+            );
+            if s > 1.0 {
+                let old = l.grid(w0, h0);
+                assert!(
+                    (old.cols, old.rows) != (80, 24),
+                    "scale {s}: the old way kept {w0}x{h0} px = {}x{}",
+                    old.cols,
+                    old.rows
+                );
+            }
+        }
+    }
+
     use super::preedit_cursor;
 
     #[test]
