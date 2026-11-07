@@ -13,6 +13,12 @@
 //! difference of an input is printed with the input offset, row, column, field,
 //! both values and the last bytes fed. The summary gives the match rate per
 //! field and per input category; exit status 1 when anything differs.
+//!
+//! Development aids:
+//!   --probe 'BYTES' [COLS ROWS]  both engines' state after BYTES (`\e`, `\xNN`, `\\`), and what differs
+//!   --bisect NAME                the named input byte by byte: the first byte after which they differ,
+//!                                and a minimal input that still differs (delta debugging)
+//!   --gen-width FILE             writes `haetty-vt`'s width tables from libghostty-vt
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -391,9 +397,247 @@ impl std::fmt::Write for Text<'_> {
     }
 }
 
+/// `\e`, `\r`, `\n`, `\t`, `\xNN` and `\\` in a probe argument.
+fn unescape(s: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\\' && i + 1 < b.len() {
+            i += 1;
+            match b[i] {
+                b'e' => out.push(0x1b),
+                b'r' => out.push(b'\r'),
+                b'n' => out.push(b'\n'),
+                b't' => out.push(b'\t'),
+                b'a' => out.push(0x07),
+                b'x' if i + 2 < b.len() => {
+                    out.push(u8::from_str_radix(&s[i + 1..i + 3], 16).unwrap_or(b'?'));
+                    i += 2;
+                }
+                c => out.push(c),
+            }
+        } else {
+            out.push(b[i]);
+        }
+        i += 1;
+    }
+    out
+}
+
+/// `--probe BYTES`: both engines' state after BYTES, side by side (development aid).
+fn probe(bytes: &[u8], cols: u16, rows: u16) {
+    let mut a = GhosttyEngine::new(&init(cols, rows)).expect("reference engine");
+    let mut b = NativeEngine::new(&init(cols, rows));
+    a.feed(bytes);
+    b.feed(bytes);
+    let mut seen = Vec::new();
+    for (name, e) in [("reference", &mut a as &mut dyn VtEngine), ("native", &mut b as &mut dyn VtEngine)] {
+        let s = e.snapshot();
+        let r = e.take_replies();
+        seen.push((s.clone(), e.scrollback_rows(), r.clone()));
+        println!("== {name}: {}x{}, cursor {:?}, scrollback {}", s.cols, s.rows, s.cursor, e.scrollback_rows());
+        println!("   modes {:?}", s.modes);
+        println!(
+            "   title {:?} pwd {:?} default fg {:?} bg {:?} cursor colour {:?}",
+            s.title, s.pwd, s.default_fg, s.default_bg, s.cursor_color
+        );
+        println!("   replies: {}", show(&r));
+        println!("   events: {:?}", e.take_events().iter().map(|e| format!("{e:?}")).collect::<Vec<_>>());
+        for y in 0..s.rows {
+            for x in 0..s.cols {
+                let c = s.cell(x, y).unwrap();
+                if !c.text.is_empty()
+                    || c.fg.is_some()
+                    || c.bg.is_some()
+                    || c.flags.0 != 0
+                    || c.width != haetty_core::Width::Narrow
+                {
+                    println!(
+                        "   ({x},{y}) {:?} {:?} fg {:?} bg {:?} flags {:#x}",
+                        c.text, c.width, c.fg, c.bg, c.flags.0
+                    );
+                }
+            }
+        }
+    }
+    let ((sa, ka, ra), (sb, kb, rb)) = (&seen[0], &seen[1]);
+    for d in compare(sa, sb, *ka, *kb, ra, rb) {
+        println!("!! {} {}: reference {} / native {}", d.field, d.at, d.reference, d.native);
+    }
+}
+
+/// `--gen-width FILE`: the width libghostty-vt gives every code point, as the
+/// range tables of `haetty-vt` (DESIGN.md §10.2). Each character is written
+/// after an `a` on a cleared line; the cursor then says its width (column 1:
+/// zero, 2: one, 3: two).
+fn gen_width(path: &str) {
+    let mut e = GhosttyEngine::new(&init(8, 2)).expect("reference engine");
+    let mut zero: Vec<(u32, u32)> = Vec::new();
+    let mut wide: Vec<(u32, u32)> = Vec::new();
+    let mut vs_base: Vec<(u32, u32)> = Vec::new();
+    let add = |v: &mut Vec<(u32, u32)>, c: u32| match v.last_mut() {
+        Some(r) if r.1 + 1 == c => r.1 = c,
+        _ => v.push((c, c)),
+    };
+    let mut buf = Vec::with_capacity(16);
+    for cp in 0x20u32..=0x10ffff {
+        if (0x7f..=0x9f).contains(&cp) {
+            continue;
+        }
+        let Some(ch) = char::from_u32(cp) else { continue };
+        buf.clear();
+        buf.extend_from_slice(b"\r\x1b[2Ka");
+        let mut u = [0u8; 4];
+        buf.extend_from_slice(ch.encode_utf8(&mut u).as_bytes());
+        e.feed(&buf);
+        let _ = e.take_replies();
+        let _ = e.take_events();
+        let x = e.snapshot().cursor.map_or(2, |c| c.x);
+        match x {
+            1 => add(&mut zero, cp),
+            3 => add(&mut wide, cp),
+            _ => {}
+        }
+        if x != 1 {
+            // Does a variation selector after it stay in its cell?
+            buf.clear();
+            buf.extend_from_slice(b"\r\x1b[2K");
+            buf.extend_from_slice(ch.encode_utf8(&mut u).as_bytes());
+            buf.extend_from_slice("\u{fe0f}".as_bytes());
+            e.feed(&buf);
+            if e.snapshot().cell(0, 0).is_some_and(|c| c.text.ends_with('\u{fe0f}')) {
+                add(&mut vs_base, cp);
+            }
+        }
+    }
+    let table = |v: &[(u32, u32)]| v.iter().map(|(a, b)| format!("    (0x{a:x}, 0x{b:x}),\n")).collect::<String>();
+    let out = format!(
+        "//! Cell widths as libghostty-vt 0.2.2 gives them, generated by `haetty-vtdiff --gen-width` (DESIGN.md §10.2):\n\
+         //! every code point written after an `a` on a cleared line, its width read from the cursor. Do not edit.\n\n\
+         /// Code points that take no cell of their own (inclusive ranges).\n\
+         pub const ZERO: &[(u32, u32)] = &[\n{}];\n\n\
+         /// Code points that take two cells (inclusive ranges).\n\
+         pub const WIDE: &[(u32, u32)] = &[\n{}];\n\n\
+         /// Code points a variation selector (U+FE0E, U+FE0F) can follow; after others it is dropped.\n\
+         pub const VS_BASE: &[(u32, u32)] = &[\n{}];\n",
+        table(&zero),
+        table(&wide),
+        table(&vs_base)
+    );
+    std::fs::write(path, out).expect("write");
+    println!(
+        "{path}: {} zero-width ranges, {} wide ranges, {} variation-selector bases",
+        zero.len(),
+        wide.len(),
+        vs_base.len()
+    );
+}
+
+/// The engines differ after these bytes (80x24).
+fn differs(bytes: &[u8]) -> bool {
+    let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
+    let _ = a.take_replies();
+    let mut b = NativeEngine::new(&init(80, 24));
+    a.feed(bytes);
+    b.feed(bytes);
+    let (ra, rb) = (a.take_replies(), b.take_replies());
+    let (sa, sb) = (a.snapshot(), b.snapshot());
+    !compare(&sa, &sb, a.scrollback_rows(), b.scrollback_rows(), &ra, &rb).is_empty()
+}
+
+/// Delta debugging: drops ever smaller pieces while the engines still differ.
+fn minimize(mut v: Vec<u8>) -> Vec<u8> {
+    let mut n = v.len() / 2;
+    while n >= 1 {
+        let mut i = 0;
+        let mut changed = false;
+        while i < v.len() {
+            let mut c = v.clone();
+            c.drain(i..(i + n).min(v.len()));
+            if differs(&c) {
+                v = c;
+                changed = true;
+            } else {
+                i += n;
+            }
+        }
+        if !changed {
+            n /= 2;
+        }
+    }
+    v
+}
+
+/// Like `show`, without the length cap.
+fn show_all(b: &[u8]) -> String {
+    b.chunks(160).map(show).collect()
+}
+
+/// `--bisect NAME`: feeds the named input one byte at a time and stops at the
+/// first byte after which the engines differ (development aid): prints the
+/// difference and the bytes that led to it.
+fn bisect(inp: &Input) {
+    let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
+    let _ = a.take_replies();
+    let mut b = NativeEngine::new(&init(80, 24));
+    let mut fed: Vec<u8> = Vec::new();
+    let (mut ra, mut rb) = (Vec::new(), Vec::new());
+    for step in &inp.steps {
+        let bytes: Vec<Vec<u8>> = match step {
+            Step::Bytes(v) => v.iter().map(|&c| vec![c]).collect(),
+            Step::Resize(c, r) => {
+                let gs = GridSize::new(*c, *r).with_cell(9, 18);
+                a.resize(gs);
+                b.resize(gs);
+                vec![vec![]]
+            }
+        };
+        for one in bytes {
+            a.feed(&one);
+            b.feed(&one);
+            fed.extend_from_slice(&one);
+            ra.extend(a.take_replies());
+            rb.extend(b.take_replies());
+            let (sa, sb) = (a.snapshot(), b.snapshot());
+            let d = compare(&sa, &sb, a.scrollback_rows(), b.scrollback_rows(), &ra, &rb);
+            if let Some(d) = d.first() {
+                println!(
+                    "{}: first difference after byte {}: {} {} — reference {} / native {}",
+                    inp.name,
+                    fed.len(),
+                    d.field,
+                    d.at,
+                    d.reference,
+                    d.native
+                );
+                println!("bytes before: {}", show(&fed[fed.len().saturating_sub(120)..]));
+                if inp.steps.len() == 1 {
+                    let m = minimize(fed);
+                    println!("minimal input ({} bytes): {}", m.len(), show_all(&m));
+                }
+                return;
+            }
+        }
+    }
+    println!("{}: no difference", inp.name);
+}
+
 fn main() {
-    let mut args = std::env::args().skip(1);
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    if raw.first().map(String::as_str) == Some("--gen-width") {
+        gen_width(raw.get(1).map_or("width_table.rs", String::as_str));
+        return;
+    }
+    if raw.first().map(String::as_str) == Some("--probe") {
+        let cols = raw.get(2).and_then(|v| v.parse().ok()).unwrap_or(20);
+        let rows = raw.get(3).and_then(|v| v.parse().ok()).unwrap_or(5);
+        probe(&unescape(raw.get(1).map_or("", String::as_str)), cols, rows);
+        return;
+    }
+    let mut args = raw.into_iter();
     let (mut corpus, mut nfuzz, mut chunk, mut every, mut report) = (None, 20u64, 4096usize, 1024u64, None);
+    let mut bisect_name: Option<String> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--corpus" => corpus = args.next(),
@@ -401,8 +645,9 @@ fn main() {
             "--chunk" => chunk = args.next().and_then(|v| v.parse().ok()).unwrap_or(4096),
             "--every" => every = args.next().and_then(|v| v.parse().ok()).unwrap_or(1024),
             "--report" => report = args.next(),
+            "--bisect" => bisect_name = args.next(),
             _ => {
-                eprintln!("usage: vtdiff [--corpus DIR] [--fuzz N] [--chunk BYTES] [--every BYTES] [--report FILE]");
+                eprintln!("usage: vtdiff [--corpus DIR] [--fuzz N] [--chunk BYTES] [--every BYTES] [--report FILE] [--bisect NAME]");
                 std::process::exit(2);
             }
         }
@@ -423,6 +668,13 @@ fn main() {
     inputs.extend(scenarios());
     inputs.extend(resizes());
     inputs.extend((1..=nfuzz).map(fuzz));
+    if let Some(n) = bisect_name {
+        match inputs.iter().find(|i| i.name == n) {
+            Some(i) => bisect(i),
+            None => eprintln!("no input named {n:?}"),
+        }
+        return;
+    }
 
     let mut total = Tally::default();
     let mut cats: BTreeMap<String, Tally> = BTreeMap::new();

@@ -148,7 +148,9 @@ run any other heavy command through `tools/heavy.sh CMD` /
 The native engine (DESIGN.md §10, not the default): `crates/haetty-vt`
 (pure Rust), wrapped as `haetty_core::native` (feature `native`);
 `cargo run -p haetty-vtdiff --release -- --corpus ~/m4/vtcorpus --report
-FILE` compares it with libghostty-vt cell by cell (dev only).
+FILE` compares it with libghostty-vt cell by cell (dev only); `--bisect
+NAME` finds the first differing byte and a minimal input, `--probe 'BYTES'`
+shows both engines' state.
 `scripts/zig-mode.sh` shows libghostty-vt's Zig mode per profile (all
 optimized); `scripts/e2e/measure.sh` measures the §3.4 budgets.
 End-to-end checks of the real GUI (Linux, Xvfb): `scripts/e2e/run-all.sh`
