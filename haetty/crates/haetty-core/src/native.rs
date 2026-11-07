@@ -47,6 +47,7 @@ impl NativeEngine {
                 colors: colors(&init.colors),
                 dark: dark(init.color_scheme),
                 xtversion: init.xtversion.clone(),
+                scrollback_limit: init.scrollback_limit,
             }),
         }
     }
@@ -87,7 +88,7 @@ impl VtEngine for NativeEngine {
             for x in 0..cols {
                 let c = t.cell(x, y);
                 cells.push(Cell {
-                    text: c.text.clone(),
+                    text: t.text(&c),
                     fg: t.resolve(c.style.fg).map(rgb),
                     bg: t.resolve(c.style.bg).map(rgb),
                     flags: CellFlags(c.style.flags),
