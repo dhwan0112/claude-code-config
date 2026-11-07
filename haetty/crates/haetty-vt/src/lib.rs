@@ -357,11 +357,16 @@ impl Compat {
     /// Under origin mode CHA, HPA and HPR also move the cursor down by the
     /// scroll region's top.
     pub const ORIGIN_COLUMN_MOVES_ROW: Compat = Compat(2);
+    /// Under origin mode VPA and VPR also move the cursor right by the left
+    /// margin, and VPR down by the region's top (libghostty's setCursorPos
+    /// with the current column/row).
+    pub const ORIGIN_ROW_MOVES_COLUMN: Compat = Compat(4);
     /// For vtdiff's self-test: CUF moves one column too far.
     pub const SELFTEST_BREAK: Compat = Compat(0x8000);
     const NAMES: &[(&str, Compat)] = &[
         ("tbc-toggle", Compat::TBC_TOGGLE),
         ("origin-column-moves-row", Compat::ORIGIN_COLUMN_MOVES_ROW),
+        ("origin-row-moves-column", Compat::ORIGIN_ROW_MOVES_COLUMN),
         ("selftest-break", Compat::SELFTEST_BREAK),
     ];
 
@@ -392,6 +397,9 @@ pub struct Terminal {
     /// The scroll region, 0-based, inclusive.
     top: u16,
     bottom: u16,
+    /// Left and right margins (DECSLRM, with DECLRMM; DESIGN.md §10.9).
+    left: u16,
+    right: u16,
     tabs: Vec<bool>,
     pub modes: Modes,
     title: String,
@@ -452,6 +460,8 @@ impl Terminal {
             scrollback: VecDeque::new(),
             top: 0,
             bottom: rows - 1,
+            left: 0,
+            right: cols - 1,
             tabs: default_tabs(cols),
             modes: Modes::default(),
             title: String::new(),
@@ -790,6 +800,8 @@ impl Terminal {
         self.rows = rows;
         self.top = 0;
         self.bottom = rows - 1;
+        self.left = 0;
+        self.right = cols - 1;
         if cols != old_cols {
             self.tabs = default_tabs(cols);
         }
@@ -826,14 +838,32 @@ impl Terminal {
 
     /// As libghostty's insert/delete lines: shifted rows lose their soft
     /// wraps, and a spacer head at the end becomes a plain cell.
-    fn unwrap_rows(&mut self, top: u16, bottom: u16) {
-        for l in &mut self.scr().lines[top as usize..=bottom as usize] {
-            l.wrapped = false;
-            l.cont = false;
-            if let Some(c) = l.cells.last_mut() {
-                if c.wide == Wide::SpacerHead {
-                    c.wide = Wide::Narrow;
+    fn wrap_flags(&self, top: u16, bottom: u16) -> Vec<(bool, bool)> {
+        self.screen_ref().lines[top as usize..=bottom as usize].iter().map(|l| (l.wrapped, l.cont)).collect()
+    }
+
+    /// Wrap flags after rows `top..=bottom` shifted by `n` (IL or DL; SU
+    /// and SD of a region), as libghostty's
+    /// insertLines/deleteLines: a row that moved, or that another row moved
+    /// into, loses its wrap and continuation (and a spacer head at its end);
+    /// a row only cleared keeps its flags.
+    fn shift_flags(&mut self, top: u16, bottom: u16, n: u16, old: &[(bool, bool)]) {
+        let rem = bottom - top + 1;
+        let n = n.min(rem);
+        for k in 0..rem {
+            // Moved from (DL: below n; IL: above rem - n) or into: the same rows.
+            let moved = k < rem - n || k >= n;
+            let l = self.line(top + k);
+            if moved && n < rem {
+                l.wrapped = false;
+                l.cont = false;
+                if let Some(c) = l.cells.last_mut() {
+                    if c.wide == Wide::SpacerHead {
+                        c.wide = Wide::Narrow;
+                    }
                 }
+            } else {
+                (l.wrapped, l.cont) = old[k as usize];
             }
         }
     }
@@ -878,25 +908,43 @@ impl Terminal {
         if self.scr().cursor.pending_wrap && autowrap {
             self.wrap_line();
         }
-        if w == 2 && self.scr().cursor.x + 1 >= cols {
-            if cols < 2 {
-                return;
-            }
+        // As libghostty: printing stops at the right margin, unless the
+        // cursor is already right of it.
+        let right_limit = if self.scr().cursor.x > self.right { cols } else { self.right + 1 };
+        let mut w = w;
+        if w == 2 && right_limit - self.left < 2 {
+            // No room for a wide character at all: an empty cell.
+            w = 0;
+        } else if w == 2 && self.scr().cursor.x + 1 >= right_limit {
             if !autowrap {
                 return;
             }
-            // As libghostty: a spacer in the last column, then the next row.
+            // As libghostty: a spacer in the last column (an empty cell at a
+            // right margin), then the next row.
             let (x, y) = (self.scr().cursor.x, self.scr().cursor.y);
             let style = self.scr().cursor.style;
+            let wide = if right_limit == cols { Wide::SpacerHead } else { Wide::Narrow };
             self.clear_wide_at(x, y);
-            self.line(y).cells[x as usize] = Cell { content: 0, style, wide: Wide::SpacerHead, protected: false };
+            self.line(y).cells[x as usize] = Cell { content: 0, style, wide, protected: false };
             self.wrap_line();
         }
         let (x, y, style) = {
             let c = self.scr().cursor;
             (c.x, c.y, c.style)
         };
-        if self.modes.insert {
+        if w == 0 {
+            self.print_clears_head(x, y, Wide::Narrow);
+            self.clear_wide_halves(x, y);
+            self.line(y).cells[x as usize] = Cell { content: 0, style, wide: Wide::Narrow, protected: false };
+            let cur = self.cur();
+            if x + 1 >= right_limit {
+                cur.pending_wrap = autowrap;
+            } else {
+                cur.x = x + 1;
+            }
+            return;
+        }
+        if self.modes.insert && x + (w as u16) < cols {
             self.insert_blanks(x, y, w as u16);
         }
         self.print_clears_head(x, y, if w == 2 { Wide::Wide } else { Wide::Narrow });
@@ -913,8 +961,8 @@ impl Terminal {
         }
         let nx = x + w as u16;
         let cur = self.cur();
-        if nx >= cols {
-            cur.x = cols - 1;
+        if nx >= right_limit {
+            cur.x = right_limit - 1;
             cur.pending_wrap = autowrap;
         } else {
             cur.x = nx;
@@ -1108,27 +1156,116 @@ impl Terminal {
     }
 
     fn wrap_line(&mut self) {
-        let y = self.scr().cursor.y;
-        self.line(y).wrapped = true;
-        self.cur().x = 0;
+        let (x, y) = (self.scr().cursor.x, self.scr().cursor.y);
+        let mark = x == self.cols - 1;
+        if mark {
+            self.line(y).wrapped = true;
+        }
         self.cur().pending_wrap = false;
         self.linefeed();
-        let y = self.scr().cursor.y;
-        self.line(y).cont = true;
+        let left = self.left;
+        self.cur().x = left;
+        if mark {
+            let y = self.scr().cursor.y;
+            self.line(y).cont = true;
+        }
     }
 
     fn linefeed(&mut self) {
-        let (y, bottom) = (self.scr().cursor.y, self.bottom);
+        let (x, y, bottom) = (self.scr().cursor.x, self.scr().cursor.y, self.bottom);
         if y == bottom {
-            self.scroll_up(1);
+            if x >= self.left && x <= self.right {
+                self.scroll_up(1);
+            }
         } else if y + 1 < self.rows {
             self.cur().y = y + 1;
         }
         self.cur().pending_wrap = false;
     }
 
+    /// Runs `f` with the cursor at (`x`, `y`), then puts it back (with its
+    /// pending wrap), as libghostty's scrollUp and scrollDown.
+    fn at_corner(&mut self, x: u16, y: u16, f: impl FnOnce(&mut Self)) {
+        let old = self.scr().cursor;
+        let cur = self.cur();
+        cur.x = x;
+        cur.y = y;
+        f(self);
+        let cur = self.cur();
+        cur.x = old.x;
+        cur.y = old.y;
+        cur.pending_wrap = old.pending_wrap;
+    }
+
+    /// IL (`insert`) or DL inside left and right margins, as libghostty's
+    /// insertLines/deleteLines with margins: rows `y` to the region's bottom
+    /// move by `n` within the margins' columns; the rows that open get blanks
+    /// in the pen's background; the cursor goes to the left margin. Wrap
+    /// flags stay.
+    fn shift_columns(&mut self, y: u16, n: u16, insert: bool) {
+        let (bottom, l, r, pen) = (self.bottom, self.left as usize, self.right as usize, self.scr().cursor.style);
+        let rem = bottom - y + 1;
+        let n = n.min(rem);
+        let rows: Vec<u16> = if insert { (y..=bottom).rev().collect() } else { (y..=bottom).collect() };
+        for (k, &row) in rows.iter().enumerate() {
+            if (k as u16) < rem - n {
+                let src = if insert { row - n } else { row + n };
+                self.row_will_be_shifted(row);
+                self.row_will_be_shifted(src);
+                let cells: Vec<Cell> = self.screen_ref().lines[src as usize].cells[l..=r].to_vec();
+                self.line(row).cells[l..=r].copy_from_slice(&cells);
+            } else {
+                self.row_will_be_shifted(row);
+                for c in &mut self.line(row).cells[l..=r] {
+                    *c = blank(pen);
+                }
+            }
+        }
+        self.moved(y, bottom);
+        let left = self.left;
+        let cur = self.cur();
+        cur.x = left;
+        cur.pending_wrap = false;
+    }
+
+    /// libghostty's rowWillBeShifted: wide characters cut by a margin become
+    /// blank halves; a spacer head at the row's end goes when the margins
+    /// reach it.
+    fn row_will_be_shifted(&mut self, y: u16) {
+        let (cols, l, r) = (self.cols as usize, self.left as usize, self.right as usize);
+        let line = self.line(y);
+        if r == cols - 1 || l < 2 {
+            let end = &mut line.cells[cols - 1];
+            if end.wide == Wide::SpacerHead {
+                end.wide = Wide::Narrow;
+            }
+        }
+        if line.cells[l].wide == Wide::SpacerTail && l > 0 {
+            let w = &mut line.cells[l - 1];
+            w.content = 0;
+            w.wide = Wide::Narrow;
+            line.cells[l].wide = Wide::Narrow;
+        }
+        if line.cells[r].wide == Wide::Wide && r + 1 < cols {
+            line.cells[r].content = 0;
+            line.cells[r].wide = Wide::Narrow;
+            line.cells[r + 1].wide = Wide::Narrow;
+        }
+    }
+
+    /// Margins narrower than the screen (DECSLRM).
+    fn lr(&self) -> bool {
+        self.left > 0 || self.right < self.cols - 1
+    }
+
     fn reverse_index(&mut self) {
-        let y = self.scr().cursor.y;
+        let (x, y) = (self.scr().cursor.x, self.scr().cursor.y);
+        // As libghostty: outside the margins it is a CUU, which does not
+        // leave the region's top.
+        if y == self.top && (x < self.left || x > self.right) {
+            self.cur().pending_wrap = false;
+            return;
+        }
         // As libghostty: scrolling keeps a pending wrap, moving up does not.
         if y == self.top {
             self.scroll_down(1);
@@ -1144,11 +1281,17 @@ impl Terminal {
     /// of the primary screen go to the scrollback (as libghostty, whatever the
     /// region's bottom).
     fn scroll_up(&mut self, n: u16) {
+        if self.lr() {
+            let (left, top) = (self.left, self.top);
+            self.at_corner(left, top, |t| t.delete_lines(n));
+            return;
+        }
         let (top, bottom) = (self.top as usize, self.bottom as usize);
         let n = (n as usize).min(bottom - top + 1);
         let bg = self.scr().cursor.style;
         let cols = self.cols;
         let to_scrollback = top == 0 && !self.modes.alt_screen;
+        let old = self.wrap_flags(top as u16, bottom as u16);
         for _ in 0..n {
             let l = self.scr().lines.remove(top);
             if to_scrollback {
@@ -1164,32 +1307,41 @@ impl Terminal {
         // any other is a deletion of lines.
         let full = top == 0 && (!self.modes.alt_screen || bottom == self.rows as usize - 1);
         if !full {
-            self.unwrap_rows(top as u16, bottom as u16);
+            self.shift_flags(top as u16, bottom as u16, n as u16, &old);
         }
     }
 
     fn scroll_down(&mut self, n: u16) {
+        if self.lr() {
+            let (left, top) = (self.left, self.top);
+            self.at_corner(left, top, |t| t.insert_lines(n));
+            return;
+        }
         let (top, bottom) = (self.top as usize, self.bottom as usize);
         let n = (n as usize).min(bottom - top + 1);
         let bg = self.scr().cursor.style;
         let cols = self.cols;
+        let old = self.wrap_flags(top as u16, bottom as u16);
         for _ in 0..n {
             self.scr().lines.remove(bottom);
             self.scr().lines.insert(top, Line::new(cols, bg));
         }
         self.moved(top as u16, bottom as u16);
-        self.unwrap_rows(top as u16, bottom as u16);
+        self.shift_flags(top as u16, bottom as u16, n as u16, &old);
     }
 
     fn insert_blanks(&mut self, x: u16, y: u16, n: u16) {
+        if n == 0 || x < self.left || x > self.right {
+            return;
+        }
         let bg = self.scr().cursor.style;
-        let cols = self.cols as usize;
+        let right = self.right as usize;
         let l = self.line(y);
         let x = x as usize;
-        let n = (n as usize).min(cols - x);
-        for _ in 0..n {
-            l.cells.pop();
-            l.cells.insert(x, blank(bg));
+        let n = (n as usize).min(right - x + 1);
+        l.cells[x..=right].rotate_right(n);
+        for c in &mut l.cells[x..x + n] {
+            *c = blank(bg);
         }
         fix_split_wide(l);
     }
@@ -1253,16 +1405,19 @@ impl Terminal {
             let c = self.scr().cursor;
             (c.x as usize, c.y, c.style)
         };
-        let cols = self.cols as usize;
-        let n = (n as usize).min(cols - x);
+        if n == 0 || x < self.left as usize || x > self.right as usize {
+            return;
+        }
+        let right = self.right as usize;
+        let n = (n as usize).min(right - x + 1);
         // As libghostty's deleteChars.
         self.split_cell_boundary(x as u16);
         self.split_cell_boundary((x + n) as u16);
-        self.split_cell_boundary(cols as u16);
+        self.split_cell_boundary(right as u16 + 1);
         let l = self.line(y);
-        for _ in 0..n {
-            l.cells.remove(x);
-            l.cells.push(blank(bg));
+        l.cells[x..=right].rotate_left(n);
+        for c in &mut l.cells[right + 1 - n..=right] {
+            *c = blank(bg);
         }
         fix_split_wide(l);
         self.cursor_reset_wrap();
@@ -1397,11 +1552,16 @@ impl Terminal {
     }
 
     fn insert_lines(&mut self, n: u16) {
-        let y = self.scr().cursor.y;
-        if y < self.top || y > self.bottom {
+        let (x, y) = (self.scr().cursor.x, self.scr().cursor.y);
+        if y < self.top || y > self.bottom || x < self.left || x > self.right {
+            return;
+        }
+        if self.lr() {
+            self.shift_columns(y, n, true);
             return;
         }
         let (top, bg, cols) = (self.top, self.scr().cursor.style, self.cols);
+        let old = self.wrap_flags(y, self.bottom);
         self.top = y;
         for _ in 0..n.min(self.bottom - y + 1) {
             let b = self.bottom as usize;
@@ -1410,24 +1570,29 @@ impl Terminal {
         }
         self.top = top;
         self.moved(y, self.bottom);
-        self.unwrap_rows(y, self.bottom);
+        self.shift_flags(y, self.bottom, n, &old);
         self.cur().x = 0;
         self.cur().pending_wrap = false;
     }
 
     fn delete_lines(&mut self, n: u16) {
-        let y = self.scr().cursor.y;
-        if y < self.top || y > self.bottom {
+        let (x, y) = (self.scr().cursor.x, self.scr().cursor.y);
+        if y < self.top || y > self.bottom || x < self.left || x > self.right {
+            return;
+        }
+        if self.lr() {
+            self.shift_columns(y, n, false);
             return;
         }
         let (bg, cols) = (self.scr().cursor.style, self.cols);
+        let old = self.wrap_flags(y, self.bottom);
         for _ in 0..n.min(self.bottom - y + 1) {
             self.scr().lines.remove(y as usize);
             let b = self.bottom as usize;
             self.scr().lines.insert(b, Line::new(cols, bg));
         }
         self.moved(y, self.bottom);
-        self.unwrap_rows(y, self.bottom);
+        self.shift_flags(y, self.bottom, n, &old);
         self.cur().x = 0;
         self.cur().pending_wrap = false;
     }
@@ -1438,10 +1603,11 @@ impl Terminal {
     /// move with the current row, which origin mode then offsets by the
     /// region's top.
     fn origin_column_moves_row(&mut self, col: u32) {
-        let (top, bottom, cols) = (self.top as u32, self.bottom as u32, self.cols as u32);
+        let (top, bottom) = (self.top as u32, self.bottom as u32);
+        let (left, right) = (self.left as u32, self.right as u32);
         let cur = self.cur();
         let row = cur.y as u32 + 1;
-        cur.x = (col.max(1).min(cols) - 1) as u16;
+        cur.x = ((col.max(1) + left).min(right + 1) - 1) as u16;
         cur.y = ((row + top).min(bottom + 1) - 1) as u16;
         cur.pending_wrap = false;
     }
@@ -1449,9 +1615,10 @@ impl Terminal {
     /// Moves the cursor; with origin mode, rows are inside the region.
     fn goto(&mut self, x: u16, y: u16) {
         let (top, bottom, rows, cols) = (self.top, self.bottom, self.rows, self.cols);
+        let (left, right) = (self.left, self.right);
         let origin = self.modes.origin;
         let cur = self.cur();
-        cur.x = x.min(cols - 1);
+        cur.x = if origin { left.saturating_add(x).min(right) } else { x.min(cols - 1) };
         cur.y = if origin { (top + y).min(bottom) } else { y.min(rows - 1) };
         cur.pending_wrap = false;
     }
@@ -1472,32 +1639,49 @@ impl Terminal {
     }
 
     fn move_horizontal(&mut self, d: i32) {
-        let cols = self.cols as i32;
+        let (cols, right) = (self.cols as i32, self.right as i32);
         let cur = self.cur();
-        cur.x = (cur.x as i32 + d).clamp(0, cols - 1) as u16;
+        let x = cur.x as i32;
+        let max = if d > 0 && x <= right { right } else { cols - 1 };
+        cur.x = (x + d).clamp(0, max) as u16;
         cur.pending_wrap = false;
     }
 
+    /// CR, as libghostty: to the left margin, or column 0 when left of it
+    /// (origin mode: always the margin).
+    fn carriage_return(&mut self) {
+        let (left, origin) = (self.left, self.modes.origin);
+        let cur = self.cur();
+        cur.x = if origin || cur.x >= left { left } else { 0 };
+        cur.pending_wrap = false;
+    }
+
+    /// HT, as libghostty: to the next stop, at most to the right margin.
     fn tab(&mut self, n: u16) {
-        let cols = self.cols;
+        let right = self.right;
         for _ in 0..n.max(1) {
-            let mut x = self.scr().cursor.x + 1;
-            while x < cols - 1 && !self.tabs[x as usize] {
+            let mut x = self.scr().cursor.x;
+            while x < right {
                 x += 1;
+                if self.tabs[x as usize] {
+                    break;
+                }
             }
-            self.cur().x = x.min(cols - 1);
+            self.cur().x = x;
         }
     }
 
+    /// CBT, as libghostty: to the previous stop, at most to column 0 (the
+    /// left margin under origin mode).
     fn back_tab(&mut self, n: u16) {
+        let limit = if self.modes.origin { self.left } else { 0 };
         for _ in 0..n.max(1) {
             let mut x = self.scr().cursor.x;
-            if x == 0 {
-                break;
-            }
-            x -= 1;
-            while x > 0 && !self.tabs[x as usize] {
+            while x > limit {
                 x -= 1;
+                if self.tabs[x as usize] {
+                    break;
+                }
             }
             self.cur().x = x;
         }
@@ -1619,7 +1803,13 @@ impl Terminal {
                 self.set_alt_screen(47, on)
             }
             66 => self.modes.app_keypad = on,
-            69 => self.modes.lr_margins = on,
+            69 => {
+                self.modes.lr_margins = on;
+                if !on {
+                    self.left = 0;
+                    self.right = self.cols - 1;
+                }
+            }
             1000 => {
                 self.modes.mouse_normal = on;
                 self.modes.mouse_event = if on { 2 } else { 0 };
@@ -2386,16 +2576,12 @@ impl vte::Perform for Terminal {
             }
             0x09 => self.tab(1),
             0x0a..=0x0c => {
-                if self.modes.newline {
-                    self.cur().x = 0;
-                }
                 self.linefeed();
+                if self.modes.newline {
+                    self.carriage_return();
+                }
             }
-            0x0d => {
-                let cur = self.cur();
-                cur.x = 0;
-                cur.pending_wrap = false;
-            }
+            0x0d => self.carriage_return(),
             0x0e => self.cur().gl = 1,
             0x0f => self.cur().gl = 0,
             // As libghostty: C0 controls it has no action for, from 0x10 up,
@@ -2424,7 +2610,7 @@ impl vte::Perform for Terminal {
         // As libghostty, a sequence with more parameters than it takes is
         // ignored as a whole.
         let most = match (inter, action) {
-            ([], 'H' | 'f' | 'r') => 2,
+            ([], 'H' | 'f' | 'r' | 's') => 2,
             (
                 [] | [b'?'],
                 'A'..='G'
@@ -2463,6 +2649,16 @@ impl vte::Perform for Terminal {
         match (inter, action) {
             // As libghostty, an explicit 0 moves nothing for HPR and VPR.
             ([], 'a' | 'e') if count > 0 && param(params, 0, 0) == 0 => {}
+            ([], 'd' | 'e') if self.compat.has(Compat::ORIGIN_ROW_MOVES_COLUMN) && self.modes.origin => {
+                let c = self.scr().cursor;
+                let row = if action == 'd' { p0(1) as u32 } else { c.y as u32 + 1 + p0(1) as u32 };
+                let (top, bottom, left, right) =
+                    (self.top as u32, self.bottom as u32, self.left as u32, self.right as u32);
+                let cur = self.cur();
+                cur.x = ((c.x as u32 + 1 + left).min(right + 1) - 1) as u16;
+                cur.y = ((row.max(1) + top).min(bottom + 1) - 1) as u16;
+                cur.pending_wrap = false;
+            }
             ([], '@') => {
                 let (x, y) = (self.scr().cursor.x, self.scr().cursor.y);
                 self.insert_blanks(x, y, p0(1));
@@ -2474,28 +2670,32 @@ impl vte::Perform for Terminal {
                 let x = self.scr().cursor.x as u32;
                 self.origin_column_moves_row(x + 1 + p0(1) as u32);
             }
-            ([], 'C' | 'a') => {
+            ([], 'a') => {
+                let (cols, right, origin) = (self.cols, self.right, self.modes.origin);
+                let cur = self.cur();
+                cur.x = cur.x.saturating_add(p0(1)).min(if origin { right } else { cols - 1 });
+                cur.pending_wrap = false;
+            }
+            ([], 'C') => {
                 let n = p0(1) as i32 + self.compat.has(Compat::SELFTEST_BREAK) as i32;
                 self.move_horizontal(n)
             }
             ([], 'D' | 'j') => self.move_horizontal(-(p0(1) as i32)),
             ([], 'E') => {
                 self.move_vertical(p0(1) as i32);
-                self.cur().x = 0;
+                self.carriage_return();
             }
             ([], 'F') => {
                 self.move_vertical(-(p0(1) as i32));
-                self.cur().x = 0;
+                self.carriage_return();
             }
             ([], 'G' | '`') if self.compat.has(Compat::ORIGIN_COLUMN_MOVES_ROW) && self.modes.origin => {
                 self.origin_column_moves_row(p0(1) as u32);
             }
             ([], 'G' | '`') => {
-                let y = self.scr().cursor.y;
-                let cols = self.cols;
+                let (cols, left, right, origin) = (self.cols, self.left, self.right, self.modes.origin);
                 let cur = self.cur();
-                cur.x = (p0(1) - 1).min(cols - 1);
-                cur.y = y;
+                cur.x = if origin { left.saturating_add(p0(1) - 1).min(right) } else { (p0(1) - 1).min(cols - 1) };
                 cur.pending_wrap = false;
             }
             ([], 'H' | 'f') => {
@@ -2544,7 +2744,8 @@ impl vte::Perform for Terminal {
             ([b'='], 'c') => self.reply(b"\x1bP!|00000000\x1b\\"),
             ([], 'd') => {
                 let x = self.scr().cursor.x;
-                self.goto(x, p0(1) - 1);
+                self.goto(0, p0(1) - 1);
+                self.cur().x = x;
             }
             // As libghostty: TBC needs its parameter.
             ([], 'g') if count == 0 => {}
@@ -2626,11 +2827,18 @@ impl vte::Perform for Terminal {
             // As libghostty: only without parameters (with them it would be
             // DECSLRM, which needs mode 69).
             ([], 's') if count == 0 && !self.modes.lr_margins => self.save_cursor(),
-            // DECSLRM (margins not implemented): the cursor goes home.
+            // DECSLRM, as libghostty's setLeftAndRightMargin: a valid pair
+            // sets the margins and the cursor goes home.
             ([], 's') if self.modes.lr_margins => {
-                // A valid pair (left < right ≤ columns) is accepted.
-                let (l, r) = (param(params, 0, 1), param(params, 1, self.cols));
-                if l < r && r <= self.cols {
+                let cols = self.cols;
+                let l = param(params, 0, 0).max(1);
+                let r = match param(params, 1, 0) {
+                    0 => cols,
+                    r => r.min(cols),
+                };
+                if l < r {
+                    self.left = l - 1;
+                    self.right = r - 1;
                     self.goto(0, 0);
                 }
             }
@@ -2695,8 +2903,8 @@ impl vte::Perform for Terminal {
             ([], b'8') => self.restore_cursor(),
             ([], b'D') => self.linefeed(),
             ([], b'E') => {
-                self.cur().x = 0;
                 self.linefeed();
+                self.carriage_return();
             }
             // SPA / EPA: ISO protected area.
             ([], b'V') => {
@@ -2732,10 +2940,13 @@ impl vte::Perform for Terminal {
                     l.cont = false;
                 }
                 self.cur().style.flags = 0;
-                // DECALN also resets the scroll region and origin mode.
+                // DECALN also resets the scroll region, the margins and
+                // origin mode.
                 self.modes.origin = false;
                 self.top = 0;
                 self.bottom = rows - 1;
+                self.left = 0;
+                self.right = self.cols - 1;
                 self.goto(0, 0);
             }
             ([g @ (b'(' | b')' | b'*' | b'+')], set) => {

@@ -686,8 +686,8 @@ fn with_resizes(rng: &mut Rng, b: Vec<u8>) -> Vec<Step> {
     steps
 }
 
-/// Fuzz, second mix: what the first leaves out — private modes (not 69:
-/// left/right margins are not implemented, DESIGN.md §10.7), non-ASCII
+/// Fuzz, second mix: what the first leaves out — private modes (69 with
+/// DECSLRM, DESIGN.md §10.9), non-ASCII
 /// text (wide, combining, variation selectors, ZWJ, flags), SGR colon forms
 /// and extended colours, OSC colours, DCS/APC strings, kitty keyboard and
 /// the other replies, edits across wide characters, long lines; resizes in
@@ -714,8 +714,8 @@ fn fuzz2(seed: u64) -> Input {
         "\u{25cf}",
     ];
     let private = [
-        1u16, 5, 6, 7, 12, 25, 47, 66, 1000, 1002, 1003, 1004, 1005, 1006, 1015, 1016, 1047, 1048, 1049, 2004, 2026,
-        2027, 2031, 2048,
+        1u16, 5, 6, 7, 12, 25, 47, 66, 69, 69, 1000, 1002, 1003, 1004, 1005, 1006, 1015, 1016, 1047, 1048, 1049, 2004,
+        2026, 2027, 2031, 2048,
     ];
     let nums = [0u16, 1, 2, 3, 5, 8, 22, 80, 200];
     let mut b = Vec::new();
