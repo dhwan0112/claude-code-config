@@ -785,6 +785,7 @@ fn fuzz2(seed: u64) -> Input {
         2026, 2027, 2031, 2048,
     ];
     let nums = [0u16, 1, 2, 3, 5, 8, 22, 80, 200];
+    let mut krng = Rng(seed.wrapping_add(0x6b69_7474));
     let mut b = Vec::new();
     while b.len() < 8192 {
         match rng.below(16) {
@@ -870,14 +871,13 @@ fn fuzz2(seed: u64) -> Input {
                     b"\x1bc",
                 ][rng.below(17) as usize],
             ),
-            11 => b.extend_from_slice(
-                [
-                    b"\x1bP$qm\x1b\\".as_slice(),
-                    b"\x1b_Ga=q,i=3;AAAA\x1b\\",
-                    b"\x1bP+q544e\x1b\\",
-                    b"\x1b_Ga=q,i=9\x1b\\",
-                ][rng.below(4) as usize],
-            ),
+            // DCS queries, or kitty graphics commands (from their own
+            // generator, so the rest of the stream stays as it was).
+            11 => match rng.below(4) {
+                0 => b.extend_from_slice(b"\x1bP$qm\x1b\\"),
+                2 => b.extend_from_slice(b"\x1bP+q544e\x1b\\"),
+                _ => kitty_gfx(&mut krng, &mut b),
+            },
             12 => (0..70 + rng.below(100)).for_each(|_| b.push(b'w')),
             13 => {
                 let f = rng.below(32);
@@ -894,6 +894,173 @@ fn fuzz2(seed: u64) -> Input {
     }
     let steps = with_resizes(&mut rng, b);
     Input { name: format!("fuzz2 {seed}"), category: "fuzz2".into(), steps }
+}
+
+/// Base64 with padding.
+fn b64(b: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::new();
+    for c in b.chunks(3) {
+        let v = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            s.push(if i <= c.len() { T[(v >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    s
+}
+
+/// `data` as a zlib stream of stored blocks (no compressor needed).
+fn zlib_stored(data: &[u8]) -> Vec<u8> {
+    let mut z = vec![0x78, 0x01];
+    let mut chunks = data.chunks(65535).peekable();
+    if chunks.peek().is_none() {
+        z.extend_from_slice(&[1, 0, 0, 0xff, 0xff]);
+    }
+    while let Some(c) = chunks.next() {
+        z.push(u8::from(chunks.peek().is_none()));
+        z.extend_from_slice(&(c.len() as u16).to_le_bytes());
+        z.extend_from_slice(&(!(c.len() as u16)).to_le_bytes());
+        z.extend_from_slice(c);
+    }
+    let (mut a, mut b) = (1u32, 0u32);
+    for &x in data {
+        a = (a + x as u32) % 65521;
+        b = (b + a) % 65521;
+    }
+    z.extend_from_slice(&((b << 16) | a).to_be_bytes());
+    z
+}
+
+/// `f`'s text with probability `p` %.
+fn maybe(r: &mut Rng, p: u64, f: impl FnOnce(&mut Rng) -> String) -> String {
+    if r.below(100) < p {
+        f(r)
+    } else {
+        String::new()
+    }
+}
+
+/// A kitty graphics command for `fuzz2`: transmissions (chunked, zlib,
+/// numbers, quiet levels, wrong sizes), placements (cells, cursor movement,
+/// virtual), deletes of every kind, queries, animation, and broken ones (bad
+/// keys and values, files and shared memory, bad base64).
+fn kitty_gfx(r: &mut Rng, b: &mut Vec<u8>) {
+    let ids = [1u32, 2, 3, 7];
+    let id = ids[r.below(4) as usize];
+    let mut keys = String::new();
+    match r.below(16) {
+        // Transmit (and display).
+        0..=6 => {
+            let (f, bpp) = [(24, 3), (24, 3), (32, 4), (100, 4)][r.below(4) as usize];
+            let (w, h) = (1 + r.below(5) as usize, 1 + r.below(4) as usize);
+            let mut len = w * h * bpp;
+            if r.below(6) == 0 {
+                len = (len + r.below(3) as usize).saturating_sub(1);
+            }
+            let raw: Vec<u8> =
+                if f == 100 { b"\x89PNG\r\n\x1a\n".to_vec() } else { (0..len).map(|i| (i * 37) as u8).collect() };
+            let zlib = r.below(4) == 0;
+            let mut payload = if zlib { zlib_stored(&raw) } else { raw };
+            if zlib && r.below(4) == 0 {
+                let n = payload.len() - 1 - r.below(5) as usize;
+                payload.truncate(n);
+            }
+            let a = ["t", "T", "T", "q"][r.below(4) as usize];
+            keys += &format!("a={a},f={f}");
+            if r.below(8) != 0 {
+                keys += &format!(",s={w},v={h}");
+            }
+            keys += &match r.below(10) {
+                0..=5 => format!(",i={id}"),
+                6 | 7 => format!(",I={id}"),
+                8 => format!(",i={id},I={id}"),
+                _ => String::new(),
+            };
+            keys += &maybe(r, 20, |r| format!(",p={}", 1 + r.below(3)));
+            keys += &maybe(r, 30, |r| format!(",q={}", r.below(3)));
+            keys += &maybe(r, 30, |r| format!(",c={}", r.below(6)));
+            keys += &maybe(r, 30, |r| format!(",r={}", r.below(4)));
+            keys += &maybe(r, 20, |r| format!(",C={}", r.below(2)));
+            keys += &maybe(r, 10, |_| ",U=1".into());
+            keys += &maybe(r, 10, |r| format!(",X={},Y={}", r.below(20), r.below(40)));
+            keys += &maybe(r, 10, |r| format!(",z={}", r.below(4) as i64 - 1));
+            if zlib {
+                keys += ",o=z";
+            }
+            let data = b64(&payload);
+            if r.below(3) == 0 && data.len() > 4 {
+                // In chunks of whole base64 quads; the later ones carry only
+                // `m` (and sometimes `q` or an id).
+                let mut parts = Vec::new();
+                let mut rest = data.as_str();
+                while rest.len() > 4 && parts.len() < 2 {
+                    let at = 4 * (1 + r.below((rest.len() / 4) as u64 - 1).min(3) as usize);
+                    parts.push(&rest[..at]);
+                    rest = &rest[at..];
+                }
+                parts.push(rest);
+                for (i, part) in parts.iter().enumerate() {
+                    let last = i + 1 == parts.len();
+                    let ctl = if i == 0 {
+                        format!("{keys},m=1")
+                    } else {
+                        let extra = maybe(r, 20, |r| [",q=1", ",q=2", ",i=1", ",a=T"][r.below(4) as usize].into());
+                        format!("m={}{extra}", u8::from(!last))
+                    };
+                    let _ = write!(Text(&mut *b), "\x1b_G{ctl};{part}\x1b\\");
+                }
+                return;
+            }
+            let _ = write!(Text(&mut *b), "\x1b_G{keys};{data}\x1b\\");
+            return;
+        }
+        // Display.
+        7..=9 => {
+            keys += &if r.below(4) == 0 { format!("a=p,I={id}") } else { format!("a=p,i={id}") };
+            keys += &maybe(r, 30, |r| format!(",p={}", 1 + r.below(3)));
+            keys += &maybe(r, 40, |r| format!(",c={}", r.below(6)));
+            keys += &maybe(r, 40, |r| format!(",r={}", r.below(4)));
+            keys += &maybe(r, 20, |r| format!(",C={}", r.below(2)));
+            keys += &maybe(r, 10, |_| ",U=1".into());
+            keys += &maybe(r, 5, |_| ",P=1".into());
+            keys += &maybe(r, 20, |r| format!(",q={}", r.below(3)));
+            keys += &maybe(r, 10, |r| format!(",w={},h={}", r.below(30), r.below(30)));
+            keys += &maybe(r, 10, |r| format!(",z={}", r.below(4) as i64 - 1));
+        }
+        // Delete.
+        10..=12 => {
+            let d = b"aAiInNcCpPqQxXyYzZrRfF"[r.below(22) as usize] as char;
+            keys += &format!("a=d,d={d}");
+            keys += &maybe(r, 60, |_| format!(",i={id}"));
+            keys += &maybe(r, 30, |_| format!(",I={id}"));
+            keys += &maybe(r, 20, |r| format!(",p={}", 1 + r.below(3)));
+            keys += &maybe(r, 60, |r| format!(",x={},y={}", r.below(8), r.below(8)));
+            keys += &maybe(r, 30, |r| format!(",z={}", r.below(4) as i64 - 1));
+        }
+        13 => keys += &format!("a={},i={id}", ["f", "a", "c"][r.below(3) as usize]),
+        // Broken ones.
+        _ => {
+            let bad = [
+                format!("a=t,i={id},zz=1;AAAA"),
+                format!("a=x,i={id}"),
+                format!("a=t,i={id},s=1,v=1,f=24;!!!!"),
+                format!("a=t,i={id},s=1,v=1,t=f;L3RtcC94"),
+                format!("a=t,i={id},s=1,v=1,t=s;eHg="),
+                format!("a=q,i={id},t=t;L3RtcC94"),
+                format!("a=t,i={id},f=7;AAAA"),
+                "a=t,i=,s=1;AAAA".into(),
+                format!("a=T,i={id},C=5,s=1,v=1,f=24;AAAA"),
+                format!("a=p,i={id},c=99999999999"),
+                format!("a=q,i={id},q=1;AA\nAA"),
+                format!("a=t,i={id},s=1,v=1,f=24;AA=A"),
+                "m=0;AAAA".into(),
+                format!("a=d,d=r,x=3,y={}", r.below(5)),
+            ];
+            let _ = write!(Text(&mut *b), "\x1b_G{}\x1b\\", bad[r.below(bad.len() as u64) as usize]);
+            return;
+        }
+    }
+    let _ = write!(Text(&mut *b), "\x1b_G{keys}\x1b\\");
 }
 
 /// The fuzz test's grammar (escape-sequence heavy, random bytes, broken
@@ -1056,6 +1223,9 @@ fn joiners() -> Vec<Input> {
         split("2027-combining", &["\x1b[?2027hcafe", "\u{301}"]),
         split("2027-zwj", &["\x1b[?2027h\u{1f468}", "\u{200d}", "\u{1f469}"]),
         split("2027-flag", &["\x1b[?2027h\u{1f1f0}", "\u{1f1f7}"]),
+        // Not a joiner: libghostty's printCell turns the row above's spacer
+        // head back into a blank without marking that row (DESIGN.md §10.8).
+        split("spacer-head", &[format!("\x1b[2;1H{}", "w".repeat(79)).as_str(), "\u{1f600}", "\x1b[3;1Hx"]),
     ];
     // The byte split inside VS16 has to be raw bytes.
     v[4].steps =

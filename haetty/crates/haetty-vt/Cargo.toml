@@ -9,3 +9,5 @@ rust-version.workspace = true
 
 [dependencies]
 vte = "0.15"
+# zlib inflate for kitty graphics payloads (`o=z`); pure Rust, no allocation.
+miniz_oxide = { version = "0.9", default-features = false }

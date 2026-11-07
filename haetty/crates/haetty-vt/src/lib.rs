@@ -13,6 +13,7 @@ pub mod color;
 mod format;
 mod grapheme;
 pub mod grapheme_table;
+mod kitty;
 mod width;
 pub mod width_table;
 mod x11_colors;
@@ -269,6 +270,8 @@ struct Screen {
     /// The last protection set: 0 none yet, 1 ISO (SPA: erasure respects
     /// it), 2 DEC (DECSCA: only selective erasure does). Never back to 0.
     protected_mode: u8,
+    /// Kitty graphics images and placements (each screen has its own).
+    gfx: kitty::Storage,
 }
 
 impl Screen {
@@ -279,6 +282,7 @@ impl Screen {
             saved: None,
             kitty: vec![0],
             protected_mode: 0,
+            gfx: kitty::Storage::default(),
         }
     }
 }
@@ -668,30 +672,10 @@ impl Terminal {
         self.parser = parser;
     }
 
-    /// Kitty graphics (`ESC _ G … ESC \`): only the support query is
-    /// answered (`a=q` with an image id), as libghostty answers it.
+    /// An APC string (or SOS / PM: libghostty reads them the same way):
+    /// kitty graphics commands (`G…`, see `kitty`).
     fn apc_dispatch(&mut self, apc: &[u8]) {
-        // As libghostty: a C0 control inside makes the command void.
-        if apc.iter().any(|&c| c < 0x20) {
-            return;
-        }
-        let Some(body) = apc.strip_prefix(b"G") else { return };
-        let control = body.split(|&c| c == b';').next().unwrap_or(b"");
-        let (mut action, mut id, mut quiet) = (b't', 0u32, 0u32);
-        for kv in control.split(|&c| c == b',') {
-            if let [k, b'=', v @ ..] = kv {
-                let num = || std::str::from_utf8(v).ok().and_then(|v| v.parse::<u32>().ok());
-                match k {
-                    b'a' => action = v.first().copied().unwrap_or(b't'),
-                    b'i' => id = num().unwrap_or(0),
-                    b'q' => quiet = num().unwrap_or(0),
-                    _ => {}
-                }
-            }
-        }
-        if action == b'q' && id != 0 && quiet == 0 {
-            self.reply(format!("\x1b_Gi={id};OK\x1b\\").as_bytes());
-        }
+        kitty::apc(self, apc);
     }
 
     pub fn take_replies(&mut self) -> Vec<u8> {
@@ -947,13 +931,17 @@ impl Terminal {
         self.modes.sync_output = false;
         // Primary screen, with its scrollback.
         let mut sb = std::mem::take(&mut self.scrollback);
+        let before = sb.len() as i64;
         resize_screen(&mut self.primary, Some(&mut sb), old_cols, old_rows, cols, rows, reflow, &self.styles);
+        // Kitty placements stay with their rows (not with reflowed text).
+        self.primary.gfx.resized(sb.len() as i64 - before, cols);
         self.sb_bytes = 0;
         for l in sb {
             self.push_scrollback(l);
         }
         // Alternate screen: no reflow, no scrollback.
         resize_screen(&mut self.alt, None, old_cols, old_rows, cols, rows, false, &self.styles);
+        self.alt.gfx.resized(0, cols);
         self.cols = cols;
         self.rows = rows;
         self.top = 0;
@@ -1343,6 +1331,7 @@ impl Terminal {
         if y == bottom {
             if x >= self.left && x <= self.right {
                 self.scroll_up(1);
+                kitty::region_scrolled(self, 1, true);
             }
         } else if y + 1 < self.rows {
             self.cur().y = y + 1;
@@ -1486,6 +1475,9 @@ impl Terminal {
                 self.push_scrollback(l);
             }
             self.scr().lines.insert(bottom, Line::new(cols, bk_bg));
+        }
+        if to_scrollback {
+            self.primary.gfx.top_row += n as u64;
         }
         if to_scrollback && self.viewport > 0 {
             self.viewport = (self.viewport + n).min(self.scrollback.len());
@@ -1708,12 +1700,16 @@ impl Terminal {
                 self.erase_rows(0, y, bg, protect);
                 self.erase_line(1, selective);
             }
-            2 => self.erase_rows(0, self.rows, bg, protect),
+            2 => {
+                self.erase_rows(0, self.rows, bg, protect);
+                kitty::screen_erased(self);
+            }
             3 => {
                 if !self.modes.alt_screen {
                     self.scrollback.clear();
                     self.sb_bytes = 0;
                     self.viewport = 0;
+                    self.primary.gfx.history_erased();
                 }
             }
             // libghostty's "scroll complete": the rows down to the last one
@@ -1727,10 +1723,12 @@ impl Terminal {
                         let l = self.screen_ref().lines[r].clone();
                         self.push_scrollback(l);
                     }
+                    self.primary.gfx.top_row += n as u64;
                 }
                 for r in 0..self.rows {
                     *self.line(r) = Line::new(cols, Cell::default());
                 }
+                kitty::screen_erased(self);
                 let cur = self.cur();
                 if cur.y as usize >= n {
                     cur.y -= n as u16;
@@ -1966,6 +1964,9 @@ impl Terminal {
         // starting it over would lose where it is.
         let pre = std::mem::take(&mut self.pre);
         *self = Terminal::new(o);
+        // As libghostty: the reset storage has its own (higher) limit.
+        self.primary.gfx.limit = kitty::LIMIT_RESET;
+        self.alt.gfx.limit = kitty::LIMIT_RESET;
         self.replies = replies;
         self.events = events;
         self.pre = pre;
@@ -2193,7 +2194,8 @@ enum Pre {
     /// A CSI's final byte, with its parameter count (see `csi_count`) and
     /// whether a colon was among the parameters.
     CsiEnd(usize, bool),
-    /// An APC string (`ESC _ … ESC \`); its contents are in `buf`.
+    /// An APC string (`ESC _ … ESC \`, also SOS and PM); its contents are
+    /// in `buf`.
     Apc,
     /// A byte 0x80–0x9F outside a UTF-8 sequence.
     RawC1,
@@ -2222,12 +2224,30 @@ struct Scanner {
     utf8_need: u8,
     utf8_next: (u8, u8),
     buf: Vec<u8>,
+    /// The kitty command in `buf` passed libghostty's size limit: void.
+    apc_over: bool,
 }
 
 impl Scanner {
     fn keep_param(&mut self, b: u8) {
         if self.csi_raw.len() < 512 {
             self.csi_raw.push(b);
+        }
+    }
+
+    /// A kitty graphics command (`G…`) is kept whole, up to libghostty's
+    /// limit (past it the command is void); other strings up to `KEEP`.
+    fn keep_apc(&mut self, b: u8) {
+        let kitty = self.buf.first() == Some(&b'G');
+        let cap = if kitty { kitty::MAX_PAYLOAD + Self::KEEP } else { Self::KEEP };
+        if self.apc_over {
+            return;
+        }
+        if self.buf.len() < cap {
+            self.buf.push(b);
+        } else if kitty {
+            self.buf = Vec::new();
+            self.apc_over = true;
         }
     }
 
@@ -2264,14 +2284,12 @@ impl Scanner {
     /// After ESC and an intermediate byte (`ESC (`, `ESC #` …).
     const ESC_INT: u8 = 3;
     const CSI: u8 = 4;
-    /// SOS or PM string (`ESC X`, `ESC ^`): skipped.
-    const STR: u8 = 5;
     /// DCS, its header and data.
     const DCS: u8 = 6;
     /// An OSC string: only to know that a CAN or SUB there ends it without
     /// being a ground-state control (vte executes it; libghostty does not).
     const OSC: u8 = 7;
-    /// Only the control part matters; the payload is not kept past this.
+    /// What is kept of strings other than kitty graphics commands.
     const KEEP: usize = 4096;
 
     fn byte(&mut self, b: u8) -> Pre {
@@ -2279,7 +2297,7 @@ impl Scanner {
         // C1 byte acts as its 7-bit form, ESC and b - 0x40 (vte ignores it).
         // The same in SOS/PM/APC strings and DCS (not in OSC, whose
         // payload is UTF-8).
-        if matches!(self.state, Self::ESC | Self::ESC_INT | Self::CSI | Self::STR | Self::DCS | Self::APC)
+        if matches!(self.state, Self::ESC | Self::ESC_INT | Self::CSI | Self::DCS | Self::APC)
             && (0x80..=0x9f).contains(&b)
         {
             // An APC ends there and is dispatched (as libghostty).
@@ -2292,18 +2310,19 @@ impl Scanner {
         }
         match (self.state, b) {
             (Self::GROUND, _) => return self.ground(b),
-            (Self::ESC | Self::ESC_INT | Self::CSI | Self::STR | Self::DCS | Self::OSC, 0x1b) => self.state = Self::ESC,
-            (Self::ESC | Self::ESC_INT | Self::CSI | Self::STR | Self::DCS, 0x18 | 0x1a) => self.state = Self::GROUND,
+            (Self::ESC | Self::ESC_INT | Self::CSI | Self::DCS | Self::OSC, 0x1b) => self.state = Self::ESC,
+            (Self::ESC | Self::ESC_INT | Self::CSI | Self::DCS, 0x18 | 0x1a) => self.state = Self::GROUND,
             // vte ends the OSC there and executes the byte, which is then no
             // ground-state control (`Pre::GroundC0`): nothing is printed.
             (Self::OSC, 0x07 | 0x18 | 0x1a) => self.state = Self::GROUND,
-            (Self::STR | Self::DCS | Self::OSC, _) => {}
+            (Self::DCS | Self::OSC, _) => {}
             (Self::ESC, b']') => self.state = Self::OSC,
-            (Self::ESC, b'X' | b'^') => self.state = Self::STR,
             (Self::ESC, b'P') => self.state = Self::DCS,
-            (Self::ESC, b'_') => {
+            // As libghostty: SOS and PM strings are read as APC ones.
+            (Self::ESC, b'_' | b'X' | b'^') => {
                 self.state = Self::APC;
                 self.buf.clear();
+                self.apc_over = false;
             }
             (Self::ESC, b'[') => {
                 self.state = Self::CSI;
@@ -2342,8 +2361,14 @@ impl Scanner {
                 self.state = Self::ESC;
                 return Pre::Apc;
             }
-            (Self::APC, 0x18 | 0x1a) => self.state = Self::GROUND,
-            (Self::APC, _) if self.buf.len() < Self::KEEP => self.buf.push(b),
+            // As libghostty: CAN and SUB end it too, and it still runs.
+            (Self::APC, 0x18 | 0x1a) => {
+                self.state = Self::GROUND;
+                return Pre::Apc;
+            }
+            // As libghostty: bytes from 0xA0 up are not part of it.
+            (Self::APC, 0xa0..=0xff) => {}
+            (Self::APC, _) => self.keep_apc(b),
             _ => {}
         }
         Pre::None
@@ -2524,6 +2549,9 @@ fn resize_screen(
     let mut cursor = Pin { line: hist + s.cursor.y as usize, x: s.cursor.x };
     let mut saved = s.saved.map(|v| Pin { line: hist + v.cursor.y as usize, x: v.cursor.x });
     let mut active_rows = old_rows as usize;
+    // Rows with kitty placements are not trimmed either (libghostty's
+    // tracked pins).
+    let pins = s.gfx.pin_lines(hist);
     if !reflow || cols == old_cols {
         if cols != old_cols {
             all = all.into_iter().map(|l| cut_line(l, cols)).collect();
@@ -2532,12 +2560,12 @@ fn resize_screen(
                 p.x = p.x.min(cols - 1);
             }
         }
-        resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref());
+        resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref(), &pins);
     } else if cols > old_cols {
         all = reflow_lines(all, active_rows, cols, &mut cursor, saved.as_mut(), st);
-        resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref());
+        resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref(), &pins);
     } else {
-        resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref());
+        resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref(), &pins);
         all = reflow_lines(all, active_rows, cols, &mut cursor, saved.as_mut(), st);
     }
     // The active area is the last `rows` lines.
@@ -2583,14 +2611,25 @@ fn resize_screen(
 /// bottom (not the cursor's), the rest of the difference goes to the
 /// scrollback; more rows pull the scrollback down only with the cursor on
 /// the last row, else blank lines come below.
-fn resize_rows(all: &mut Vec<Line>, active_rows: &mut usize, rows: usize, cursor: &mut Pin, saved: Option<&Pin>) {
+fn resize_rows(
+    all: &mut Vec<Line>,
+    active_rows: &mut usize,
+    rows: usize,
+    cursor: &mut Pin,
+    saved: Option<&Pin>,
+    pins: &[usize],
+) {
     let old = *active_rows;
     if rows < old {
         let mut trimmed = 0;
         while trimmed < old - rows {
             let i = all.len() - 1;
             let l = &all[i];
-            if l.cells.iter().any(|c| !c.is_empty()) || cursor.line == i || saved.is_some_and(|p| p.line == i) {
+            if l.cells.iter().any(|c| !c.is_empty())
+                || cursor.line == i
+                || saved.is_some_and(|p| p.line == i)
+                || pins.contains(&i)
+            {
                 break;
             }
             all.pop();
@@ -2913,7 +2952,11 @@ impl vte::Perform for Terminal {
                 self.delete_chars(p0(1));
                 self.cur().pending_wrap = false;
             }
-            ([], 'S') => self.scroll_up(p0(1)),
+            ([], 'S') => {
+                let n = p0(1);
+                self.scroll_up(n);
+                kitty::region_scrolled(self, n, false);
+            }
             ([], 'T') => self.scroll_down(p0(1)),
             ([], 'X') => {
                 self.erase_chars(p0(1));
