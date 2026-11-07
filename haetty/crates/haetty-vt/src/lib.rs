@@ -154,6 +154,9 @@ pub struct Cell {
 
 const CLUSTER: u32 = 0x8000_0000;
 
+/// Runs of printable ASCII at least this long skip vte (`Terminal::feed`).
+const ASCII_RUN: usize = 8;
+
 impl Cell {
     fn of(c: char, style: u16, wide: Wide) -> Cell {
         Cell { content: c as u32, style, wide, protected: false }
@@ -718,7 +721,24 @@ impl Terminal {
         // them; the kitty graphics ones are answered here, in order with the
         // replies around them) and whether a CSI had parameter bytes at all.
         let mut start = k;
-        for i in 0..bytes.len() {
+        let mut i = 0;
+        while i < bytes.len() {
+            // A run of printable ASCII in the ground state is written here
+            // directly (`print_ascii`, E5c): vte would hand it over one
+            // character at a time, and leaves no state for it.
+            if i >= start && self.pre.state == Scanner::GROUND && self.pre.utf8_need == 0 {
+                let run = bytes[i..].iter().take_while(|b| (0x20..=0x7e).contains(*b)).count();
+                if run >= ASCII_RUN {
+                    parser.advance(self, &bytes[start..i]);
+                    self.print_ascii(&bytes[i..i + run]);
+                    i += run;
+                    start = i;
+                    continue;
+                }
+            }
+            let i0 = i;
+            i += 1;
+            let i = i0;
             match self.pre.byte(bytes[i]) {
                 Pre::None => {}
                 Pre::CsiEnd(count, colon) => {
@@ -1175,6 +1195,58 @@ impl Terminal {
             out[i] |= std::mem::take(&mut l.dirty);
         }
         out
+    }
+
+    /// A run of printable ASCII (see `feed`): the same as printing each
+    /// character, with the cells of one row written at once. Anything
+    /// unusual for a character — insert mode, a single shift, the DEC
+    /// graphics set, a hyperlink, a wide character or its half in the way —
+    /// takes the general path for it.
+    fn print_ascii(&mut self, run: &[u8]) {
+        let mut k = 0;
+        while k < run.len() {
+            let cur = self.screen_ref().cursor;
+            let general = self.modes.insert
+                || self.single_shift.is_some()
+                || cur.charsets[cur.gl as usize & 3] == b'0'
+                || cur.style.link != 0;
+            if general {
+                vte::Perform::print(self, run[k] as char);
+                k += 1;
+                continue;
+            }
+            if cur.pending_wrap && self.modes.autowrap {
+                self.wrap_line();
+            }
+            let cur = self.screen_ref().cursor;
+            let right_limit = if cur.x > self.right { self.cols } else { self.right + 1 };
+            let (x, y) = (cur.x as usize, cur.y as usize);
+            let n = (right_limit as usize).saturating_sub(x).min(run.len() - k).max(1);
+            if self.screen_ref().lines[y].cells[x..x + n].iter().any(|c| c.wide != Wide::Narrow) {
+                vte::Perform::print(self, run[k] as char);
+                k += 1;
+                continue;
+            }
+            let style = self.styles.id(cur.style);
+            let protected = cur.protected;
+            let line = self.line(y as u16);
+            for (dst, &b) in line.cells[x..x + n].iter_mut().zip(&run[k..k + n]) {
+                *dst = Cell { content: b as u32, style, wide: Wide::Narrow, protected };
+            }
+            let wrap_next = self.modes.autowrap || self.compat.has(Compat::PENDING_WRAP_WITHOUT_AUTOWRAP);
+            let nx = x + n;
+            let cur = self.cur();
+            if nx >= right_limit as usize {
+                cur.x = right_limit - 1;
+                cur.pending_wrap = wrap_next;
+            } else {
+                cur.x = nx as u16;
+            }
+            k += n;
+        }
+        if let Some(&b) = run.last() {
+            self.last_char = Some(b as char);
+        }
     }
 
     /// The page of libghostty's page list the next print lands on, as the
