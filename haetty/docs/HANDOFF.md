@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage e4a (branch `haetty/e4a`, worktree `~/projects/claude-code-config-wt/e4a`). Remaining: E4a: rows redrawn when a combining mark/VS/ZWJ joins a drawn cell in a later read (default engine); cost measured; headless and GUI regression tests
+
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
