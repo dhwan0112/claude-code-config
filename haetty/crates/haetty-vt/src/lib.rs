@@ -2875,6 +2875,17 @@ fn resize_screen(
     let pins = s.gfx.pin_lines(hist);
     if !reflow || cols == old_cols {
         if cols != old_cols {
+            if cols > old_cols {
+                // As libghostty: the old last column is no longer the last,
+                // so a spacer head there becomes a plain cell.
+                for l in &mut all {
+                    if let Some(c) = l.cells.get_mut(old_cols as usize - 1) {
+                        if c.wide == Wide::SpacerHead {
+                            c.wide = Wide::Narrow;
+                        }
+                    }
+                }
+            }
             all = all.into_iter().map(|l| cut_line(l, cols)).collect();
             cursor.x = cursor.x.min(cols - 1);
             if let Some(p) = &mut saved {
