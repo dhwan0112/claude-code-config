@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage e4d (branch `haetty/e4d`, worktree `~/projects/claude-code-config-wt/e4d`). Remaining: E4d: kitty graphics replies merged, native e2e/§2.3/themes/regression beside libghostty, 1 h native soak; E4e drafts; DESIGN §10.9; mirror excludes target*/
+
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
