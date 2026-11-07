@@ -33,7 +33,12 @@ fn main() {
     println!("before: RssAnon {} kB", status_kb("RssAnon:"));
     let mut keep = vec![];
     for i in 1..=sessions {
-        let script = format!("seq -f '%0119g' 1 {lines}; echo DONE; exec sleep 3600");
+        // MEM_SCRIPT: another producer, `{n}` replaced by LINES (e.g. the
+        // soak's short coloured lines).
+        let script = match std::env::var("MEM_SCRIPT") {
+            Ok(s) => format!("{}; echo DONE; exec sleep 3600", s.replace("{n}", &lines.to_string())),
+            Err(_) => format!("seq -f '%0119g' 1 {lines}; echo DONE; exec sleep 3600"),
+        };
         let mut cfg = SessionConfig::new(CommandSpec::new("sh").args(["-c", script.as_str()]));
         cfg.scrollback_limit = scrollback;
         if let Some(e) = std::env::var("HAETTY_ENGINE").ok().and_then(|e| haetty_core::vt::EngineKind::parse(&e)) {

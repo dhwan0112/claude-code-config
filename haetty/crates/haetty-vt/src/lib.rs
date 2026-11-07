@@ -1008,7 +1008,13 @@ impl Terminal {
                 l.cells.pop();
             }
         }
-        l.cells.shrink_to_fit();
+        // A copy of its own size, not `shrink_to_fit`: shrinking the row's
+        // block in place leaves holes a new row's block does not fit, and
+        // with short lines the process kept about three times the
+        // scrollback limit (E5c: 37 MB for a 12 MB limit, one session).
+        if l.cells.capacity() > l.cells.len() {
+            l.cells = l.cells.as_slice().to_vec();
+        }
         self.sb_bytes += line_bytes(&l);
         self.scrollback.push_back(l);
         self.evict();
