@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage e5c1 (branch `haetty/e5c1`, worktree `~/projects/claude-code-config-wt/e5c1`). Remaining: E5c soak rule judged after the scrollback is full (status --json scrollback, protocol 11), then the 2-hour native soak; E5d overnight engine argument; E5a, E5c throughput, E5d Windows native, E5e.
+> **In progress:** stage e5a1 (branch `haetty/e5a1`, worktree `~/projects/claude-code-config-wt/e5a1`). Remaining: E5a FAIL classes: mode 2027 variation-selector bases, kitty deflate distance, then the wide/last-column, resize and UTF-8 classes; E5c throughput; records.
 
 ## 1. Current state
 
