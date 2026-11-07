@@ -8,8 +8,6 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage e4d (branch `haetty/e4d`, worktree `~/projects/claude-code-config-wt/e4d`). Remaining: E4d: kitty graphics replies merged, native e2e/§2.3/themes/regression beside libghostty, 1 h native soak; E4e drafts; DESIGN §10.9; mirror excludes target*/
-
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
@@ -125,6 +123,7 @@ Windows, WSL and the dev machine:
 - Scripts on `\\wsl.localhost` are unsigned: a new window needs `-ExecutionPolicy Bypass` (U5b).
 - PowerShell function names are case-insensitive: a function `Git` calling `git` recursed forever (T5).
 - From Git Bash, `printf > /mnt/c/...` can fail silently: write Windows files through their Windows path.
+- Build directories other than `target/` (the gate's `target-native`, worktrees' `target-*`) reached the Dropbox mirror until E4; `tools/mirror-dropbox.sh` now skips `target-*/`. Files Dropbox holds are removed from Windows (`rmdir /s /q`), not through `/mnt/c`.
 - `heavy.ps1` from Git Bash (E3): `-Label … -- pwsh …` printed pwsh's help; dot-sourcing it in `pwsh -Command` left `Enter-HaettyHeavy` undefined. Not yet understood.
 - Claude Code may stop idle background shells when memory runs low (seen on Windows too, against its docs, U3): keep long runs outside Claude Code.
 

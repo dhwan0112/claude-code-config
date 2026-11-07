@@ -60,6 +60,29 @@ self-test (`cargo test -p haetty-vtdiff`) adds such a bug and expects FAIL.
     "[columns] (default = [row,col+1])".
 - Approved 2026-11-07, in the user's E4 instructions (as above).
 
-## Candidates
+## Candidates (not approved; counted FAIL)
 
-None yet.
+### origin-row-moves-only-row — VPA and VPR under origin mode
+
+- What happens: with origin mode set and left/right margins (DECLRMM,
+  DECSLRM), VPA (`CSI n d`) or VPR (`CSI n e`).
+  - libghostty also moves the cursor right by the left margin. It
+    implements both as `setCursorPos(row, cursor.x + 1)`, and under origin
+    mode `setCursorPos` adds the left margin to that column.
+  - For VPR, libghostty also adds the region's top to the row; that shows
+    without margins too.
+  - haetty-vt changes only the row.
+  - This is the same mechanism as the approved entry above, on the other
+    axis.
+- The specification:
+  - ECMA-48 §8.3.158 VPA: moves "to line position n in the active character
+    position".
+  - ECMA-48 §8.3.160 VPR: moves "by n line positions … in a direction
+    parallel to the line progression".
+  - Neither changes the column.
+  - xterm ctlseqs: VPA "[row] (default = [1,column])"; VPR "[rows]
+    (default = [row+1,column])".
+- Found in E4 once margins were in vtdiff's inputs (`\e[?69h\e[3;7s\e[?6h\e[3dX`).
+- Ghostty `main` (`5813c94`) routes VPA and VPR through `cursorPosForSet`,
+  which would fix it as well (docs/upstream/).
+- Needs the user's approval to move to `known-vt-differences.txt`.

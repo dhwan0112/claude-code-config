@@ -163,10 +163,12 @@ words in `approved`); proposals go to `docs/vtdiff/known-candidates.txt`
 (counted FAIL, shown "KNOWN if approved"), the reasoning for each in
 `docs/vtdiff/known.md`. Generated tables:
 `--gen-width`, `--gen-keys`, `tools/gen-grapheme-table.py`,
+`cargo run --release -p haetty-vt --example feed` (the engine's speed alone),
 `tools/gen-x11-colors.py`.
 `scripts/zig-mode.sh` shows libghostty-vt's Zig mode per profile (all
 optimized); `scripts/e2e/measure.sh` measures the §3.4 budgets.
-End-to-end checks of the real GUI (Linux, Xvfb): `scripts/e2e/run-all.sh`
+End-to-end checks of the real GUI (Linux, Xvfb): `scripts/e2e/run-all.sh`,
+`E2E_ENGINE=native scripts/e2e/run-all.sh` for every session on haetty's engine
 (`scripts/e2e/README.md`: what each script checks, Xvfb without root, the
 VT fuzz corpus); Windows: `scripts/e2e/windows/`.
 
