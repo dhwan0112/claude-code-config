@@ -21,6 +21,7 @@
 //!   --gen-width FILE             writes `haetty-vt`'s width tables from libghostty-vt
 //!   --gen-keys FILE              writes haetty-core's key and mouse types (`keys.rs`) from libghostty-vt
 //!   --encoders [--report FILE]   key, mouse, paste and focus encoding of both engines, compared
+//!   --refresh                    the default engine's render-state refresh modes: stale rows, rows copied, time
 //!   --colors                     colour and palette-entry parsing (themes, OSC) against libghostty-vt's
 //!   --dump NAME [BYTES]          the named input's bytes (escaped), resizes marked
 
@@ -749,6 +750,181 @@ fn probe(bytes: &[u8], cols: u16, rows: u16) {
     }
 }
 
+/// Inputs where a joining character arrives in a later read than its base
+/// (DESIGN.md §10.8): the reads are the `Step::Bytes` themselves.
+fn joiners() -> Vec<Input> {
+    let split = |name: &str, parts: &[&str]| Input {
+        name: name.into(),
+        category: "joiners".into(),
+        steps: parts.iter().map(|p| Step::Bytes(p.as_bytes().to_vec())).collect(),
+    };
+    let mut v = vec![
+        split("combining", &["cafe", "\u{301} ok"]),
+        split("vs16", &["\u{2764}", "\u{fe0f}"]),
+        split("vs16-narrow-to-wide", &["ab\u{263a}", "\u{fe0f}cd"]),
+        split("zwj", &["\u{1f468}", "\u{200d}", "\u{1f469}"]),
+        split("vs16-bytes", &["\u{2764}\u{ef}", "\u{b8}", "\u{8f}"]),
+        split("2027-combining", &["\x1b[?2027hcafe", "\u{301}"]),
+        split("2027-zwj", &["\x1b[?2027h\u{1f468}", "\u{200d}", "\u{1f469}"]),
+        split("2027-flag", &["\x1b[?2027h\u{1f1f0}", "\u{1f1f7}"]),
+    ];
+    // The byte split inside VS16 has to be raw bytes.
+    v[4].steps =
+        vec![Step::Bytes(b"\xe2\x9d\xa4\xef".to_vec()), Step::Bytes(b"\xb8".to_vec()), Step::Bytes(b"\x8f".to_vec())];
+    v
+}
+
+/// `--refresh`: libghostty's render state read three ways (`Refresh` in
+/// haetty-core's ghostty.rs): a snapshot after every read, compared with a
+/// render state built fresh for that snapshot; rows copied and time per
+/// snapshot. Reads are 4096 bytes, then random 1–64 bytes. `VTDIFF_STALE=1`
+/// prints the first stale place per input with `Refresh::Joined`.
+fn refresh(inputs: &[Input]) {
+    use haetty_core::ghostty::Refresh;
+    use std::time::{Duration, Instant};
+    let modes = [Refresh::Incremental, Refresh::Joined, Refresh::Always];
+    #[derive(Default, Clone)]
+    struct T {
+        snapshots: u64,
+        fresh: u64,
+        rows: u64,
+        time: Duration,
+        stale: u64,
+        stale_inputs: u64,
+    }
+    let mut by: BTreeMap<String, [T; 3]> = BTreeMap::new();
+    let mut stale_names: Vec<String> = Vec::new();
+    for inp in inputs {
+        for small in [false, true] {
+            let mut engines: Vec<GhosttyEngine> = Vec::new();
+            for m in modes {
+                let mut e = GhosttyEngine::new(&init(80, 24)).expect("engine");
+                e.set_refresh(m);
+                engines.push(e);
+            }
+            let mut truth = GhosttyEngine::new(&init(80, 24)).expect("engine");
+            let mut rng = Rng(0x5eed ^ small as u64);
+            let mut t: [T; 3] = Default::default();
+            let mut stale = [false; 3];
+            let mut step = |engines: &mut Vec<GhosttyEngine>,
+                            truth: &mut GhosttyEngine,
+                            t: &mut [T; 3],
+                            last: &[u8]| {
+                let want = truth.snapshot_fresh();
+                for (k, e) in engines.iter_mut().enumerate() {
+                    let start = Instant::now();
+                    let s = e.snapshot();
+                    t[k].time += start.elapsed();
+                    if s.cells != want.cells || s.cursor != want.cursor {
+                        t[k].stale += 1;
+                        if k == 1 && !stale[k] && std::env::var_os("VTDIFF_STALE").is_some() {
+                            let at = (0..want.cells.len().min(s.cells.len()))
+                                .find(|&i| s.cells[i] != want.cells[i])
+                                .map(|i| {
+                                    format!("cell {},{}: {:?} / fresh {:?}", i % 80, i / 80, s.cells[i], want.cells[i])
+                                })
+                                .unwrap_or_else(|| format!("cursor {:?} / fresh {:?}", s.cursor, want.cursor));
+                            eprintln!("STALE {}: {at}; last read {}", inp.name, show(last));
+                        }
+                        stale[k] = true;
+                    }
+                }
+            };
+            for st in &inp.steps {
+                match st {
+                    Step::Bytes(b) => {
+                        let mut i = 0;
+                        // A joiners input's steps are its reads.
+                        let whole = inp.category == "joiners";
+                        while i < b.len() {
+                            let n = if whole {
+                                b.len()
+                            } else if small {
+                                1 + rng.below(64) as usize
+                            } else {
+                                4096
+                            }
+                            .min(b.len() - i);
+                            for e in engines.iter_mut() {
+                                e.feed(&b[i..i + n]);
+                                let _ = e.take_replies();
+                            }
+                            truth.feed(&b[i..i + n]);
+                            let _ = truth.take_replies();
+                            step(&mut engines, &mut truth, &mut t, &b[i..i + n]);
+                            i += n;
+                        }
+                    }
+                    Step::Resize(c, r) => {
+                        let gs = GridSize::new(*c, *r).with_cell(9, 18);
+                        for e in engines.iter_mut() {
+                            e.resize(gs);
+                        }
+                        truth.resize(gs);
+                        step(&mut engines, &mut truth, &mut t, b"<resize>");
+                    }
+                }
+            }
+            let cat = by.entry(inp.category.clone()).or_default();
+            for k in 0..3 {
+                let s = engines[k].stats;
+                t[k].snapshots = s.snapshots;
+                t[k].fresh = s.fresh;
+                t[k].rows = s.rows_copied;
+                t[k].stale_inputs = stale[k] as u64;
+                let c = &mut cat[k];
+                c.snapshots += t[k].snapshots;
+                c.fresh += t[k].fresh;
+                c.rows += t[k].rows;
+                c.time += t[k].time;
+                c.stale += t[k].stale;
+                c.stale_inputs += t[k].stale_inputs;
+            }
+            if stale[2] {
+                stale_names.push(format!("{} ({})", inp.name, if small { "small reads" } else { "4096" }));
+            }
+        }
+    }
+    println!("| Inputs | Mode | Snapshots | From a new render state | Rows copied per snapshot | Time per snapshot | Stale snapshots (runs) |");
+    println!("|---|---|---|---|---|---|---|");
+    let mut total: [T; 3] = Default::default();
+    for (cat, t) in &by {
+        for k in 0..3 {
+            let x = &t[k];
+            let tt = &mut total[k];
+            tt.snapshots += x.snapshots;
+            tt.fresh += x.fresh;
+            tt.rows += x.rows;
+            tt.time += x.time;
+            tt.stale += x.stale;
+            tt.stale_inputs += x.stale_inputs;
+        }
+        for (k, m) in modes.iter().enumerate() {
+            row(cat, *m, &t[k]);
+        }
+    }
+    for (k, m) in modes.iter().enumerate() {
+        row("all", *m, &total[k]);
+    }
+    fn row(cat: &str, m: Refresh, x: &T) {
+        let per = |v: u64| if x.snapshots == 0 { 0.0 } else { v as f64 / x.snapshots as f64 };
+        println!(
+            "| {cat} | {m:?} | {} | {} ({:.1} %) | {:.2} | {:.1} µs | {} ({}) |",
+            x.snapshots,
+            x.fresh,
+            per(x.fresh) * 100.0,
+            per(x.rows),
+            if x.snapshots == 0 { 0.0 } else { x.time.as_secs_f64() * 1e6 / x.snapshots as f64 },
+            x.stale,
+            x.stale_inputs
+        );
+    }
+    if !stale_names.is_empty() {
+        println!("\nStale with Always (the default): {}", stale_names.join(", "));
+        std::process::exit(1);
+    }
+}
+
 /// `--colors`: colour specifications and palette entries parsed by haetty
 /// (`haetty_vt::color`, what themes and OSC use) and by libghostty-vt's
 /// `RgbColor::parse` / `Palette::parse_palette_entry`, compared: every X11
@@ -1391,6 +1567,7 @@ fn main() {
     let (mut corpus, mut nfuzz, mut chunk, mut every, mut report) = (None, 20u64, 4096usize, 1024u64, None);
     let mut bisect_name: Option<String> = None;
     let mut dump: Option<(String, usize)> = None;
+    let mut refresh_only = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--corpus" => corpus = args.next(),
@@ -1398,6 +1575,7 @@ fn main() {
             "--chunk" => chunk = args.next().and_then(|v| v.parse().ok()).unwrap_or(4096),
             "--every" => every = args.next().and_then(|v| v.parse().ok()).unwrap_or(1024),
             "--report" => report = args.next(),
+            "--refresh" => refresh_only = true,
             "--bisect" => bisect_name = args.next(),
             "--dump" => {
                 let n = args.next().unwrap_or_default();
@@ -1430,6 +1608,7 @@ fn main() {
     });
     inputs.extend(scenarios());
     inputs.extend(resizes());
+    inputs.extend(joiners());
     inputs.extend((1..=nfuzz).map(fuzz));
     inputs.extend((1..=nfuzz).map(fuzz2));
     inputs.extend((1..=nfuzz).map(grammar));
@@ -1441,6 +1620,10 @@ fn main() {
         None => vec![],
     };
     inputs.extend((1..=nfuzz).map(|s| mutated(s, &other)));
+    if refresh_only {
+        refresh(&inputs);
+        return;
+    }
     if let Some((n, len)) = dump {
         for i in inputs.iter().filter(|i| i.name == n) {
             let mut left = len;

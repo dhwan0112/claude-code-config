@@ -1632,5 +1632,58 @@ included); the native engine should stay well under that.
   - throughput: now 65–75 % of libghostty's;
   - the e2e suite (`run-all.sh`) and a soak with `--engine native`;
   - VT and HTML dumps;
-  - finding 3 (stale rows) is libghostty's and concerns the default engine
-    today, whatever is decided.
+  - finding 3 (stale rows): fixed in the default engine (§10.8).
+
+### 10.8 E4a: the default engine redraws rows libghostty leaves unmarked (2026-11-07)
+
+- The defect (§10.7 finding 3):
+  - libghostty's render state copies only the rows the terminal marked
+    dirty;
+  - a combining mark, VS16 or ZWJ that joins a cell already drawn does
+    not mark its row;
+  - when that character arrives in a later PTY read than its base, the
+    daemon's snapshot keeps the old row until something else changes it.
+  - Seen through the observer and the GUI frame: `cafe`, then U+0301 one
+    second later, stays `cafe` until the cursor leaves the row.
+  - `vtdiff --refresh` found a second unmarked change: the spacer at the
+    last column (before a wide character that wrapped) turning back into
+    an ordinary blank. It draws the same, but the cells differ.
+- Fix: `GhosttyEngine` reads each snapshot from a new render state
+  (`Refresh::Always` in `haetty-core/src/ghostty.rs`). The engine and the
+  bytes fed are unchanged; only the copy into the snapshot changed.
+- Choice, measured (`vtdiff --refresh`: a snapshot after every read, reads
+  of 4096 bytes and of 1–64 bytes, corpus plus 200 inputs of each
+  generator, 212 886 snapshots):
+
+  | Refresh | New render states | Rows copied per snapshot | Time per snapshot | Stale snapshots (runs) |
+  |---|---|---|---|---|
+  | incremental (before) | 0 % | 4.91 | 86.2 µs | 1429 (240) |
+  | after a possible joiner (`Joined`) | 10.7 % | 6.90 | 86.6 µs | 96 (22) |
+  | always (chosen) | 100 % | 24.58 | 90.3 µs | 0 (0) |
+
+  - The Claude Code corpus: 24 rows copied per snapshot instead of 4.02,
+    84.3 µs instead of 87.8 µs per snapshot (within noise).
+  - `Joined` scans the bytes for zero-width characters, and for anything
+    above U+00FF under mode 2027. It copies fewer rows, but it misses the
+    spacer case (all of its 96 stale snapshots).
+  - Through the daemon (dist, `measure.sh`'s cases, two rounds each,
+    incremental / joined / always):
+    - key → frame median: 0.88–0.93 ms for all three;
+    - throughput: within the noise of the 50 ms steps of headless's
+      `wait-exit` (plain lines 24–30 MiB/s, SGR 53–67 MiB/s, a VS16/ZWJ
+      mix 10–13 MiB/s).
+  - GUI frame cost is unchanged: the daemon sends only rows whose
+    contents changed (`haetty-proto` frame diff), so copying unchanged
+    rows from libghostty sends nothing more.
+- Tests:
+  - `haetty-core/tests/ghostty_refresh.rs`: seven split cases (combining
+    mark, VS16, VS16 on a narrow base, ZWJ, VS16 split inside its bytes,
+    mode 2027 combining and ZWJ) equal a fresh render state. A second test
+    shows that the incremental state alone leaves four of them stale.
+  - `scripts/e2e/regression.sh` 5b:
+    - headless: `café` and `❤️` with each joiner in its own read;
+    - GUI: the frame dump with U+0301 a second after `cafe` equals, byte
+      for byte, the frame where both come in one read.
+    - Both checks failed with the incremental state and pass now.
+  - vtdiff's reference was already read fresh (§10.7), so its results are
+    unchanged. `run-all.sh` passes with the reference frames unchanged.

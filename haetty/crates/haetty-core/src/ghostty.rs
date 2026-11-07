@@ -39,6 +39,45 @@ pub struct GhosttyEngine {
     key_ev: key::Event<'static>,
     mouse_enc: mouse::Encoder<'static>,
     mouse_ev: mouse::Event<'static>,
+    /// How snapshots read the render state (DESIGN.md §10.8).
+    refresh: Refresh,
+    /// A character that may have joined a cell already drawn was fed since
+    /// the last snapshot (`Refresh::Joined`).
+    joined: bool,
+    /// UTF-8 decoding across `feed` calls for that check: the code point so
+    /// far and the continuation bytes still expected.
+    utf8: (u32, u8),
+    pub stats: SnapStats,
+}
+
+/// How a snapshot reads libghostty's render state. Its incremental update
+/// copies only rows the terminal marked dirty, and libghostty does not mark
+/// a row when a combining mark, variation selector or ZWJ joins a cell
+/// already there (outside mode 2027), so such a row would stay stale until
+/// something else changes it (DESIGN.md §10.7 finding 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refresh {
+    /// Incremental only (stale rows possible; for measurements).
+    Incremental,
+    /// A new render state for every snapshot: every row copied each time.
+    /// The default (DESIGN.md §10.8).
+    Always,
+    /// A new render state only after a character that can join a drawn
+    /// cell: zero width, or above U+00FF under mode 2027. Cheaper, but
+    /// misses libghostty's other unmarked rows (§10.8); kept for
+    /// `vtdiff --refresh`.
+    Joined,
+}
+
+/// Counters for choosing a `Refresh` (DESIGN.md §10.8).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SnapStats {
+    pub snapshots: u64,
+    /// Snapshots taken from a new render state.
+    pub fresh: u64,
+    /// Rows the render state copied: all of them for a fresh one, the dirty
+    /// ones otherwise.
+    pub rows_copied: u64,
 }
 
 impl GhosttyEngine {
@@ -51,7 +90,45 @@ impl GhosttyEngine {
         if let Ok(rs) = RenderState::new() {
             self.render = rs;
         }
-        build_snapshot(self)
+        build_snapshot(self, true)
+    }
+
+    pub fn set_refresh(&mut self, r: Refresh) {
+        self.refresh = r;
+    }
+
+    /// Notes whether `bytes` hold a character that can join a drawn cell.
+    fn scan_joiners(&mut self, bytes: &[u8]) {
+        let cluster = self.term.mode(Mode::GRAPHEME_CLUSTER).unwrap_or(false);
+        let (mut cp, mut need) = self.utf8;
+        for &b in bytes {
+            if need > 0 && b & 0xc0 == 0x80 {
+                cp = (cp << 6) | (b & 0x3f) as u32;
+                need -= 1;
+                if need > 0 {
+                    continue;
+                }
+            } else {
+                need = 0;
+                match b {
+                    0xc0..=0xdf => (cp, need) = ((b & 0x1f) as u32, 1),
+                    0xe0..=0xef => (cp, need) = ((b & 0x0f) as u32, 2),
+                    0xf0..=0xf7 => (cp, need) = ((b & 0x07) as u32, 3),
+                    _ => cp = 0,
+                }
+                if need > 0 {
+                    continue;
+                }
+            }
+            if cp > 0xff {
+                if let Some(c) = char::from_u32(cp) {
+                    if cluster || haetty_vt::width(c) == 0 {
+                        self.joined = true;
+                    }
+                }
+            }
+        }
+        self.utf8 = (cp, need);
     }
 
     pub fn new(init: &VtInit) -> Result<GhosttyEngine, String> {
@@ -84,12 +161,19 @@ impl GhosttyEngine {
             key_ev: key::Event::new().map_err(|e| format!("key event: {e}"))?,
             mouse_enc: mouse::Encoder::new().map_err(|e| format!("mouse encoder: {e}"))?,
             mouse_ev: mouse::Event::new().map_err(|e| format!("mouse event: {e}"))?,
+            refresh: Refresh::Always,
+            joined: false,
+            utf8: (0, 0),
+            stats: SnapStats::default(),
         })
     }
 }
 
 impl VtEngine for GhosttyEngine {
     fn feed(&mut self, bytes: &[u8]) {
+        if self.refresh == Refresh::Joined && !self.joined {
+            self.scan_joiners(bytes);
+        }
         self.term.vt_write(bytes);
     }
 
@@ -108,7 +192,17 @@ impl VtEngine for GhosttyEngine {
     }
 
     fn snapshot(&mut self) -> Snapshot {
-        build_snapshot(self)
+        let fresh = match self.refresh {
+            Refresh::Incremental => false,
+            Refresh::Always => true,
+            Refresh::Joined => std::mem::take(&mut self.joined),
+        };
+        if fresh {
+            if let Ok(rs) = RenderState::new() {
+                self.render = rs;
+            }
+        }
+        build_snapshot(self, fresh)
     }
 
     fn mode(&self, m: VtMode) -> bool {
@@ -340,7 +434,9 @@ fn install_callbacks(
     Ok(())
 }
 
-fn build_snapshot(e: &mut GhosttyEngine) -> Snapshot {
+fn build_snapshot(e: &mut GhosttyEngine, fresh: bool) -> Snapshot {
+    e.stats.snapshots += 1;
+    e.stats.fresh += fresh as u64;
     let term = &e.term;
     let mut snap = Snapshot {
         title: term.title().unwrap_or("").to_owned(),
@@ -390,6 +486,11 @@ fn build_snapshot(e: &mut GhosttyEngine) -> Snapshot {
     let mut text = String::with_capacity(8);
     if let Ok(mut row_it) = e.rows.update(&rs) {
         while let Some(row) = row_it.next() {
+            // Counted, then cleared: nothing else reads the row flags.
+            if fresh || row.dirty().unwrap_or(true) {
+                e.stats.rows_copied += 1;
+            }
+            let _ = row.set_dirty(false);
             let start = snap.cells.len();
             if let Ok(mut cell_it) = e.cells.update(row) {
                 while let Some(cell) = cell_it.next() {

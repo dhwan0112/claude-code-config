@@ -2,7 +2,8 @@
 # Regression run (inside xvfb.sh). usage: regression.sh TAG
 # Isolated daemon (own socket and state dir). Checks: keys/Shift+Enter/paste/wheel/focus through the GUI
 # (probe), OSC 52 copy, resize, Ctrl+C twice exit with Claude Code (6 s settle), IME preedit (ibus-hangul),
-# frame dumps for Hangul two-cell and monochrome symbols (looked at by hand).
+# late combining marks / VS16 (headless and GUI frame), frame dumps for Hangul two-cell and monochrome symbols
+# (looked at by hand).
 # Test isolation: everything below writes only in $HAETTY_RUN (scripts/test-guard.sh).
 . "$(dirname "$0")/lib.sh"
 TAG=$1
@@ -194,6 +195,28 @@ GP=$G4; GW=$W4; focus $GW; xdotool key ctrl+shift+p; sleep 0.3; xdotool type --d
 I=$(info); echo "  palette attach: $I"
 [ "${I%% *}" = 4 ] && [ "$(echo $I | cut -d' ' -f2)" = 4 ] && ok "palette 'Attach detached sessions' took the orphan" || bad "palette attach" "$I"
 kids=$(session_pids); stop; haetty_stop_daemon "$BIN"; for p in $kids; do kill $p 2>/dev/null; done; unset CLAUDE_CONFIG_DIR; cd /
+
+# 5b. A combining mark or VS16 in a later read than its base (DESIGN.md §10.8): the headless screen and the
+# GUI frame show it, the frame byte for byte as when everything arrives in one read.
+cat > $W/join.sh <<'EOS'
+printf '\033[?25l'
+case $1 in
+  split) sleep 1.5; printf 'cafe'; sleep 1; printf '\314\201'; sleep 1; printf '\r\n\342\235\244'; sleep 1; printf '\357\270\217' ;;
+  # For the frame the mark comes last: a later change to its row would redraw it anyway.
+  frame-split) sleep 1.5; printf 'cafe'; sleep 1; printf '\314\201' ;;
+  frame-whole) printf 'cafe\314\201' ;;
+esac
+sleep ${2:-4}
+EOS
+hs=$($HL --cols 20 --rows 4 --timeout 20 -e "wait-text cafe" -e "sleep 1500" -e "wait-text ❤" -e "sleep 1500" --dump text -- sh $W/join.sh split 2 2>&1)
+case "$hs" in *"$(printf 'cafe\314\201')"*"$(printf '\342\235\244\357\270\217')"*) ok "headless: late combining mark and VS16 shown" ;; *) bad "headless: late joiners" "$(printf %s "$hs" | od -c | head -3 | tr -s ' ' | tr '\n' ' ')" ;; esac
+for v in split whole; do
+  rm -f $W/join-$v.ppm
+  HAETTY_DUMP_FRAME=$W/join-$v.ppm gui join-$v sh $W/join.sh frame-$v 10
+  sleep 6; cp $W/join-$v.ppm $OUT/join-$v.ppm 2>/dev/null; stop
+done
+if [ -s $OUT/join-split.ppm ] && cmp -s $OUT/join-split.ppm $OUT/join-whole.ppm; then ok "GUI frame: late combining mark drawn as in one read"
+else bad "GUI frame: late combining mark" "join-split.ppm differs from join-whole.ppm"; fi
 
 # 6. Frame dumps: Hangul two-cell, symbols monochrome first (looked at by hand).
 HAETTY_FONT_DIR=${HAETTY_E2E_FONT_DIR:-} bash "$E2E/dump-sample.sh" $BIN $OUT/hangul-emoji 14 > /dev/null
