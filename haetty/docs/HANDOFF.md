@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage e5b (branch `haetty/e5b`, worktree `~/projects/claude-code-config-wt/e5b`). Remaining: E5b underline kinds, underline colour and OSC 8 hyperlinks (both engines, GUI hover and Ctrl+click; DESIGN 2 change, approved); vtdiff dev aids; then E5a, E5c, E5d, E5e.
+> **In progress:** stage e5c1 (branch `haetty/e5c1`, worktree `~/projects/claude-code-config-wt/e5c1`). Remaining: E5c soak rule judged after the scrollback is full (status --json scrollback, protocol 11), then the 2-hour native soak; E5d overnight engine argument; E5a, E5c throughput, E5d Windows native, E5e.
 
 ## 1. Current state
 
