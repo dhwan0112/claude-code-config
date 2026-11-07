@@ -12,6 +12,8 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 
 
+> **In progress:** stage v7 (branch `haetty/v7`, worktree `~/projects/claude-code-config-wt/v7`). Remaining: V7 kramers check results into docs/checks, section 6.1 links; A7 Wayland fractional-scale window size fix and tests; then E0-E3 native engine
+
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
