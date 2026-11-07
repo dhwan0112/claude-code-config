@@ -96,9 +96,9 @@ impl VtEngine for NativeEngine {
                 let c = t.cell(x, y);
                 cells.push(Cell {
                     text: t.text(&c),
-                    fg: t.resolve(c.style.fg).map(rgb),
-                    bg: t.resolve(c.style.bg).map(rgb),
-                    flags: CellFlags(c.style.flags),
+                    fg: t.resolve(t.style(&c).fg).map(rgb),
+                    bg: t.resolve(t.style(&c).bg).map(rgb),
+                    flags: CellFlags(t.style(&c).flags),
                     width: match c.wide {
                         haetty_vt::Wide::Narrow => Width::Narrow,
                         haetty_vt::Wide::Wide => Width::Wide,
@@ -223,9 +223,14 @@ impl VtEngine for NativeEngine {
         }
     }
 
-    fn dump(&mut self, _fmt: DumpFormat) -> String {
-        let s = self.snapshot();
-        (0..s.rows).map(|y| s.row_text(y)).collect::<Vec<_>>().join("\n")
+    /// As the default engine: libghostty's formatter, whole screen, trimmed.
+    fn dump(&mut self, fmt: DumpFormat) -> String {
+        let kind = match fmt {
+            DumpFormat::Plain => haetty_vt::Format::Plain,
+            DumpFormat::Vt => haetty_vt::Format::Vt,
+            DumpFormat::Html => haetty_vt::Format::Html,
+        };
+        self.term.format(kind, true)
     }
 
     fn scrollback_rows(&mut self) -> u64 {

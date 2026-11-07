@@ -24,6 +24,11 @@
 //!   --refresh                    the default engine's render-state refresh modes: stale rows, rows copied, time
 //!   --colors                     colour and palette-entry parsing (themes, OSC) against libghostty-vt's
 //!   --dump NAME [BYTES]          the named input's bytes (escaped), resizes marked
+//!
+//! At the end of every run the screen dumps (`dump`: plain, VT, HTML) of both
+//! engines are compared too. The report counts identical dumps per format, for
+//! all runs and for runs whose screens were identical throughout; the FAIL
+//! accounting does not count them.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -31,7 +36,7 @@ use std::fmt::Write as _;
 use haetty_core::ghostty::GhosttyEngine;
 use haetty_core::native::NativeEngine;
 use haetty_core::vt::{VtEngine, VtInit};
-use haetty_core::{ColorSchemePref, GridSize, Rgb, ScrollTo, Snapshot, TermColors};
+use haetty_core::{ColorSchemePref, DumpFormat, GridSize, Rgb, ScrollTo, Snapshot, TermColors};
 use haetty_vt::Compat;
 
 /// The fuzz test's generators (grammar, Claude-Code-like stream, mutations).
@@ -281,6 +286,63 @@ impl Run<'_> {
 struct Outcome {
     first: Option<String>,
     fields: BTreeSet<&'static str>,
+    /// Per format of `DUMPS`, at the end: where the dumps differ (none:
+    /// identical).
+    dumps: [Option<DumpDiff>; 3],
+}
+
+struct DumpDiff {
+    /// What the first difference comes from: one of `CAUSES`.
+    cause: &'static str,
+    text: String,
+}
+
+/// Causes of a dump difference, in report order. The first two are state
+/// haetty-vt does not keep: they are recognised by what the reference dump
+/// has around the first difference.
+const CAUSES: [&str; 3] = ["underline style or colour", "hyperlink", "other"];
+
+/// The dump formats compared, in report order.
+const DUMPS: [(&str, DumpFormat); 3] =
+    [("plain", DumpFormat::Plain), ("vt", DumpFormat::Vt), ("html", DumpFormat::Html)];
+
+/// The first byte where two dumps differ, with the bytes around it, and its
+/// cause.
+fn dump_diff(a: &str, b: &str) -> Option<DumpDiff> {
+    if a == b {
+        return None;
+    }
+    let (x, y) = (a.as_bytes(), b.as_bytes());
+    let at = x.iter().zip(y).position(|(p, q)| p != q).unwrap_or(x.len().min(y.len()));
+    let around = |s: &[u8]| show(&s[at.saturating_sub(40)..(at + 40).min(s.len())]);
+    // Underline styles (SGR 4:2 to 4:5, 21), the underline colour (SGR 58)
+    // and OSC 8 links: haetty-vt keeps none of them.
+    let near = &x[at.saturating_sub(60)..(at + 200).min(x.len())];
+    let has = |m: &&str| near.windows(m.len()).any(|w| w == m.as_bytes());
+    let underline = [
+        "\x1b[4:",
+        "\x1b[58;",
+        "text-decoration-color",
+        "style: double",
+        "style: wavy",
+        "style: dotted",
+        "style: dashed",
+    ];
+    let cause = if underline.iter().any(has) {
+        CAUSES[0]
+    } else if has(&"<a href") || has(&"</a>") {
+        CAUSES[1]
+    } else {
+        CAUSES[2]
+    };
+    let text =
+        format!("byte {at} (lengths {} / {}): reference …{}… / native …{}…", x.len(), y.len(), around(x), around(y));
+    Some(DumpDiff { cause, text })
+}
+
+/// Both engines' dumps in every format, compared.
+fn dumps(a: &mut dyn VtEngine, b: &mut dyn VtEngine) -> [Option<DumpDiff>; 3] {
+    DUMPS.map(|(_, f)| dump_diff(&a.dump(f), &b.dump(f)))
 }
 
 fn run_input(
@@ -295,7 +357,11 @@ fn run_input(
     let mut reference = match GhosttyEngine::new(&init(80, 24)) {
         Ok(e) => e,
         Err(e) => {
-            return Outcome { first: Some(format!("{}: reference engine: {e}", inp.name)), fields: BTreeSet::new() }
+            return Outcome {
+                first: Some(format!("{}: reference engine: {e}", inp.name)),
+                fields: BTreeSet::new(),
+                dumps: [None, None, None],
+            }
         }
     };
     // Applications ask for nothing at start; drain what an engine may say.
@@ -349,6 +415,7 @@ fn run_input(
     }
     r.checkpoint(offset);
     r.history();
+    let dumps = dumps(&mut r.reference, &mut r.native);
     r.tally.inputs += 1;
     r.by_category.inputs += 1;
     if r.all_equal {
@@ -366,7 +433,7 @@ fn run_input(
             inp.name, inp.category, d.field, d.at, d.reference, d.native
         )
     });
-    Outcome { first, fields }
+    Outcome { first, fields, dumps }
 }
 
 /// The verdict on one run (`--known`, docs/vtdiff/known.md).
@@ -961,6 +1028,14 @@ fn probe(bytes: &[u8], cols: u16, rows: u16) {
     let ((sa, ka, ra), (sb, kb, rb)) = (&seen[0], &seen[1]);
     for d in compare(sa, sb, *ka, *kb, ra, rb) {
         println!("!! {} {}: reference {} / native {}", d.field, d.at, d.reference, d.native);
+    }
+    for (name, f) in DUMPS {
+        let (x, y) = (a.dump(f), b.dump(f));
+        println!("== dump {name}: reference {}", show_all(x.as_bytes()));
+        match dump_diff(&x, &y) {
+            None => println!("   native identical"),
+            Some(d) => println!("   native {}\n!! dump {name} [{}] {}", show_all(y.as_bytes()), d.cause, d.text),
+        }
     }
 }
 
@@ -1883,10 +1958,35 @@ fn main() {
     let mut known_runs: BTreeMap<String, u64> = BTreeMap::new();
     let mut if_approved: BTreeMap<String, u64> = BTreeMap::new();
     let mut fails = 0u64;
+    // Per dump format: runs with identical dumps; runs with identical
+    // screens, and of those with identical dumps and with differences per
+    // cause; the first differences not explained by a cause.
+    let (mut dump_equal, mut screens_equal, mut dump_equal_screens) = ([0u64; 3], 0u64, [0u64; 3]);
+    let mut dump_causes = [[0u64; 3]; 3];
+    let mut dump_firsts: [Vec<String>; 3] = Default::default();
     for inp in &inputs {
         for splits in [None, Some(7u64)] {
             let cat = cats.entry(inp.category.clone()).or_default();
             let o = run_input(inp, chunk, splits, every, &mut total, cat, Compat::default());
+            screens_equal += o.first.is_none() as u64;
+            for (i, d) in o.dumps.iter().enumerate() {
+                match d {
+                    None => {
+                        dump_equal[i] += 1;
+                        dump_equal_screens[i] += o.first.is_none() as u64;
+                    }
+                    Some(d) if o.first.is_none() => {
+                        let c = CAUSES.iter().position(|c| *c == d.cause).unwrap_or(2);
+                        dump_causes[i][c] += 1;
+                        if c == 2 {
+                            let mode =
+                                splits.map_or(format!("chunks of {chunk}"), |s| format!("random splits (seed {s})"));
+                            dump_firsts[i].push(format!("{} [{}], {mode}: {}", inp.name, inp.category, d.text));
+                        }
+                    }
+                    Some(_) => {}
+                }
+            }
             match judge(inp, chunk, splits, every, &o, Compat::default(), &approved, &candidates) {
                 Verdict::Identical => {}
                 Verdict::Known(ids) => *known_runs.entry(ids.join(" + ")).or_default() += 1,
@@ -1964,6 +2064,38 @@ fn main() {
             t.inputs,
             pct(all, t.checkpoints)
         );
+    }
+    let _ = writeln!(
+        out,
+        "\n| Dump (end of each run) | Identical, all runs | Identical, runs with identical screens | \
+         Differing there: {} | {} | {} |\n|---|---|---|---|---|---|",
+        CAUSES[0], CAUSES[1], CAUSES[2]
+    );
+    for (i, (name, _)) in DUMPS.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "| {name} | {} of {} ({:.1} %) | {} of {screens_equal} ({:.1} %) | {} | {} | {} |",
+            dump_equal[i],
+            total.inputs,
+            pct(dump_equal[i], total.inputs),
+            dump_equal_screens[i],
+            pct(dump_equal_screens[i], screens_equal),
+            dump_causes[i][0],
+            dump_causes[i][1],
+            dump_causes[i][2]
+        );
+    }
+    for (i, (name, _)) in DUMPS.iter().enumerate() {
+        if dump_firsts[i].is_empty() {
+            continue;
+        }
+        let _ = writeln!(out, "\n## Dump {name}: first differences (cause other), runs with identical screens\n");
+        for f in dump_firsts[i].iter().take(8) {
+            let _ = writeln!(out, "- {f}");
+        }
+        if dump_firsts[i].len() > 8 {
+            let _ = writeln!(out, "- … {} more", dump_firsts[i].len() - 8);
+        }
     }
     let _ = writeln!(out, "\n## First difference per FAIL run\n");
     for f in &firsts {

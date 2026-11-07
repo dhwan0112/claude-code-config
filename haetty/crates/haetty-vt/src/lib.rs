@@ -10,6 +10,7 @@
 //! queries. Encoders and the rest are stage E3.
 
 pub mod color;
+mod format;
 mod grapheme;
 pub mod grapheme_table;
 mod width;
@@ -19,10 +20,11 @@ mod x11_colors;
 use std::collections::VecDeque;
 
 pub use color::{parse_color, parse_palette_entry};
+pub use format::Format;
 pub use width::width;
 
 /// A colour as the program set it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Color {
     #[default]
     Default,
@@ -43,7 +45,7 @@ pub mod flags {
     pub const OVERLINE: u16 = 1 << 8;
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Style {
     pub fg: Color,
     pub bg: Color,
@@ -61,13 +63,15 @@ pub enum Wide {
     SpacerHead,
 }
 
-/// One cell of the screen: 16 bytes, `Copy` (DESIGN.md §10.3, §10.7).
+/// One cell of the screen: 8 bytes, `Copy` (DESIGN.md §10.3, §10.9).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Cell {
     /// 0: empty; below 0x110000: that character alone; with the top bit
     /// set: a grapheme cluster in the terminal's table (`Terminal::text`).
     content: u32,
-    pub style: Style,
+    /// The style, a number in the terminal's table (`Terminal::style`);
+    /// 0 is the default style.
+    pub style: u16,
     pub wide: Wide,
     /// Written under SPA or DECSCA: erasure that respects protection
     /// leaves it.
@@ -77,7 +81,7 @@ pub struct Cell {
 const CLUSTER: u32 = 0x8000_0000;
 
 impl Cell {
-    fn of(c: char, style: Style, wide: Wide) -> Cell {
+    fn of(c: char, style: u16, wide: Wide) -> Cell {
         Cell { content: c as u32, style, wide, protected: false }
     }
 
@@ -99,14 +103,128 @@ struct Line {
 }
 
 impl Line {
-    fn new(cols: u16, bg: Style) -> Line {
-        Line { cells: vec![blank(bg); cols as usize], wrapped: false, dirty: true, cont: false }
+    /// A line of `blank` cells (see `Styles::blank`).
+    fn new(cols: u16, blank: Cell) -> Line {
+        Line { cells: vec![blank; cols as usize], wrapped: false, dirty: true, cont: false }
     }
 }
 
-/// An erased cell: empty, keeping the background colour (as libghostty).
-fn blank(s: Style) -> Cell {
-    Cell { content: 0, style: Style { fg: Color::Default, bg: s.bg, flags: 0 }, wide: Wide::Narrow, protected: false }
+/// An erased cell of style `id`, which is a background-only style (see
+/// `Styles::blank`).
+fn blank(id: u16) -> Cell {
+    Cell { content: 0, style: id, wide: Wide::Narrow, protected: false }
+}
+
+/// The styles cells refer to by number (DESIGN.md §10.9). 0 is the default
+/// style. The table only grows; `Terminal::compact_styles` rebuilds it from
+/// the styles still in use when it gets large, so it stays bounded.
+#[derive(Clone, Debug)]
+struct Styles {
+    /// Compact when the table reaches this size.
+    compact_at: usize,
+    /// The last style looked up and its number (the pen rarely changes),
+    /// and the last erased form.
+    last: (Style, u16),
+    last_blank: (Color, u16),
+    list: Vec<Style>,
+    /// Per style: the number of its erased form (background only).
+    erased: Vec<u16>,
+    ids: std::collections::HashMap<Style, u16, std::hash::BuildHasherDefault<FxHasher>>,
+}
+
+/// A small fast hasher for the style table (as rustc's FxHasher); styles
+/// come from the program's output, but a collision costs only time.
+#[derive(Default)]
+struct FxHasher(u64);
+
+impl std::hash::Hasher for FxHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0.rotate_left(5) ^ b as u64).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+        }
+    }
+    fn write_u8(&mut self, i: u8) {
+        self.0 = (self.0.rotate_left(5) ^ i as u64).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+    fn write_u16(&mut self, i: u16) {
+        self.0 = (self.0.rotate_left(5) ^ i as u64).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+    fn write_isize(&mut self, i: isize) {
+        self.0 = (self.0.rotate_left(5) ^ i as u64).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+impl Styles {
+    /// Compaction happens above this many styles.
+    const COMPACT_AT: usize = 0xc000;
+
+    fn new() -> Styles {
+        Styles {
+            compact_at: Styles::COMPACT_AT,
+            last: (Style::default(), 0),
+            last_blank: (Color::Default, 0),
+            list: vec![Style::default()],
+            erased: vec![0],
+            ids: [(Style::default(), 0)].into_iter().collect(),
+        }
+    }
+
+    /// The number of `s`, added if new. A full table (65 535 styles, which
+    /// compaction had no room to free) gives the erased form instead.
+    fn id(&mut self, s: Style) -> u16 {
+        if self.last.0 == s {
+            return self.last.1;
+        }
+        if let Some(&i) = self.ids.get(&s) {
+            self.last = (s, i);
+            return i;
+        }
+        let e = Style { fg: Color::Default, bg: s.bg, flags: 0 };
+        let eid = if e == s { None } else { Some(self.id(e)) };
+        if self.list.len() >= u16::MAX as usize {
+            return eid.unwrap_or(0);
+        }
+        let i = self.list.len() as u16;
+        self.list.push(s);
+        self.erased.push(eid.unwrap_or(i));
+        self.ids.insert(s, i);
+        self.last = (s, i);
+        i
+    }
+
+    fn get(&self, id: u16) -> Style {
+        self.list.get(id as usize).copied().unwrap_or_default()
+    }
+
+    /// An erased cell in the pen's background (as libghostty).
+    fn blank(&mut self, pen: Style) -> Cell {
+        if self.last_blank.0 == pen.bg {
+            return blank(self.last_blank.1);
+        }
+        let last = self.last;
+        let id = self.id(Style { fg: Color::Default, bg: pen.bg, flags: 0 });
+        self.last = last;
+        self.last_blank = (pen.bg, id);
+        blank(id)
+    }
+
+    /// The erased form of a cell's style.
+    fn erased(&self, id: u16) -> u16 {
+        self.erased.get(id as usize).copied().unwrap_or(0)
+    }
+
+    fn bg_default(&self, id: u16) -> bool {
+        self.get(id).bg == Color::Default
+    }
+
+    /// Memory the table takes (for measurements).
+    pub(crate) fn bytes(&self) -> usize {
+        self.list.capacity() * (std::mem::size_of::<Style>() + 2)
+            + self.ids.capacity() * (std::mem::size_of::<Style>() + 2 + 8)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -156,7 +274,7 @@ struct Screen {
 impl Screen {
     fn new(cols: u16, rows: u16) -> Screen {
         Screen {
-            lines: (0..rows).map(|_| Line::new(cols, Style::default())).collect(),
+            lines: (0..rows).map(|_| Line::new(cols, Cell::default())).collect(),
             cursor: Cursor { charsets: [b'B'; 4], ..Default::default() },
             saved: None,
             kitty: vec![0],
@@ -435,6 +553,8 @@ pub struct Terminal {
     /// Grapheme clusters cells refer to (`Cell::content` with the top bit),
     /// each once.
     clusters: Vec<Box<str>>,
+    /// The styles cells refer to (`Cell::style`).
+    styles: Styles,
     cluster_ids: std::collections::HashMap<Box<str>, u32>,
     /// What the scrollback holds and may hold, in bytes (as Ghostty's
     /// `scrollback-limit`; DESIGN.md §10.3).
@@ -487,6 +607,7 @@ impl Terminal {
             viewport: 0,
             all_dirty: true,
             clusters: Vec::new(),
+            styles: Styles::new(),
             cluster_ids: std::collections::HashMap::new(),
             sb_bytes: 0,
             saved_modes: std::collections::HashMap::new(),
@@ -495,6 +616,7 @@ impl Terminal {
     }
 
     pub fn feed(&mut self, bytes: &[u8]) {
+        self.compact_styles();
         let mut parser = std::mem::take(&mut self.parser);
         // The scanner sees what vte does not tell: APC strings (vte skips
         // them; the kitty graphics ones are answered here, in order with the
@@ -603,6 +725,42 @@ impl Terminal {
             Color::Index(i) => Some(self.palette[i as usize]),
             Color::Rgb(v) => Some(v),
         }
+    }
+
+    /// A cell's style (`Cell::style` is its number in the table).
+    pub fn style(&self, c: &Cell) -> Style {
+        self.styles.get(c.style)
+    }
+
+    /// Distinct styles in the table and the bytes the table takes.
+    pub fn style_table(&self) -> (usize, usize) {
+        (self.styles.list.len(), self.styles.bytes())
+    }
+
+    /// Rebuilds the style table from the styles cells still use, once it
+    /// is large (DESIGN.md §10.9): styles of rows gone from the scrollback
+    /// go. If nearly all are in use, the next attempt waits until half the
+    /// room left is taken.
+    fn compact_styles(&mut self) {
+        if self.styles.list.len() < self.styles.compact_at {
+            return;
+        }
+        let mut used = vec![false; self.styles.list.len()];
+        used[0] = true;
+        for l in self.primary.lines.iter().chain(&self.alt.lines).chain(&self.scrollback) {
+            for c in &l.cells {
+                used[c.style as usize] = true;
+            }
+        }
+        let old = std::mem::replace(&mut self.styles, Styles::new());
+        let map: Vec<u16> = old.list.iter().zip(&used).map(|(s, &u)| if u { self.styles.id(*s) } else { 0 }).collect();
+        for l in self.primary.lines.iter_mut().chain(self.alt.lines.iter_mut()).chain(self.scrollback.iter_mut()) {
+            for c in &mut l.cells {
+                c.style = map[c.style as usize];
+            }
+        }
+        let n = self.styles.list.len();
+        self.styles.compact_at = Styles::COMPACT_AT.max(n + (u16::MAX as usize - n) / 2);
     }
 
     /// See [`Compat`]: for vtdiff only.
@@ -789,13 +947,13 @@ impl Terminal {
         self.modes.sync_output = false;
         // Primary screen, with its scrollback.
         let mut sb = std::mem::take(&mut self.scrollback);
-        resize_screen(&mut self.primary, Some(&mut sb), old_cols, old_rows, cols, rows, reflow);
+        resize_screen(&mut self.primary, Some(&mut sb), old_cols, old_rows, cols, rows, reflow, &self.styles);
         self.sb_bytes = 0;
         for l in sb {
             self.push_scrollback(l);
         }
         // Alternate screen: no reflow, no scrollback.
-        resize_screen(&mut self.alt, None, old_cols, old_rows, cols, rows, false);
+        resize_screen(&mut self.alt, None, old_cols, old_rows, cols, rows, false, &self.styles);
         self.cols = cols;
         self.rows = rows;
         self.top = 0;
@@ -922,7 +1080,8 @@ impl Terminal {
             // As libghostty: a spacer in the last column (an empty cell at a
             // right margin), then the next row.
             let (x, y) = (self.scr().cursor.x, self.scr().cursor.y);
-            let style = self.scr().cursor.style;
+            let pen = self.scr().cursor.style;
+            let style = self.styles.id(pen);
             let wide = if right_limit == cols { Wide::SpacerHead } else { Wide::Narrow };
             self.clear_wide_at(x, y);
             self.line(y).cells[x as usize] = Cell { content: 0, style, wide, protected: false };
@@ -932,6 +1091,7 @@ impl Terminal {
             let c = self.scr().cursor;
             (c.x, c.y, c.style)
         };
+        let style = self.styles.id(style);
         if w == 0 {
             self.print_clears_head(x, y, Wide::Narrow);
             self.clear_wide_halves(x, y);
@@ -947,11 +1107,15 @@ impl Terminal {
         if self.modes.insert && x + (w as u16) < cols {
             self.insert_blanks(x, y, w as u16);
         }
-        self.print_clears_head(x, y, if w == 2 { Wide::Wide } else { Wide::Narrow });
-        self.clear_wide_halves(x, y);
-        if w == 2 {
-            self.print_clears_head(x + 1, y, Wide::SpacerTail);
-            self.clear_wide_halves(x + 1, y);
+        // Over a narrow cell a narrow character needs neither (the common
+        // case, kept short).
+        if w == 2 || self.screen_ref().lines[y as usize].cells[x as usize].wide != Wide::Narrow {
+            self.print_clears_head(x, y, if w == 2 { Wide::Wide } else { Wide::Narrow });
+            self.clear_wide_halves(x, y);
+            if w == 2 {
+                self.print_clears_head(x + 1, y, Wide::SpacerTail);
+                self.clear_wide_halves(x + 1, y);
+            }
         }
         let protected = self.screen_ref().cursor.protected;
         let l = self.line(y);
@@ -1028,14 +1192,15 @@ impl Terminal {
                     }
                     // No room: the cluster goes to the next row, wide.
                     let old = self.line(cur.y).cells[px as usize];
-                    let head_style = if text.chars().count() > 1 { old.style } else { pen };
+                    let pen_id = self.styles.id(pen);
+                    let head_style = if text.chars().count() > 1 { old.style } else { pen_id };
                     self.line(cur.y).cells[px as usize] =
                         Cell { content: 0, style: head_style, wide: Wide::SpacerHead, protected: false };
                     self.wrap_line();
                     let ny = self.scr().cursor.y;
                     self.clear_wide_at(0, ny);
                     self.line(ny).cells[0] =
-                        Cell { content: prev_cell.content, style: pen, wide: Wide::Wide, protected: false };
+                        Cell { content: prev_cell.content, style: pen_id, wide: Wide::Wide, protected: false };
                     cx = 0;
                     cy = ny;
                 } else {
@@ -1044,8 +1209,9 @@ impl Terminal {
                 let x = self.scr().cursor.x + 1;
                 let yy = self.scr().cursor.y;
                 self.clear_wide_at(x, yy);
+                let pen_id = self.styles.id(pen);
                 self.line(yy).cells[x as usize] =
-                    Cell { content: 0, style: pen, wide: Wide::SpacerTail, protected: false };
+                    Cell { content: 0, style: pen_id, wide: Wide::SpacerTail, protected: false };
                 if x == cols - 1 {
                     self.cur().x = x;
                     self.cur().pending_wrap = true;
@@ -1145,14 +1311,15 @@ impl Terminal {
         if i >= cols {
             return;
         }
+        let other = match self.screen_ref().lines[y as usize].cells[i].wide {
+            Wide::Wide if i + 1 < cols => i + 1,
+            Wide::SpacerTail if i > 0 => i - 1,
+            _ => return,
+        };
         // In the pen's background, as libghostty.
         let pen = self.scr().cursor.style;
-        let l = self.line(y);
-        match l.cells[i].wide {
-            Wide::Wide if i + 1 < cols => l.cells[i + 1] = blank(pen),
-            Wide::SpacerTail if i > 0 => l.cells[i - 1] = blank(pen),
-            _ => {}
-        }
+        let bk_pen = self.styles.blank(pen);
+        self.line(y).cells[other] = bk_pen;
     }
 
     fn wrap_line(&mut self) {
@@ -1204,6 +1371,7 @@ impl Terminal {
     /// flags stay.
     fn shift_columns(&mut self, y: u16, n: u16, insert: bool) {
         let (bottom, l, r, pen) = (self.bottom, self.left as usize, self.right as usize, self.scr().cursor.style);
+        let bk_pen = self.styles.blank(pen);
         let rem = bottom - y + 1;
         let n = n.min(rem);
         let rows: Vec<u16> = if insert { (y..=bottom).rev().collect() } else { (y..=bottom).collect() };
@@ -1217,7 +1385,7 @@ impl Terminal {
             } else {
                 self.row_will_be_shifted(row);
                 for c in &mut self.line(row).cells[l..=r] {
-                    *c = blank(pen);
+                    *c = bk_pen;
                 }
             }
         }
@@ -1250,6 +1418,24 @@ impl Terminal {
             line.cells[r].content = 0;
             line.cells[r].wide = Wide::Narrow;
             line.cells[r + 1].wide = Wide::Narrow;
+        }
+    }
+
+    /// A wide character cut in two by an insert or delete loses both halves
+    /// (each an erased cell of its style).
+    fn fix_split_wide(&mut self, y: u16) {
+        let cells = &self.screen_ref().lines[y as usize].cells;
+        let n = cells.len();
+        let bad: Vec<(usize, u16)> = (0..n)
+            .filter(|&i| match cells[i].wide {
+                Wide::Wide => i + 1 >= n || cells[i + 1].wide != Wide::SpacerTail,
+                Wide::SpacerTail => i == 0 || cells[i - 1].wide != Wide::Wide,
+                _ => false,
+            })
+            .map(|i| (i, self.styles.erased(cells[i].style)))
+            .collect();
+        for (i, e) in bad {
+            self.line(y).cells[i] = blank(e);
         }
     }
 
@@ -1289,15 +1475,17 @@ impl Terminal {
         let (top, bottom) = (self.top as usize, self.bottom as usize);
         let n = (n as usize).min(bottom - top + 1);
         let bg = self.scr().cursor.style;
+        let bk_bg = self.styles.blank(bg);
         let cols = self.cols;
         let to_scrollback = top == 0 && !self.modes.alt_screen;
-        let old = self.wrap_flags(top as u16, bottom as u16);
+        let full = top == 0 && (!self.modes.alt_screen || bottom == self.rows as usize - 1);
+        let old = if full { vec![] } else { self.wrap_flags(top as u16, bottom as u16) };
         for _ in 0..n {
             let l = self.scr().lines.remove(top);
             if to_scrollback {
                 self.push_scrollback(l);
             }
-            self.scr().lines.insert(bottom, Line::new(cols, bg));
+            self.scr().lines.insert(bottom, Line::new(cols, bk_bg));
         }
         if to_scrollback && self.viewport > 0 {
             self.viewport = (self.viewport + n).min(self.scrollback.len());
@@ -1305,7 +1493,6 @@ impl Terminal {
         self.moved(top as u16, bottom as u16);
         // A region from the top scrolls as lines leaving the screen do;
         // any other is a deletion of lines.
-        let full = top == 0 && (!self.modes.alt_screen || bottom == self.rows as usize - 1);
         if !full {
             self.shift_flags(top as u16, bottom as u16, n as u16, &old);
         }
@@ -1320,11 +1507,12 @@ impl Terminal {
         let (top, bottom) = (self.top as usize, self.bottom as usize);
         let n = (n as usize).min(bottom - top + 1);
         let bg = self.scr().cursor.style;
+        let bk_bg = self.styles.blank(bg);
         let cols = self.cols;
         let old = self.wrap_flags(top as u16, bottom as u16);
         for _ in 0..n {
             self.scr().lines.remove(bottom);
-            self.scr().lines.insert(top, Line::new(cols, bg));
+            self.scr().lines.insert(top, Line::new(cols, bk_bg));
         }
         self.moved(top as u16, bottom as u16);
         self.shift_flags(top as u16, bottom as u16, n as u16, &old);
@@ -1335,15 +1523,16 @@ impl Terminal {
             return;
         }
         let bg = self.scr().cursor.style;
+        let bk_bg = self.styles.blank(bg);
         let right = self.right as usize;
         let l = self.line(y);
         let x = x as usize;
         let n = (n as usize).min(right - x + 1);
         l.cells[x..=right].rotate_right(n);
         for c in &mut l.cells[x..x + n] {
-            *c = blank(bg);
+            *c = bk_bg;
         }
-        fix_split_wide(l);
+        self.fix_split_wide(y);
     }
 
     /// libghostty's `Screen.splitCellBoundary` on the cursor's row: makes `x`
@@ -1353,6 +1542,7 @@ impl Terminal {
     /// `x` is cleared (both halves).
     fn split_cell_boundary(&mut self, x: u16) {
         let (cols, y, pen) = (self.cols, self.scr().cursor.y, self.scr().cursor.style);
+        let bk_pen = self.styles.blank(pen);
         let (wrapped, cont, first) = {
             let l = &self.screen_ref().lines[y as usize];
             (l.wrapped, l.cont, l.cells[0].wide)
@@ -1361,7 +1551,7 @@ impl Terminal {
             if wrapped {
                 let c = &mut self.line(y).cells[cols as usize - 1];
                 if c.wide == Wide::SpacerHead {
-                    *c = blank(pen);
+                    *c = bk_pen;
                 }
             }
             return;
@@ -1369,7 +1559,7 @@ impl Terminal {
         if x <= 1 && cont && first == Wide::Wide && y > 0 {
             let c = &mut self.line(y - 1).cells[cols as usize - 1];
             if c.wide == Wide::SpacerHead {
-                *c = blank(pen);
+                *c = bk_pen;
             }
         }
         if x == 0 {
@@ -1377,8 +1567,8 @@ impl Terminal {
         }
         let l = self.line(y);
         if l.cells[x as usize - 1].wide == Wide::Wide {
-            l.cells[x as usize - 1] = blank(pen);
-            l.cells[x as usize] = blank(pen);
+            l.cells[x as usize - 1] = bk_pen;
+            l.cells[x as usize] = bk_pen;
         }
     }
 
@@ -1386,6 +1576,7 @@ impl Terminal {
     /// wraps (its spacer head goes, the next row is no continuation).
     fn cursor_reset_wrap(&mut self) {
         let (cols, y, pen) = (self.cols as usize, self.scr().cursor.y, self.scr().cursor.style);
+        let bk_pen = self.styles.blank(pen);
         self.cur().pending_wrap = false;
         if !self.screen_ref().lines[y as usize].wrapped {
             return;
@@ -1393,7 +1584,7 @@ impl Terminal {
         let l = self.line(y);
         l.wrapped = false;
         if l.cells[cols - 1].wide == Wide::SpacerHead {
-            l.cells[cols - 1] = blank(pen);
+            l.cells[cols - 1] = bk_pen;
         }
         if y + 1 < self.rows {
             self.line(y + 1).cont = false;
@@ -1405,6 +1596,7 @@ impl Terminal {
             let c = self.scr().cursor;
             (c.x as usize, c.y, c.style)
         };
+        let bk_bg = self.styles.blank(bg);
         if n == 0 || x < self.left as usize || x > self.right as usize {
             return;
         }
@@ -1417,9 +1609,9 @@ impl Terminal {
         let l = self.line(y);
         l.cells[x..=right].rotate_left(n);
         for c in &mut l.cells[right + 1 - n..=right] {
-            *c = blank(bg);
+            *c = bk_bg;
         }
-        fix_split_wide(l);
+        self.fix_split_wide(y);
         self.cursor_reset_wrap();
     }
 
@@ -1430,6 +1622,7 @@ impl Terminal {
             let c = self.scr().cursor;
             (c.x as usize, c.y, c.style)
         };
+        let bk_bg = self.styles.blank(bg);
         let cols = self.cols as usize;
         // As libghostty's eraseChars: a wide character at the end is taken
         // whole.
@@ -1443,7 +1636,7 @@ impl Terminal {
         let l = self.line(y);
         for c in &mut l.cells[x..end] {
             if !(protect && c.protected) {
-                *c = blank(bg);
+                *c = bk_bg;
             }
         }
     }
@@ -1456,6 +1649,7 @@ impl Terminal {
             let c = self.scr().cursor;
             (c.x as usize, c.y, c.style)
         };
+        let bk_bg = self.styles.blank(bg);
         let cols = self.cols as usize;
         let (a, b) = match mode {
             0 => (x, cols),
@@ -1472,7 +1666,7 @@ impl Terminal {
         let l = self.line(y);
         for c in &mut l.cells[a..b.min(cols)] {
             if !(protect && c.protected) {
-                *c = blank(bg);
+                *c = bk_bg;
             }
         }
         if mode != 1 {
@@ -1483,16 +1677,17 @@ impl Terminal {
 
     /// Rows `from..to` blank (protected cells stay when `protect`).
     fn erase_rows(&mut self, from: u16, to: u16, bg: Style, protect: bool) {
+        let bk_bg = self.styles.blank(bg);
         let cols = self.cols;
         for r in from..to {
             if protect {
                 for c in &mut self.line(r).cells {
                     if !c.protected {
-                        *c = blank(bg);
+                        *c = bk_bg;
                     }
                 }
             } else {
-                *self.line(r) = Line::new(cols, bg);
+                *self.line(r) = Line::new(cols, bk_bg);
             }
         }
     }
@@ -1524,7 +1719,8 @@ impl Terminal {
             // libghostty's "scroll complete": the rows down to the last one
             // with content go to the scrollback, the screen is cleared.
             22 => {
-                let used = |l: &Line| l.cells.iter().any(|c| !c.is_empty() || c.style.bg != Color::Default);
+                let st = &self.styles;
+                let used = |l: &Line| l.cells.iter().any(|c| !c.is_empty() || !st.bg_default(c.style));
                 let n = self.screen_ref().lines.iter().rposition(used).map_or(0, |r| r + 1);
                 if !self.modes.alt_screen {
                     for r in 0..n {
@@ -1533,7 +1729,7 @@ impl Terminal {
                     }
                 }
                 for r in 0..self.rows {
-                    *self.line(r) = Line::new(cols, Style::default());
+                    *self.line(r) = Line::new(cols, Cell::default());
                 }
                 let cur = self.cur();
                 if cur.y as usize >= n {
@@ -1561,12 +1757,13 @@ impl Terminal {
             return;
         }
         let (top, bg, cols) = (self.top, self.scr().cursor.style, self.cols);
+        let bk_bg = self.styles.blank(bg);
         let old = self.wrap_flags(y, self.bottom);
         self.top = y;
         for _ in 0..n.min(self.bottom - y + 1) {
             let b = self.bottom as usize;
             self.scr().lines.remove(b);
-            self.scr().lines.insert(y as usize, Line::new(cols, bg));
+            self.scr().lines.insert(y as usize, Line::new(cols, bk_bg));
         }
         self.top = top;
         self.moved(y, self.bottom);
@@ -1585,11 +1782,12 @@ impl Terminal {
             return;
         }
         let (bg, cols) = (self.scr().cursor.style, self.cols);
+        let bk_bg = self.styles.blank(bg);
         let old = self.wrap_flags(y, self.bottom);
         for _ in 0..n.min(self.bottom - y + 1) {
             self.scr().lines.remove(y as usize);
             let b = self.bottom as usize;
-            self.scr().lines.insert(b, Line::new(cols, bg));
+            self.scr().lines.insert(b, Line::new(cols, bk_bg));
         }
         self.moved(y, self.bottom);
         self.shift_flags(y, self.bottom, n, &old);
@@ -2181,7 +2379,7 @@ fn cut_line(mut l: Line, cols: u16) -> Line {
     if l.cells.len() > n {
         l.cells.truncate(n);
     } else {
-        l.cells.resize(n, blank(Style::default()));
+        l.cells.resize(n, Cell::default());
     }
     l.dirty = true;
     l
@@ -2194,22 +2392,6 @@ fn line_bytes(l: &Line) -> usize {
 
 fn default_tabs(cols: u16) -> Vec<bool> {
     (0..cols).map(|x| x > 0 && x % 8 == 0).collect()
-}
-
-/// A wide character cut in two by an insert or delete loses both halves.
-fn fix_split_wide(l: &mut Line) {
-    let n = l.cells.len();
-    for i in 0..n {
-        let bad = match l.cells[i].wide {
-            Wide::Wide => i + 1 >= n || l.cells[i + 1].wide != Wide::SpacerTail,
-            Wide::SpacerTail => i == 0 || l.cells[i - 1].wide != Wide::Wide,
-            _ => false,
-        };
-        if bad {
-            let s = l.cells[i].style;
-            l.cells[i] = blank(s);
-        }
-    }
 }
 
 /// One SGR attribute other than an extended colour.
@@ -2315,12 +2497,13 @@ struct Pin {
 
 /// A cell without content (as libghostty's `isEmpty`: no text, not part of
 /// a wide character, no background).
-fn empty(c: &Cell) -> bool {
-    c.is_empty() && c.wide == Wide::Narrow && c.style.bg == Color::Default
+fn empty(c: &Cell, st: &Styles) -> bool {
+    c.is_empty() && c.wide == Wide::Narrow && st.bg_default(c.style)
 }
 
 /// One screen through a resize (see `Terminal::resize`). `sb`: its
 /// scrollback (`None`: lines pushed out are dropped).
+#[allow(clippy::too_many_arguments)]
 fn resize_screen(
     s: &mut Screen,
     sb: Option<&mut VecDeque<Line>>,
@@ -2329,6 +2512,7 @@ fn resize_screen(
     cols: u16,
     rows: u16,
     reflow: bool,
+    st: &Styles,
 ) {
     let keep_history = sb.is_some();
     let mut all: Vec<Line> = match &sb {
@@ -2350,15 +2534,15 @@ fn resize_screen(
         }
         resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref());
     } else if cols > old_cols {
-        all = reflow_lines(all, active_rows, cols, &mut cursor, saved.as_mut());
+        all = reflow_lines(all, active_rows, cols, &mut cursor, saved.as_mut(), st);
         resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref());
     } else {
         resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref());
-        all = reflow_lines(all, active_rows, cols, &mut cursor, saved.as_mut());
+        all = reflow_lines(all, active_rows, cols, &mut cursor, saved.as_mut(), st);
     }
     // The active area is the last `rows` lines.
     while all.len() < rows as usize {
-        all.push(Line::new(cols, Style::default()));
+        all.push(Line::new(cols, Cell::default()));
     }
     let top = all.len() - rows as usize;
     let active = |p: Pin| (p.line >= top).then(|| (p.x.min(cols - 1), (p.line - top) as u16));
@@ -2417,11 +2601,11 @@ fn resize_rows(all: &mut Vec<Line>, active_rows: &mut usize, rows: usize, cursor
         let cols = all.first().map_or(1, |l| l.cells.len()) as u16;
         if cursor.line < top + old - 1 {
             for _ in 0..rows - old {
-                all.push(Line::new(cols, Style::default()));
+                all.push(Line::new(cols, Cell::default()));
             }
         } else {
             while all.len() < rows {
-                all.push(Line::new(cols, Style::default()));
+                all.push(Line::new(cols, Cell::default()));
             }
         }
     }
@@ -2432,7 +2616,14 @@ fn resize_rows(all: &mut Vec<Line>, active_rows: &mut usize, rows: usize, cursor
 /// are cut again, trailing empty cells of a hard line end are dropped,
 /// blank lines are written only when content follows them, and as many rows
 /// stay below the cursor as before.
-fn reflow_lines(all: Vec<Line>, rows: usize, cols: u16, cursor: &mut Pin, mut saved: Option<&mut Pin>) -> Vec<Line> {
+fn reflow_lines(
+    all: Vec<Line>,
+    rows: usize,
+    cols: u16,
+    cursor: &mut Pin,
+    mut saved: Option<&mut Pin>,
+    st: &Styles,
+) -> Vec<Line> {
     let n = cols as usize;
     let continuation = |all: &[Line], i: usize| all[i].cont;
     let top = all.len().saturating_sub(rows);
@@ -2442,14 +2633,14 @@ fn reflow_lines(all: Vec<Line>, rows: usize, cols: u16, cursor: &mut Pin, mut sa
     } else {
         (false, 0, 0)
     };
-    let mut out: Vec<Line> = vec![Line::new(cols, Style::default())];
+    let mut out: Vec<Line> = vec![Line::new(cols, Cell::default())];
     let (mut x, mut pending) = (0usize, false);
     let mut new_rows = 0usize;
     let (mut cur_new, mut saved_new) = (None, None);
     for (i, src) in all.iter().enumerate() {
         let mut len = src.cells.len();
         if !src.wrapped {
-            while len > 0 && empty(&src.cells[len - 1]) {
+            while len > 0 && empty(&src.cells[len - 1], st) {
                 len -= 1;
             }
         }
@@ -2472,7 +2663,7 @@ fn reflow_lines(all: Vec<Line>, rows: usize, cols: u16, cursor: &mut Pin, mut sa
             continue;
         }
         while new_rows > 0 {
-            out.push(Line::new(cols, Style::default()));
+            out.push(Line::new(cols, Cell::default()));
             x = 0;
             pending = false;
             new_rows -= 1;
@@ -2481,7 +2672,7 @@ fn reflow_lines(all: Vec<Line>, rows: usize, cols: u16, cursor: &mut Pin, mut sa
         while sx < len {
             if pending {
                 out.last_mut().expect("a line").wrapped = true;
-                out.push(Line { cont: true, ..Line::new(cols, Style::default()) });
+                out.push(Line { cont: true, ..Line::new(cols, Cell::default()) });
                 x = 0;
                 pending = false;
             }
@@ -2501,14 +2692,13 @@ fn reflow_lines(all: Vec<Line>, rows: usize, cols: u16, cursor: &mut Pin, mut sa
                 // One column: a wide character becomes an empty cell, its
                 // spacer goes.
                 Wide::Wide if n < 2 => {
-                    out.last_mut().expect("a line").cells[x] = blank(c.style);
+                    out.last_mut().expect("a line").cells[x] = blank(st.erased(c.style));
                     pending = true;
                     sx += 2;
                     continue;
                 }
                 Wide::Wide if x == n - 1 => {
-                    out.last_mut().expect("a line").cells[x] =
-                        Cell { wide: Wide::SpacerHead, ..blank(Style::default()) };
+                    out.last_mut().expect("a line").cells[x] = Cell { wide: Wide::SpacerHead, ..Cell::default() };
                     pending = true;
                     continue;
                 }
@@ -2536,7 +2726,7 @@ fn reflow_lines(all: Vec<Line>, rows: usize, cols: u16, cursor: &mut Pin, mut sa
     // those above it gained by wrapping).
     if cursor_in {
         while out.len() < rows {
-            out.push(Line::new(cols, Style::default()));
+            out.push(Line::new(cols, Cell::default()));
         }
         let top = out.len() - rows;
         if cursor.line >= top {
@@ -2544,7 +2734,7 @@ fn reflow_lines(all: Vec<Line>, rows: usize, cols: u16, cursor: &mut Pin, mut sa
             let current = rows.saturating_sub(cursor.line - top + 1);
             let req = remaining.saturating_sub(wrapped.saturating_sub(wrapped_before)).saturating_sub(current);
             for _ in 0..req {
-                out.push(Line::new(cols, Style::default()));
+                out.push(Line::new(cols, Cell::default()));
             }
         }
     }
@@ -2930,7 +3120,8 @@ impl vte::Perform for Terminal {
             ([b'#'], b'8') => {
                 // In the current colours (no attributes), as libghostty.
                 let (cols, rows) = (self.cols, self.rows);
-                let style = Style { flags: 0, ..self.scr().cursor.style };
+                let pen = self.scr().cursor.style;
+                let style = self.styles.id(Style { flags: 0, ..pen });
                 for y in 0..rows {
                     for x in 0..cols {
                         self.line(y).cells[x as usize] = Cell::of('E', style, Wide::Narrow);
@@ -3078,6 +3269,27 @@ fn base64(s: &[u8]) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
+    /// 200 000 distinct colours through a small scrollback: the table stays
+    /// bounded, and the cells still on screen keep their colours.
+    #[test]
+    fn style_table_stays_bounded() {
+        let mut t = term(20, 5);
+        t.sb_limit = 64 << 10;
+        for i in 0..200_000u32 {
+            let s = format!("\x1b[38;2;{};{};{}mx\r\n", i >> 16, (i >> 8) & 255, i & 255);
+            t.feed(s.as_bytes());
+        }
+        let (n, _) = t.style_table();
+        assert!(n < u16::MAX as usize, "{n} styles");
+        t.feed(b"\x1b[38;2;1;2;3mA");
+        let y = t.scr().cursor.y;
+        let c = t.cell(0, y);
+        assert_eq!(t.style(&c).fg, Color::Rgb([1, 2, 3]));
+        // The row above shows the last colour of the loop.
+        let above = t.cell(0, y - 1);
+        assert_eq!(t.style(&above).fg, Color::Rgb([3, 13, 63]));
+    }
+
     fn term(cols: u16, rows: u16) -> Terminal {
         Terminal::new(Options {
             cols,
@@ -3204,7 +3416,7 @@ mod tests {
 
     #[test]
     fn cells_are_small_and_scrollback_keeps_its_limit() {
-        assert_eq!(std::mem::size_of::<Cell>(), 16);
+        assert_eq!(std::mem::size_of::<Cell>(), 8);
         let mut t = term(40, 4);
         t.sb_limit = 4096;
         for i in 0..2000 {
