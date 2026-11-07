@@ -254,27 +254,36 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     GUI-TABS FAIL for `63822de` (the Hangul rename fix is `6a67b22`);
     `main` passed 14/14 and 17/17 (V6).
 
-30. **Overnight soak v2 on the 0.2.0 candidate** (`63822de`; needed for the
-    `haetty-v0.2.0` tag — see "Next session" and §1 about where the tag can
-    go). Before going to bed, close what you do not need (nothing else
-    heavy may run) and run, **from a PowerShell window — not from Claude
-    Code**:
+30. **Overnight soak v2, native engine (next night; E5d).** The 0.2.0
+    run is done (`haetty-v0.2.0` tagged, §1; record in history). Next:
+    the v0.3.0 candidate with every session on haetty's own engine, both
+    platforms, with the Windows GUI e2e runs (item 29). Before going to
+    bed, close what you do not need (nothing else heavy may run) and run,
+    **from a PowerShell window — not from Claude Code**:
     ```powershell
-    pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<user>\projects\claude-code-config\haetty\tools\overnight-soak.ps1 -GuiE2E
+    pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\Ubuntu\home\denny\projects\claude-code-config\haetty\tools\overnight-soak.ps1 -Commit COMMIT -Engine native -GuiE2E
     ```
-    (this machine: `<distro>` = `Ubuntu`). `-ExecutionPolicy Bypass` is
-    needed: the script on `\\wsl.localhost` is unsigned, and this machine's
-    policy (RemoteSigned, LocalMachine) refuses it in a new window
-    (checked 2026-11-07).
-    - It builds `63822de`, runs the Linux soak (1 h), then on an untouched
+    with `COMMIT` = the commit named in §6.0 ("Next overnight"). `-Engine
+    native` passes `--engine native` to every GUI (Linux through
+    `scripts/e2e/engine-gui.sh`, Windows through
+    `scripts/e2e/windows/lib.ps1`); `-Engine ghostty` (default) is the
+    libghostty run. `-ExecutionPolicy Bypass` is needed: the script on
+    `\\wsl.localhost` is unsigned, and this machine's policy (RemoteSigned,
+    LocalMachine) refuses it in a new window (checked 2026-11-07).
+    - It builds the commit, runs the Linux soak (1 h), then on an untouched
       desktop the Windows soak (1 h) and, with `-GuiE2E`, item 29 — the
       steps are in the script's header. **Any input of yours stops a Windows
       part** (counted as not passed); the screen stays on. About **2 h 10
-      min** (V6 trials).
+      min**.
+    - The soaks judge daemon memory after the scrollback is full (E5c): a
+      run where it never fills, or fills in the last 15 min, fails that
+      check. haetty's engine fills later than libghostty (§6.0); `-Minutes
+      120` gives it room.
     - Result: `C:\Users\Public\haetty-overnight\latest.txt`, first lines
-      `RESULT LINUX|WINDOWS|GUI-TABS|GUI-ORCHESTRATOR …`; `progress.log` beside it.
-    - Options: `-Minutes`, `-IdleWaitMinutes`, `-Commit`, `-OutDir`,
-      `-GuiE2E`.
+      `RESULT LINUX|WINDOWS|GUI-TABS|GUI-ORCHESTRATOR …`, then
+      `engine: native`; `progress.log` beside it.
+    - Options: `-Minutes`, `-IdleWaitMinutes`, `-Commit`, `-Engine`,
+      `-OutDir`, `-GuiE2E`.
 
 31. **Observing a tab** (V3): palette "Observing: allow or stop for this
     tab" — a dim `◦` appears after the tab's number (grey, also on the

@@ -39,7 +39,7 @@ $lines = foreach ($m in 0, 1, 2) {
 }
 [IO.File]::WriteAllText("$W\state\tabs\last.tsv", (($lines -join "`n") + "`n"))
 # Not Start-Gui (it passes --restore-tabs false): this run needs the three restored tabs.
-$script:Gui = Start-Process -FilePath $Exe -ArgumentList (@("--cols", "120", "--rows", "36", $ps) + $tabArgs + "3") -WorkingDirectory $R -PassThru
+$script:Gui = Start-Process -FilePath $Exe -ArgumentList (@("--cols", "120", "--rows", "36") + (Engine-Args) + @($ps) + $tabArgs + "3") -WorkingDirectory $R -PassThru
 for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 250; $script:Gui.Refresh(); if ($script:Gui.MainWindowHandle -ne 0) { break } }
 Start-Sleep 4
 $DP = (Status).daemon_pid

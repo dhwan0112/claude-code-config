@@ -67,8 +67,12 @@ while (`$true) { `$k = [Console]::ReadKey(`$true); [IO.File]::AppendAllText('$w\
 # The fake claude as (program, args).
 function Fake-Claude([string]$W) { ,@("$W\bin\claude.exe", @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "$W\fake.ps1")) }
 
+# HAETTY_E2E_ENGINE (tools/overnight-soak.ps1 -Engine): every GUI of the run on that engine (`--engine`, the GUI's
+# setting from its command line: the scripts write their own config files).
+function Engine-Args { if ($env:HAETTY_E2E_ENGINE) { @("--engine", $env:HAETTY_E2E_ENGINE) } else { @() } }
+
 function Start-Gui([string]$Program, [string[]]$Arguments, [string]$Cwd, [string[]]$Extra = @()) {
-    $al = @("--cols", "100", "--rows", "26", "--restore-tabs", "false") + $Extra + @($Program) + $Arguments
+    $al = @("--cols", "100", "--rows", "26", "--restore-tabs", "false") + (Engine-Args) + $Extra + @($Program) + $Arguments
     $script:Gui = Start-Process -FilePath $Exe -ArgumentList $al -WorkingDirectory $Cwd -PassThru
     for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 250; $script:Gui.Refresh(); if ($script:Gui.MainWindowHandle -ne 0) { break } }
     Start-Sleep 2

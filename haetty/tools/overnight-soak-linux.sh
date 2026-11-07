@@ -3,10 +3,13 @@
 #   overnight-soak-linux.sh check                        other heavy work running? (prints it; exit 1 if so)
 #   overnight-soak-linux.sh build COMMIT WINOUT          a checkout of COMMIT, its release build for Linux and
 #                                                        Windows; haetty.exe copied to WINOUT\bin (a Windows path)
-#   overnight-soak-linux.sh soak MINUTES XROOT WINOUT    the Linux soak v2 (this checkout's scripts/e2e/soak.sh —
+#   overnight-soak-linux.sh soak MINUTES XROOT WINOUT [ENGINE]
+#                                                        the Linux soak v2 (this checkout's scripts/e2e/soak.sh —
 #                                                        the current harness — under Xvfb) with the commit's build;
 #                                                        output and CSV to WINOUT;
-#                                                        XROOT (HAETTY_XROOT) relative to $HOME unless absolute
+#                                                        XROOT (HAETTY_XROOT) relative to $HOME unless absolute;
+#                                                        ENGINE `native`: every session on haetty's own engine
+#                                                        (scripts/e2e/engine-gui.sh, as run-all.sh's E2E_ENGINE)
 #   overnight-soak-linux.sh clean                        removes the checkout and the test files (keeps the target)
 # Everything lives in /tmp/haetty-overnight: the checkout (wt), the build (target, kept for the next night),
 # the test runs (test).
@@ -38,11 +41,16 @@ build)
   echo "linux:   $($B/target/release/haetty --version)"
   ;;
 soak)
-  min=$2 xroot=$3 out=$(wslpath -u "$4")
+  min=$2 xroot=$3 out=$(wslpath -u "$4") engine=${5:-ghostty}
   case "$xroot" in /*) ;; *) xroot=$HOME/$xroot ;; esac
   cd "$top/haetty" || exit 2
   rm -rf $B/test; mkdir -p $B/test
   export HAETTY_BIN=$B/target/release/haetty HAETTY_HEADLESS_BIN=$B/target/release/haetty-headless HAETTY_TEST_TMP=$B/test
+  if [ "$engine" != ghostty ]; then
+    export E2E_ENGINE=$engine HAETTY_E2E_REAL_BIN=$HAETTY_BIN HAETTY_E2E_REAL_HL=$HAETTY_HEADLESS_BIN
+    export HAETTY_BIN=$top/haetty/scripts/e2e/engine-gui.sh HAETTY_HEADLESS_BIN=$top/haetty/scripts/e2e/engine-headless.sh
+  fi
+  echo "engine: $engine"
   [ -d "$xroot" ] && export HAETTY_XROOT=$xroot
   scripts/e2e/xvfb.sh bash scripts/e2e/soak.sh "$out/linux.csv" $((min * 60)) 2>&1 | grep -v -e XGetInputFocus -e 'screen size is bogus'
   rm -rf $B/test

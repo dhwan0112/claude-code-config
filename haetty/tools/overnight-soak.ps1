@@ -18,6 +18,8 @@
 #   7. with -GuiE2E, then the Windows GUI end-to-end runs of that commit (scripts/e2e/windows/tabs.ps1 and
 #      orchestrator.ps1; HANDOFF §6.1 item 29), each again only after 120 s without input (the soak's own keys
 #      count as input) and stopped at once by any input of yours.
+# -Engine native: every session on haetty's own engine, on both platforms (the GUI's `--engine`; Linux through
+# scripts/e2e/engine-gui.sh, Windows through scripts/e2e/windows/lib.ps1). Default ghostty (libghostty-vt).
 # The first lines of the result file are the verdicts: "RESULT LINUX PASS|FAIL|NOT-RUN …", the same for
 # WINDOWS, then GUI-TABS and GUI-ORCHESTRATOR. Progress goes to -OutDir\progress.log.
 param(
@@ -29,7 +31,9 @@ param(
     # (scripts/e2e/README.md); unused where Xvfb is installed.
     [string]$XRoot = "m2/xroot",
     # Also the Windows GUI end-to-end runs (tabs.ps1, orchestrator.ps1) after the soaks.
-    [switch]$GuiE2E
+    [switch]$GuiE2E,
+    # The engine every session runs on.
+    [ValidateSet("ghostty", "native")][string]$Engine = "ghostty"
 )
 $ErrorActionPreference = "Continue"
 . (Join-Path $PSScriptRoot "heavy.ps1")
@@ -65,7 +69,7 @@ function Wait-Desktop {
 
 $holds = @()
 try {
-    Say "overnight soak: commit $Commit, $Minutes min each, results in $result"
+    Say "overnight soak: commit $Commit, engine $Engine, $Minutes min each, results in $result"
     # 1. Nothing else heavy; then both slots are ours.
     Remove-Item env:HAETTY_HEAVY_SLOT -ErrorAction SilentlyContinue
     $chk = @(L @("check"))
@@ -89,7 +93,7 @@ try {
     # 3. Linux, alone.
     Say "Linux soak v2: $Minutes min"
     Remove-Item (Join-Path $OutDir "linux.csv") -ErrorAction SilentlyContinue
-    $linOut = @(L @("soak", "$Minutes", $XRoot, $OutDir))
+    $linOut = @(L @("soak", "$Minutes", $XRoot, $OutDir, $Engine))
     $v = $linOut | Where-Object { $_ -match '^VERDICT ' } | Select-Object -Last 1
     $lin = if ($v -match 'VERDICT PASS') { "PASS" } elseif ($v) { "FAIL" } else { "FAIL (no verdict: $(($linOut | Select-Object -Last 1)))" }
     Say "Linux: $lin"
@@ -101,6 +105,7 @@ try {
     Copy-Item "$wsrc\test-guard.ps1" $wdst; Copy-Item "$wsrc\e2e\windows\*.ps1" "$wdst\e2e\windows"
     Copy-Item (Join-Path $PSScriptRoot "heavy.ps1") "$wdst\e2e\windows\heavy.ps1"   # lib.ps1 looks beside itself too
     $env:HAETTY_TEST_TMP = Join-Path $env:PUBLIC "haetty-test"
+    if ($Engine -ne "ghostty") { $env:HAETTY_E2E_ENGINE = $Engine } else { Remove-Item env:HAETTY_E2E_ENGINE -ErrorAction SilentlyContinue }
     $why = Wait-Desktop
     if ($why) {
         $win = $why; Say "Windows: $win"
@@ -137,7 +142,7 @@ finally {
     [void](L @("clean"))
     $csv = { param($f) if (Test-Path $f) { Get-Content $f } else { "(none)" } }
     $body = @("RESULT LINUX $lin", "RESULT WINDOWS $win", "RESULT GUI-TABS $($gui.tabs)", "RESULT GUI-ORCHESTRATOR $($gui.orchestrator)",
-        "commit: $Commit; $Minutes min each; started $stamp, ended $(Get-Date -Format 'yyyyMMdd-HHmm')") + $ver +
+        "commit: $Commit; engine: $Engine; $Minutes min each; started $stamp, ended $(Get-Date -Format 'yyyyMMdd-HHmm')") + $ver +
         @("", "== Linux soak v2 (scripts/e2e/soak.sh)") + $linOut + @("-- linux.csv") + (& $csv (Join-Path $OutDir "linux.csv")) +
         @("", "== Windows soak v2 (scripts/e2e/windows/soak.ps1)") + $winOut + @("-- windows.csv") + (& $csv (Join-Path $OutDir "windows.csv")) +
         $guiOut
