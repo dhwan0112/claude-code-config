@@ -510,6 +510,8 @@ struct Known {
     finals: Vec<u8>,
     p0: Option<u16>,
     decset: Option<u16>,
+    /// `DECRST N` patterns: a reset of DEC private mode N (no CSI final).
+    decrst: Option<u16>,
     fields: Vec<String>,
     /// The haetty-vt switch that behaves as libghostty does.
     compat: Compat,
@@ -536,7 +538,25 @@ fn load_known(path: &str, need_approval: bool) -> Result<Vec<Known>, String> {
         }
         let pat = get("pattern")?;
         let t: Vec<&str> = pat.split_whitespace().collect();
-        let bad = || format!("{path}: [{id}] pattern {pat:?}: want `CSI [P] F|F… [with DECSET N]`");
+        let bad = || format!("{path}: [{id}] pattern {pat:?}: want `CSI [P] F|F… [with DECSET N]` or `DECRST N`");
+        let compat_of = || -> Result<Compat, String> {
+            get("compat")?
+                .split_whitespace()
+                .map(|n| Compat::by_name(n).ok_or_else(|| format!("{path}: [{id}] unknown compat {n:?}")))
+                .try_fold(Compat::default(), |a, c| c.map(|c| a | c))
+        };
+        let fields: Vec<String> = get("fields")?.split_whitespace().map(String::from).collect();
+        for f in &fields {
+            if !FIELDS.contains(&f.as_str()) && f != "history" {
+                return Err(format!("{path}: [{id}] unknown field {f:?}"));
+            }
+        }
+        if t.first() == Some(&"DECRST") {
+            let n = t.get(1).and_then(|n| n.parse().ok()).ok_or_else(bad)?;
+            let compat = compat_of()?;
+            out.push(Known { id, finals: vec![], p0: None, decset: None, decrst: Some(n), fields, compat });
+            return Ok(());
+        }
         if t.first() != Some(&"CSI") {
             return Err(bad());
         }
@@ -555,17 +575,8 @@ fn load_known(path: &str, need_approval: bool) -> Result<Vec<Known>, String> {
             }
             decset = Some(t.get(i + 2).and_then(|n| n.parse().ok()).ok_or_else(bad)?);
         }
-        let compat = get("compat")?
-            .split_whitespace()
-            .map(|n| Compat::by_name(n).ok_or_else(|| format!("{path}: [{id}] unknown compat {n:?}")))
-            .try_fold(Compat::default(), |a, c| c.map(|c| a | c))?;
-        let fields: Vec<String> = get("fields")?.split_whitespace().map(String::from).collect();
-        for f in &fields {
-            if !FIELDS.contains(&f.as_str()) && f != "history" {
-                return Err(format!("{path}: [{id}] unknown field {f:?}"));
-            }
-        }
-        out.push(Known { id, finals, p0, decset, fields, compat });
+        let compat = compat_of()?;
+        out.push(Known { id, finals, p0, decset, decrst: None, fields, compat });
         Ok(())
     };
     for line in text.lines() {
@@ -627,6 +638,9 @@ fn csis(b: &[u8]) -> Vec<(u8, Vec<u16>, u8)> {
 }
 
 fn known_matches(k: &Known, seqs: &[(u8, Vec<u16>, u8)]) -> bool {
+    if let Some(m) = k.decrst {
+        return seqs.iter().any(|(p, ps, f)| *p == b'?' && *f == b'l' && ps.contains(&m));
+    }
     let hit = seqs.iter().any(|(p, ps, f)| {
         *p == 0 && k.finals.contains(f) && k.p0.is_none_or(|want| ps.first().copied().unwrap_or(0) == want)
     });
@@ -1219,6 +1233,11 @@ fn unescape(s: &str) -> Vec<u8> {
 fn probe(bytes: &[u8], cols: u16, rows: u16) {
     let mut a = GhosttyEngine::new(&init(cols, rows)).expect("reference engine");
     let mut b = NativeEngine::new(&init(cols, rows));
+    // VTDIFF_COMPAT=name,…: haetty-vt with those switches (haetty_vt::Compat).
+    if let Ok(names) = std::env::var("VTDIFF_COMPAT") {
+        let c = names.split(',').filter_map(Compat::by_name).fold(Compat::default(), |a, c| a | c);
+        b.set_compat(c);
+    }
     // `<resize CxR>` in the input resizes both engines there.
     const MARK: &[u8] = b"<resize ";
     if bytes.windows(MARK.len()).any(|w| w == MARK) {
@@ -1899,9 +1918,14 @@ fn gen_keys(path: &str) {
 /// zero, 2: one, 3: two).
 fn gen_width(path: &str) {
     let mut e = GhosttyEngine::new(&init(8, 2)).expect("reference engine");
+    // Under mode 2027 libghostty asks Unicode's emoji_vs_base, not
+    // Extended_Pictographic (`graphemeWidthEffect`): a table of its own.
+    let mut e27 = GhosttyEngine::new(&init(8, 2)).expect("reference engine");
+    e27.feed(b"\x1b[?2027h");
     let mut zero: Vec<(u32, u32)> = Vec::new();
     let mut wide: Vec<(u32, u32)> = Vec::new();
     let mut vs_base: Vec<(u32, u32)> = Vec::new();
+    let mut vs_base_2027: Vec<(u32, u32)> = Vec::new();
     let add = |v: &mut Vec<(u32, u32)>, c: u32| match v.last_mut() {
         Some(r) if r.1 + 1 == c => r.1 = c,
         _ => v.push((c, c)),
@@ -1935,6 +1959,12 @@ fn gen_width(path: &str) {
             if e.snapshot().cell(0, 0).is_some_and(|c| c.text.ends_with('\u{fe0f}')) {
                 add(&mut vs_base, cp);
             }
+            e27.feed(&buf);
+            let _ = e27.take_replies();
+            let _ = e27.take_events();
+            if e27.snapshot().cell(0, 0).is_some_and(|c| c.text.ends_with('\u{fe0f}')) {
+                add(&mut vs_base_2027, cp);
+            }
         }
     }
     let table = |v: &[(u32, u32)]| v.iter().map(|(a, b)| format!("    (0x{a:x}, 0x{b:x}),\n")).collect::<String>();
@@ -1946,17 +1976,21 @@ fn gen_width(path: &str) {
          /// Code points that take two cells (inclusive ranges).\n\
          pub const WIDE: &[(u32, u32)] = &[\n{}];\n\n\
          /// Code points a variation selector (U+FE0E, U+FE0F) can follow; after others it is dropped.\n\
-         pub const VS_BASE: &[(u32, u32)] = &[\n{}];\n",
+         pub const VS_BASE: &[(u32, u32)] = &[\n{}];\n\n\
+         /// The same under mode 2027 (grapheme clustering).\n\
+         pub const VS_BASE_2027: &[(u32, u32)] = &[\n{}];\n",
         table(&zero),
         table(&wide),
-        table(&vs_base)
+        table(&vs_base),
+        table(&vs_base_2027)
     );
     std::fs::write(path, out).expect("write");
     println!(
-        "{path}: {} zero-width ranges, {} wide ranges, {} variation-selector bases",
+        "{path}: {} zero-width ranges, {} wide ranges, {} variation-selector bases, {} under mode 2027",
         zero.len(),
         wide.len(),
-        vs_base.len()
+        vs_base.len(),
+        vs_base_2027.len()
     );
 }
 

@@ -556,12 +556,16 @@ impl Compat {
     /// margin, and VPR down by the region's top (libghostty's setCursorPos
     /// with the current column/row).
     pub const ORIGIN_ROW_MOVES_COLUMN: Compat = Compat(4);
+    /// A print into the last column sets the pending wrap with autowrap
+    /// (DECAWM) off too; it acts once autowrap is on again.
+    pub const PENDING_WRAP_WITHOUT_AUTOWRAP: Compat = Compat(8);
     /// For vtdiff's self-test: CUF moves one column too far.
     pub const SELFTEST_BREAK: Compat = Compat(0x8000);
     const NAMES: &[(&str, Compat)] = &[
         ("tbc-toggle", Compat::TBC_TOGGLE),
         ("origin-column-moves-row", Compat::ORIGIN_COLUMN_MOVES_ROW),
         ("origin-row-moves-column", Compat::ORIGIN_ROW_MOVES_COLUMN),
+        ("pending-wrap-without-autowrap", Compat::PENDING_WRAP_WITHOUT_AUTOWRAP),
         ("selftest-break", Compat::SELFTEST_BREAK),
     ];
 
@@ -701,10 +705,19 @@ impl Terminal {
     pub fn feed(&mut self, bytes: &[u8]) {
         self.compact_styles();
         let mut parser = std::mem::take(&mut self.parser);
+        // vte 0.15 loses a character when a call completes the character the
+        // last one ended in and goes on to another character and the start
+        // of one more within its first bytes (`advance_partial_utf8` counts
+        // every valid byte after the completed character as consumed). So the
+        // bytes that complete it go to vte on their own first.
+        let k = self.pre.continuation(bytes);
+        if k > 0 {
+            parser.advance(self, &bytes[..k]);
+        }
         // The scanner sees what vte does not tell: APC strings (vte skips
         // them; the kitty graphics ones are answered here, in order with the
         // replies around them) and whether a CSI had parameter bytes at all.
-        let mut start = 0;
+        let mut start = k;
         for i in 0..bytes.len() {
             match self.pre.byte(bytes[i]) {
                 Pre::None => {}
@@ -1248,13 +1261,16 @@ impl Terminal {
             (c.x, c.y, c.style)
         };
         let style = self.styles.id(style);
+        // Without autowrap there is no pending wrap (xterm); libghostty sets
+        // it anyway (`Compat::PENDING_WRAP_WITHOUT_AUTOWRAP`).
+        let wrap_next = autowrap || self.compat.has(Compat::PENDING_WRAP_WITHOUT_AUTOWRAP);
         if w == 0 {
             self.print_clears_head(x, y, Wide::Narrow);
             self.clear_wide_halves(x, y);
             self.line(y).cells[x as usize] = Cell { content: 0, style, wide: Wide::Narrow, protected: false };
             let cur = self.cur();
             if x + 1 >= right_limit {
-                cur.pending_wrap = autowrap;
+                cur.pending_wrap = wrap_next;
             } else {
                 cur.x = x + 1;
             }
@@ -1283,7 +1299,7 @@ impl Terminal {
         let cur = self.cur();
         if nx >= right_limit {
             cur.x = right_limit - 1;
-            cur.pending_wrap = autowrap;
+            cur.pending_wrap = wrap_next;
         } else {
             cur.x = nx;
         }
@@ -1330,7 +1346,7 @@ impl Terminal {
         let pen = self.scr().cursor.style;
         // Where the cluster is now (it moves when it wraps).
         let (mut cx, mut cy) = (px, cur.y);
-        if matches!(c, '\u{fe0e}' | '\u{fe0f}') && !width::vs_base(prev) {
+        if matches!(c, '\u{fe0e}' | '\u{fe0f}') && !width::vs_base_2027(prev) {
             return true;
         }
         let wide = if matches!(c, '\u{fe0e}' | '\u{fe0f}') {
@@ -2437,6 +2453,22 @@ impl Scanner {
 
     /// Follows UTF-8 in the ground state as vte's decoder does, to tell a raw
     /// C1 byte from a continuation byte.
+    /// How many bytes at the start of `bytes` continue (and may complete)
+    /// the UTF-8 character the last input ended in (none outside the ground
+    /// state).
+    fn continuation(&self, bytes: &[u8]) -> usize {
+        if self.state != Self::GROUND {
+            return 0;
+        }
+        let mut range = self.utf8_next;
+        let mut k = 0;
+        while k < self.utf8_need as usize && bytes.get(k).is_some_and(|b| (range.0..=range.1).contains(b)) {
+            k += 1;
+            range = (0x80, 0xbf);
+        }
+        k
+    }
+
     fn ground(&mut self, b: u8) -> Pre {
         if self.utf8_need > 0 {
             if (self.utf8_next.0..=self.utf8_next.1).contains(&b) {
@@ -3254,6 +3286,23 @@ impl vte::Perform for Terminal {
                 3 => self.tabs.iter_mut().for_each(|t| *t = false),
                 _ => {}
             },
+            // CTC (ECMA-48 §8.3.17), as libghostty takes it: 0 (or none) sets
+            // a tab stop at the cursor, 2 clears it (libghostty toggles, as
+            // with TBC 0), 5 clears them all; anything else, or more
+            // parameters, is ignored. DECST8C (`CSI ? 5 W`) resets them.
+            ([], 'W') if count == 0 || (count == 1 && param(params, 0, 0) == 0) => {
+                let x = self.scr().cursor.x as usize;
+                self.tabs[x] = true;
+            }
+            ([], 'W') if count == 1 => match param(params, 0, 0) {
+                2 => {
+                    let x = self.scr().cursor.x as usize;
+                    self.tabs[x] = self.compat.has(Compat::TBC_TOGGLE) && !self.tabs[x];
+                }
+                5 => self.tabs.iter_mut().for_each(|t| *t = false),
+                _ => {}
+            },
+            ([b'?'], 'W') if count == 1 && param(params, 0, 0) == 5 => self.tabs = default_tabs(self.cols),
             ([] | [b'?'], 'h') => {
                 for p in params.iter() {
                     self.set_mode(private, p[0], true);
@@ -3656,6 +3705,41 @@ mod tests {
         assert_eq!(link_at(&t, 0, 0), None, "erased");
         t.feed(b"\x1b#8");
         assert_eq!(link_at(&t, 0, 0), None, "DECALN writes without links");
+    }
+
+    /// CTC sets (0, none) and clears (2, 5) tab stops; DECST8C resets them.
+    #[test]
+    fn ctc_and_decst8c() {
+        let col = |t: &mut Terminal, s: &[u8]| {
+            t.feed(s);
+            t.cursor().map(|c| c.0)
+        };
+        let mut t = term(20, 3);
+        assert_eq!(col(&mut t, b"AB\x1b[W\r\t"), Some(2));
+        assert_eq!(col(&mut t, b"\x1b[2W\r\t"), Some(8), "cleared, not toggled");
+        assert_eq!(col(&mut t, b"\x1b[5W\r\t"), Some(19), "all cleared");
+        assert_eq!(col(&mut t, b"\x1b[?5W\r\t"), Some(8), "every 8 again");
+        assert_eq!(col(&mut t, b"\x1b[3G\x1b[1;2W\r\t"), Some(8), "two parameters: ignored");
+    }
+
+    /// A character split across inputs, followed by an ASCII one and the
+    /// start of another: vte 0.15 alone would lose the ASCII one (E5a).
+    #[test]
+    fn utf8_split_across_inputs() {
+        let mut t = term(20, 3);
+        t.feed(b"\xd0");
+        t.feed(b"\x96e\xea");
+        t.feed(b"\xb0\x80");
+        assert_eq!(
+            (t.text(&t.cell(0, 0)), t.text(&t.cell(1, 0)), t.text(&t.cell(2, 0))),
+            ("Ж".into(), "e".into(), "가".into())
+        );
+        // A combining mark completed the same way, with nothing to join.
+        let mut t = term(20, 3);
+        t.feed(b"\xcc");
+        t.feed(b"\x81e\xcc");
+        assert_eq!(t.text(&t.cell(0, 0)), "e");
+        assert_eq!(t.cursor(), Some((1, 0)));
     }
 
     /// SGR 4:x (an unknown kind is single), 21, 24, 58 and 59.

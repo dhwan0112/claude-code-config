@@ -2,4 +2,14 @@
 # Same format as known-vt-differences.txt; the reasoning for each is in known.md. Moving an entry to the approved
 # list needs the person's approval (CLAUDE.md).
 
-# (none at present)
+[no-pending-wrap-without-autowrap]
+pattern = DECRST 7
+fields = text width fg bg flags underline link cursor scrollback history
+compat = pending-wrap-without-autowrap
+basis = With autowrap (DECAWM, mode 7) reset, a character written in the last column replaces the one there and the cursor stays: no wrap is pending (DEC STD 070 / VT510: "characters received when the cursor is at the right margin replace previously displayed characters"; xterm sets its wrap flag only with wraparound on). libghostty 0.2.2 (Ghostty a887df4) sets the pending wrap anyway, so a character written after DECAWM is set again goes to the next row. Ghostty fixed it in 42a6564 ("terminal: clear pending wrap when printing with DECAWM off", 2026-10-11).
+
+[ctc-2-clears]
+pattern = CSI 2 W
+fields = text width fg bg flags underline link cursor scrollback history
+compat = tbc-toggle
+basis = ECMA-48 §8.3.17 CTC, Ps = 2: "the character tabulation stop in the active line is cleared at the active presentation position". libghostty implements it with Tabstops.unset, which XORs the bit (as approved entry tbc-0-clears), so a column without a stop gains one. Ghostty fixed unset in bed20eb ("terminal: clear tabstop bit on unset instead of toggling").

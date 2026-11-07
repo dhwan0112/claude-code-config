@@ -89,4 +89,37 @@ self-test (`cargo test -p haetty-vtdiff`) adds such a bug and expects FAIL.
 
 ## Candidates (not approved; counted FAIL)
 
-None at present.
+### no-pending-wrap-without-autowrap — DECAWM off and the last column
+
+- What happens: with autowrap reset (DECAWM, `CSI ? 7 l`) a character is
+  written in the last column; later autowrap is set again and another
+  character is written.
+  - libghostty sets the pending wrap anyway, so that character goes to
+    the next row.
+  - haetty-vt sets no pending wrap without autowrap: it replaces the
+    character in the last column.
+- The specification:
+  - DEC STD 070 and the VT510 manual, DECAWM reset: characters received
+    when the cursor is at the right margin replace previously displayed
+    characters.
+  - xterm sets its wrap flag only with wraparound on.
+- Found in E5a (fuzz2): `\e[?7l` + a full row + `\e[?7h` + a character.
+  With `pending-wrap-without-autowrap` on, haetty-vt matches libghostty.
+- Ghostty fixed it after the version we compare with: `42a6564` ("clear
+  pending wrap when printing with DECAWM off", 2026-10-11).
+- Pattern `DECRST 7` (new in E5a: a reset of DEC private mode 7).
+
+### ctc-2-clears — CTC 2
+
+- What happens: CTC with parameter 2 (`CSI 2 W`) at a column without a
+  tab stop.
+  - libghostty sets one there: it clears with `Tabstops.unset`, which
+    toggles, as in the approved entry tbc-0-clears.
+  - haetty-vt leaves the column without a stop.
+- The specification: ECMA-48 §8.3.17 CTC, Ps = 2: "the character
+  tabulation stop in the active line is cleared at the active
+  presentation position".
+- Found in E5a with `--diverge` (grammar): haetty-vt had no CTC at all
+  until E5a; it now takes 0 (or none), 2 and 5 as libghostty does, and
+  DECST8C (`CSI ? 5 W`).
+- Ghostty fixed `unset` in `bed20eb` (2026-08-18), as for tbc-0-clears.

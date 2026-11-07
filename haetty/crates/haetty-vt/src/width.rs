@@ -1,7 +1,7 @@
 //! Cell width of a character (DESIGN.md §10.2): the tables are generated from
 //! libghostty-vt (`width_table.rs`), so the two engines agree by construction.
 
-use crate::width_table::{VS_BASE, WIDE, ZERO};
+use crate::width_table::{VS_BASE, VS_BASE_2027, WIDE, ZERO};
 
 fn within(t: &[(u32, u32)], c: u32) -> bool {
     t.binary_search_by(|&(a, b)| {
@@ -34,6 +34,11 @@ pub fn width(c: char) -> u8 {
 /// A variation selector (U+FE0E, U+FE0F) can follow this character.
 pub fn vs_base(c: char) -> bool {
     within(VS_BASE, c as u32)
+}
+
+/// The same under mode 2027 (libghostty asks Unicode's emoji_vs_base there).
+pub fn vs_base_2027(c: char) -> bool {
+    within(VS_BASE_2027, c as u32)
 }
 
 #[cfg(test)]

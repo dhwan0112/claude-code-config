@@ -615,6 +615,7 @@ impl Loading {
 /// is not checked either); anything after them is ignored. `None`: it does
 /// not inflate.
 fn inflated_len(data: &[u8]) -> Option<u64> {
+    use miniz_oxide::inflate::core::inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
     use miniz_oxide::inflate::core::{decompress, DecompressorOxide};
     use miniz_oxide::inflate::TINFLStatus;
     let [cmf, _, rest @ ..] = data else { return None };
@@ -622,11 +623,15 @@ fn inflated_len(data: &[u8]) -> Option<u64> {
         return None;
     }
     let mut d = DecompressorOxide::new();
-    // A wrapping window: only the length is wanted.
+    // A wrapping window: only the length is wanted. Until the window is full
+    // it is not wrapping, so that miniz refuses a match reaching back before
+    // the start of the output (as libghostty's decoder: E4's "z-far-dist";
+    // in a wrapping window miniz would read the window's zeros).
     let mut out = vec![0u8; 32 * 1024];
     let (mut input, mut pos, mut total) = (rest, 0usize, 0u64);
     loop {
-        let (status, used, made) = decompress(&mut d, input, &mut out, pos, 0);
+        let flags = if total < out.len() as u64 { TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF } else { 0 };
+        let (status, used, made) = decompress(&mut d, input, &mut out, pos, flags);
         input = &input[used..];
         total += made as u64;
         pos = (pos + made) & (out.len() - 1);
