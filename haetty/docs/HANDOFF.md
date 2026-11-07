@@ -53,6 +53,8 @@ from the overnight run of §6.1 item 30 (commit `63822de`):
 
 
 
+> **In progress:** stage v2 (branch `haetty/v2`, worktree `~/projects/claude-code-config-wt/v2`). Remaining: V2 HANDOFF diet, V3 observe-only interface, V4 DESIGN 9, V5 CLI and config table, V6 overnight GUI e2e
+
 ## 1. Goal
 
 A terminal made for Claude Code that replaces the user's tmux-based `ccx`
