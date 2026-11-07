@@ -4,12 +4,12 @@
 //! its rows), no extras (no palette, modes, cursor), no unwrapping, palette
 //! colours as indexes.
 //!
-//! What haetty-vt does not keep cannot be dumped: hyperlinks (OSC 8, HTML
-//! `<a href>`), underline styles other than single (SGR 4:2 to 4:5, 21) and
-//! the underline colour (SGR 58). Nor can the rows libghostty keeps above
-//! the alternate screen after `CSI 22 J` (hidden there, but dumped).
+//! Underline kinds and colours are in VT and HTML dumps, hyperlinks in HTML
+//! (`<a href>`) only, as libghostty (its VT dump has no OSC 8 for cells).
+//! What haetty-vt does not keep cannot be dumped: the rows libghostty keeps
+//! above the alternate screen after `CSI 22 J` (hidden there, but dumped).
 
-use crate::{flags, Color, Line, Style, Terminal, Wide};
+use crate::{flags, underline, Color, Line, Style, Terminal, Wide};
 
 /// The output format (libghostty's `Format`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,34 +28,29 @@ const GRID_BITS: usize = 3_002_112;
 /// Rows in one page of libghostty's page list at this width
 /// (`initialCapacity`): a row costs 64 bits of metadata and 64 per cell.
 /// Too wide for a standard page, a page holds the standard 215 rows.
-fn rows_per_page(cols: u16) -> usize {
+pub(crate) fn rows_per_page(cols: u16) -> usize {
     match GRID_BITS / (64 * (cols as usize + 1)) {
         0 => 215,
         n => n.min(u16::MAX as usize),
     }
 }
 
-/// libghostty's underline kinds (`sgr.Attribute.Underline`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum Underline {
-    #[default]
-    None,
-    Single,
-}
-
-/// A cell's style as libghostty's formatter sees it.
+/// A cell's style as libghostty's formatter sees it (the hyperlink is not
+/// part of it).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Look {
     fg: Color,
     bg: Color,
     flags: u16,
-    underline: Underline,
+    /// [`underline`] kinds.
+    underline: u8,
+    ul: Color,
 }
 
 impl Look {
     fn of(s: &Style) -> Look {
-        let underline = if s.flags & flags::UNDERLINE != 0 { Underline::Single } else { Underline::None };
-        Look { fg: s.fg, bg: s.bg, flags: s.flags & !flags::UNDERLINE, underline }
+        let underline = if s.flags & flags::UNDERLINE != 0 { s.underline.max(underline::SINGLE) } else { 0 };
+        Look { fg: s.fg, bg: s.bg, flags: s.flags & !flags::UNDERLINE, underline, ul: s.ul }
     }
 
     fn is_default(&self) -> bool {
@@ -105,6 +100,8 @@ impl Writer {
             self.out.push_str("<div style=\"font-family: monospace; white-space: pre;\">");
         }
         let mut look = Look::default();
+        // The open `<a>` (HTML), by link number; each page closes its own.
+        let mut link = 0u16;
         let cols = t.cols as usize;
         for line in lines {
             // Scrollback lines keep no trailing blanks: past their end a
@@ -134,10 +131,12 @@ impl Writer {
                     continue;
                 }
                 let text = t.text(c);
+                let st = t.style(c);
                 // A cell with neither text nor style is blank; in plain text
                 // a space is too when trimming. Blanks are written only when
-                // something follows them on the row.
-                let styled_cell = self.styled() && (!c.is_empty() || c.style != 0);
+                // something follows them on the row. A hyperlink is not style
+                // (libghostty's `hasStyling`).
+                let styled_cell = self.styled() && (!c.is_empty() || Style { link: 0, ..st } != Style::default());
                 if !styled_cell && (c.is_empty() || (self.trim && text.starts_with(' '))) {
                     self.blank_cells += 1;
                     continue;
@@ -149,7 +148,7 @@ impl Writer {
                     self.blank_cells = 0;
                 }
                 if self.styled() {
-                    let l = Look::of(&t.style(c));
+                    let l = Look::of(&st);
                     if l != look {
                         // VT closes only to go back to the default: an
                         // opening sequence starts with a reset anyway.
@@ -160,6 +159,22 @@ impl Writer {
                         if !l.is_default() {
                             self.open(&l);
                         }
+                    }
+                }
+                // After the style, as libghostty: `<div …><a href=…>`.
+                if self.kind == Format::Html && st.link != link {
+                    if link != 0 {
+                        self.out.push_str("</a>");
+                    }
+                    link = 0;
+                    if let Some(l) = t.link(st.link) {
+                        link = st.link;
+                        // Byte by byte, each as a character (as libghostty).
+                        self.out.push_str("<a href=\"");
+                        for &b in l.uri.iter() {
+                            self.char(b as char);
+                        }
+                        self.out.push_str("\">");
                     }
                 }
                 if c.is_empty() {
@@ -174,6 +189,9 @@ impl Writer {
         }
         if !look.is_default() {
             self.close();
+        }
+        if link != 0 {
+            self.out.push_str("</a>");
         }
         if self.kind == Format::Html {
             self.out.push_str("</div>");
@@ -231,10 +249,15 @@ impl Writer {
                 o.push_str(s);
             }
         }
-        if l.underline == Underline::Single {
-            o.push_str("\x1b[4m");
-        }
-        for (p, c) in [(38, l.fg), (48, l.bg)] {
+        o.push_str(match l.underline {
+            underline::NONE => "",
+            underline::DOUBLE => "\x1b[4:2m",
+            underline::CURLY => "\x1b[4:3m",
+            underline::DOTTED => "\x1b[4:4m",
+            underline::DASHED => "\x1b[4:5m",
+            _ => "\x1b[4m",
+        });
+        for (p, c) in [(38, l.fg), (48, l.bg), (58, l.ul)] {
             match c {
                 Color::Default => {}
                 Color::Index(i) => o.push_str(&format!("\x1b[{p};5;{i}m")),
@@ -247,14 +270,14 @@ impl Writer {
     fn open_html(&mut self, l: &Look) {
         let o = &mut self.out;
         o.push_str("<div style=\"display: inline;");
-        for (p, c) in [("color", l.fg), ("background-color", l.bg)] {
+        for (p, c) in [("color", l.fg), ("background-color", l.bg), ("text-decoration-color", l.ul)] {
             match c {
                 Color::Default => {}
                 Color::Index(i) => o.push_str(&format!("{p}: var(--vt-palette-{i});")),
                 Color::Rgb([r, g, b]) => o.push_str(&format!("{p}: rgb({r}, {g}, {b});")),
             }
         }
-        let underline = l.underline != Underline::None;
+        let underline = l.underline != underline::NONE;
         if underline || l.has(flags::STRIKETHROUGH) || l.has(flags::OVERLINE) || l.has(flags::BLINK) {
             o.push_str("text-decoration-line:");
             for (on, s) in [
@@ -269,9 +292,14 @@ impl Writer {
             }
             o.push(';');
         }
-        if l.underline == Underline::Single {
-            o.push_str("text-decoration-style: solid;");
-        }
+        o.push_str(match l.underline {
+            underline::NONE => "",
+            underline::DOUBLE => "text-decoration-style: double;",
+            underline::CURLY => "text-decoration-style: wavy;",
+            underline::DOTTED => "text-decoration-style: dotted;",
+            underline::DASHED => "text-decoration-style: dashed;",
+            _ => "text-decoration-style: solid;",
+        });
         for (f, s) in [
             (flags::BOLD, "font-weight: bold;"),
             (flags::ITALIC, "font-style: italic;"),
@@ -352,6 +380,31 @@ mod tests {
                  filter: invert(100%);\">1</div>2<div style=\"display: inline;color: rgb(1, 2, 3);\
                  background-color: var(--vt-palette-200);\">3</div><div style=\"display: inline;\
                  color: var(--vt-palette-0);background-color: var(--vt-palette-7);\">45</div></div>"
+            )
+        );
+    }
+
+    /// Underline kinds and colours; a hyperlink in HTML (after the style's
+    /// `<div>`, closed when the link changes), not in VT.
+    #[test]
+    fn underlines_and_hyperlinks() {
+        let t = term(
+            16,
+            2,
+            "\x1b[4:3;58;2;1;2;3ma\x1b[21mb\x1b[0m\x1b]8;;http://x/\u{e9}\x1b\\\x1b[1mc\x1b[0md\x1b]8;;\x1b\\e",
+        );
+        assert_eq!(t.format(Plain, true), "abcde");
+        assert_eq!(
+            t.format(Vt, true),
+            "\x1b[0m\x1b[4:3m\x1b[58;2;1;2;3ma\x1b[0m\x1b[4:2m\x1b[58;2;1;2;3mb\x1b[0m\x1b[1mc\x1b[0mde"
+        );
+        assert_eq!(
+            t.format(Html, true),
+            format!(
+                "{DIV}<div style=\"display: inline;text-decoration-color: rgb(1, 2, 3);text-decoration-line: underline;\
+                 text-decoration-style: wavy;\">a</div><div style=\"display: inline;text-decoration-color: rgb(1, 2, 3);\
+                 text-decoration-line: underline;text-decoration-style: double;\">b</div><div style=\"display: inline;\
+                 font-weight: bold;\"><a href=\"http://x/&#195;&#169;\">c</div>d</a>e</div>"
             )
         );
     }

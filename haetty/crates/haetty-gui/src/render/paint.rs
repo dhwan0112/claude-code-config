@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use haetty_core::{CellFlags, CursorShape, Rgb, Snapshot, Width};
+use haetty_core::{CellFlags, CursorShape, Rgb, Snapshot, Underline, Width};
 use swash::scale::{image::Content, Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Angle, Format, Transform};
 
@@ -220,7 +220,10 @@ impl Painter {
                 self.draw_text(cv, &cell.text, rect, span as u8, style, fg);
             }
             if f.has(CellFlags::UNDERLINE) {
-                cv.fill(Rect::new(rect.x, top + m.underline, rect.w, m.stroke), fg);
+                underline(cv, rect, top, &m, cell.underline, cell.underline_color.unwrap_or(fg));
+            } else if cell.link.is_some() && cell.link.as_deref() == scene.hover_link {
+                // A hyperlink shows only under the pointer (DESIGN.md §2.2).
+                underline(cv, rect, top, &m, Underline::Single, fg);
             }
             if f.has(CellFlags::STRIKETHROUGH) {
                 cv.fill(Rect::new(rect.x, top + m.strike, rect.w, m.stroke), fg);
@@ -580,6 +583,53 @@ fn centre_on_ink(c: char) -> bool {
     matches!(c as u32, 0xAC00..=0xD7A3 | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x3FFFF)
 }
 
+/// An underline of `kind` across `rect` (one cell or a wide one) in the row
+/// whose top is `top`. Patterns follow the window's x, so they run on
+/// across cells.
+fn underline(cv: &mut Canvas, rect: Rect, top: i32, m: &Metrics, kind: Underline, color: Rgb) {
+    let t = m.stroke.max(1);
+    // The lowest top a line of thickness t may have in the cell.
+    let low = top + m.cell_h - t;
+    let y0 = (top + m.underline).min(low);
+    match kind {
+        Underline::Single => cv.fill(Rect::new(rect.x, y0, rect.w, t), color),
+        Underline::Double => {
+            // Two lines a stroke apart, moved up when the cell is too short.
+            let y1 = (y0 + 2 * t).min(low);
+            let y0 = (y1 - 2 * t).max(top);
+            cv.fill(Rect::new(rect.x, y0, rect.w, t), color);
+            cv.fill(Rect::new(rect.x, y1, rect.w, t), color);
+        }
+        Underline::Curly => {
+            // One wave per cell width, as high as two strokes (at least 2 px).
+            let amp = t.max(1);
+            let mid = (y0 + amp).min(low - amp).max(top + amp);
+            let period = m.cell_w.max(4) as f32;
+            for x in rect.x..rect.x + rect.w {
+                let phase = (x as f32 / period) * std::f32::consts::TAU;
+                let dy = (phase.sin() * amp as f32).round() as i32;
+                cv.fill(Rect::new(x, mid - dy, 1, t), color);
+            }
+        }
+        Underline::Dotted => {
+            let d = t;
+            for x in rect.x..rect.x + rect.w {
+                if (x / d) % 2 == 0 {
+                    cv.fill(Rect::new(x, y0, 1, t), color);
+                }
+            }
+        }
+        Underline::Dashed => {
+            let d = (m.cell_w / 3).max(2 * t).max(2);
+            for x in rect.x..rect.x + rect.w {
+                if (x / d) % 2 == 0 {
+                    cv.fill(Rect::new(x, y0, 1, t), color);
+                }
+            }
+        }
+    }
+}
+
 fn zero() -> Metrics {
     Metrics { px: 0.0, cell_w: 1, cell_h: 1, baseline: 0, underline: 0, strike: 0, stroke: 1 }
 }
@@ -759,7 +809,7 @@ mod tests {
     }
 
     fn scene<'a>(s: &'a Snapshot, dirty: &'a [bool], focused: bool, pre: Option<&'a Preedit>) -> Scene<'a> {
-        Scene { snap: s, dirty, full: true, focused, preedit: pre }
+        Scene { snap: s, dirty, full: true, focused, preedit: pre, hover_link: None }
     }
 
     fn render(p: &mut Painter, sc: &Scene) -> Canvas {
@@ -822,6 +872,7 @@ mod tests {
             diff: None,
             palette: None,
             hint: None,
+            link: None,
         }
         .build();
         p.set_look(Look { min_contrast: 4.5, ..Look::of(&t) });
@@ -1061,7 +1112,7 @@ mod tests {
         let h = s.rows as i32 * m.cell_h + 2 * pad + 1;
         let mut cv = Canvas::new(w as u32, h as u32);
         let style = PaddingStyle { min: (pad as u32, pad as u32), balance: false, color, debug };
-        let sc = Scene { snap: s, dirty: &[], full: true, focused: true, preedit: None };
+        let sc = Scene { snap: s, dirty: &[], full: true, focused: true, preedit: None, hover_link: None };
         for y in 0..s.rows {
             p.paint_row(&mut cv, (pad, pad), &sc, y, style);
         }

@@ -55,8 +55,27 @@ struct Input {
 }
 
 /// The fields compared, in report order.
-const FIELDS: &[&str] =
-    &["size", "text", "width", "fg", "bg", "flags", "cursor", "modes", "title", "pwd", "scrollback", "replies"];
+const FIELDS: &[&str] = &[
+    "size",
+    "text",
+    "width",
+    "fg",
+    "bg",
+    "flags",
+    "underline",
+    "link",
+    "cursor",
+    "modes",
+    "title",
+    "pwd",
+    "scrollback",
+    "replies",
+];
+
+/// A cell's underline as compared: its kind (when there is one) and colour.
+fn underline_of(c: &haetty_core::Cell) -> (Option<haetty_core::Underline>, Option<Rgb>) {
+    (c.flags.has(haetty_core::CellFlags::UNDERLINE).then_some(c.underline), c.underline_color)
+}
 
 struct Diff {
     field: &'static str,
@@ -124,7 +143,13 @@ fn compare(a: &Snapshot, b: &Snapshot, sa: u64, sb: u64, ra: &[u8], rb: &[u8]) -
                     push("bg", at.clone(), format!("{:?}", ca.bg), format!("{:?}", cb.bg));
                 }
                 if ca.flags != cb.flags {
-                    push("flags", at, format!("{:#x}", ca.flags.0), format!("{:#x}", cb.flags.0));
+                    push("flags", at.clone(), format!("{:#x}", ca.flags.0), format!("{:#x}", cb.flags.0));
+                }
+                if underline_of(ca) != underline_of(cb) {
+                    push("underline", at.clone(), format!("{:?}", underline_of(ca)), format!("{:?}", underline_of(cb)));
+                }
+                if ca.link != cb.link {
+                    push("link", at, format!("{:?}", ca.link), format!("{:?}", cb.link));
                 }
             }
         }
@@ -316,7 +341,7 @@ fn dump_diff(a: &str, b: &str) -> Option<DumpDiff> {
     let at = x.iter().zip(y).position(|(p, q)| p != q).unwrap_or(x.len().min(y.len()));
     let around = |s: &[u8]| show(&s[at.saturating_sub(40)..(at + 40).min(s.len())]);
     // Underline styles (SGR 4:2 to 4:5, 21), the underline colour (SGR 58)
-    // and OSC 8 links: haetty-vt keeps none of them.
+    // and OSC 8 links (kept by haetty-vt since E5b; before, it kept none).
     let near = &x[at.saturating_sub(60)..(at + 200).min(x.len())];
     let has = |m: &&str| near.windows(m.len()).any(|w| w == m.as_bytes());
     let underline = [
@@ -894,6 +919,76 @@ fn fuzz2(seed: u64) -> Input {
     }
     let steps = with_resizes(&mut rng, b);
     Input { name: format!("fuzz2 {seed}"), category: "fuzz2".into(), steps }
+}
+
+/// Underline kinds and colours, and OSC 8 hyperlinks (E5b): SGR 4:x, 21,
+/// 24, 58, 59 and 0 among text, wide characters and wraps; links opened and
+/// ended in the forms libghostty's parser treats differently (ids, keys
+/// without values, an id with an empty target); and what may keep or drop a
+/// link: DECSC/DECRC, the alternate screens, DECALN, RIS, erasing,
+/// inserting and deleting. A category of its own, so that the others keep
+/// their streams.
+fn decor(seed: u64) -> Input {
+    let mut r = Rng(seed.wrapping_add(0xdec0));
+    let texts = ["link", "가나", "😀", "e\u{301}", "a b", "ｗｗ", "─x"];
+    let uris = ["http://a.example/x", "https://b.example/é?q=1#f", "file:///tmp/f.txt", "ssh://h", "x"];
+    let ids = ["", "id=1", "id=", "id=a:id=b", ":id=c", "k", "=v:id=d", "id=1:k=v"];
+    let mut b = Vec::new();
+    while b.len() < 4096 {
+        match r.below(12) {
+            0..=3 => {
+                let t = texts[r.below(texts.len() as u64) as usize];
+                (0..1 + r.below(6)).for_each(|_| b.extend_from_slice(t.as_bytes()));
+            }
+            4 | 5 => {
+                let (n, x, y, z) = (r.below(256), r.below(256), r.below(256), r.below(256));
+                let forms = [
+                    "4".to_string(),
+                    format!("4:{}", r.below(8)),
+                    "21".into(),
+                    "24".into(),
+                    format!("58;5;{n}"),
+                    format!("58;2;{x};{y};{z}"),
+                    format!("58:2::{x}:{y}:{z}"),
+                    format!("58:5:{n}"),
+                    "59".into(),
+                    "0".into(),
+                    "1;4:3;58;5;1".into(),
+                    format!("38;5;{n};4"),
+                ];
+                let _ = write!(Text(&mut b), "\x1b[{}m", forms[r.below(forms.len() as u64) as usize]);
+            }
+            6 | 7 => {
+                let end = ["\x07", "\x1b\\"][r.below(2) as usize];
+                let id = ids[r.below(ids.len() as u64) as usize];
+                let uri = if r.below(4) == 0 { "" } else { uris[r.below(uris.len() as u64) as usize] };
+                let _ = write!(Text(&mut b), "\x1b]8;{id};{uri}{end}");
+            }
+            8 => b.extend_from_slice(
+                [
+                    b"\x1b7".as_slice(),
+                    b"\x1b8",
+                    b"\x1b[?1049h",
+                    b"\x1b[?1049l",
+                    b"\x1b[?47h",
+                    b"\x1b[?47l",
+                    b"\x1b[?1047h",
+                    b"\x1b[?1047l",
+                    b"\x1b#8",
+                    b"\x1bc",
+                ][r.below(10) as usize],
+            ),
+            9 => {
+                let n = 1 + r.below(4);
+                let f = b"KJXP@LMrABCDH"[r.below(13) as usize] as char;
+                let _ = write!(Text(&mut b), "\x1b[{n}{f}");
+            }
+            10 => b.extend_from_slice([b"\r\n".as_slice(), b"\r", b"\n", b"\t", b"\x08"][r.below(5) as usize]),
+            _ => (0..20 + r.below(70)).for_each(|_| b.push(b'w')),
+        }
+    }
+    let steps = with_resizes(&mut r, b);
+    Input { name: format!("decor {seed}"), category: "decor".into(), steps }
 }
 
 /// Base64 with padding.
@@ -2076,6 +2171,7 @@ fn main() {
     inputs.extend((1..=nfuzz).map(fuzz));
     inputs.extend((1..=nfuzz).map(fuzz2));
     inputs.extend((1..=nfuzz).map(grammar));
+    inputs.extend((1..=nfuzz).map(decor));
     let other: Vec<u8> = match inputs.iter().find(|i| i.category == "corpus") {
         Some(Input { steps, .. }) => match steps.first() {
             Some(Step::Bytes(b)) => b[..b.len().min(64 << 10)].to_vec(),
@@ -2148,11 +2244,11 @@ fn main() {
                     Some(d) if o.first.is_none() => {
                         let c = CAUSES.iter().position(|c| *c == d.cause).unwrap_or(2);
                         dump_causes[i][c] += 1;
-                        if c == 2 {
-                            let mode =
-                                splits.map_or(format!("chunks of {chunk}"), |s| format!("random splits (seed {s})"));
-                            dump_firsts[i].push(format!("{} [{}], {mode}: {}", inp.name, inp.category, d.text));
-                        }
+                        // Every cause listed: haetty-vt keeps underlines and
+                        // links since E5b.
+                        let mode = splits.map_or(format!("chunks of {chunk}"), |s| format!("random splits (seed {s})"));
+                        dump_firsts[i]
+                            .push(format!("{} [{}], {mode} ({}): {}", inp.name, inp.category, d.cause, d.text));
                     }
                     Some(_) => {}
                 }
@@ -2259,12 +2355,12 @@ fn main() {
         if dump_firsts[i].is_empty() {
             continue;
         }
-        let _ = writeln!(out, "\n## Dump {name}: first differences (cause other), runs with identical screens\n");
-        for f in dump_firsts[i].iter().take(8) {
+        let _ = writeln!(out, "\n## Dump {name}: first differences, runs with identical screens\n");
+        for f in dump_firsts[i].iter().take(12) {
             let _ = writeln!(out, "- {f}");
         }
-        if dump_firsts[i].len() > 8 {
-            let _ = writeln!(out, "- … {} more", dump_firsts[i].len() - 8);
+        if dump_firsts[i].len() > 12 {
+            let _ = writeln!(out, "- … {} more", dump_firsts[i].len() - 12);
         }
     }
     let _ = writeln!(out, "\n## First difference per FAIL run\n");

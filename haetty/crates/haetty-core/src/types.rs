@@ -80,6 +80,39 @@ pub enum Width {
     Spacer,
 }
 
+/// The underline's kind (SGR 4:x, 21), when `CellFlags::UNDERLINE` is set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Underline {
+    #[default]
+    Single,
+    Double,
+    Curly,
+    Dotted,
+    Dashed,
+}
+
+impl Underline {
+    /// SGR 4:N's number (1 to 5); anything else is single.
+    pub fn from_sgr(n: u8) -> Underline {
+        match n {
+            2 => Underline::Double,
+            3 => Underline::Curly,
+            4 => Underline::Dotted,
+            5 => Underline::Dashed,
+            _ => Underline::Single,
+        }
+    }
+    pub fn sgr(self) -> u8 {
+        match self {
+            Underline::Single => 1,
+            Underline::Double => 2,
+            Underline::Curly => 3,
+            Underline::Dotted => 4,
+            Underline::Dashed => 5,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Cell {
     /// Grapheme cluster as UTF-8; empty for a blank cell.
@@ -89,6 +122,13 @@ pub struct Cell {
     pub bg: Option<Rgb>,
     pub flags: CellFlags,
     pub width: Width,
+    /// Meaningful with `CellFlags::UNDERLINE` only.
+    pub underline: Underline,
+    /// `None`: the underline takes the text's colour (SGR 59).
+    pub underline_color: Option<Rgb>,
+    /// The hyperlink's target (OSC 8), as the program sent it. Shown text:
+    /// never logged.
+    pub link: Option<std::sync::Arc<str>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

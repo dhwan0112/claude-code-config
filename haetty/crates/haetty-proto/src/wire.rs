@@ -12,12 +12,12 @@ use std::io::{self, Read, Write};
 
 use haetty_core::{
     Cell, CellFlags, Cursor, CursorShape, GridSize, Key, KeyAction, KeyInput, Modes, Mods, MouseAction, MouseButton,
-    MouseInput, Progress, Rgb, ScrollTo, Scrollbar, SessionEvent, Snapshot, Width,
+    MouseInput, Progress, Rgb, ScrollTo, Scrollbar, SessionEvent, Snapshot, Underline, Width,
 };
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 9;
+pub const VERSION: u32 = 10;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -492,6 +492,22 @@ pub struct WireCell {
     pub flags: u16,
     /// 0 narrow, 1 wide, 2 spacer.
     pub width: u8,
+    /// The underline's kind as SGR 4:N (1 to 5; protocol 10).
+    pub underline: u8,
+    pub underline_color: Option<[u8; 3]>,
+    /// The hyperlink: 0 none, else a number in its row's [`WireRow::links`]
+    /// from 1.
+    pub link: u16,
+}
+
+/// One row of a [`Frame`] (protocol 10).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct WireRow {
+    pub y: u16,
+    pub cells: Vec<WireCell>,
+    /// The hyperlink targets of the row's cells (`WireCell::link`), each
+    /// once. Shown text: never logged.
+    pub links: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -511,7 +527,7 @@ pub struct Frame {
     pub full: bool,
     pub cols: u16,
     pub rows: u16,
-    pub changed: Vec<(u16, Vec<WireCell>)>,
+    pub changed: Vec<WireRow>,
     pub cursor: Option<WireCursor>,
     pub default_fg: [u8; 3],
     pub default_bg: [u8; 3],
@@ -722,32 +738,61 @@ impl From<WireScroll> for ScrollTo {
     }
 }
 
-pub fn cell_to_wire(c: &Cell) -> WireCell {
-    WireCell {
-        text: c.text.clone(),
-        fg: c.fg.map(rgb),
-        bg: c.bg.map(rgb),
-        flags: c.flags.0,
-        width: match c.width {
-            Width::Narrow => 0,
-            Width::Wide => 1,
-            Width::Spacer => 2,
-        },
-    }
+/// A row's cells for the wire, their hyperlink targets gathered in `links`.
+pub fn row_to_wire(y: u16, cells: &[Cell]) -> WireRow {
+    let mut links: Vec<std::sync::Arc<str>> = Vec::new();
+    let cells = cells
+        .iter()
+        .map(|c| {
+            let link = match &c.link {
+                None => 0,
+                Some(l) => match links.iter().position(|x| x == l) {
+                    Some(i) => i as u16 + 1,
+                    None => {
+                        links.push(l.clone());
+                        links.len() as u16
+                    }
+                },
+            };
+            WireCell {
+                text: c.text.clone(),
+                fg: c.fg.map(rgb),
+                bg: c.bg.map(rgb),
+                flags: c.flags.0,
+                width: match c.width {
+                    Width::Narrow => 0,
+                    Width::Wide => 1,
+                    Width::Spacer => 2,
+                },
+                underline: c.underline.sgr(),
+                underline_color: c.underline_color.map(rgb),
+                link,
+            }
+        })
+        .collect();
+    WireRow { y, cells, links: links.iter().map(|l| l.to_string()).collect() }
 }
 
-pub fn wire_to_cell(c: &WireCell) -> Cell {
-    Cell {
-        text: c.text.clone(),
-        fg: c.fg.map(from_rgb),
-        bg: c.bg.map(from_rgb),
-        flags: CellFlags(c.flags),
-        width: match c.width {
-            1 => Width::Wide,
-            2 => Width::Spacer,
-            _ => Width::Narrow,
-        },
-    }
+/// A row from the wire; `links` are its targets, shared with its cells.
+pub fn wire_to_row(r: &WireRow) -> Vec<Cell> {
+    let links: Vec<std::sync::Arc<str>> = r.links.iter().map(|l| std::sync::Arc::from(l.as_str())).collect();
+    r.cells
+        .iter()
+        .map(|c| Cell {
+            text: c.text.clone(),
+            fg: c.fg.map(from_rgb),
+            bg: c.bg.map(from_rgb),
+            flags: CellFlags(c.flags),
+            width: match c.width {
+                1 => Width::Wide,
+                2 => Width::Spacer,
+                _ => Width::Narrow,
+            },
+            underline: Underline::from_sgr(c.underline),
+            underline_color: c.underline_color.map(from_rgb),
+            link: (c.link as usize).checked_sub(1).and_then(|i| links.get(i).cloned()),
+        })
+        .collect()
 }
 
 /// `Modes` booleans as bits, in declaration order.
@@ -817,7 +862,7 @@ pub fn frame_between(session: &str, base: Option<&Snapshot>, next: &Snapshot) ->
             _ => true,
         };
         if differs {
-            changed.push((y as u16, row(next, y, cols).iter().map(cell_to_wire).collect()));
+            changed.push(row_to_wire(y as u16, row(next, y, cols)));
         }
     }
     Frame {
@@ -847,11 +892,11 @@ pub fn apply_frame(mirror: &mut Snapshot, f: &Frame) {
         mirror.cells = vec![Cell::default(); f.cols as usize * f.rows as usize];
     }
     let cols = f.cols as usize;
-    for (y, cells) in &f.changed {
-        let start = *y as usize * cols;
-        for (i, c) in cells.iter().take(cols).enumerate() {
+    for r in &f.changed {
+        let start = r.y as usize * cols;
+        for (i, c) in wire_to_row(r).into_iter().take(cols).enumerate() {
             if let Some(slot) = mirror.cells.get_mut(start + i) {
-                *slot = wire_to_cell(c);
+                *slot = c;
             }
         }
     }
@@ -935,7 +980,7 @@ mod tests {
         assert!(full.full && full.changed.len() == 3);
         let diff = frame_between("s", Some(&a), &b);
         assert!(!diff.full);
-        assert_eq!(diff.changed.iter().map(|(y, _)| *y).collect::<Vec<_>>(), vec![1]);
+        assert_eq!(diff.changed.iter().map(|r| r.y).collect::<Vec<_>>(), vec![1]);
         // Through the wire.
         let mut buf = vec![];
         write_msg(&mut buf, &DaemonMsg::Frame(diff.clone())).unwrap();
@@ -971,5 +1016,27 @@ mod tests {
         let mut buf = vec![];
         write_msg(&mut buf, &ClientMsg::ListSessions).unwrap();
         assert!(read_msg::<ClientMsg>(&mut &buf[..buf.len() - 1]).is_err());
+    }
+
+    /// Underline kinds, underline colours and hyperlinks survive a frame;
+    /// a row sends each target once.
+    #[test]
+    fn underlines_and_links_round_trip() {
+        let a = snap(4, 2, "");
+        let mut b = a.clone();
+        let l: std::sync::Arc<str> = "https://example.com/a".into();
+        for x in 0..3 {
+            b.cells[4 + x].link = Some(l.clone());
+        }
+        b.cells[4].flags = CellFlags(CellFlags::UNDERLINE);
+        b.cells[4].underline = Underline::Curly;
+        b.cells[4].underline_color = Some(Rgb { r: 9, g: 8, b: 7 });
+        let f = frame_between("s", Some(&a), &b);
+        assert_eq!(f.changed.len(), 1);
+        assert_eq!(f.changed[0].links, vec!["https://example.com/a".to_string()]);
+        assert_eq!(f.changed[0].cells.iter().map(|c| c.link).collect::<Vec<_>>(), vec![1, 1, 1, 0]);
+        let mut m = a.clone();
+        apply_frame(&mut m, &f);
+        assert_eq!(m.cells, b.cells);
     }
 }

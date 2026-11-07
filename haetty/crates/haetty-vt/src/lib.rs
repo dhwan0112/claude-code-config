@@ -51,6 +51,79 @@ pub struct Style {
     pub fg: Color,
     pub bg: Color,
     pub flags: u16,
+    /// The underline's kind while `flags::UNDERLINE` is set (SGR 4:x, 21),
+    /// 0 otherwise: [`underline`] numbers, as libghostty's `sgr.Attribute.Underline`.
+    pub underline: u8,
+    /// The underline colour (SGR 58, 59).
+    pub ul: Color,
+    /// The hyperlink (OSC 8), a number in the terminal's table
+    /// (`Terminal::link`); 0 is none. In the pen it is set by OSC 8 only:
+    /// SGR 0 and DECRC keep it, as in libghostty, where it is not part of
+    /// the style.
+    pub link: u16,
+}
+
+/// Underline kinds ([`Style::underline`]).
+pub mod underline {
+    pub const NONE: u8 = 0;
+    pub const SINGLE: u8 = 1;
+    pub const DOUBLE: u8 = 2;
+    pub const CURLY: u8 = 3;
+    pub const DOTTED: u8 = 4;
+    pub const DASHED: u8 = 5;
+}
+
+/// A hyperlink's id: the one OSC 8 gave (`id=`), or a number of its own
+/// for each OSC 8 without one (libghostty's implicit ids), so that two links
+/// to the same target stay two.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum LinkId {
+    Explicit(Box<[u8]>),
+    Implicit(u32),
+}
+
+/// A hyperlink (OSC 8) as the program sent it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Link {
+    pub id: LinkId,
+    pub uri: Box<[u8]>,
+}
+
+/// The hyperlinks cells refer to through their style. 0 is none. Rebuilt
+/// with the style table (`Terminal::compact_styles`), so it stays bounded.
+#[derive(Clone, Debug)]
+struct Links {
+    compact_at: usize,
+    list: Vec<Option<Link>>,
+    ids: std::collections::HashMap<Link, u16>,
+    /// The next implicit id.
+    implicit: u32,
+}
+
+impl Links {
+    const COMPACT_AT: usize = 0x4000;
+
+    fn new() -> Links {
+        Links { compact_at: Links::COMPACT_AT, list: vec![None], ids: Default::default(), implicit: 0 }
+    }
+
+    /// The number of `l`, added if new; 0 when the table is full.
+    fn id(&mut self, l: Link) -> u16 {
+        if let Some(&i) = self.ids.get(&l) {
+            return i;
+        }
+        if self.list.len() >= u16::MAX as usize {
+            return 0;
+        }
+        let i = self.list.len() as u16;
+        self.list.push(Some(l.clone()));
+        self.ids.insert(l, i);
+        i
+    }
+
+    fn get(&self, id: u16) -> Option<&Link> {
+        self.list.get(id as usize).and_then(|l| l.as_ref())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -183,7 +256,7 @@ impl Styles {
             self.last = (s, i);
             return i;
         }
-        let e = Style { fg: Color::Default, bg: s.bg, flags: 0 };
+        let e = Style { bg: s.bg, ..Style::default() };
         let eid = if e == s { None } else { Some(self.id(e)) };
         if self.list.len() >= u16::MAX as usize {
             return eid.unwrap_or(0);
@@ -206,7 +279,7 @@ impl Styles {
             return blank(self.last_blank.1);
         }
         let last = self.last;
-        let id = self.id(Style { fg: Color::Default, bg: pen.bg, flags: 0 });
+        let id = self.id(Style { bg: pen.bg, ..Style::default() });
         self.last = last;
         self.last_blank = (pen.bg, id);
         blank(id)
@@ -559,6 +632,10 @@ pub struct Terminal {
     clusters: Vec<Box<str>>,
     /// The styles cells refer to (`Cell::style`).
     styles: Styles,
+    /// The hyperlinks styles refer to (`Style::link`).
+    links: Links,
+    /// The page the pen's hyperlink was (re-)added on (`renew_link`).
+    link_page: usize,
     cluster_ids: std::collections::HashMap<Box<str>, u32>,
     /// What the scrollback holds and may hold, in bytes (as Ghostty's
     /// `scrollback-limit`; DESIGN.md §10.3).
@@ -612,6 +689,8 @@ impl Terminal {
             all_dirty: true,
             clusters: Vec::new(),
             styles: Styles::new(),
+            links: Links::new(),
+            link_page: 0,
             cluster_ids: std::collections::HashMap::new(),
             sb_bytes: 0,
             saved_modes: std::collections::HashMap::new(),
@@ -658,6 +737,11 @@ impl Terminal {
                     self.ground_c0 = true;
                     parser.advance(self, &bytes[i..=i]);
                     self.ground_c0 = false;
+                    start = i + 1;
+                }
+                Pre::Osc => {
+                    // vte dispatches on this byte: `osc` is this OSC's.
+                    parser.advance(self, &bytes[start..=i]);
                     start = i + 1;
                 }
                 Pre::Apc => {
@@ -721,12 +805,18 @@ impl Terminal {
         (self.styles.list.len(), self.styles.bytes())
     }
 
+    /// A style's hyperlink (`Style::link`).
+    pub fn link(&self, id: u16) -> Option<&Link> {
+        self.links.get(id)
+    }
+
     /// Rebuilds the style table from the styles cells still use, once it
     /// is large (DESIGN.md §10.9): styles of rows gone from the scrollback
     /// go. If nearly all are in use, the next attempt waits until half the
-    /// room left is taken.
+    /// room left is taken. The hyperlinks go the same way: those of the
+    /// styles kept and of the pens (and saved cursors) stay.
     fn compact_styles(&mut self) {
-        if self.styles.list.len() < self.styles.compact_at {
+        if self.styles.list.len() < self.styles.compact_at && self.links.list.len() < self.links.compact_at {
             return;
         }
         let mut used = vec![false; self.styles.list.len()];
@@ -736,8 +826,52 @@ impl Terminal {
                 used[c.style as usize] = true;
             }
         }
+        // The hyperlinks still referred to.
+        let mut lused = vec![false; self.links.list.len()];
+        for (s, &u) in self.styles.list.iter().zip(&used) {
+            if u {
+                lused[s.link as usize] = true;
+            }
+        }
+        for scr in [&self.primary, &self.alt] {
+            lused[scr.cursor.style.link as usize] = true;
+            if let Some(s) = &scr.saved {
+                lused[s.cursor.style.link as usize] = true;
+            }
+        }
+        let old_links = std::mem::replace(&mut self.links, Links::new());
+        self.links.implicit = old_links.implicit;
+        let lmap: Vec<u16> = old_links
+            .list
+            .into_iter()
+            .zip(&lused)
+            .map(|(l, &u)| match l {
+                Some(l) if u => self.links.id(l),
+                _ => 0,
+            })
+            .collect();
+        let relink = |s: &mut Style| s.link = lmap[s.link as usize];
+        for scr in [&mut self.primary, &mut self.alt] {
+            relink(&mut scr.cursor.style);
+            if let Some(s) = &mut scr.saved {
+                relink(&mut s.cursor.style);
+            }
+        }
         let old = std::mem::replace(&mut self.styles, Styles::new());
-        let map: Vec<u16> = old.list.iter().zip(&used).map(|(s, &u)| if u { self.styles.id(*s) } else { 0 }).collect();
+        let map: Vec<u16> = old
+            .list
+            .iter()
+            .zip(&used)
+            .map(|(s, &u)| {
+                if u {
+                    let mut s = *s;
+                    relink(&mut s);
+                    self.styles.id(s)
+                } else {
+                    0
+                }
+            })
+            .collect();
         for l in self.primary.lines.iter_mut().chain(self.alt.lines.iter_mut()).chain(self.scrollback.iter_mut()) {
             for c in &mut l.cells {
                 c.style = map[c.style as usize];
@@ -745,6 +879,8 @@ impl Terminal {
         }
         let n = self.styles.list.len();
         self.styles.compact_at = Styles::COMPACT_AT.max(n + (u16::MAX as usize - n) / 2);
+        let n = self.links.list.len();
+        self.links.compact_at = Links::COMPACT_AT.max(n + (u16::MAX as usize - n) / 2);
     }
 
     /// See [`Compat`]: for vtdiff only.
@@ -952,6 +1088,7 @@ impl Terminal {
             self.tabs = default_tabs(cols);
         }
         self.viewport = 0;
+        self.renew_link(true);
         if self.modes.in_band_resize {
             self.size_report_2048();
         }
@@ -1027,7 +1164,38 @@ impl Terminal {
         out
     }
 
+    /// The page of libghostty's page list the next print lands on, as the
+    /// dump models it (`format::rows_per_page`, counted from the top).
+    fn cursor_page(&self) -> usize {
+        let base = if self.modes.alt_screen { 0 } else { self.scrollback.len() };
+        let c = self.screen_ref().cursor;
+        (base + c.y as usize + c.pending_wrap as usize) / format::rows_per_page(self.cols)
+    }
+
+    /// libghostty re-adds the pen's hyperlink when the cursor goes to another
+    /// page (`cursorChangePin`) and on a resize: a link without an id gets a
+    /// new one then (`startHyperlink(uri, null)`), so its cells on either
+    /// side are two links (HTML dumps show `</a><a …>`).
+    fn renew_link(&mut self, resized: bool) {
+        let l = self.screen_ref().cursor.style.link;
+        if l == 0 {
+            return;
+        }
+        let page = self.cursor_page();
+        if !resized && self.link_page == page {
+            return;
+        }
+        self.link_page = page;
+        if let Some(Link { id: LinkId::Implicit(_), uri }) = self.links.get(l).cloned() {
+            let n = self.links.implicit;
+            self.links.implicit = n.wrapping_add(1);
+            let id = self.links.id(Link { id: LinkId::Implicit(n), uri });
+            self.cur().style.link = id;
+        }
+    }
+
     fn print_char(&mut self, c: char) {
+        self.renew_link(false);
         if self.modes.grapheme_cluster && self.cluster(c) {
             return;
         }
@@ -1895,10 +2063,12 @@ impl Terminal {
             .unwrap_or(Saved { cursor: Cursor { charsets: [b'B'; 4], ..Default::default() }, origin: false });
         let (cols, rows) = (self.cols, self.rows);
         let cur = self.cur();
-        // The shape is not part of what DECSC saves.
-        let shape = cur.shape;
+        // The shape is not part of what DECSC saves, nor the hyperlink (as
+        // libghostty).
+        let (shape, link) = (cur.shape, cur.style.link);
         *cur = s.cursor;
         cur.shape = shape;
+        cur.style.link = link;
         cur.x = cur.x.min(cols - 1);
         cur.y = cur.y.min(rows - 1);
         self.modes.origin = s.origin;
@@ -1928,6 +2098,12 @@ impl Terminal {
             _ => {}
         }
         let changed = on != self.modes.alt_screen;
+        // A change of screen ends the hyperlink of the screen left
+        // (libghostty's `switchScreen`), and the copy does not take one
+        // (`cursorCopy(.., .{ .hyperlink = false })`): no link survives it.
+        if changed {
+            self.scr().cursor.style.link = 0;
+        }
         let old = self.scr().cursor;
         if changed {
             self.modes.alt_screen = on;
@@ -2159,6 +2335,8 @@ impl Terminal {
             }
             sgr_simple(&mut style, &[v]);
         }
+        // The hyperlink is not part of the style in libghostty: SGR 0 keeps it.
+        style.link = self.scr().cursor.style.link;
         self.cur().style = style;
     }
 
@@ -2203,6 +2381,9 @@ enum Pre {
     GroundC0,
     /// A C1 byte inside an escape or CSI sequence: vte gets its 7-bit form.
     C1(u8),
+    /// The byte that ends an OSC (BEL, CAN, SUB, ESC): vte dispatches it on
+    /// this byte, with its whole payload in `osc`.
+    Osc,
 }
 
 /// Follows the byte stream as vte's parser does, as far as CSI and APC go:
@@ -2226,6 +2407,9 @@ struct Scanner {
     buf: Vec<u8>,
     /// The kitty command in `buf` passed libghostty's size limit: void.
     apc_over: bool,
+    /// The current (or last) OSC's payload as vte collects it, all of it:
+    /// vte splits only 16 parameters and drops what follows them.
+    osc: Vec<u8>,
 }
 
 impl Scanner {
@@ -2289,6 +2473,8 @@ impl Scanner {
     /// An OSC string: only to know that a CAN or SUB there ends it without
     /// being a ground-state control (vte executes it; libghostty does not).
     const OSC: u8 = 7;
+    /// OSC payload kept (`osc`); more is dropped.
+    const OSC_KEEP: usize = 1 << 20;
     /// What is kept of strings other than kitty graphics commands.
     const KEEP: usize = 4096;
 
@@ -2310,13 +2496,30 @@ impl Scanner {
         }
         match (self.state, b) {
             (Self::GROUND, _) => return self.ground(b),
-            (Self::ESC | Self::ESC_INT | Self::CSI | Self::DCS | Self::OSC, 0x1b) => self.state = Self::ESC,
+            (Self::OSC, 0x1b) => {
+                self.state = Self::ESC;
+                return Pre::Osc;
+            }
+            (Self::ESC | Self::ESC_INT | Self::CSI | Self::DCS, 0x1b) => self.state = Self::ESC,
             (Self::ESC | Self::ESC_INT | Self::CSI | Self::DCS, 0x18 | 0x1a) => self.state = Self::GROUND,
             // vte ends the OSC there and executes the byte, which is then no
             // ground-state control (`Pre::GroundC0`): nothing is printed.
-            (Self::OSC, 0x07 | 0x18 | 0x1a) => self.state = Self::GROUND,
-            (Self::DCS | Self::OSC, _) => {}
-            (Self::ESC, b']') => self.state = Self::OSC,
+            (Self::OSC, 0x07 | 0x18 | 0x1a) => {
+                self.state = Self::GROUND;
+                return Pre::Osc;
+            }
+            // As vte: other C0 controls are not part of the string.
+            (Self::OSC, 0x00..=0x1f) => {}
+            (Self::OSC, _) => {
+                if self.osc.len() < Self::OSC_KEEP {
+                    self.osc.push(b);
+                }
+            }
+            (Self::DCS, _) => {}
+            (Self::ESC, b']') => {
+                self.state = Self::OSC;
+                self.osc.clear();
+            }
             (Self::ESC, b'P') => self.state = Self::DCS,
             // As libghostty: SOS and PM strings are read as APC ones.
             (Self::ESC, b'_' | b'X' | b'^') => {
@@ -2427,21 +2630,23 @@ fn sgr_simple(style: &mut Style, p: &[u16]) {
         1 => style.flags |= flags::BOLD,
         2 => style.flags |= flags::FAINT,
         3 => style.flags |= flags::ITALIC,
-        4 => {
-            if p.len() > 1 && p[1] == 0 {
-                style.flags &= !flags::UNDERLINE
-            } else {
-                style.flags |= flags::UNDERLINE
-            }
-        }
+        // `4:N` picks the kind (an unknown one is single), as libghostty.
+        4 => set_underline(
+            style,
+            match p.get(1) {
+                None => underline::SINGLE,
+                Some(&k) if k <= 5 => k as u8,
+                Some(_) => underline::SINGLE,
+            },
+        ),
         5 | 6 => style.flags |= flags::BLINK,
         7 => style.flags |= flags::INVERSE,
         8 => style.flags |= flags::INVISIBLE,
         9 => style.flags |= flags::STRIKETHROUGH,
-        21 => style.flags |= flags::UNDERLINE,
+        21 => set_underline(style, underline::DOUBLE),
         22 => style.flags &= !(flags::BOLD | flags::FAINT),
         23 => style.flags &= !flags::ITALIC,
-        24 => style.flags &= !flags::UNDERLINE,
+        24 => set_underline(style, underline::NONE),
         25 => style.flags &= !flags::BLINK,
         27 => style.flags &= !flags::INVERSE,
         28 => style.flags &= !flags::INVISIBLE,
@@ -2452,6 +2657,7 @@ fn sgr_simple(style: &mut Style, p: &[u16]) {
         49 => style.bg = Color::Default,
         53 => style.flags |= flags::OVERLINE,
         55 => style.flags &= !flags::OVERLINE,
+        59 => style.ul = Color::Default,
         90..=97 => style.fg = Color::Index((v - 90 + 8) as u8),
         100..=107 => style.bg = Color::Index((v - 100 + 8) as u8),
         _ => {}
@@ -2490,7 +2696,18 @@ fn set_colour(style: &mut Style, which: u16, c: Option<Color>) {
     match (which, c) {
         (38, Some(c)) => style.fg = c,
         (48, Some(c)) => style.bg = c,
-        _ => {} // no colour, or the underline colour (not in the snapshot)
+        (58, Some(c)) => style.ul = c,
+        _ => {}
+    }
+}
+
+/// The underline's kind; `flags::UNDERLINE` says whether there is one.
+fn set_underline(style: &mut Style, kind: u8) {
+    style.underline = kind;
+    if kind == underline::NONE {
+        style.flags &= !flags::UNDERLINE;
+    } else {
+        style.flags |= flags::UNDERLINE;
     }
 }
 
@@ -2784,6 +3001,52 @@ fn param(params: &vte::Params, i: usize, default: u16) -> u16 {
     match params.iter().nth(i).map(|p| p[0]) {
         None | Some(0) => default,
         Some(v) => v,
+    }
+}
+
+impl Terminal {
+    /// OSC 8 `params ; uri`, as libghostty's `osc/parsers/hyperlink.zig`:
+    /// the parameters are `key=value` pairs between colons, read up to the
+    /// first one without `=`; `id` with a value names the link. An empty URI
+    /// ends the link, unless an id was given (then nothing happens).
+    fn osc_hyperlink(&mut self, kvs: &[u8], uri: &[u8]) {
+        // As libghostty's loop over NUL-separated pairs: a pair runs from
+        // its start to the next separator after its first byte.
+        let mut kvs = kvs.to_vec();
+        kvs.push(0);
+        for b in &mut kvs {
+            if *b == b':' {
+                *b = 0;
+            }
+        }
+        let mut id: Option<&[u8]> = None;
+        let mut start = 0;
+        while start < kvs.len() {
+            let Some(end) = kvs[start + 1..].iter().position(|&b| b == 0).map(|p| p + start + 1) else { break };
+            let kv = &kvs[start..end];
+            let Some(eq) = kv.iter().position(|&b| b == b'=') else { break };
+            if &kv[..eq] == b"id" && eq + 1 < kv.len() {
+                id = Some(&kvs[start + eq + 1..end]);
+            }
+            start = end + 1;
+        }
+        if uri.is_empty() {
+            if id.is_none() {
+                self.cur().style.link = 0;
+            }
+            return;
+        }
+        let id = match id {
+            Some(i) => LinkId::Explicit(i.into()),
+            None => {
+                let n = self.links.implicit;
+                self.links.implicit = n.wrapping_add(1);
+                LinkId::Implicit(n)
+            }
+        };
+        let l = self.links.id(Link { id, uri: uri.into() });
+        self.cur().style.link = l;
+        self.link_page = self.cursor_page();
     }
 }
 
@@ -3163,8 +3426,11 @@ impl vte::Perform for Terminal {
             ([b'#'], b'8') => {
                 // In the current colours (no attributes), as libghostty.
                 let (cols, rows) = (self.cols, self.rows);
+                // Only the colours stay in the pen (its hyperlink too, but
+                // the cells get none).
                 let pen = self.scr().cursor.style;
-                let style = self.styles.id(Style { flags: 0, ..pen });
+                let style = self.styles.id(Style { fg: pen.fg, bg: pen.bg, ..Style::default() });
+                self.cur().style = Style { fg: pen.fg, bg: pen.bg, link: pen.link, ..Style::default() };
                 for y in 0..rows {
                     for x in 0..cols {
                         self.line(y).cells[x as usize] = Cell::of('E', style, Wide::Narrow);
@@ -3173,7 +3439,6 @@ impl vte::Perform for Terminal {
                     l.wrapped = false;
                     l.cont = false;
                 }
-                self.cur().style.flags = 0;
                 // DECALN also resets the scroll region, the margins and
                 // origin mode.
                 self.modes.origin = false;
@@ -3193,8 +3458,9 @@ impl vte::Perform for Terminal {
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell: bool) {
         let Some(code) = params.first().and_then(|p| std::str::from_utf8(p).ok()) else { return };
-        // As libghostty: an OSC that is not valid UTF-8 is dropped whole.
-        if params.iter().any(|p| std::str::from_utf8(p).is_err()) {
+        // As libghostty: an OSC that is not valid UTF-8 is dropped whole —
+        // but OSC 8, whose parser takes the bytes as they are.
+        if code != "8" && params.iter().any(|p| std::str::from_utf8(p).is_err()) {
             return;
         }
         if matches!(code, "4" | "10" | "11" | "12" | "104" | "110" | "111" | "112") {
@@ -3262,6 +3528,15 @@ impl vte::Perform for Terminal {
                         }
                     }
                 }
+            }
+            "8" if params.len() >= 3 => {
+                // From the scanner's copy: vte keeps only 16 parameters.
+                let raw = std::mem::take(&mut self.pre.osc);
+                let rest = raw.strip_prefix(b"8;").unwrap_or(&[]);
+                if let Some(p) = rest.iter().position(|&c| c == b';') {
+                    self.osc_hyperlink(&rest[..p], &rest[p + 1..]);
+                }
+                self.pre.osc = raw;
             }
             "110" => self.fg = self.base.fg,
             "111" => self.bg = self.base.bg,
@@ -3331,6 +3606,71 @@ mod tests {
         // The row above shows the last colour of the loop.
         let above = t.cell(0, y - 1);
         assert_eq!(t.style(&above).fg, Color::Rgb([3, 13, 63]));
+    }
+
+    /// The link of cell (x, y): its id and target.
+    fn link_at(t: &Terminal, x: u16, y: u16) -> Option<(LinkId, String)> {
+        let c = t.cell(x, y);
+        t.link(t.style(&c).link).map(|l| (l.id.clone(), String::from_utf8_lossy(&l.uri).into_owned()))
+    }
+
+    /// OSC 8 as libghostty's parser: ids, pairs read up to one without
+    /// `=`, an empty target ending the link unless an id came with it.
+    #[test]
+    fn hyperlinks_open_and_end() {
+        let mut t = term(20, 3);
+        t.feed(b"\x1b]8;id=a:k=v;http://x;y\x07A\x1b]8;;\x07B");
+        assert_eq!(link_at(&t, 0, 0), Some((LinkId::Explicit((*b"a").into()), "http://x;y".into())));
+        assert_eq!(link_at(&t, 1, 0), None);
+        // Two links without an id stay two, even to one target.
+        t.feed(b"\x1b]8;;u\x07C\x1b]8;;u\x07D");
+        let (c, d) = (link_at(&t, 2, 0).unwrap(), link_at(&t, 3, 0).unwrap());
+        assert!(matches!(c.0, LinkId::Implicit(_)) && c.1 == "u" && c != d);
+        // An id with an empty target does nothing; a key without `=` ends
+        // the reading (the id after it is not seen).
+        t.feed(b"\x1b]8;id=1;\x07E\x1b]8;k:id=z;v\x07F\x1b]8;;\x07");
+        assert_eq!(link_at(&t, 4, 0).map(|l| l.1), Some("u".into()));
+        assert!(matches!(link_at(&t, 5, 0), Some((LinkId::Implicit(_), _))));
+        // No `;` after the parameters: not a link at all.
+        t.feed(b"\x1b]8;id=q\x07G");
+        assert_eq!(link_at(&t, 6, 0), None);
+    }
+
+    /// SGR 0 and DECRC keep the link (not part of the style in libghostty);
+    /// the alternate screens start without one; erasing drops it.
+    #[test]
+    fn what_keeps_a_link() {
+        let mut t = term(20, 3);
+        t.feed(b"\x1b7\x1b]8;;u\x07\x1b[1;4mA\x1b[0mB\x1b8C");
+        for x in 0..2 {
+            assert!(link_at(&t, x, 0).is_some(), "col {x}");
+        }
+        // DECRC put the cursor back on column 0: C wrote over A, linked.
+        assert!(link_at(&t, 0, 0).is_some());
+        t.feed(b"\x1b[?1049hD");
+        assert_eq!(link_at(&t, 0, 0), None);
+        t.feed(b"\x1b[?1049lE");
+        assert_eq!(link_at(&t, 1, 0), None, "a change of screen ends the link");
+        assert!(link_at(&t, 0, 0).is_some(), "cells keep theirs");
+        t.feed(b"\x1b[1;1H\x1b[X");
+        assert_eq!(link_at(&t, 0, 0), None, "erased");
+        t.feed(b"\x1b#8");
+        assert_eq!(link_at(&t, 0, 0), None, "DECALN writes without links");
+    }
+
+    /// SGR 4:x (an unknown kind is single), 21, 24, 58 and 59.
+    #[test]
+    fn underline_kinds_and_colours() {
+        let mut t = term(20, 3);
+        t.feed(b"\x1b[4:3mA\x1b[21mB\x1b[4:9mC\x1b[4:0mD\x1b[58;5;3;4mE\x1b[59mF\x1b[24mG");
+        let s = |x: u16| t.style(&t.cell(x, 0));
+        let k = |x: u16| (s(x).flags & flags::UNDERLINE != 0, s(x).underline);
+        assert_eq!(
+            (0..7).map(k).collect::<Vec<_>>(),
+            vec![(true, 3), (true, 2), (true, 1), (false, 0), (true, 1), (true, 1), (false, 0)]
+        );
+        assert_eq!(s(4).ul, Color::Index(3));
+        assert_eq!(s(5).ul, Color::Default);
     }
 
     fn term(cols: u16, rows: u16) -> Terminal {

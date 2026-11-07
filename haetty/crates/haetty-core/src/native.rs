@@ -91,19 +91,33 @@ impl VtEngine for NativeEngine {
         let t = &self.term;
         let (cols, rows) = t.size();
         let mut cells = Vec::with_capacity(cols as usize * rows as usize);
+        // One string per hyperlink in the snapshot, shared by its cells.
+        let mut links: Vec<(u16, std::sync::Arc<str>)> = Vec::new();
         for y in 0..rows {
             for x in 0..cols {
                 let c = t.cell(x, y);
+                let s = t.style(&c);
+                let link = (s.link != 0).then(|| match links.iter().find(|(i, _)| *i == s.link) {
+                    Some((_, a)) => Some(a.clone()),
+                    None => t.link(s.link).map(|l| {
+                        let a: std::sync::Arc<str> = String::from_utf8_lossy(&l.uri).into();
+                        links.push((s.link, a.clone()));
+                        a
+                    }),
+                });
                 cells.push(Cell {
                     text: t.text(&c),
-                    fg: t.resolve(t.style(&c).fg).map(rgb),
-                    bg: t.resolve(t.style(&c).bg).map(rgb),
-                    flags: CellFlags(t.style(&c).flags),
+                    fg: t.resolve(s.fg).map(rgb),
+                    bg: t.resolve(s.bg).map(rgb),
+                    flags: CellFlags(s.flags),
                     width: match c.wide {
                         haetty_vt::Wide::Narrow => Width::Narrow,
                         haetty_vt::Wide::Wide => Width::Wide,
                         haetty_vt::Wide::SpacerTail | haetty_vt::Wide::SpacerHead => Width::Spacer,
                     },
+                    underline: Underline::from_sgr(s.underline),
+                    underline_color: t.resolve(s.ul).map(rgb),
+                    link: link.flatten(),
                 });
             }
         }

@@ -34,6 +34,7 @@ use crate::geom::Layout;
 use crate::gitview;
 use crate::input::{self, RawKey, Wheel};
 use crate::keymap::{Action, Chord, Keymap};
+use crate::links;
 use crate::render::paint::{Look, Painter};
 use crate::render::soft::SoftRenderer;
 use crate::render::{PaddingStyle, Preedit, Renderer, Scene};
@@ -245,6 +246,15 @@ struct Win {
     last_title_press: Option<(Instant, PhysicalPosition<f64>)>,
     /// Window edge under the pointer (integrated, not maximized).
     edge: Option<winit::window::ResizeDirection>,
+    /// The hyperlink under the pointer, shown on the status row's place
+    /// (DESIGN.md §2.2); Ctrl+click opens only this one.
+    link_hover: Option<Arc<str>>,
+    /// A Ctrl+click on a link took the left button: its release is not
+    /// sent either.
+    link_press: bool,
+    /// Why the last Ctrl+click on the hovered link did not open it (shown
+    /// after its target).
+    link_note: Option<String>,
     /// The renderer's colours and `minimum-contrast` now in use.
     look: Look,
     /// Command-line settings (applied over the config file on a reload).
@@ -406,6 +416,9 @@ impl App {
             tasks: tasks::load_all(&tasks::dir()),
             worker_command: self.opts.config.worker_command.split_whitespace().map(str::to_string).collect(),
             hint: None,
+            link_hover: None,
+            link_press: false,
+            link_note: None,
             daemon_lost: false,
             pending_close: None,
             swallowed: HashSet::new(),
@@ -511,6 +524,7 @@ impl Win {
             bg: None,
             flags: haetty_core::CellFlags(0),
             width: haetty_core::Width::Narrow,
+            ..Default::default()
         };
         self.composed = Some(Snapshot {
             cols,
@@ -1443,6 +1457,8 @@ impl Win {
             if title_changed {
                 self.update_title();
             }
+            // The text under a still pointer may have changed.
+            self.update_link_hover();
             self.recompose();
         } else if title_changed && self.tabs.len() >= 2 {
             self.recompose(); // the tab bar shows its name
@@ -1543,6 +1559,7 @@ impl Win {
             diff: self.diff.as_ref(),
             palette: self.palette.as_ref().map(|p| (p, &self.keys)),
             hint: self.hint.as_ref().map(|(h, _)| h.as_str()),
+            link: self.link_hover.as_deref().map(|l| (l, self.link_row(), self.link_note.as_deref())),
         }
         .build();
         if self.composed.as_ref().is_some_and(|s| (s.cols, s.rows) != (next.cols, next.rows)) {
@@ -1566,6 +1583,71 @@ impl Win {
         let (x, y) = self.layout.cell_origin(self.origin(), c.x, c.y);
         let cell = self.layout.cell;
         self.window.set_ime_cursor_area(PhysicalPosition::new(x, y), PhysicalSize::new(cell.width, cell.height));
+    }
+
+    /// The hyperlink of the screen cell under the pointer: none over haetty's
+    /// own rows and columns, the palette or the diff view.
+    fn hovered_link(&self) -> Option<Arc<str>> {
+        if self.palette.is_some() || self.diff.is_some() {
+            return None;
+        }
+        let snap = self.tab().snap.as_ref()?;
+        let (col, row) = self.layout.cell_at(self.origin(), self.mouse.x, self.mouse.y, self.grid);
+        let row = row.checked_sub(self.top())?;
+        if col >= self.grid.cols.saturating_sub(self.panel_cols()) {
+            return None;
+        }
+        snap.cell(col, row)?.link.clone()
+    }
+
+    /// The window row that shows the hovered link: the bottom one, or the
+    /// first screen row while the pointer is on the bottom one.
+    fn link_row(&self) -> usize {
+        let bottom = (self.grid.rows as usize).saturating_sub(1);
+        let (_, row) = self.layout.cell_at(self.origin(), self.mouse.x, self.mouse.y, self.grid);
+        if row as usize >= bottom {
+            self.top() as usize
+        } else {
+            bottom
+        }
+    }
+
+    /// Pointer moved or the screen changed: the link under the pointer.
+    fn update_link_hover(&mut self) {
+        let now = self.hovered_link();
+        if now != self.link_hover {
+            self.link_hover = now;
+            self.link_note = None;
+            // The underline is on cells the composed grid does not mark.
+            self.full = true;
+            self.recompose();
+        }
+    }
+
+    /// Ctrl+left press: on a link that is shown, open it (allowed schemes) or
+    /// say why not. True when the press was taken.
+    fn link_click(&mut self) -> bool {
+        let Some(l) = self.hovered_link() else { return false };
+        if self.link_hover.as_ref() != Some(&l) {
+            // Not shown yet: show it, do not open it.
+            self.link_hover = Some(l);
+            self.link_note = None;
+            self.full = true;
+            self.recompose();
+            return true;
+        }
+        match links::check(&l) {
+            Ok(()) => match links::open(&l) {
+                Ok(()) => log::info!("link: opened ({}:)", links::scheme(&l).unwrap_or_default()),
+                Err(e) => {
+                    log::warn!("link: could not open ({}:): {e}", links::scheme(&l).unwrap_or_default());
+                    self.link_note = Some("could not open it".into());
+                }
+            },
+            Err(why) => self.link_note = Some(why),
+        }
+        self.recompose();
+        true
     }
 
     fn mouse_tracking(&self) -> bool {
@@ -1835,8 +1917,14 @@ impl Win {
         if self.dirty.len() != snap.rows as usize {
             self.dirty = vec![true; snap.rows as usize];
         }
-        let scene =
-            Scene { snap, dirty: &self.dirty, full: self.full, focused: self.focused, preedit: self.preedit.as_ref() };
+        let scene = Scene {
+            snap,
+            dirty: &self.dirty,
+            full: self.full,
+            focused: self.focused,
+            preedit: self.preedit.as_ref(),
+            hover_link: self.link_hover.as_deref(),
+        };
         let t0 = Instant::now();
         if let Err(e) = self.renderer.render(&scene) {
             log::error!("render: {e}");
@@ -2147,6 +2235,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CursorMoved { position, .. } => {
                 win.mouse = position;
                 win.title_hover();
+                win.update_link_hover();
                 if win.mouse_tracking() {
                     win.mouse_event(MouseAction::Motion, win.held.first().copied());
                 }
@@ -2158,6 +2247,12 @@ impl ApplicationHandler<UserEvent> for App {
                         if b == MouseButton::Left && win.title_press() {
                             return;
                         }
+                        // Ctrl+click on a hyperlink (DESIGN.md §2.2); not
+                        // sent to the program.
+                        if b == MouseButton::Left && win.mods.control_key() && win.link_click() {
+                            win.link_press = true;
+                            return;
+                        }
                         // The title row has no menu (the window menu is not done).
                         if win.integrated && win.title_col().is_some() {
                             return;
@@ -2167,6 +2262,9 @@ impl ApplicationHandler<UserEvent> for App {
                         MouseAction::Press
                     }
                     ElementState::Released => {
+                        if b == MouseButton::Left && std::mem::take(&mut win.link_press) {
+                            return;
+                        }
                         if b == MouseButton::Left && win.pressed_button.is_some() {
                             if win.title_release() {
                                 close_window(win, el);

@@ -42,6 +42,7 @@ mod icon;
 mod input;
 mod install;
 mod keymap;
+mod links;
 mod migrate;
 #[cfg(test)]
 mod reftest;

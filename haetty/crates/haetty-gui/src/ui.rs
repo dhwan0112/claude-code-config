@@ -142,9 +142,17 @@ pub fn put(row: &mut [Cell], x: usize, text: &str, fg: Rgb, bg: Rgb, bold: bool)
             bg: Some(bg),
             flags,
             width: if w == 2 { Width::Wide } else { Width::Narrow },
+            ..Default::default()
         };
         if w == 2 {
-            row[x + 1] = Cell { text: String::new(), fg: Some(fg), bg: Some(bg), flags, width: Width::Spacer };
+            row[x + 1] = Cell {
+                text: String::new(),
+                fg: Some(fg),
+                bg: Some(bg),
+                flags,
+                width: Width::Spacer,
+                ..Default::default()
+            };
         }
         x += w;
     }
@@ -152,7 +160,14 @@ pub fn put(row: &mut [Cell], x: usize, text: &str, fg: Rgb, bg: Rgb, bold: bool)
 }
 
 fn blank(fg: Rgb, bg: Rgb) -> Cell {
-    Cell { text: String::new(), fg: Some(fg), bg: Some(bg), flags: CellFlags(0), width: Width::Narrow }
+    Cell {
+        text: String::new(),
+        fg: Some(fg),
+        bg: Some(bg),
+        flags: CellFlags(0),
+        width: Width::Narrow,
+        ..Default::default()
+    }
 }
 
 /// What the tab bar needs to know about a tab.
@@ -683,6 +698,44 @@ fn draw_lines(rows: &mut [Vec<Cell>], lines: &[(String, String, Rgb)], g: Greys)
     }
 }
 
+/// A hyperlink's target in `w` cells. Where it goes is what must show: the
+/// scheme and host stay whole and the rest is cut in the middle (its end,
+/// often a file name, stays); controls show as U+FFFD.
+pub fn fit_link(uri: &str, w: usize) -> String {
+    let uri: String = uri.chars().map(|c| if c.is_control() { '\u{fffd}' } else { c }).collect();
+    if width(&uri) <= w {
+        return uri;
+    }
+    // scheme://authority — up to the first '/', '?' or '#' after "//".
+    let auth_end = match uri.find("//") {
+        Some(i) => uri[i + 2..].find(['/', '?', '#']).map_or(uri.len(), |j| i + 2 + j),
+        None => uri.find(':').map_or(0, |i| i + 1),
+    };
+    let (head, rest) = uri.split_at(auth_end);
+    let hw = width(head);
+    if hw + 2 > w {
+        return fit(head, w);
+    }
+    format!("{head}{}", fit_left(rest, w - hw))
+}
+
+/// A hyperlink's target over a whole row (the status row's place), dim:
+/// a link is shown before it can be opened (Ctrl+click), since its text
+/// and its target may differ. `note` (why a click did not open it) follows
+/// the target, which stays in view.
+pub fn link_row(row: &mut [Cell], uri: &str, note: Option<&str>, g: Greys) {
+    for c in row.iter_mut() {
+        *c = blank(g.dim, g.bar);
+    }
+    let w = row.len().saturating_sub(2);
+    let note = note.map(|n| format!("  · {n}")).unwrap_or_default();
+    // The target keeps its width, or half the row when longer.
+    let nw = width(&note).min(w - width(uri).min(w / 2));
+    let t = fit_link(uri, w - nw);
+    let x = put(row, 1, &t, g.dim, g.bar, false);
+    put(row, x, &fit(&note, nw), g.normal, g.bar, false);
+}
+
 /// One short hint over the bottom row, right-aligned, dim (§2.2: no pop-ups).
 pub fn hint(grid: &mut [Vec<Cell>], text: &str, g: Greys) {
     let Some(row) = grid.last_mut() else { return };
@@ -714,6 +767,9 @@ pub struct Compose<'a> {
     pub diff: Option<&'a crate::diffview::DiffView>,
     pub palette: Option<(&'a Palette, &'a Keymap)>,
     pub hint: Option<&'a str>,
+    /// The hyperlink under the pointer, the window row to show it on, and
+    /// why a click did not open it.
+    pub link: Option<(&'a str, usize, Option<&'a str>)>,
 }
 
 impl Compose<'_> {
@@ -785,6 +841,12 @@ impl Compose<'_> {
                     cursor = Some(Cursor { x, y, shape: haetty_core::CursorShape::Bar, blinking: false });
                 }
             });
+        }
+        if let Some((uri, y, note)) = self.link {
+            if let (Some(row), Some(prow)) = (grid.get_mut(y), program.get_mut(y)) {
+                link_row(row, uri, note, g);
+                prow.fill(false);
+            }
         }
         if let Some(h) = self.hint {
             overlay(&mut grid, &mut program, &mut |grid| hint(grid, h, g));
@@ -943,6 +1005,7 @@ mod tests {
             diff: None,
             palette: None,
             hint: None,
+            link: None,
         }
         .build();
         assert_eq!(out.rows, 3);
@@ -959,6 +1022,7 @@ mod tests {
             diff: None,
             palette: None,
             hint: Some("hi"),
+            link: None,
         }
         .build();
         assert_eq!(plain.cursor.unwrap().y, 1);
@@ -976,6 +1040,7 @@ mod tests {
             diff: None,
             palette: None,
             hint: None,
+            link: None,
         }
         .build();
         assert_eq!((with.cells[0].text.as_str(), with.cells[8].text.as_str()), ("x", "S"));
@@ -1127,5 +1192,22 @@ mod tests {
         assert!(joined.contains("✓ t1 Fix · verified") && joined.contains("next      merge"), "{joined}");
         assert_eq!(when(0), "01-01 00:00 UTC");
         assert_eq!(human(1_234_567), "1.2M");
+    }
+
+    /// A long target keeps its scheme and host whole and its end; controls
+    /// show as U+FFFD; a note follows the target.
+    #[test]
+    fn link_targets_keep_scheme_host_and_end() {
+        let u = "https://example.com/a/very/long/path/to/some/file-name.html";
+        assert_eq!(fit_link(u, 80), u);
+        let f = fit_link(u, 40);
+        assert!(f.starts_with("https://example.com") && f.ends_with("file-name.html") && f.contains('…'), "{f}");
+        assert_eq!(width(&f), 40);
+        assert!(fit_link("https://a.example/x\u{1b}[2Jy", 80).contains('\u{fffd}'));
+        let g = Greys::from(Rgb { r: 200, g: 200, b: 200 }, Rgb { r: 20, g: 20, b: 20 });
+        let mut row = vec![Cell::default(); 60];
+        link_row(&mut row, "ssh://host/x", Some("not opened (only http, https, file)"), g);
+        let t: String = row.iter().map(|c| if c.text.is_empty() { " ".to_string() } else { c.text.clone() }).collect();
+        assert!(t.contains("ssh://host/x") && t.contains("not opened (only http, https, file)"), "{t}");
     }
 }

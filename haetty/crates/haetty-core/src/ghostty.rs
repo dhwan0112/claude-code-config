@@ -9,9 +9,10 @@ use libghostty_vt::key;
 use libghostty_vt::mouse;
 use libghostty_vt::render::{CellIterator, CursorVisualStyle, RowIterator};
 use libghostty_vt::screen::CellWide;
+use libghostty_vt::style::StyleColor;
 use libghostty_vt::terminal::{
-    ColorScheme, ConformanceLevel, DeviceAttributeFeature, DeviceAttributes, DeviceType, Mode, PrimaryDeviceAttributes,
-    ScrollViewport, SecondaryDeviceAttributes, SizeReportSize,
+    ColorScheme, ConformanceLevel, DeviceAttributeFeature, DeviceAttributes, DeviceType, Mode, Point, PointCoordinate,
+    PrimaryDeviceAttributes, ScrollViewport, SecondaryDeviceAttributes, SizeReportSize,
 };
 use libghostty_vt::{RenderState, Terminal, TerminalOptions};
 
@@ -465,11 +466,23 @@ fn build_snapshot(e: &mut GhosttyEngine, fresh: bool) -> Snapshot {
     let rows = rs.rows().unwrap_or(0);
     snap.cols = cols;
     snap.rows = rows;
+    let mut palette = None;
     if let Ok(c) = rs.colors() {
         snap.default_fg = c.foreground.into();
         snap.default_bg = c.background.into();
         snap.cursor_color = c.cursor.map(Into::into);
+        palette = Some(c.palette);
     }
+    let ul_color = |c: StyleColor| -> Option<Rgb> {
+        match c {
+            StyleColor::None => None,
+            StyleColor::Rgb(c) => Some(c.into()),
+            StyleColor::Palette(i) => palette.as_ref().map(|p| p[i.0 as usize].into()),
+        }
+    };
+    // One string per hyperlink target in the snapshot, shared by its cells.
+    let mut links: Vec<std::sync::Arc<str>> = Vec::new();
+    let mut uri = vec![0u8; 256];
     if rs.cursor_visible().unwrap_or(false) {
         if let Ok(Some(cv)) = rs.cursor_viewport() {
             let shape = match rs.cursor_visual_style() {
@@ -484,8 +497,11 @@ fn build_snapshot(e: &mut GhosttyEngine, fresh: bool) -> Snapshot {
 
     snap.cells.reserve(cols as usize * rows as usize);
     let mut text = String::with_capacity(8);
+    let mut y: u32 = 0;
     if let Ok(mut row_it) = e.rows.update(&rs) {
         while let Some(row) = row_it.next() {
+            let row_links = row.raw_row().and_then(|r| r.has_hyperlink()).unwrap_or(false);
+            let mut x: u16 = 0;
             // Counted, then cleared: nothing else reads the row flags.
             if fresh || row.dirty().unwrap_or(true) {
                 e.stats.rows_copied += 1;
@@ -530,12 +546,25 @@ fn build_snapshot(e: &mut GhosttyEngine, fresh: bool) -> Snapshot {
                             if s.overline {
                                 f |= CellFlags::OVERLINE
                             }
-                            if s.underline != libghostty_vt::style::Underline::None {
-                                f |= CellFlags::UNDERLINE
+                            use libghostty_vt::style::Underline as U;
+                            if s.underline != U::None {
+                                f |= CellFlags::UNDERLINE;
+                                out.underline = match s.underline {
+                                    U::Double => Underline::Double,
+                                    U::Curly => Underline::Curly,
+                                    U::Dotted => Underline::Dotted,
+                                    U::Dashed => Underline::Dashed,
+                                    _ => Underline::Single,
+                                };
                             }
+                            out.underline_color = ul_color(s.underline_color);
                             out.flags = CellFlags(f);
                         }
                     }
+                    if row_links && cell.raw_cell().and_then(|c| c.has_hyperlink()).unwrap_or(false) {
+                        out.link = cell_link(term, x, y, &mut uri, &mut links);
+                    }
+                    x = x.saturating_add(1);
                     if cell.is_selected().unwrap_or(false) {
                         out.flags.0 |= CellFlags::SELECTED;
                     }
@@ -553,10 +582,41 @@ fn build_snapshot(e: &mut GhosttyEngine, fresh: bool) -> Snapshot {
                 snap.cells.push(Cell::default());
             }
             snap.cells.truncate(start + cols as usize);
+            y += 1;
         }
     }
     snap.cells.resize(cols as usize * rows as usize, Cell::default());
     snap
+}
+
+/// The hyperlink target of the viewport cell (x, y), shared with the cells
+/// before it that have the same one.
+fn cell_link(
+    term: &Terminal<'static, 'static>,
+    x: u16,
+    y: u32,
+    buf: &mut Vec<u8>,
+    links: &mut Vec<std::sync::Arc<str>>,
+) -> Option<std::sync::Arc<str>> {
+    let r = term.grid_ref(Point::Viewport(PointCoordinate { x, y })).ok()?;
+    let n = match r.hyperlink_uri(buf) {
+        Ok(n) => n,
+        Err(libghostty_vt::Error::OutOfSpace { required }) => {
+            buf.resize(required, 0);
+            r.hyperlink_uri(buf).ok()?
+        }
+        Err(_) => return None,
+    };
+    if n == 0 {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&buf[..n]);
+    if let Some(a) = links.iter().find(|a| ***a == *s) {
+        return Some(a.clone());
+    }
+    let a: std::sync::Arc<str> = s.into();
+    links.push(a.clone());
+    Some(a)
 }
 
 // haetty-core's key and mouse types have libghostty-vt's numbering

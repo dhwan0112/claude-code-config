@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Every end-to-end check of a release build, Linux (Xvfb): the regression run, DESIGN §2.3 (system and integrated
-# decorations), theme change, the integrated title row, tab features, the orchestrator, the GUI after a daemon crash,
+# decorations), theme change, the integrated title row, underlines and hyperlinks, tab features, the orchestrator, the GUI after a daemon crash,
 # the first window at 100–200 % scale.
 #   HAETTY_TEST_TMP=/tmp/haetty-test [E2E_ENGINE=native] scripts/e2e/run-all.sh [--no-build]
 # Prints each check's FAIL lines and TOTAL; exits with the number of scripts that had a failure (77: no Xvfb).
@@ -32,6 +32,7 @@ run bash "$here/design-2-3.sh"
 run E2E_ARGS="--decorations integrated" E2E_BANDS=2 bash "$here/design-2-3.sh"
 run bash "$here/themes.sh"
 run bash "$here/titlebar.sh"
+run bash "$here/links.sh"
 run bash "$here/tabs.sh"
 run bash "$here/orchestrator.sh"
 run bash "$here/daemon-crash.sh"

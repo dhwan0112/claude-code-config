@@ -37,6 +37,9 @@ pub struct Scene<'a> {
     pub full: bool,
     pub focused: bool,
     pub preedit: Option<&'a Preedit>,
+    /// The hyperlink under the pointer: its cells are underlined (a link
+    /// is not marked otherwise).
+    pub hover_link: Option<&'a str>,
 }
 
 /// How the area around the grid is laid out and coloured.

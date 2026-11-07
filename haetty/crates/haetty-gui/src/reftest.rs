@@ -18,7 +18,7 @@
 use std::path::{Path, PathBuf};
 
 use haetty_core::theme::Theme;
-use haetty_core::{Cell, Cursor, CursorShape, Rgb, Snapshot};
+use haetty_core::{Cell, CellFlags, Cursor, CursorShape, Rgb, Snapshot, Underline};
 use haetty_proto::wire::{Attention, ClaudeInfo, EditMeta, Limit, Worker};
 
 use crate::font::Fonts;
@@ -202,6 +202,7 @@ fn compose<'a>(screen: &'a Snapshot, accents: &'a [Rgb; 16]) -> Compose<'a> {
         diff: None,
         palette: None,
         hint: None,
+        link: None,
     }
 }
 
@@ -237,8 +238,48 @@ fn claude_info() -> ClaudeInfo {
     }
 }
 
-/// The window states: name, composed grid, IME preedit.
-fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
+/// Underline kinds and colours, and two hyperlinks (unmarked: plain text;
+/// one of them under the pointer when `hover`).
+fn decorated(cols: u16, rows: u16) -> Snapshot {
+    let mut s = screen(cols, rows, &["$ printf ...", "", "", "", "$ "], Some((2, 4)));
+    let t = theme();
+    let mut put = |y: u16, x: u16, text: &str, ul: Option<(Underline, Option<Rgb>)>, link: Option<&str>| {
+        let mut row = vec![Cell::default(); cols as usize];
+        let end = ui::put(&mut row, 0, text, t.foreground, t.background, false);
+        for (i, c) in row.into_iter().take(end).enumerate() {
+            let mut c = c;
+            if let Some((k, col)) = ul {
+                c.flags.0 |= CellFlags::UNDERLINE;
+                c.underline = k;
+                c.underline_color = col;
+            }
+            c.link = link.map(Into::into);
+            s.cells[y as usize * cols as usize + x as usize + i] = c;
+        }
+        x + end as u16
+    };
+    let red = Some(Rgb { r: 0xe0, g: 0x40, b: 0x40 });
+    let mut x = 0;
+    for (k, name) in [
+        (Underline::Single, "single"),
+        (Underline::Double, "double"),
+        (Underline::Curly, "curly"),
+        (Underline::Dotted, "dotted"),
+        (Underline::Dashed, "dashed"),
+    ] {
+        x = put(1, x, name, Some((k, None)), None) + 1;
+    }
+    put(2, 0, "curly in colour 58", Some((Underline::Curly, red)), None);
+    let x = put(3, 0, "see ", None, None);
+    let x = put(3, x, "the docs", None, Some("https://example.invalid/docs/guide.html"));
+    let x = put(3, x, " or ", None, None);
+    put(3, x, "this file", None, Some("file:///home/user/notes.txt"));
+    s
+}
+
+/// The window states: name, composed grid, IME preedit, the hyperlink
+/// under the pointer.
+fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str>)> {
     let t = theme();
     let acc = t.palette;
     let g = Greys::new(t.foreground, t.background, &acc);
@@ -246,7 +287,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
     let mut out = vec![];
 
     let s = screen(COLS, ROWS, &[], Some((0, 0)));
-    out.push(("empty", compose(&s).build(), None));
+    out.push(("empty", compose(&s).build(), None, None));
 
     let typed = "$ 한글 입";
     let s = screen(
@@ -256,7 +297,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
         Some((ui::width(typed) as u16, 4)),
     );
     let pre = Preedit { text: "력".into(), cursor: Some((3, 3)) };
-    out.push(("hangul-preedit", compose(&s).build(), Some(pre)));
+    out.push(("hangul-preedit", compose(&s).build(), Some(pre), None));
 
     let s = screen(
         COLS,
@@ -271,7 +312,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
         TabView { name: "cargo test", exited: true, attention: Attention::None, observed: false },
     ];
     let bar = ui::tab_bar(&tabs, 0, COLS as usize, g);
-    out.push(("tabs", Compose { tab_bar: Some(bar), ..compose(&s) }.build(), None));
+    out.push(("tabs", Compose { tab_bar: Some(bar), ..compose(&s) }.build(), None, None));
 
     // decorations = integrated: the title row with one tab (the window title,
     // dim) and with two tabs, the pointer over the close button.
@@ -280,11 +321,11 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
     let s = screen(COLS, ROWS - 1, &["$ ls", "Cargo.toml  README.md  crates  docs", "$ "], Some((2, 2)));
     let one = [TabView { name: "bash", exited: false, attention: Attention::None, observed: false }];
     let row = titlebar::row(&one, 0, COLS as usize, g, "~/projects/haetty", &b, None, false);
-    out.push(("integrated-title", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None));
+    out.push(("integrated-title", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None, None));
     let two =
         [one[0].clone(), TabView { name: "Claude Code", exited: false, attention: Attention::Wait, observed: false }];
     let row = titlebar::row(&two, 0, COLS as usize, g, "", &b, Some(Button::Close), false);
-    out.push(("integrated-tabs", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None));
+    out.push(("integrated-tabs", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None, None));
 
     let info = claude_info();
     let area = ROWS as usize - 1;
@@ -306,7 +347,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
     );
     let status = ui::status_row(Some(&info), COLS as usize, g, "ctrl+shift+d");
     let panel = ui::panel(Some(&info), &[], PANEL_COLS, area, g, NOW_MS);
-    out.push(("claude-panel", Compose { status: Some(status), panel: Some(panel), ..compose(&s) }.build(), None));
+    out.push(("claude-panel", Compose { status: Some(status), panel: Some(panel), ..compose(&s) }.build(), None, None));
 
     // Orchestrator (DESIGN.md §8.3, stage S3): worker tabs with their state
     // glyphs and the panel's WORKERS section for the active worker.
@@ -350,6 +391,19 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
         "workers",
         Compose { tab_bar: Some(bar), status: Some(status), panel: Some(panel), ..compose(&s) }.build(),
         None,
+        None,
+    ));
+
+    // E5b (DESIGN.md §2.2): underline kinds and colours; hyperlinks plain,
+    // then one under the pointer: underlined, its target on the bottom row.
+    let s = decorated(COLS, ROWS);
+    out.push(("underlines-links", compose(&s).build(), None, None));
+    let link = "https://example.invalid/docs/guide.html";
+    out.push((
+        "link-hover",
+        Compose { link: Some((link, ROWS as usize - 1, None)), ..compose(&s) }.build(),
+        None,
+        Some(link),
     ));
     out
 }
@@ -357,7 +411,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
 // ---- rendering ------------------------------------------------------------
 
 /// One full frame, as `SoftRenderer::render` paints it.
-fn render(painter: &mut Painter, snap: &Snapshot, preedit: Option<&Preedit>) -> Canvas {
+fn render(painter: &mut Painter, snap: &Snapshot, preedit: Option<&Preedit>, hover_link: Option<&str>) -> Canvas {
     // The default padding: 10 / 6 logical px at scale 1 (the frame fits the
     // grid exactly, so balance changes nothing).
     let pad = PaddingStyle { min: (10, 6), balance: false, ..Default::default() };
@@ -368,7 +422,7 @@ fn render(painter: &mut Painter, snap: &Snapshot, preedit: Option<&Preedit>) -> 
     let origin = (ox as i32, oy as i32);
     cv.fill(cv.bounds(), snap.default_bg);
     let dirty = vec![true; snap.rows as usize];
-    let scene = Scene { snap, dirty: &dirty, full: true, focused: true, preedit };
+    let scene = Scene { snap, dirty: &dirty, full: true, focused: true, preedit, hover_link };
     for y in 0..snap.rows {
         painter.paint_row(&mut cv, origin, &scene, y, pad);
     }
@@ -446,8 +500,8 @@ fn reference_frames() {
     let mut painter = Painter::new(fonts, PX);
     painter.set_look(Look::of(&theme()));
     let mut failures = vec![];
-    for (name, snap, preedit) in scenes() {
-        let cv = render(&mut painter, &snap, preedit.as_ref());
+    for (name, snap, preedit, hover) in scenes() {
+        let cv = render(&mut painter, &snap, preedit.as_ref(), hover);
         let (w, h) = (cv.width, cv.height);
         let actual_png = out.join(format!("{name}-actual.png"));
         let _ = std::fs::write(&actual_png, png_wh(w, h, &rgba(&cv.pixels)));

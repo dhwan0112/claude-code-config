@@ -75,6 +75,18 @@ away. Functions stay; what changes is when they are visible.
   (`window-padding-balance`).
 - Key hints appear next to an element when it first shows, not in a resident
   list; a command palette (Ctrl+Shift+P) lists all actions.
+- Underlines in the program's text are drawn as it asks: single, double,
+  curly, dotted or dashed (SGR 4:x, 21), in its underline colour (SGR 58)
+  or else the text's (E5, the user's DESIGN §2 change, 2026-11-08).
+- Hyperlinks (OSC 8) have no mark of their own: plain text. Under the
+  pointer the link's cells are underlined and the status row's place (the
+  bottom row; the top screen row while the pointer is on the bottom one)
+  shows the target in the dim colour, scheme and host always whole.
+  Ctrl+click opens it with the operating system's default program — `http`,
+  `https` and `file` only; another scheme is not opened, and a note after
+  the target (which stays in view) says so. A link's text and its target
+  can differ, so the target is always shown before a click can open it
+  (E5, as above).
 - No sounds, pop-ups or animations. Notifications: tab marker, and an OS
   notification only when the window is unfocused.
 - Numbers: fixed width, right-aligned, consistent units, no needless decimals.
