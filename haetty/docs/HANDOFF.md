@@ -11,6 +11,8 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 
 
+> **In progress:** stage v6 (branch `haetty/v6`, worktree `~/projects/claude-code-config-wt/v6`). Remaining: V6 overnight GUI e2e; then V7 kramers checks and A7, E0-E3 native engine
+
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
