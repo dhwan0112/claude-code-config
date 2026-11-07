@@ -153,7 +153,15 @@ Zig (the gate checks this). `cargo run -p haetty-vtdiff --release --
 --corpus ~/m4/vtcorpus --report FILE` compares the engines cell by cell
 (dev only); `--encoders` compares their key/mouse/paste/focus bytes,
 `--bisect NAME` finds the first differing byte and a minimal input,
-`--probe 'BYTES'` shows both engines' state. Generated tables:
+`--probe 'BYTES'` shows both engines' state, `--refresh` measures the
+default engine's render-state refresh (DESIGN.md §10.8). A differing run is
+KNOWN only if an entry of `docs/vtdiff/known-vt-differences.txt` explains it
+(pattern in the input, fields covered, identical with the entry's
+`haetty_vt::Compat` switch on); everything else is FAIL. **Adding or changing
+an entry in that list needs the user's approval** (record the date and their
+words in `approved`); proposals go to `docs/vtdiff/known-candidates.txt`
+(counted FAIL, shown "KNOWN if approved"), the reasoning for each in
+`docs/vtdiff/known.md`. Generated tables:
 `--gen-width`, `--gen-keys`, `tools/gen-grapheme-table.py`,
 `tools/gen-x11-colors.py`.
 `scripts/zig-mode.sh` shows libghostty-vt's Zig mode per profile (all

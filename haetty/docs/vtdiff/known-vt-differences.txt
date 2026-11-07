@@ -1,0 +1,22 @@
+# Known differences between libghostty-vt (vtdiff's reference) and haetty-vt that the person approved.
+# vtdiff counts a differing run KNOWN only when (1) an entry's pattern occurs in the input, (2) every field that
+# differed is among the matching entries' fields, and (3) with those entries' haetty-vt switches on (`compat`,
+# haetty_vt::Compat, which make haetty-vt do what libghostty does) the run is identical. Everything else is FAIL.
+# Adding or changing an entry needs the person's approval (CLAUDE.md); proposals go to known-candidates.txt.
+# The reasoning for each entry is in known.md.
+#
+# pattern = CSI [first parameter] FINAL|FINAL… [with DECSET N]
+
+[tbc-0-clears]
+pattern = CSI 0 g
+fields = text width fg bg flags cursor scrollback history
+compat = tbc-toggle
+basis = ECMA-48 (5th ed., 1991) §8.3.154 TBC, Ps = 0: "the character tabulation stop at the active presentation position is cleared"; xterm ctlseqs: "CSI Ps g  Tab Clear (TBC) … Ps = 0 -> Clear Current Column (default)". libghostty's Tabstops.unset XORs the bit, so a column without a stop gains one.
+approved = 2026-11-07, the person's E4 instructions: "발견 1·2(TBC 0, 원점 모드의 CHA·HPA·HPR): 새 엔진은 규격(ECMA-48, xterm)을 따른다 … 발견 1·2는 이번 지시로 승인함"
+
+[origin-column-moves-only-column]
+pattern = CSI G|`|a with DECSET 6
+fields = text width fg bg flags cursor scrollback history
+compat = origin-column-moves-row
+basis = ECMA-48 §8.3.9 CHA and §8.3.57 HPA move to character position n "in the active line"; §8.3.59 HPR moves by n character positions in the direction of the character progression; none changes the line. xterm ctlseqs: CHA and HPA "[column] (default = [row,1])", HPR "[columns] (default = [row,col+1])". libghostty implements them as setCursorPos(cursor.y + 1, …), and under origin mode setCursorPos adds the scroll region's top to the row.
+approved = 2026-11-07, the person's E4 instructions (as above)

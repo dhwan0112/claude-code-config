@@ -25,13 +25,14 @@
 //!   --colors                     colour and palette-entry parsing (themes, OSC) against libghostty-vt's
 //!   --dump NAME [BYTES]          the named input's bytes (escaped), resizes marked
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use haetty_core::ghostty::GhosttyEngine;
 use haetty_core::native::NativeEngine;
 use haetty_core::vt::{VtEngine, VtInit};
 use haetty_core::{ColorSchemePref, GridSize, Rgb, ScrollTo, Snapshot, TermColors};
+use haetty_vt::Compat;
 
 /// The fuzz test's generators (grammar, Claude-Code-like stream, mutations).
 #[path = "../../haetty-core/tests/common/vtgen.rs"]
@@ -186,6 +187,8 @@ struct Run<'a> {
     rb: Vec<u8>,
     fed: Vec<u8>,
     first: Option<(u64, Diff, String)>,
+    /// Every field that differed somewhere in the run.
+    fields: BTreeSet<&'static str>,
     tally: &'a mut Tally,
     by_category: &'a mut Tally,
     all_equal: bool,
@@ -214,6 +217,7 @@ impl Run<'_> {
                     .into_iter()
                     .find(|d| matches!(d.field, "size" | "text" | "width" | "fg" | "bg" | "flags"));
                 if let Some(d) = cells {
+                    self.fields.insert("history");
                     diff =
                         Some(Diff { field: "history", at: format!("{} (page from scrollback row {top})", d.at), ..d });
                     break;
@@ -250,6 +254,7 @@ impl Run<'_> {
         self.rb.extend(self.native.take_replies());
         let (sa, sb) = (self.reference.scrollback_rows(), self.native.scrollback_rows());
         let diffs = compare(&a, &b, sa, sb, &self.ra, &self.rb);
+        self.fields.extend(diffs.iter().map(|d| d.field));
         for t in [&mut *self.tally, &mut *self.by_category] {
             t.checkpoints += 1;
             for f in FIELDS {
@@ -271,6 +276,13 @@ impl Run<'_> {
     }
 }
 
+/// What a run found: its first difference (none: identical throughout) and
+/// every field that differed.
+struct Outcome {
+    first: Option<String>,
+    fields: BTreeSet<&'static str>,
+}
+
 fn run_input(
     inp: &Input,
     chunk: usize,
@@ -278,14 +290,18 @@ fn run_input(
     every: u64,
     tally: &mut Tally,
     cat: &mut Tally,
-) -> Option<String> {
+    compat: Compat,
+) -> Outcome {
     let mut reference = match GhosttyEngine::new(&init(80, 24)) {
         Ok(e) => e,
-        Err(e) => return Some(format!("{}: reference engine: {e}", inp.name)),
+        Err(e) => {
+            return Outcome { first: Some(format!("{}: reference engine: {e}", inp.name)), fields: BTreeSet::new() }
+        }
     };
     // Applications ask for nothing at start; drain what an engine may say.
     let _ = reference.take_replies();
-    let native = NativeEngine::new(&init(80, 24));
+    let mut native = NativeEngine::new(&init(80, 24));
+    native.set_compat(compat);
     let mut r = Run {
         reference,
         native,
@@ -293,6 +309,7 @@ fn run_input(
         rb: vec![],
         fed: vec![],
         first: None,
+        fields: BTreeSet::new(),
         tally,
         by_category: cat,
         all_equal: true,
@@ -342,12 +359,209 @@ fn run_input(
         Some(s) => format!("random splits (seed {s})"),
         None => format!("chunks of {chunk}"),
     };
-    r.first.map(|(off, d, tail)| {
+    let fields = std::mem::take(&mut r.fields);
+    let first = r.first.map(|(off, d, tail)| {
         format!(
             "{} [{}], {mode}: first difference at input offset {off}: {} {} — reference {} / native {}; last bytes fed: {tail}",
             inp.name, inp.category, d.field, d.at, d.reference, d.native
         )
-    })
+    });
+    Outcome { first, fields }
+}
+
+/// The verdict on one run (`--known`, docs/vtdiff/known.md).
+#[derive(Debug, PartialEq)]
+enum Verdict {
+    Identical,
+    /// Explained by these approved entries.
+    Known(Vec<String>),
+    /// Not explained; would be by these candidates once approved.
+    Fail(Option<Vec<String>>),
+}
+
+#[allow(clippy::too_many_arguments)]
+fn judge(
+    inp: &Input,
+    chunk: usize,
+    splits: Option<u64>,
+    every: u64,
+    out: &Outcome,
+    base: Compat,
+    approved: &[Known],
+    candidates: &[Known],
+) -> Verdict {
+    if out.first.is_none() {
+        return Verdict::Identical;
+    }
+    let mut rerun = |c: Compat| {
+        let (mut a, mut b) = (Tally::default(), Tally::default());
+        run_input(inp, chunk, splits, every, &mut a, &mut b, base | c).first.is_none()
+    };
+    if let Some(ids) = explained(inp, approved, &out.fields, &mut rerun) {
+        return Verdict::Known(ids.into_iter().map(String::from).collect());
+    }
+    let both: Vec<Known> = approved.iter().chain(candidates).cloned().collect();
+    Verdict::Fail(explained(inp, &both, &out.fields, &mut rerun).map(|v| v.into_iter().map(String::from).collect()))
+}
+
+/// One entry of the known-differences lists (docs/vtdiff/known.md): a
+/// behaviour where haetty-vt follows the specification and libghostty does
+/// not.
+#[derive(Clone)]
+struct Known {
+    id: String,
+    /// CSI finals that trigger it, with a required first parameter and a
+    /// DEC private mode that must also be set somewhere in the input.
+    finals: Vec<u8>,
+    p0: Option<u16>,
+    decset: Option<u16>,
+    fields: Vec<String>,
+    /// The haetty-vt switch that behaves as libghostty does.
+    compat: Compat,
+}
+
+/// Reads a list: `[id]` sections with `pattern`, `fields`, `compat`, `basis`
+/// and, in the approved list, `approved`.
+fn load_known(path: &str, need_approval: bool) -> Result<Vec<Known>, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(format!("{path}: {e}")),
+    };
+    let mut out = Vec::new();
+    let mut cur: Option<(String, BTreeMap<String, String>)> = None;
+    let finish = |c: Option<(String, BTreeMap<String, String>)>, out: &mut Vec<Known>| -> Result<(), String> {
+        let Some((id, kv)) = c else { return Ok(()) };
+        let get = |k: &str| kv.get(k).cloned().ok_or_else(|| format!("{path}: [{id}] has no {k}"));
+        for k in ["basis", "pattern", "fields", "compat"] {
+            get(k)?;
+        }
+        if need_approval && kv.get("approved").is_none_or(|a| a.trim().is_empty()) {
+            return Err(format!("{path}: [{id}] has no approval record"));
+        }
+        let pat = get("pattern")?;
+        let t: Vec<&str> = pat.split_whitespace().collect();
+        let bad = || format!("{path}: [{id}] pattern {pat:?}: want `CSI [P] F|F… [with DECSET N]`");
+        if t.first() != Some(&"CSI") {
+            return Err(bad());
+        }
+        let mut i = 1;
+        let mut p0 = None;
+        if let Some(n) = t.get(i).and_then(|s| s.parse().ok()) {
+            p0 = Some(n);
+            i += 1;
+        }
+        let finals: Vec<u8> = t.get(i).ok_or_else(bad)?.split('|').filter_map(|f| f.bytes().next()).collect();
+        i += 1;
+        let mut decset = None;
+        if t.get(i) == Some(&"with") {
+            if t.get(i + 1) != Some(&"DECSET") {
+                return Err(bad());
+            }
+            decset = Some(t.get(i + 2).and_then(|n| n.parse().ok()).ok_or_else(bad)?);
+        }
+        let compat = get("compat")?
+            .split_whitespace()
+            .map(|n| Compat::by_name(n).ok_or_else(|| format!("{path}: [{id}] unknown compat {n:?}")))
+            .try_fold(Compat::default(), |a, c| c.map(|c| a | c))?;
+        let fields: Vec<String> = get("fields")?.split_whitespace().map(String::from).collect();
+        for f in &fields {
+            if !FIELDS.contains(&f.as_str()) && f != "history" {
+                return Err(format!("{path}: [{id}] unknown field {f:?}"));
+            }
+        }
+        out.push(Known { id, finals, p0, decset, fields, compat });
+        Ok(())
+    };
+    for line in text.lines() {
+        let l = line.trim();
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+        if let Some(id) = l.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            finish(cur.take(), &mut out)?;
+            cur = Some((id.to_string(), BTreeMap::new()));
+        } else if let (Some((k, v)), Some((_, kv))) = (l.split_once('='), cur.as_mut()) {
+            kv.insert(k.trim().to_string(), v.trim().to_string());
+        } else {
+            return Err(format!("{path}: cannot read {l:?}"));
+        }
+    }
+    finish(cur.take(), &mut out)?;
+    Ok(out)
+}
+
+/// The CSI sequences in `b` (7-bit introducer): private marker, parameters,
+/// final.
+fn csis(b: &[u8]) -> Vec<(u8, Vec<u16>, u8)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 1 < b.len() {
+        if b[i] != 0x1b || b[i + 1] != b'[' {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 2;
+        let private = match b.get(j) {
+            Some(&c @ 0x3c..=0x3f) => {
+                j += 1;
+                c
+            }
+            _ => 0,
+        };
+        let mut params = vec![];
+        let mut n: Option<u32> = None;
+        while let Some(&c) = b.get(j) {
+            match c {
+                b'0'..=b'9' => n = Some(n.unwrap_or(0) * 10 + (c - b'0') as u32).map(|v| v.min(65535)),
+                b';' | b':' => params.push(n.take().unwrap_or(0) as u16),
+                0x20..=0x2f => {}
+                _ => break,
+            }
+            j += 1;
+        }
+        if let Some(n) = n {
+            params.push(n as u16);
+        }
+        if let Some(&f @ 0x40..=0x7e) = b.get(j) {
+            out.push((private, params, f));
+        }
+        i = j.max(i + 1);
+    }
+    out
+}
+
+fn known_matches(k: &Known, seqs: &[(u8, Vec<u16>, u8)]) -> bool {
+    let hit = seqs.iter().any(|(p, ps, f)| {
+        *p == 0 && k.finals.contains(f) && k.p0.is_none_or(|want| ps.first().copied().unwrap_or(0) == want)
+    });
+    hit && k.decset.is_none_or(|m| seqs.iter().any(|(p, ps, f)| *p == b'?' && *f == b'h' && ps.contains(&m)))
+}
+
+/// Whether a differing run is explained by `list`: entries whose pattern
+/// occurs in the input, whose fields cover every field that differed, and
+/// with whose switches on haetty-vt then matches libghostty throughout.
+fn explained<'k>(
+    inp: &Input,
+    list: &'k [Known],
+    fields: &BTreeSet<&'static str>,
+    rerun: &mut dyn FnMut(Compat) -> bool,
+) -> Option<Vec<&'k str>> {
+    let bytes: Vec<u8> = inp
+        .steps
+        .iter()
+        .flat_map(|s| match s {
+            Step::Bytes(b) => b.clone(),
+            Step::Resize(..) => vec![],
+        })
+        .collect();
+    let seqs = csis(&bytes);
+    let hits: Vec<&Known> = list.iter().filter(|k| known_matches(k, &seqs)).collect();
+    if hits.is_empty() || !fields.iter().all(|f| hits.iter().any(|k| k.fields.iter().any(|g| g == f))) {
+        return None;
+    }
+    let compat = hits.iter().fold(Compat::default(), |a, k| a | k.compat);
+    rerun(compat).then(|| hits.iter().map(|k| k.id.as_str()).collect())
 }
 
 /// vttest-like scenarios: each probes state that only shows later.
@@ -1568,6 +1782,9 @@ fn main() {
     let mut bisect_name: Option<String> = None;
     let mut dump: Option<(String, usize)> = None;
     let mut refresh_only = false;
+    let docs = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/vtdiff");
+    let (mut known_path, mut cand_path) =
+        (format!("{docs}/known-vt-differences.txt"), format!("{docs}/known-candidates.txt"));
     while let Some(a) = args.next() {
         match a.as_str() {
             "--corpus" => corpus = args.next(),
@@ -1576,6 +1793,8 @@ fn main() {
             "--every" => every = args.next().and_then(|v| v.parse().ok()).unwrap_or(1024),
             "--report" => report = args.next(),
             "--refresh" => refresh_only = true,
+            "--known" => known_path = args.next().unwrap_or_default(),
+            "--candidates" => cand_path = args.next().unwrap_or_default(),
             "--bisect" => bisect_name = args.next(),
             "--dump" => {
                 let n = args.next().unwrap_or_default();
@@ -1651,14 +1870,38 @@ fn main() {
         return;
     }
 
+    let load = |p: &str, approval: bool| {
+        load_known(p, approval).unwrap_or_else(|e| {
+            eprintln!("vtdiff: {e}");
+            std::process::exit(2)
+        })
+    };
+    let (approved, candidates) = (load(&known_path, true), load(&cand_path, false));
     let mut total = Tally::default();
     let mut cats: BTreeMap<String, Tally> = BTreeMap::new();
     let mut firsts = Vec::new();
+    let mut known_runs: BTreeMap<String, u64> = BTreeMap::new();
+    let mut if_approved: BTreeMap<String, u64> = BTreeMap::new();
+    let mut fails = 0u64;
     for inp in &inputs {
         for splits in [None, Some(7u64)] {
             let cat = cats.entry(inp.category.clone()).or_default();
-            if let Some(f) = run_input(inp, chunk, splits, every, &mut total, cat) {
-                firsts.push(f);
+            let o = run_input(inp, chunk, splits, every, &mut total, cat, Compat::default());
+            match judge(inp, chunk, splits, every, &o, Compat::default(), &approved, &candidates) {
+                Verdict::Identical => {}
+                Verdict::Known(ids) => *known_runs.entry(ids.join(" + ")).or_default() += 1,
+                Verdict::Fail(c) => {
+                    fails += 1;
+                    let f = o.first.unwrap_or_default();
+                    match c {
+                        Some(ids) => {
+                            let ids = ids.join(" + ");
+                            *if_approved.entry(ids.clone()).or_default() += 1;
+                            firsts.push(format!("{f} [KNOWN if approved: {ids}]"));
+                        }
+                        None => firsts.push(f),
+                    }
+                }
             }
         }
     }
@@ -1674,6 +1917,30 @@ fn main() {
         total.inputs,
         pct(total.inputs_equal, total.inputs)
     );
+    let differing = total.inputs - total.inputs_equal;
+    let nknown: u64 = known_runs.values().sum();
+    let _ = writeln!(
+        out,
+        "**Unexplained differences (FAIL): {fails} runs.** Differing runs {differing}: KNOWN {nknown}, FAIL {fails} \
+         (of which {} would be KNOWN once candidates are approved). Lists: {} approved \
+         (`docs/vtdiff/known-vt-differences.txt`), {} candidates (`known-candidates.txt`), reasons in `known.md`.\n",
+        if_approved.values().sum::<u64>(),
+        approved.len(),
+        candidates.len()
+    );
+    if !known_runs.is_empty() || !if_approved.is_empty() {
+        let _ = writeln!(out, "| Entries | KNOWN runs | FAIL runs, KNOWN if approved |\n|---|---|---|");
+        let keys: BTreeSet<&String> = known_runs.keys().chain(if_approved.keys()).collect();
+        for k in keys {
+            let _ = writeln!(
+                out,
+                "| {k} | {} | {} |",
+                known_runs.get(k).copied().unwrap_or(0),
+                if_approved.get(k).copied().unwrap_or(0)
+            );
+        }
+        let _ = writeln!(out);
+    }
     let _ = writeln!(out, "| Field | Matching checkpoints |\n|---|---|");
     for f in FIELDS {
         let e = total.equal.get(f).copied().unwrap_or(0);
@@ -1698,7 +1965,7 @@ fn main() {
             pct(all, t.checkpoints)
         );
     }
-    let _ = writeln!(out, "\n## First difference per input\n");
+    let _ = writeln!(out, "\n## First difference per FAIL run\n");
     for f in &firsts {
         let _ = writeln!(out, "- {f}");
     }
@@ -1706,5 +1973,69 @@ fn main() {
     if let Some(p) = report {
         let _ = std::fs::write(p, &out);
     }
-    std::process::exit(if firsts.is_empty() { 0 } else { 1 });
+    std::process::exit(if fails == 0 { 0 } else { 1 });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(name: &str, b: &[u8]) -> Input {
+        Input { name: name.into(), category: "selftest".into(), steps: vec![Step::Bytes(b.to_vec())] }
+    }
+
+    fn list() -> Vec<Known> {
+        let p = std::env::temp_dir().join(format!("vtdiff-known-{}.txt", std::process::id()));
+        std::fs::write(
+            &p,
+            "[tbc]\npattern = CSI 0 g\nfields = text width fg bg flags cursor scrollback history\n\
+             compat = tbc-toggle\nbasis = test\napproved = test\n\n\
+             [origin]\npattern = CSI G|`|a with DECSET 6\nfields = text width fg bg flags cursor scrollback history\n\
+             compat = origin-column-moves-row\nbasis = test\napproved = test\n",
+        )
+        .unwrap();
+        let l = load_known(p.to_str().unwrap(), true).unwrap();
+        let _ = std::fs::remove_file(p);
+        l
+    }
+
+    fn verdict(b: &[u8], base: Compat) -> Verdict {
+        let inp = input("t", b);
+        let (mut a, mut c) = (Tally::default(), Tally::default());
+        let o = run_input(&inp, 4096, None, 1024, &mut a, &mut c, base);
+        judge(&inp, 4096, None, 1024, &o, base, &list(), &[])
+    }
+
+    /// A known behaviour is KNOWN; the same input with an unrelated
+    /// difference (haetty-vt's self-test break) is FAIL; an entry missing
+    /// from the approved list leaves its difference FAIL.
+    #[test]
+    fn known_only_when_the_entry_explains_everything() {
+        let tbc: &[u8] = b"\x1b[5G\x1b[0g\r\tX";
+        let origin: &[u8] = b"\x1b[5;10r\x1b[?6h\x1b[3;1HA\x1b[20GB";
+        assert_eq!(verdict(tbc, Compat::default()), Verdict::Known(vec!["tbc".into()]));
+        assert_eq!(verdict(origin, Compat::default()), Verdict::Known(vec!["origin".into()]));
+        let mut both = tbc.to_vec();
+        both.extend_from_slice(b"\r\n\x1b[3CY");
+        assert_eq!(verdict(&both, Compat::SELFTEST_BREAK), Verdict::Fail(None));
+        assert_eq!(verdict(b"\x1b[3CY", Compat::SELFTEST_BREAK), Verdict::Fail(None));
+        assert_eq!(verdict(b"\x1b[3CY", Compat::default()), Verdict::Identical);
+        let inp = input("t", tbc);
+        let (mut a, mut c) = (Tally::default(), Tally::default());
+        let o = run_input(&inp, 4096, None, 1024, &mut a, &mut c, Compat::default());
+        let only_origin: Vec<Known> = list().into_iter().filter(|k| k.id == "origin").collect();
+        let tbc_cand: Vec<Known> = list().into_iter().filter(|k| k.id == "tbc").collect();
+        assert_eq!(
+            judge(&inp, 4096, None, 1024, &o, Compat::default(), &only_origin, &tbc_cand),
+            Verdict::Fail(Some(vec!["tbc".into()]))
+        );
+    }
+
+    /// Every list in docs/vtdiff reads; the approved one has approvals.
+    #[test]
+    fn the_lists_read() {
+        let docs = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/vtdiff");
+        load_known(&format!("{docs}/known-vt-differences.txt"), true).unwrap();
+        load_known(&format!("{docs}/known-candidates.txt"), false).unwrap();
+    }
 }

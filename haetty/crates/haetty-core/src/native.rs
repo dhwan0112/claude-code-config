@@ -10,6 +10,13 @@ pub struct NativeEngine {
     term: haetty_vt::Terminal,
 }
 
+impl NativeEngine {
+    /// See [`haetty_vt::Compat`]: for vtdiff's KNOWN check only.
+    pub fn set_compat(&mut self, c: haetty_vt::Compat) {
+        self.term.set_compat(c);
+    }
+}
+
 fn arr(c: Rgb) -> [u8; 3] {
     [c.r, c.g, c.b]
 }

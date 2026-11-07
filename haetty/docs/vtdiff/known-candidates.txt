@@ -1,0 +1,3 @@
+# Proposed known differences, NOT approved: vtdiff counts their runs as FAIL and shows "KNOWN if approved".
+# Same format as known-vt-differences.txt; the reasoning for each is in known.md. Moving an entry to the approved
+# list needs the person's approval (CLAUDE.md).

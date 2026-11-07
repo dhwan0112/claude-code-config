@@ -344,7 +344,45 @@ pub struct Options {
     pub scrollback_limit: usize,
 }
 
+/// libghostty behaviours haetty-vt does not follow (it follows ECMA-48 and
+/// xterm there), each switchable for vtdiff's KNOWN check only: with the
+/// switch on, a difference the entry explains must vanish
+/// (docs/vtdiff/known.md). Nothing else sets them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Compat(pub u16);
+
+impl Compat {
+    /// TBC 0 toggles the stop at the cursor instead of clearing it.
+    pub const TBC_TOGGLE: Compat = Compat(1);
+    /// Under origin mode CHA, HPA and HPR also move the cursor down by the
+    /// scroll region's top.
+    pub const ORIGIN_COLUMN_MOVES_ROW: Compat = Compat(2);
+    /// For vtdiff's self-test: CUF moves one column too far.
+    pub const SELFTEST_BREAK: Compat = Compat(0x8000);
+    const NAMES: &[(&str, Compat)] = &[
+        ("tbc-toggle", Compat::TBC_TOGGLE),
+        ("origin-column-moves-row", Compat::ORIGIN_COLUMN_MOVES_ROW),
+        ("selftest-break", Compat::SELFTEST_BREAK),
+    ];
+
+    pub fn by_name(n: &str) -> Option<Compat> {
+        Compat::NAMES.iter().find(|(k, _)| *k == n).map(|(_, c)| *c)
+    }
+
+    pub fn has(self, o: Compat) -> bool {
+        self.0 & o.0 != 0
+    }
+}
+
+impl std::ops::BitOr for Compat {
+    type Output = Compat;
+    fn bitor(self, o: Compat) -> Compat {
+        Compat(self.0 | o.0)
+    }
+}
+
 pub struct Terminal {
+    compat: Compat,
     cols: u16,
     rows: u16,
     cell: (u16, u16),
@@ -394,6 +432,8 @@ pub struct Terminal {
     /// `scrollback-limit`; DESIGN.md §10.3).
     sb_bytes: usize,
     sb_limit: usize,
+    /// XTSAVE: DEC private modes saved, for XTRESTORE.
+    saved_modes: std::collections::HashMap<u16, bool>,
     /// Every row counts as changed (see `take_dirty`).
     all_dirty: bool,
 }
@@ -403,6 +443,7 @@ impl Terminal {
         let (cols, rows) = (o.cols.max(1), o.rows.max(1));
         let p16 = o.colors.palette.unwrap_or(DEFAULT_16);
         Terminal {
+            compat: Compat::default(),
             cols,
             rows,
             cell: (o.cell_width, o.cell_height),
@@ -438,6 +479,7 @@ impl Terminal {
             clusters: Vec::new(),
             cluster_ids: std::collections::HashMap::new(),
             sb_bytes: 0,
+            saved_modes: std::collections::HashMap::new(),
             sb_limit: o.scrollback_limit,
         }
     }
@@ -551,6 +593,11 @@ impl Terminal {
             Color::Index(i) => Some(self.palette[i as usize]),
             Color::Rgb(v) => Some(v),
         }
+    }
+
+    /// See [`Compat`]: for vtdiff only.
+    pub fn set_compat(&mut self, c: Compat) {
+        self.compat = c;
     }
 
     pub fn set_colors(&mut self, c: Colors) {
@@ -852,9 +899,11 @@ impl Terminal {
         if self.modes.insert {
             self.insert_blanks(x, y, w as u16);
         }
-        self.clear_wide_at(x, y);
+        self.print_clears_head(x, y, if w == 2 { Wide::Wide } else { Wide::Narrow });
+        self.clear_wide_halves(x, y);
         if w == 2 {
-            self.clear_wide_at(x + 1, y);
+            self.print_clears_head(x + 1, y, Wide::SpacerTail);
+            self.clear_wide_halves(x + 1, y);
         }
         let protected = self.screen_ref().cursor.protected;
         let l = self.line(y);
@@ -1006,15 +1055,30 @@ impl Terminal {
         self.line(cur.y).cells[i].content = joined;
     }
 
-    /// Writing over half of a wide character clears the other half.
-    fn clear_wide_at(&mut self, x: u16, y: u16) {
-        let cols = self.cols as usize;
-        let i = x as usize;
-        if i >= cols {
+    /// Printing over a wide character or its tail in the first two columns
+    /// turns the row above's spacer head back into a blank, as libghostty's
+    /// `printCell` (whether or not that character came from there).
+    fn print_clears_head(&mut self, x: u16, y: u16, new: Wide) {
+        if y == 0 || x > 1 || x >= self.cols {
             return;
         }
-        // In the pen's background, as libghostty.
-        let pen = self.scr().cursor.style;
+        let old = self.screen_ref().lines[y as usize].cells[x as usize].wide;
+        if old == new || !(old == Wide::Wide && x + 1 < self.cols || old == Wide::SpacerTail) {
+            return;
+        }
+        if let Some(c) = self.line(y - 1).cells.last_mut() {
+            if c.wide == Wide::SpacerHead {
+                c.wide = Wide::Narrow;
+            }
+        }
+    }
+
+    /// Writing over half of a wide character clears the other half.
+    fn clear_wide_at(&mut self, x: u16, y: u16) {
+        let i = x as usize;
+        if i >= self.cols as usize {
+            return;
+        }
         // A wide character in the first column that came from the row above:
         // that row's spacer head goes too.
         if i == 0 && y > 0 && self.screen_ref().lines[y as usize].cells[0].wide == Wide::Wide {
@@ -1024,6 +1088,17 @@ impl Terminal {
                 }
             }
         }
+        self.clear_wide_halves(x, y);
+    }
+
+    fn clear_wide_halves(&mut self, x: u16, y: u16) {
+        let cols = self.cols as usize;
+        let i = x as usize;
+        if i >= cols {
+            return;
+        }
+        // In the pen's background, as libghostty.
+        let pen = self.scr().cursor.style;
         let l = self.line(y);
         match l.cells[i].wide {
             Wide::Wide if i + 1 < cols => l.cells[i + 1] = blank(pen),
@@ -1119,19 +1194,78 @@ impl Terminal {
         fix_split_wide(l);
     }
 
+    /// libghostty's `Screen.splitCellBoundary` on the cursor's row: makes `x`
+    /// a clean boundary between cells. At the row's end, a wrapped row's
+    /// spacer head goes; at 0 or 1 on a continued row starting with a wide
+    /// character, the row above's spacer head goes; a wide character across
+    /// `x` is cleared (both halves).
+    fn split_cell_boundary(&mut self, x: u16) {
+        let (cols, y, pen) = (self.cols, self.scr().cursor.y, self.scr().cursor.style);
+        let (wrapped, cont, first) = {
+            let l = &self.screen_ref().lines[y as usize];
+            (l.wrapped, l.cont, l.cells[0].wide)
+        };
+        if x >= cols {
+            if wrapped {
+                let c = &mut self.line(y).cells[cols as usize - 1];
+                if c.wide == Wide::SpacerHead {
+                    *c = blank(pen);
+                }
+            }
+            return;
+        }
+        if x <= 1 && cont && first == Wide::Wide && y > 0 {
+            let c = &mut self.line(y - 1).cells[cols as usize - 1];
+            if c.wide == Wide::SpacerHead {
+                *c = blank(pen);
+            }
+        }
+        if x == 0 {
+            return;
+        }
+        let l = self.line(y);
+        if l.cells[x as usize - 1].wide == Wide::Wide {
+            l.cells[x as usize - 1] = blank(pen);
+            l.cells[x as usize] = blank(pen);
+        }
+    }
+
+    /// libghostty's `Screen.cursorResetWrap`: the cursor's row no longer
+    /// wraps (its spacer head goes, the next row is no continuation).
+    fn cursor_reset_wrap(&mut self) {
+        let (cols, y, pen) = (self.cols as usize, self.scr().cursor.y, self.scr().cursor.style);
+        self.cur().pending_wrap = false;
+        if !self.screen_ref().lines[y as usize].wrapped {
+            return;
+        }
+        let l = self.line(y);
+        l.wrapped = false;
+        if l.cells[cols - 1].wide == Wide::SpacerHead {
+            l.cells[cols - 1] = blank(pen);
+        }
+        if y + 1 < self.rows {
+            self.line(y + 1).cont = false;
+        }
+    }
+
     fn delete_chars(&mut self, n: u16) {
         let (x, y, bg) = {
             let c = self.scr().cursor;
             (c.x as usize, c.y, c.style)
         };
         let cols = self.cols as usize;
-        let l = self.line(y);
         let n = (n as usize).min(cols - x);
+        // As libghostty's deleteChars.
+        self.split_cell_boundary(x as u16);
+        self.split_cell_boundary((x + n) as u16);
+        self.split_cell_boundary(cols as u16);
+        let l = self.line(y);
         for _ in 0..n {
             l.cells.remove(x);
             l.cells.push(blank(bg));
         }
         fix_split_wide(l);
+        self.cursor_reset_wrap();
     }
 
     /// Under ISO protection (SPA last), ECH leaves protected cells.
@@ -1142,11 +1276,15 @@ impl Terminal {
             (c.x as usize, c.y, c.style)
         };
         let cols = self.cols as usize;
-        let end = (x + n.max(1) as usize).min(cols);
-        self.clear_wide_at(x as u16, y);
-        if end > 0 {
-            self.clear_wide_at(end as u16 - 1, y);
+        // As libghostty's eraseChars: a wide character at the end is taken
+        // whole.
+        let mut end = (x + n.max(1) as usize).min(cols);
+        if end < cols && self.screen_ref().lines[y as usize].cells[end - 1].wide == Wide::Wide {
+            end += 1;
         }
+        self.split_cell_boundary(x as u16);
+        self.split_cell_boundary(end as u16);
+        self.cursor_reset_wrap();
         let l = self.line(y);
         for c in &mut l.cells[x..end] {
             if !(protect && c.protected) {
@@ -1296,6 +1434,18 @@ impl Terminal {
 
     // ----------------------------------------------------- cursor moves
 
+    /// libghostty's CHA/HPA/HPR under origin mode (`Compat`): its absolute
+    /// move with the current row, which origin mode then offsets by the
+    /// region's top.
+    fn origin_column_moves_row(&mut self, col: u32) {
+        let (top, bottom, cols) = (self.top as u32, self.bottom as u32, self.cols as u32);
+        let cur = self.cur();
+        let row = cur.y as u32 + 1;
+        cur.x = (col.max(1).min(cols) - 1) as u16;
+        cur.y = ((row + top).min(bottom + 1) - 1) as u16;
+        cur.pending_wrap = false;
+    }
+
     /// Moves the cursor; with origin mode, rows are inside the region.
     fn goto(&mut self, x: u16, y: u16) {
         let (top, bottom, rows, cols) = (self.top, self.bottom, self.rows, self.cols);
@@ -1385,48 +1535,36 @@ impl Terminal {
         }
     }
 
-    fn set_alt_screen(&mut self, on: bool, save: bool, clear: bool) {
-        if on && self.modes.alt_screen && save {
-            // As libghostty: 1049 again saves the cursor and erases the
-            // screen (in the pen's background; entering gives a fresh one).
-            self.save_cursor();
-            let (cols, rows, pen) = (self.cols, self.rows, self.scr().cursor.style);
-            self.alt.lines = (0..rows).map(|_| Line::new(cols, pen)).collect();
+    /// Modes 47, 1047 and 1049, as libghostty's `switchScreenMode` (itself
+    /// from xterm's charproc.c): 1047 erases the alternate screen on the way
+    /// out, 1049 saves the cursor and erases it on the way in (also when
+    /// already there), each erase an ED 2 with the alternate screen's own
+    /// cursor (its pen, character protection); the cursor is copied across
+    /// when the screen changes, and 1049 restores it on the way out.
+    fn set_alt_screen(&mut self, mode: u16, on: bool) {
+        match mode {
+            1047 if !on && self.modes.alt_screen => self.erase_display(2, false),
+            1049 if on => self.save_cursor(),
+            _ => {}
+        }
+        let changed = on != self.modes.alt_screen;
+        let old = self.scr().cursor;
+        if changed {
+            self.modes.alt_screen = on;
             self.all_dirty = true;
-            return;
+            self.viewport = 0;
         }
-        if on == self.modes.alt_screen {
-            return;
+        match mode {
+            1049 if on => {
+                self.erase_display(2, false);
+                if changed {
+                    self.alt.cursor = old;
+                }
+            }
+            1049 => self.restore_cursor(),
+            _ if changed => *self.cur() = old,
+            _ => {}
         }
-        self.all_dirty = true;
-        if on {
-            if save {
-                self.save_cursor();
-            }
-            let cur = self.primary.cursor;
-            self.modes.alt_screen = true;
-            self.alt.cursor = cur;
-            if clear {
-                let (cols, rows) = (self.cols, self.rows);
-                self.alt.lines = (0..rows).map(|_| Line::new(cols, Style::default())).collect();
-            }
-        } else {
-            // As libghostty: 1049 erases on the way in only; 1047 also out.
-            if clear && !save {
-                let (cols, rows) = (self.cols, self.rows);
-                self.alt.lines = (0..rows).map(|_| Line::new(cols, Style::default())).collect();
-            }
-            // As libghostty: without a saved cursor (47, 1047) the cursor
-            // stays where it is on the alternate screen.
-            let alt_cursor = self.alt.cursor;
-            self.modes.alt_screen = false;
-            if save {
-                self.restore_cursor();
-            } else {
-                self.primary.cursor = alt_cursor;
-            }
-        }
-        self.viewport = 0;
     }
 
     fn full_reset(&mut self) {
@@ -1478,7 +1616,7 @@ impl Terminal {
             25 => self.modes.cursor_visible = on,
             47 => {
                 self.modes.alt_modes[0] = on;
-                self.set_alt_screen(on, false, false)
+                self.set_alt_screen(47, on)
             }
             66 => self.modes.app_keypad = on,
             69 => self.modes.lr_margins = on,
@@ -1513,7 +1651,7 @@ impl Terminal {
             }
             1047 => {
                 self.modes.alt_modes[1] = on;
-                self.set_alt_screen(on, false, true)
+                self.set_alt_screen(1047, on)
             }
             1048 => {
                 if on {
@@ -1522,15 +1660,9 @@ impl Terminal {
                     self.restore_cursor()
                 }
             }
-            // As libghostty, leaving restores the cursor even when the
-            // alternate screen was not on.
-            1049 if !on && !self.modes.alt_screen => {
-                self.modes.alt_modes[2] = false;
-                self.restore_cursor()
-            }
             1049 => {
                 self.modes.alt_modes[2] = on;
-                self.set_alt_screen(on, true, true)
+                self.set_alt_screen(1049, on)
             }
             2004 => self.modes.bracketed_paste = on,
             2026 => self.modes.sync_output = on,
@@ -1748,6 +1880,9 @@ impl Scanner {
     const STR: u8 = 5;
     /// DCS, its header and data.
     const DCS: u8 = 6;
+    /// An OSC string: only to know that a CAN or SUB there ends it without
+    /// being a ground-state control (vte executes it; libghostty does not).
+    const OSC: u8 = 7;
     /// Only the control part matters; the payload is not kept past this.
     const KEEP: usize = 4096;
 
@@ -1769,9 +1904,13 @@ impl Scanner {
         }
         match (self.state, b) {
             (Self::GROUND, _) => return self.ground(b),
-            (Self::ESC | Self::ESC_INT | Self::CSI | Self::STR | Self::DCS, 0x1b) => self.state = Self::ESC,
+            (Self::ESC | Self::ESC_INT | Self::CSI | Self::STR | Self::DCS | Self::OSC, 0x1b) => self.state = Self::ESC,
             (Self::ESC | Self::ESC_INT | Self::CSI | Self::STR | Self::DCS, 0x18 | 0x1a) => self.state = Self::GROUND,
-            (Self::STR | Self::DCS, _) => {}
+            // vte ends the OSC there and executes the byte, which is then no
+            // ground-state control (`Pre::GroundC0`): nothing is printed.
+            (Self::OSC, 0x07 | 0x18 | 0x1a) => self.state = Self::GROUND,
+            (Self::STR | Self::DCS | Self::OSC, _) => {}
+            (Self::ESC, b']') => self.state = Self::OSC,
             (Self::ESC, b'X' | b'^') => self.state = Self::STR,
             (Self::ESC, b'P') => self.state = Self::DCS,
             (Self::ESC, b'_') => {
@@ -2331,7 +2470,14 @@ impl vte::Perform for Terminal {
             }
             ([], 'A' | 'k') => self.move_vertical(-(p0(1) as i32)),
             ([], 'B' | 'e') => self.move_vertical(p0(1) as i32),
-            ([], 'C' | 'a') => self.move_horizontal(p0(1) as i32),
+            ([], 'a') if self.compat.has(Compat::ORIGIN_COLUMN_MOVES_ROW) && self.modes.origin => {
+                let x = self.scr().cursor.x as u32;
+                self.origin_column_moves_row(x + 1 + p0(1) as u32);
+            }
+            ([], 'C' | 'a') => {
+                let n = p0(1) as i32 + self.compat.has(Compat::SELFTEST_BREAK) as i32;
+                self.move_horizontal(n)
+            }
             ([], 'D' | 'j') => self.move_horizontal(-(p0(1) as i32)),
             ([], 'E') => {
                 self.move_vertical(p0(1) as i32);
@@ -2340,6 +2486,9 @@ impl vte::Perform for Terminal {
             ([], 'F') => {
                 self.move_vertical(-(p0(1) as i32));
                 self.cur().x = 0;
+            }
+            ([], 'G' | '`') if self.compat.has(Compat::ORIGIN_COLUMN_MOVES_ROW) && self.modes.origin => {
+                self.origin_column_moves_row(p0(1) as u32);
             }
             ([], 'G' | '`') => {
                 let y = self.scr().cursor.y;
@@ -2402,7 +2551,8 @@ impl vte::Perform for Terminal {
             ([], 'g') => match param(params, 0, 0) {
                 0 => {
                     let x = self.scr().cursor.x as usize;
-                    self.tabs[x] = false;
+                    // ECMA-48 §8.3.154: clears (libghostty toggles; Compat).
+                    self.tabs[x] = self.compat.has(Compat::TBC_TOGGLE) && !self.tabs[x];
                 }
                 3 => self.tabs.iter_mut().for_each(|t| *t = false),
                 _ => {}
@@ -2454,6 +2604,25 @@ impl vte::Perform for Terminal {
                 self.reply(v.as_bytes());
             }
             ([], 'r') => self.set_region(param(params, 0, 1), param(params, 1, 0)),
+            // XTSAVE and XTRESTORE, for the modes DECRQM knows (as libghostty;
+            // a mode never saved restores to its default).
+            ([b'?'], 's') => {
+                for p in params.iter() {
+                    let st = self.mode_state(p[0]);
+                    if st != 0 {
+                        self.saved_modes.insert(p[0], st == 1);
+                    }
+                }
+            }
+            ([b'?'], 'r') => {
+                for p in params.iter() {
+                    if self.mode_state(p[0]) != 0 {
+                        let v =
+                            self.saved_modes.get(&p[0]).copied().unwrap_or(matches!(p[0], 7 | 25 | 1007 | 1035 | 1036));
+                        self.set_mode(true, p[0], v);
+                    }
+                }
+            }
             // As libghostty: only without parameters (with them it would be
             // DECSLRM, which needs mode 69).
             ([], 's') if count == 0 && !self.modes.lr_margins => self.save_cursor(),
@@ -2596,7 +2765,8 @@ impl vte::Perform for Terminal {
                 self.events.push(Event::Title(t));
             }
             "7" => {
-                let p = text(1);
+                // The whole rest, semicolons included (as libghostty).
+                let p = params[1..].iter().map(|p| String::from_utf8_lossy(p)).collect::<Vec<_>>().join(";");
                 self.pwd = p.clone();
                 self.events.push(Event::Pwd(p));
             }
