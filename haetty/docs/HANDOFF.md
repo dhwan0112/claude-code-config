@@ -14,7 +14,6 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 
 
-> **In progress:** stage e1 (branch `haetty/e1`, worktree `~/projects/claude-code-config-wt/e1`). Remaining: E1 engine trait (behaviour unchanged), haetty-vt skeleton, haetty-vtdiff differential tool and report; then E2 core engine, E3 encoders
 
 ## 1. Current state
 

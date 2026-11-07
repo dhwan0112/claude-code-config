@@ -9,6 +9,8 @@ members = [
   "crates/haetty-daemon",
   "crates/haetty-headless",
   "crates/haetty-gui",
+  "crates/haetty-vt",
+  "crates/haetty-vtdiff",
 ]
 
 [workspace.package]
@@ -25,6 +27,7 @@ haetty-proto = { path = "crates/haetty-proto" }
 haetty-daemon = { path = "crates/haetty-daemon" }
 haetty-cc = { path = "crates/haetty-cc" }
 haetty-testkit = { path = "crates/haetty-testkit" }
+haetty-vt = { path = "crates/haetty-vt" }
 libghostty-vt = "=0.2.2"
 portable-pty = "0.9.0"
 crossbeam-channel = "0.5"

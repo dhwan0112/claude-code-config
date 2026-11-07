@@ -1,0 +1,11 @@
+[package]
+name = "haetty-vt"
+description = "haetty's own terminal engine in pure Rust (DESIGN.md §10): parser, screen, modes, replies, encoders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+vte = "0.15"

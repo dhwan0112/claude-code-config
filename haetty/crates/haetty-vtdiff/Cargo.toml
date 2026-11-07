@@ -1,0 +1,12 @@
+[package]
+name = "haetty-vtdiff"
+description = "Differential tests: the same bytes into libghostty-vt and haetty's own engine, compared cell by cell (DESIGN.md §10.5). Dev only."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+haetty-core = { workspace = true, features = ["native"] }

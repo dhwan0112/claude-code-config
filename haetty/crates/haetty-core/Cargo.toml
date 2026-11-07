@@ -9,8 +9,13 @@ rust-version.workspace = true
 [dependencies]
 haetty-pty.workspace = true
 libghostty-vt.workspace = true
+haetty-vt = { workspace = true, optional = true }
 crossbeam-channel.workspace = true
 log.workspace = true
 
 [dev-dependencies]
 haetty-testkit.workspace = true
+
+[features]
+# haetty's own engine (DESIGN.md §10): not used by sessions yet.
+native = ["dep:haetty-vt"]

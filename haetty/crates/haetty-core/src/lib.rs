@@ -15,6 +15,8 @@
 
 mod engine;
 pub mod ghostty;
+#[cfg(feature = "native")]
+pub mod native;
 pub mod osc;
 pub mod theme;
 pub mod types;
