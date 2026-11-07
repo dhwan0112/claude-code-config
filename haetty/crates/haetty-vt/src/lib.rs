@@ -1411,7 +1411,8 @@ impl Terminal {
                 self.alt.lines = (0..rows).map(|_| Line::new(cols, Style::default())).collect();
             }
         } else {
-            if clear {
+            // As libghostty: 1049 erases on the way in only; 1047 also out.
+            if clear && !save {
                 let (cols, rows) = (self.cols, self.rows);
                 self.alt.lines = (0..rows).map(|_| Line::new(cols, Style::default())).collect();
             }
@@ -2562,7 +2563,8 @@ impl vte::Perform for Terminal {
                     l.cont = false;
                 }
                 self.cur().style.flags = 0;
-                // DECALN also resets the scroll region.
+                // DECALN also resets the scroll region and origin mode.
+                self.modes.origin = false;
                 self.top = 0;
                 self.bottom = rows - 1;
                 self.goto(0, 0);

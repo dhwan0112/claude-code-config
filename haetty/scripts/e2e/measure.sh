@@ -8,6 +8,8 @@
 #   - GUI + daemon anonymous memory and idle CPU with 1 and 4 tabs (Claude Code idle when on PATH, else a shell)
 #   - GUI draw time per incremental frame while typing (trace log)
 #   HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/xvfb.sh bash scripts/e2e/measure.sh [dist|release]
+# ENGINE=native: the sessions run on haetty's own engine (DESIGN.md §10); NOGHOSTTY=1 also builds without
+# libghostty (--no-default-features).
 . "$(dirname "$0")/lib.sh"
 PROF=${1:-dist}
 cd "$REPO" || exit 2
@@ -15,11 +17,14 @@ cd "$REPO" || exit 2
 command -v zig > /dev/null || PATH=$HOME/.local/bin:$PATH
 T=${CARGO_TARGET_DIR:-$REPO/target}
 case $PROF in release) flag=--release; dir=release ;; *) flag="--profile $PROF"; dir=$PROF ;; esac
+[ -n "${NOGHOSTTY:-}" ] && { flag="$flag --no-default-features"; export CARGO_TARGET_DIR=$T-native; T=$CARGO_TARGET_DIR; }
+export HAETTY_ENGINE=${ENGINE:-}
+EARG=${ENGINE:+--engine $ENGINE}
 cargo build -q $flag -p haetty-gui -p haetty-headless 2>&1 | tail -3
 cargo build -q $flag -p haetty-daemon --example latency 2>&1 | tail -3
 cargo build -q $flag -p haetty-core --example mem 2>&1 | tail -3
 BIN=$T/$dir/haetty HL=$T/$dir/haetty-headless
-echo "== build: $($BIN --version), profile $PROF"
+echo "== build: $($BIN --version), profile $PROF, engine ${ENGINE:-ghostty}${NOGHOSTTY:+ (no libghostty)}"
 W=$HAETTY_RUN/measure; haetty_guard $W; mkdir -p $W/rt $W/data; chmod 700 $W/rt
 export HAETTY_INSTANCE=dev HAETTY_SOCKET=$W/rt/d.sock HAETTY_STATE_DIR=$W/state HAETTY_CONFIG_DIR=$W/cfg
 
@@ -33,7 +38,7 @@ python3 -Ic "import sys; sys.stdout.buffer.write(b''.join(b'\x1b[38;2;%d;%d;%dm%
 for f in lines wrapped sgr; do
   sz=$(stat -c %s $W/data/$f)
   t0=$(date +%s%N)
-  $HL --cols 80 --rows 24 --timeout 300 -e "wait-exit 290000" --dump none -- cat $W/data/$f > /dev/null 2>&1
+  $HL $EARG --cols 80 --rows 24 --timeout 300 -e "wait-exit 290000" --dump none -- cat $W/data/$f > /dev/null 2>&1
   t=$(( ($(date +%s%N) - t0) / 1000000 ))
   echo "  $f: $((sz / 1048576)) MiB in $t ms = $(( sz * 1000 / (t > 0 ? t : 1) / 1048576 )) MiB/s"
 done
@@ -58,7 +63,7 @@ gui_case() {
       set -- -c "$script"; args="-c$(printf '\x1f')$script"; fi
     mkdir -p $W/state/tabs; : > $W/state/tabs/last.tsv
     for i in $(seq 2 $tabs); do printf 'tab%s\t%s\t%s\t%s\t\t0\t0\n' $i "$PWD" "$prog" "$args" >> $W/state/tabs/last.tsv; done
-    HAETTY_LOG=info HAETTY_LOG_FILE=$W/gui-$kind-$tabs.log setsid $BIN --cols 120 --rows 36 "$prog" "$@" > /dev/null 2>&1 < /dev/null & P=$!
+    HAETTY_LOG=info HAETTY_LOG_FILE=$W/gui-$kind-$tabs.log setsid $BIN $EARG --cols 120 --rows 36 "$prog" "$@" > /dev/null 2>&1 < /dev/null & P=$!
     timeout 15 xdotool search --sync --onlyvisible --pid $P > /dev/null; sleep 20
     D=$(dpid)
     g0=$(ticks $P); d0=$(ticks $D); sleep 30; g1=$(ticks $P); d1=$(ticks $D)
@@ -73,7 +78,7 @@ gui_case filled 2
 gui_case filled 4
 
 echo "== GUI draw per incremental frame while typing (120x36)"
-HAETTY_LOG=trace HAETTY_LOG_FILE=$W/draw.log setsid $BIN --cols 120 --rows 36 --restore-tabs false python3 $PROBE echo-input > /dev/null 2>&1 < /dev/null & P=$!
+HAETTY_LOG=trace HAETTY_LOG_FILE=$W/draw.log setsid $BIN $EARG --cols 120 --rows 36 --restore-tabs false python3 $PROBE echo-input > /dev/null 2>&1 < /dev/null & P=$!
 WW=$(timeout 10 xdotool search --sync --onlyvisible --pid $P | head -1); sleep 2; xdotool windowfocus --sync $WW; sleep 0.3
 xdotool type --delay 60 'the quick brown fox jumps over the lazy dog 0123456789'; sleep 1
 python3 -I - $W/draw.log <<'PY'

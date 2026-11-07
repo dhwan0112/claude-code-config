@@ -7,7 +7,8 @@
 //! 120x36 session, then N times: send a key from a control client and wait
 //! for the frame in which the echoed character appears. Prints median, p95
 //! and max. Does not include the GUI's drawing (logged separately at trace
-//! level as "frame drawn in").
+//! level as "frame drawn in"). `HAETTY_ENGINE=native` runs the session on
+//! haetty's own engine.
 
 use std::time::{Duration, Instant};
 
@@ -52,7 +53,7 @@ fn main() {
             palette: vec![],
             cursor_color: None,
             claude_integration: false,
-            engine: String::new(),
+            engine: std::env::var("HAETTY_ENGINE").unwrap_or_default(),
         })
         .expect("create");
     let s = c.attach(&id, None).expect("attach");

@@ -146,11 +146,16 @@ run any other heavy command through `tools/heavy.sh CMD` /
 `pwsh -File tools\heavy.ps1 -Label TEXT -- CMD`, and never around it.
 `tools/heavy.sh --status` shows who holds the slots.
 The native engine (DESIGN.md §10, not the default): `crates/haetty-vt`
-(pure Rust), wrapped as `haetty_core::native` (feature `native`);
-`cargo run -p haetty-vtdiff --release -- --corpus ~/m4/vtcorpus --report
-FILE` compares it with libghostty-vt cell by cell (dev only); `--bisect
-NAME` finds the first differing byte and a minimal input, `--probe 'BYTES'`
-shows both engines' state.
+(pure Rust), wrapped as `haetty_core::native`, chosen per session with
+`engine = native` (config, `--engine`). libghostty-vt is the default
+feature `ghostty`; `--no-default-features` builds without it and without
+Zig (the gate checks this). `cargo run -p haetty-vtdiff --release --
+--corpus ~/m4/vtcorpus --report FILE` compares the engines cell by cell
+(dev only); `--encoders` compares their key/mouse/paste/focus bytes,
+`--bisect NAME` finds the first differing byte and a minimal input,
+`--probe 'BYTES'` shows both engines' state. Generated tables:
+`--gen-width`, `--gen-keys`, `tools/gen-grapheme-table.py`,
+`tools/gen-x11-colors.py`.
 `scripts/zig-mode.sh` shows libghostty-vt's Zig mode per profile (all
 optimized); `scripts/e2e/measure.sh` measures the §3.4 budgets.
 End-to-end checks of the real GUI (Linux, Xvfb): `scripts/e2e/run-all.sh`

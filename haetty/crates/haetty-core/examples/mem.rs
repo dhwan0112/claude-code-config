@@ -8,6 +8,7 @@
 //! anonymous RSS and the session's history length are printed.
 //! `SessionConfig::scrollback_limit` is a byte limit, not a line count.
 //! Without arguments: 4 sessions, the default limit, 10 000 lines.
+//! `HAETTY_ENGINE=native` runs the sessions on haetty's own engine.
 
 use std::time::{Duration, Instant};
 
@@ -35,6 +36,9 @@ fn main() {
         let script = format!("seq -f '%0119g' 1 {lines}; echo DONE; exec sleep 3600");
         let mut cfg = SessionConfig::new(CommandSpec::new("sh").args(["-c", script.as_str()]));
         cfg.scrollback_limit = scrollback;
+        if let Some(e) = std::env::var("HAETTY_ENGINE").ok().and_then(|e| haetty_core::vt::EngineKind::parse(&e)) {
+            cfg.engine = e;
+        }
         let s = Session::spawn(cfg).expect("spawn");
         let end = Instant::now() + Duration::from_secs(60);
         while !s.handle.snapshot().expect("snapshot").contains("DONE") && Instant::now() < end {
