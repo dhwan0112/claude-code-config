@@ -19,6 +19,7 @@
 //!   --bisect NAME                the named input byte by byte: the first byte after which they differ,
 //!                                and a minimal input that still differs (delta debugging)
 //!   --gen-width FILE             writes `haetty-vt`'s width tables from libghostty-vt
+//!   --dump NAME [BYTES]          the named input's bytes (escaped), resizes marked
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -26,7 +27,11 @@ use std::fmt::Write as _;
 use haetty_core::ghostty::GhosttyEngine;
 use haetty_core::native::NativeEngine;
 use haetty_core::vt::{VtEngine, VtInit};
-use haetty_core::{ColorSchemePref, GridSize, Rgb, Snapshot, TermColors};
+use haetty_core::{ColorSchemePref, GridSize, Rgb, ScrollTo, Snapshot, TermColors};
+
+/// The fuzz test's generators (grammar, Claude-Code-like stream, mutations).
+#[path = "../../haetty-core/tests/common/vtgen.rs"]
+mod vtgen;
 
 enum Step {
     Bytes(Vec<u8>),
@@ -57,6 +62,9 @@ struct Tally {
     equal: BTreeMap<&'static str, u64>,
     inputs: u64,
     inputs_equal: u64,
+    /// Runs whose scrollback contents were compared at the end, and equal.
+    history: u64,
+    history_equal: u64,
 }
 
 fn init(cols: u16, rows: u16) -> VtInit {
@@ -138,6 +146,7 @@ fn show(b: &[u8]) -> String {
     for &c in b.iter().take(160) {
         match c {
             0x1b => s.push_str("\\e"),
+            b'\\' => s.push_str("\\\\"),
             b'\n' => s.push_str("\\n"),
             b'\r' => s.push_str("\\r"),
             0x20..=0x7e => s.push(c as char),
@@ -179,8 +188,60 @@ struct Run<'a> {
 }
 
 impl Run<'_> {
+    /// At the end of a run: the scrollback contents, page by page from the
+    /// top (the counts are compared at every checkpoint).
+    fn history(&mut self) {
+        let (ka, kb) = (self.reference.scrollback_rows(), self.native.scrollback_rows());
+        if ka != kb {
+            return;
+        }
+        for t in [&mut *self.tally, &mut *self.by_category] {
+            t.history += 1;
+        }
+        let mut diff = None;
+        if ka > 0 {
+            self.reference.scroll_viewport(ScrollTo::Top);
+            self.native.scroll_viewport(ScrollTo::Top);
+            let rows = self.reference.snapshot_fresh().rows.max(1) as u64;
+            let mut top = 0u64;
+            loop {
+                let (a, b) = (self.reference.snapshot_fresh(), self.native.snapshot());
+                let cells = compare(&a, &b, 0, 0, &[], &[])
+                    .into_iter()
+                    .find(|d| matches!(d.field, "size" | "text" | "width" | "fg" | "bg" | "flags"));
+                if let Some(d) = cells {
+                    diff =
+                        Some(Diff { field: "history", at: format!("{} (page from scrollback row {top})", d.at), ..d });
+                    break;
+                }
+                if top + rows >= ka {
+                    break;
+                }
+                top += rows;
+                self.reference.scroll_viewport(ScrollTo::Delta(rows as isize));
+                self.native.scroll_viewport(ScrollTo::Delta(rows as isize));
+            }
+            self.reference.scroll_viewport(ScrollTo::Bottom);
+            self.native.scroll_viewport(ScrollTo::Bottom);
+        }
+        match diff {
+            None => {
+                for t in [&mut *self.tally, &mut *self.by_category] {
+                    t.history_equal += 1;
+                }
+            }
+            Some(d) => {
+                self.all_equal = false;
+                if self.first.is_none() {
+                    let tail = &self.fed[self.fed.len().saturating_sub(24)..];
+                    self.first = Some((self.fed.len() as u64, d, show(tail)));
+                }
+            }
+        }
+    }
+
     fn checkpoint(&mut self, offset: u64) {
-        let (a, b) = (self.reference.snapshot(), self.native.snapshot());
+        let (a, b) = (self.reference.snapshot_fresh(), self.native.snapshot());
         self.ra.extend(self.reference.take_replies());
         self.rb.extend(self.native.take_replies());
         let (sa, sb) = (self.reference.scrollback_rows(), self.native.scrollback_rows());
@@ -266,6 +327,7 @@ fn run_input(
         }
     }
     r.checkpoint(offset);
+    r.history();
     r.tally.inputs += 1;
     r.by_category.inputs += 1;
     if r.all_equal {
@@ -388,6 +450,184 @@ fn fuzz(seed: u64) -> Input {
     Input { name: format!("fuzz {seed}"), category: "fuzz".into(), steps: vec![Step::Bytes(b)] }
 }
 
+/// Splits a stream at up to two random points with a resize between the parts.
+fn with_resizes(rng: &mut Rng, b: Vec<u8>) -> Vec<Step> {
+    let mut steps = Vec::new();
+    let mut rest = b;
+    for _ in 0..rng.below(3) {
+        if rest.len() < 2 {
+            break;
+        }
+        let at = 1 + rng.below(rest.len() as u64 - 1) as usize;
+        let tail = rest.split_off(at);
+        steps.push(Step::Bytes(rest));
+        steps.push(Step::Resize(10 + rng.below(140) as u16, 3 + rng.below(50) as u16));
+        rest = tail;
+    }
+    steps.push(Step::Bytes(rest));
+    steps
+}
+
+/// Fuzz, second mix: what the first leaves out — private modes (not 69:
+/// left/right margins are not implemented, DESIGN.md §10.7), non-ASCII
+/// text (wide, combining, variation selectors, ZWJ, flags), SGR colon forms
+/// and extended colours, OSC colours, DCS/APC strings, kitty keyboard and
+/// the other replies, edits across wide characters, long lines; resizes in
+/// between.
+fn fuzz2(seed: u64) -> Input {
+    let mut rng = Rng(seed.wrapping_add(0xbeef));
+    let texts = [
+        "가나다",
+        "漢字",
+        "😀",
+        "e\u{301}",
+        "x\u{fe0f}",
+        "\u{2764}\u{fe0f}",
+        "\u{2714}\u{fe0e}",
+        "👨\u{200d}👩",
+        "a",
+        "hello ",
+        "\u{200d}",
+        "\u{301}",
+        "ｗ",
+        "🇰🇷",
+        "\u{a0}",
+        "─",
+        "\u{25cf}",
+    ];
+    let private = [
+        1u16, 5, 6, 7, 12, 25, 47, 66, 1000, 1002, 1003, 1004, 1005, 1006, 1015, 1016, 1047, 1048, 1049, 2004, 2026,
+        2027, 2031, 2048,
+    ];
+    let nums = [0u16, 1, 2, 3, 5, 8, 22, 80, 200];
+    let mut b = Vec::new();
+    while b.len() < 8192 {
+        match rng.below(16) {
+            0..=3 => {
+                let t = texts[rng.below(texts.len() as u64) as usize];
+                (0..1 + rng.below(10)).for_each(|_| b.extend_from_slice(t.as_bytes()));
+            }
+            4 => {
+                let m = private[rng.below(private.len() as u64) as usize];
+                let _ = write!(Text(&mut b), "\x1b[?{m}{}", ["h", "l", "$p"][rng.below(3) as usize]);
+            }
+            5 | 6 => {
+                b.extend_from_slice(b"\x1b[");
+                for i in 0..rng.below(4) {
+                    if i > 0 {
+                        b.push(b';');
+                    }
+                    let _ = write!(Text(&mut b), "{}", nums[rng.below(nums.len() as u64) as usize]);
+                }
+                b.push(b"ABCDEFGHIJKLMPSTXZ@`abdefghjklmnrstu"[rng.below(36) as usize]);
+            }
+            7 => {
+                let n = rng.below(256);
+                let (r, g, bl) = (rng.below(300), rng.below(256), rng.below(256));
+                let forms = [
+                    format!("38;5;{n}"),
+                    format!("48;2;{r};{g};{bl}"),
+                    format!("38:2::{r}:{g}:{bl}"),
+                    format!("48:5:{n}"),
+                    "4:3".into(),
+                    format!("58;5;{n}"),
+                    format!("{}", 1 + rng.below(9)),
+                    format!("{}", 21 + rng.below(9)),
+                    "53".into(),
+                    "55".into(),
+                    format!("{}", 90 + rng.below(18)),
+                    "0".into(),
+                    String::new(),
+                    format!("38;{}", rng.below(10)),
+                ];
+                let _ = write!(Text(&mut b), "\x1b[{}m", forms[rng.below(forms.len() as u64) as usize]);
+            }
+            8 => {
+                let n = rng.below(256);
+                let forms = [
+                    format!("4;{n};rgb:{:x}/{:x}/{:x}", rng.below(256), rng.below(256), rng.below(256)),
+                    format!("4;{n};?"),
+                    "10;?".into(),
+                    "11;#abc".into(),
+                    format!("104;{n}"),
+                    "104".into(),
+                    "110".into(),
+                    "111".into(),
+                    "112".into(),
+                    "12;?".into(),
+                    format!("0;t{n}"),
+                    format!("2;t;{n}"),
+                    format!("7;file://h/p{n}"),
+                    "52;c;aGk=".into(),
+                ];
+                let end = ["\x07", "\x1b\\"][rng.below(2) as usize];
+                let _ = write!(Text(&mut b), "\x1b]{}{end}", forms[rng.below(forms.len() as u64) as usize]);
+            }
+            9 => b.push([b'\r', b'\n', b'\t', 0x08, 0x07, 0x0e, 0x0f, 0x0b, 0x0c, 0x00][rng.below(10) as usize]),
+            10 => b.extend_from_slice(
+                [
+                    b"\x1b7".as_slice(),
+                    b"\x1b8",
+                    b"\x1bM",
+                    b"\x1bD",
+                    b"\x1bE",
+                    b"\x1bH",
+                    b"\x1b=",
+                    b"\x1b>",
+                    b"\x1b(0",
+                    b"\x1b(B",
+                    b"\x1b)0",
+                    b"\x1b*0",
+                    b"\x1bn",
+                    b"\x1bN",
+                    b"\x1b#8",
+                    b"\x1bZ",
+                    b"\x1bc",
+                ][rng.below(17) as usize],
+            ),
+            11 => b.extend_from_slice(
+                [
+                    b"\x1bP$qm\x1b\\".as_slice(),
+                    b"\x1b_Ga=q,i=3;AAAA\x1b\\",
+                    b"\x1bP+q544e\x1b\\",
+                    b"\x1b_Ga=q,i=9\x1b\\",
+                ][rng.below(4) as usize],
+            ),
+            12 => (0..70 + rng.below(100)).for_each(|_| b.push(b'w')),
+            13 => {
+                let f = rng.below(32);
+                let forms = [format!(">{f}u"), "<u".into(), format!("={f};{}u", 1 + rng.below(3)), "?u".into()];
+                let _ = write!(Text(&mut b), "\x1b[{}", forms[rng.below(4) as usize]);
+            }
+            14 => {
+                let _ = write!(Text(&mut b), "\x1b[{} q", rng.below(7));
+            }
+            _ => {
+                let _ = write!(Text(&mut b), "\x1b[{}t", [14, 16, 18, 22, 23][rng.below(5) as usize]);
+            }
+        }
+    }
+    let steps = with_resizes(&mut rng, b);
+    Input { name: format!("fuzz2 {seed}"), category: "fuzz2".into(), steps }
+}
+
+/// The fuzz test's grammar (escape-sequence heavy, random bytes, broken
+/// UTF-8), with resizes in between.
+fn grammar(seed: u64) -> Input {
+    let mut r = vtgen::Rng(seed.wrapping_add(0x5eed));
+    let b = vtgen::grammar(&mut r, 8192);
+    let mut rng = Rng(seed);
+    Input { name: format!("grammar {seed}"), category: "grammar".into(), steps: with_resizes(&mut rng, b) }
+}
+
+/// Mutations of the Claude-Code-like stream (with pieces of a corpus file
+/// spliced in when there is one).
+fn mutated(seed: u64, other: &[u8]) -> Input {
+    let mut r = vtgen::Rng(seed.wrapping_add(0x3a7e));
+    let b = vtgen::mutate(&mut r, &vtgen::claude_like(), other);
+    Input { name: format!("mutated {seed}"), category: "mutated".into(), steps: vec![Step::Bytes(b)] }
+}
+
 /// `write!` into a byte vector.
 struct Text<'a>(&'a mut Vec<u8>);
 impl std::fmt::Write for Text<'_> {
@@ -429,11 +669,50 @@ fn unescape(s: &str) -> Vec<u8> {
 fn probe(bytes: &[u8], cols: u16, rows: u16) {
     let mut a = GhosttyEngine::new(&init(cols, rows)).expect("reference engine");
     let mut b = NativeEngine::new(&init(cols, rows));
-    a.feed(bytes);
-    b.feed(bytes);
+    // `<resize CxR>` in the input resizes both engines there.
+    const MARK: &[u8] = b"<resize ";
+    if bytes.windows(MARK.len()).any(|w| w == MARK) {
+        let mut rest = bytes;
+        loop {
+            let at = rest.windows(MARK.len()).position(|w| w == MARK).unwrap_or(rest.len());
+            a.feed(&rest[..at]);
+            b.feed(&rest[..at]);
+            if at == rest.len() {
+                break;
+            }
+            let spec = &rest[at + MARK.len()..];
+            let end = spec.iter().position(|&c| c == b'>').unwrap_or(spec.len());
+            let txt = String::from_utf8_lossy(&spec[..end]).into_owned();
+            let (c, r) = txt.split_once('x').unwrap_or(("80", "24"));
+            let gs = GridSize::new(c.parse().unwrap_or(80), r.parse().unwrap_or(24)).with_cell(9, 18);
+            a.resize(gs);
+            b.resize(gs);
+            rest = &spec[(end + 1).min(spec.len())..];
+        }
+    } else if std::env::var_os("VTDIFF_SPLIT").is_some() {
+        // VTDIFF_SPLIT=1: one byte per write, as `--bisect` feeds.
+        // VTDIFF_SPLIT=snap: and a snapshot after each.
+        let snap = std::env::var("VTDIFF_SPLIT").is_ok_and(|v| v == "snap");
+        for c in bytes.chunks(1) {
+            a.feed(c);
+            b.feed(c);
+            if snap {
+                let _ = (a.snapshot(), b.snapshot());
+            }
+        }
+    } else {
+        a.feed(bytes);
+        b.feed(bytes);
+    }
     let mut seen = Vec::new();
+    // A fresh reference snapshot (see `GhosttyEngine::snapshot_fresh`).
+    let fresh = a.snapshot_fresh();
     for (name, e) in [("reference", &mut a as &mut dyn VtEngine), ("native", &mut b as &mut dyn VtEngine)] {
-        let s = e.snapshot();
+        let s = if name == "reference" && std::env::var("VTDIFF_SPLIT").map_or(true, |v| v != "snap") {
+            fresh.clone()
+        } else {
+            e.snapshot()
+        };
         let r = e.take_replies();
         seen.push((s.clone(), e.scrollback_rows(), r.clone()));
         println!("== {name}: {}x{}, cursor {:?}, scrollback {}", s.cols, s.rows, s.cursor, e.scrollback_rows());
@@ -442,7 +721,7 @@ fn probe(bytes: &[u8], cols: u16, rows: u16) {
             "   title {:?} pwd {:?} default fg {:?} bg {:?} cursor colour {:?}",
             s.title, s.pwd, s.default_fg, s.default_bg, s.cursor_color
         );
-        println!("   replies: {}", show(&r));
+        println!("   replies: {}", show_all(&r));
         println!("   events: {:?}", e.take_events().iter().map(|e| format!("{e:?}")).collect::<Vec<_>>());
         for y in 0..s.rows {
             for x in 0..s.cols {
@@ -534,20 +813,50 @@ fn gen_width(path: &str) {
     );
 }
 
-/// The engines differ after these bytes (80x24).
-fn differs(bytes: &[u8]) -> bool {
+/// One step of a minimised input: a byte, or a resize.
+#[derive(Clone, Copy)]
+enum Ev {
+    B(u8),
+    R(u16, u16),
+}
+
+/// The engines differ after these steps (from 80x24).
+fn differs(evs: &[Ev]) -> bool {
     let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
     let _ = a.take_replies();
     let mut b = NativeEngine::new(&init(80, 24));
-    a.feed(bytes);
-    b.feed(bytes);
-    let (ra, rb) = (a.take_replies(), b.take_replies());
-    let (sa, sb) = (a.snapshot(), b.snapshot());
+    let (mut ra, mut rb) = (Vec::new(), Vec::new());
+    let mut i = 0;
+    while i < evs.len() {
+        match evs[i] {
+            Ev::B(_) => {
+                let mut run = Vec::new();
+                while let Some(Ev::B(c)) = evs.get(i) {
+                    run.push(*c);
+                    i += 1;
+                }
+                a.feed(&run);
+                b.feed(&run);
+            }
+            Ev::R(c, r) => {
+                let gs = GridSize::new(c, r).with_cell(9, 18);
+                a.resize(gs);
+                b.resize(gs);
+                i += 1;
+            }
+        }
+        ra.extend(a.take_replies());
+        rb.extend(b.take_replies());
+    }
+    let (sa, sb) = (a.snapshot_fresh(), b.snapshot());
     !compare(&sa, &sb, a.scrollback_rows(), b.scrollback_rows(), &ra, &rb).is_empty()
 }
 
 /// Delta debugging: drops ever smaller pieces while the engines still differ.
-fn minimize(mut v: Vec<u8>) -> Vec<u8> {
+fn minimize(mut v: Vec<Ev>) -> Vec<Ev> {
+    if !differs(&v) {
+        return v;
+    }
     let mut n = v.len() / 2;
     while n >= 1 {
         let mut i = 0;
@@ -569,6 +878,23 @@ fn minimize(mut v: Vec<u8>) -> Vec<u8> {
     v
 }
 
+/// Steps as text: bytes escaped, resizes as `<resize CxR>`.
+fn show_evs(evs: &[Ev]) -> String {
+    let mut out = String::new();
+    let mut run = Vec::new();
+    for e in evs {
+        match e {
+            Ev::B(c) => run.push(*c),
+            Ev::R(c, r) => {
+                out.push_str(&show_all(&std::mem::take(&mut run)));
+                let _ = write!(out, "<resize {c}x{r}>");
+            }
+        }
+    }
+    out.push_str(&show_all(&run));
+    out
+}
+
 /// Like `show`, without the length cap.
 fn show_all(b: &[u8]) -> String {
     b.chunks(160).map(show).collect()
@@ -582,6 +908,7 @@ fn bisect(inp: &Input) {
     let _ = a.take_replies();
     let mut b = NativeEngine::new(&init(80, 24));
     let mut fed: Vec<u8> = Vec::new();
+    let mut evs: Vec<Ev> = Vec::new();
     let (mut ra, mut rb) = (Vec::new(), Vec::new());
     for step in &inp.steps {
         let bytes: Vec<Vec<u8>> = match step {
@@ -590,6 +917,7 @@ fn bisect(inp: &Input) {
                 let gs = GridSize::new(*c, *r).with_cell(9, 18);
                 a.resize(gs);
                 b.resize(gs);
+                evs.push(Ev::R(*c, *r));
                 vec![vec![]]
             }
         };
@@ -597,9 +925,10 @@ fn bisect(inp: &Input) {
             a.feed(&one);
             b.feed(&one);
             fed.extend_from_slice(&one);
+            evs.extend(one.iter().map(|&c| Ev::B(c)));
             ra.extend(a.take_replies());
             rb.extend(b.take_replies());
-            let (sa, sb) = (a.snapshot(), b.snapshot());
+            let (sa, sb) = (a.snapshot_fresh(), b.snapshot());
             let d = compare(&sa, &sb, a.scrollback_rows(), b.scrollback_rows(), &ra, &rb);
             if let Some(d) = d.first() {
                 println!(
@@ -612,10 +941,8 @@ fn bisect(inp: &Input) {
                     d.native
                 );
                 println!("bytes before: {}", show(&fed[fed.len().saturating_sub(120)..]));
-                if inp.steps.len() == 1 {
-                    let m = minimize(fed);
-                    println!("minimal input ({} bytes): {}", m.len(), show_all(&m));
-                }
+                let m = minimize(evs);
+                println!("minimal input ({} steps): {}", m.len(), show_evs(&m));
                 return;
             }
         }
@@ -638,6 +965,7 @@ fn main() {
     let mut args = raw.into_iter();
     let (mut corpus, mut nfuzz, mut chunk, mut every, mut report) = (None, 20u64, 4096usize, 1024u64, None);
     let mut bisect_name: Option<String> = None;
+    let mut dump: Option<(String, usize)> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--corpus" => corpus = args.next(),
@@ -646,6 +974,11 @@ fn main() {
             "--every" => every = args.next().and_then(|v| v.parse().ok()).unwrap_or(1024),
             "--report" => report = args.next(),
             "--bisect" => bisect_name = args.next(),
+            "--dump" => {
+                let n = args.next().unwrap_or_default();
+                let len = args.next().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
+                dump = Some((n, len));
+            }
             _ => {
                 eprintln!("usage: vtdiff [--corpus DIR] [--fuzz N] [--chunk BYTES] [--every BYTES] [--report FILE] [--bisect NAME]");
                 std::process::exit(2);
@@ -665,9 +998,43 @@ fn main() {
         }
     }
     inputs.extend((1..=3).map(synthetic));
+    inputs.push(Input {
+        name: "claude-like".into(),
+        category: "synthetic".into(),
+        steps: vec![Step::Bytes(vtgen::claude_like())],
+    });
     inputs.extend(scenarios());
     inputs.extend(resizes());
     inputs.extend((1..=nfuzz).map(fuzz));
+    inputs.extend((1..=nfuzz).map(fuzz2));
+    inputs.extend((1..=nfuzz).map(grammar));
+    let other: Vec<u8> = match inputs.iter().find(|i| i.category == "corpus") {
+        Some(Input { steps, .. }) => match steps.first() {
+            Some(Step::Bytes(b)) => b[..b.len().min(64 << 10)].to_vec(),
+            _ => vec![],
+        },
+        None => vec![],
+    };
+    inputs.extend((1..=nfuzz).map(|s| mutated(s, &other)));
+    if let Some((n, len)) = dump {
+        for i in inputs.iter().filter(|i| i.name == n) {
+            let mut left = len;
+            for st in &i.steps {
+                match st {
+                    Step::Bytes(b) => {
+                        let k = b.len().min(left);
+                        println!("{}", show_all(&b[..k]));
+                        left -= k;
+                    }
+                    Step::Resize(c, r) => println!("<resize {c}x{r}>"),
+                }
+                if left == 0 {
+                    break;
+                }
+            }
+        }
+        return;
+    }
     if let Some(n) = bisect_name {
         match inputs.iter().find(|i| i.name == n) {
             Some(i) => bisect(i),
@@ -704,6 +1071,13 @@ fn main() {
         let e = total.equal.get(f).copied().unwrap_or(0);
         let _ = writeln!(out, "| {f} | {e} of {} ({:.1} %) |", total.checkpoints, pct(e, total.checkpoints));
     }
+    let _ = writeln!(
+        out,
+        "| history (scrollback contents, end of each run) | {} of {} ({:.1} %) |",
+        total.history_equal,
+        total.history,
+        pct(total.history_equal, total.history)
+    );
     let _ =
         writeln!(out, "\n| Input category | Inputs identical | Checkpoints with every field equal |\n|---|---|---|");
     for (c, t) in &cats {

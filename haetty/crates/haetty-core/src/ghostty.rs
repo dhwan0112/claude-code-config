@@ -42,6 +42,18 @@ pub struct GhosttyEngine {
 }
 
 impl GhosttyEngine {
+    /// A snapshot from a new render state, so every row is read again.
+    /// The incremental one misses a row whose only change is a combining
+    /// mark, variation selector or ZWJ joining a cell already drawn:
+    /// libghostty does not mark that row dirty (DESIGN.md §10.7).
+    /// `haetty-vtdiff` compares with this one; sessions use `snapshot`.
+    pub fn snapshot_fresh(&mut self) -> Snapshot {
+        if let Ok(rs) = RenderState::new() {
+            self.render = rs;
+        }
+        build_snapshot(self)
+    }
+
     pub fn new(init: &VtInit) -> Result<GhosttyEngine, String> {
         let gs = init.size.clamped();
         // Leaked once per session: the XTVERSION callback must return a &str
@@ -336,7 +348,9 @@ fn build_snapshot(e: &mut GhosttyEngine) -> Snapshot {
         ..Default::default()
     };
     snap.modes = Modes {
-        alt_screen: term.mode(Mode::ALT_SCREEN_SAVE).unwrap_or(false) || term.mode(Mode::ALT_SCREEN).unwrap_or(false),
+        // The screen shown, not the mode flags: 47, 1047 and 1049 can be
+        // left set while the primary screen is back.
+        alt_screen: term.active_screen().is_ok_and(|s| s == libghostty_vt::screen::Screen::Alternate),
         mouse_tracking: term.is_mouse_tracking().unwrap_or(false),
         sgr_mouse: term.mode(Mode::SGR_MOUSE).unwrap_or(false),
         bracketed_paste: term.mode(Mode::BRACKETED_PASTE).unwrap_or(false),

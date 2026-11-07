@@ -9,6 +9,8 @@
 //! scroll regions, the alternate screen, wide characters, modes, replies to
 //! queries. Encoders and the rest are stage E3.
 
+mod grapheme;
+pub mod grapheme_table;
 mod width;
 pub mod width_table;
 
@@ -72,11 +74,14 @@ struct Line {
     wrapped: bool,
     /// Changed since the frontend last took the changes (`take_dirty`).
     dirty: bool,
+    /// The line continues the one above (libghostty's `wrap_continuation`,
+    /// cleared on its own by line insertion and deletion).
+    cont: bool,
 }
 
 impl Line {
     fn new(cols: u16, bg: Style) -> Line {
-        Line { cells: vec![blank(bg); cols as usize], wrapped: false, dirty: true }
+        Line { cells: vec![blank(bg); cols as usize], wrapped: false, dirty: true, cont: false }
     }
 }
 
@@ -104,13 +109,15 @@ struct Cursor {
     charsets: [u8; 4],
     /// Which of G0–G3 is in GL (SI/SO).
     gl: u8,
+    /// DECSCUSR's shape; it goes with the cursor (saved, restored, copied
+    /// between screens), as in libghostty.
+    shape: CursorShape,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct Saved {
     cursor: Cursor,
     origin: bool,
-    autowrap: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -169,7 +176,32 @@ pub struct Modes {
     pub alt_screen: bool,
     pub cursor_blink: bool,
     pub app_keypad: bool,
+    /// DECLRMM (69): left/right margins allowed (DECSLRM itself is not implemented).
+    pub lr_margins: bool,
+    /// Other modes libghostty knows, kept for DECRQM only (`OTHER_MODES`).
+    pub other: [bool; OTHER_MODES.len()],
+    /// 47, 1047 and 1049 as set (DECRQM reports each).
+    pub alt_modes: [bool; 3],
 }
+
+/// Modes libghostty answers DECRQM for that haetty-vt only keeps (no
+/// behaviour), with their defaults: DECCOLM, DECSCLM, DECARM, 80/132,
+/// reverse wrap, DECBKM, alternate scroll, the meta/alt keys, extended
+/// reverse wrap, 1048's save state.
+pub const OTHER_MODES: [(u16, bool); 12] = [
+    (3, false),
+    (4, false),
+    (8, false),
+    (40, false),
+    (45, false),
+    (67, false),
+    (1007, true),
+    (1035, true),
+    (1036, true),
+    (1039, false),
+    (1045, false),
+    (1048, false),
+];
 
 impl Default for Modes {
     fn default() -> Modes {
@@ -198,6 +230,9 @@ impl Default for Modes {
             alt_screen: false,
             cursor_blink: false,
             app_keypad: false,
+            lr_margins: false,
+            other: OTHER_MODES.map(|m| m.1),
+            alt_modes: [false; 3],
         }
     }
 }
@@ -283,17 +318,25 @@ pub struct Terminal {
     fg: [u8; 3],
     bg: [u8; 3],
     cursor_color: Option<[u8; 3]>,
-    cursor_shape: CursorShape,
     dark: Option<bool>,
     xtversion: String,
     parser: vte::Parser,
     pre: Scanner,
     /// SS2/SS3: the next character from G2/G3.
     single_shift: Option<u8>,
+    /// What REP repeats.
+    last_char: Option<char>,
+    /// The C1 control vte is executing came as a raw byte (see `execute`).
+    raw_c1: bool,
+    /// The C0 control vte is executing is in the ground state (see `execute`).
+    ground_c0: bool,
     /// Parameters of the CSI being dispatched as libghostty counts them:
     /// `CSI s` has none, `CSI 0 s` and `CSI ; s` one, `CSI 5 ; B` one
     /// (vte would say 1, 1, 2 and 2).
     csi_count: usize,
+    csi_colon: bool,
+    /// Its parameter bytes.
+    csi_raw: Vec<u8>,
     replies: Vec<u8>,
     events: Vec<Event>,
     /// Lines of scrollback the viewport is above the live screen.
@@ -324,13 +367,17 @@ impl Terminal {
             fg: o.colors.fg,
             bg: o.colors.bg,
             cursor_color: o.colors.cursor,
-            cursor_shape: CursorShape::Block,
             dark: o.dark,
             xtversion: o.xtversion,
             parser: vte::Parser::new(),
             pre: Scanner::default(),
             single_shift: None,
+            last_char: None,
+            raw_c1: false,
+            ground_c0: false,
             csi_count: 0,
+            csi_colon: false,
+            csi_raw: Vec::new(),
             replies: Vec::new(),
             events: Vec::new(),
             viewport: 0,
@@ -347,10 +394,35 @@ impl Terminal {
         for i in 0..bytes.len() {
             match self.pre.byte(bytes[i]) {
                 Pre::None => {}
-                Pre::CsiEnd(count) => {
+                Pre::CsiEnd(count, colon) => {
                     parser.advance(self, &bytes[start..i]);
                     self.csi_count = count;
+                    self.csi_colon = colon;
+                    std::mem::swap(&mut self.csi_raw, &mut self.pre.csi_raw);
                     parser.advance(self, &bytes[i..=i]);
+                    start = i + 1;
+                }
+                Pre::C1(c) => {
+                    parser.advance(self, &bytes[start..i]);
+                    parser.advance(self, &[0x1b]);
+                    if let Some(apc) = self.pre.apc_done.take() {
+                        self.apc_dispatch(&apc);
+                    }
+                    parser.advance(self, &[c - 0x40]);
+                    start = i + 1;
+                }
+                Pre::RawC1 => {
+                    parser.advance(self, &bytes[start..i]);
+                    self.raw_c1 = true;
+                    parser.advance(self, &bytes[i..=i]);
+                    self.raw_c1 = false;
+                    start = i + 1;
+                }
+                Pre::GroundC0 => {
+                    parser.advance(self, &bytes[start..i]);
+                    self.ground_c0 = true;
+                    parser.advance(self, &bytes[i..=i]);
+                    self.ground_c0 = false;
                     start = i + 1;
                 }
                 Pre::Apc => {
@@ -368,6 +440,10 @@ impl Terminal {
     /// Kitty graphics (`ESC _ G … ESC \`): only the support query is
     /// answered (`a=q` with an image id), as libghostty answers it.
     fn apc_dispatch(&mut self, apc: &[u8]) {
+        // As libghostty: a C0 control inside makes the command void.
+        if apc.iter().any(|&c| c < 0x20) {
+            return;
+        }
         let Some(body) = apc.strip_prefix(b"G") else { return };
         let control = body.split(|&c| c == b';').next().unwrap_or(b"");
         let (mut action, mut id, mut quiet) = (b't', 0u32, 0u32);
@@ -438,7 +514,7 @@ impl Terminal {
     }
 
     pub fn cursor_shape(&self) -> CursorShape {
-        self.cursor_shape
+        self.screen_ref().cursor.shape
     }
 
     pub fn scrollback_rows(&self) -> u64 {
@@ -517,6 +593,11 @@ impl Terminal {
 
     // ----------------------------------------------------------- resize
 
+    /// A new size. As libghostty (`PageList.resize`): with wider columns the
+    /// lines reflow first and the rows change after, with narrower ones the
+    /// other way round; lines reflow only on the primary screen and only
+    /// while autowrap is on. The cursor and the saved cursor follow their
+    /// cells; one that ends in the scrollback goes to the top left.
     pub fn resize(&mut self, cols: u16, rows: u16, cell_width: u16, cell_height: u16) {
         self.all_dirty = true;
         let (cols, rows) = (cols.max(1), rows.max(1));
@@ -524,56 +605,23 @@ impl Terminal {
         if (cols, rows) == (self.cols, self.rows) {
             return;
         }
-        let old_cols = self.cols;
-        // Primary screen: reflow soft-wrapped lines (scrollback included).
-        let (lines, cur) = reflow(
-            self.scrollback.drain(..).chain(std::mem::take(&mut self.primary.lines)).collect(),
-            old_cols,
-            cols,
-            (self.primary.cursor.x, self.primary.cursor.y as usize + self.scrollback.len()),
-        );
-        let _ = cur;
-        let mut lines = lines;
-        let cy_abs = {
-            // The cursor's line after reflow.
-            cur.1
-        };
-        // Keep the cursor's line on screen: rows below it are dropped first
-        // when the screen shrinks, then rows from the top go to scrollback.
-        let mut keep_end = lines.len().max(cy_abs + 1);
-        while keep_end > cy_abs + 1 && keep_end > rows as usize && lines.get(keep_end - 1).is_some_and(is_blank) {
-            keep_end -= 1;
-        }
-        lines.truncate(keep_end);
-        while lines.len() < rows as usize {
-            lines.push(Line::new(cols, Style::default()));
-        }
-        let split = lines.len() - rows as usize;
-        let screen: Vec<Line> = lines.split_off(split);
-        self.scrollback = lines.into();
-        self.primary.lines = screen;
-        self.primary.cursor.x = cur.0.min(cols - 1);
-        self.primary.cursor.y = (cy_abs.saturating_sub(split)).min(rows as usize - 1) as u16;
-        self.primary.cursor.pending_wrap = false;
-        // Alternate screen: cut or extended, no reflow.
-        let mut alt = std::mem::take(&mut self.alt.lines);
-        for l in &mut alt {
-            l.cells.resize(cols as usize, blank(Style::default()));
-            l.wrapped = false;
-        }
-        alt.resize(rows as usize, Line::new(cols, Style::default()));
-        if alt.len() > rows as usize {
-            alt.truncate(rows as usize);
-        }
-        self.alt.lines = alt;
-        self.alt.cursor.x = self.alt.cursor.x.min(cols - 1);
-        self.alt.cursor.y = self.alt.cursor.y.min(rows - 1);
-        self.alt.cursor.pending_wrap = false;
+        let (old_cols, old_rows) = (self.cols, self.rows);
+        let reflow = self.modes.autowrap;
+        // As libghostty, a resize ends synchronized output.
+        self.modes.sync_output = false;
+        // Primary screen, with its scrollback.
+        let mut sb = std::mem::take(&mut self.scrollback);
+        resize_screen(&mut self.primary, Some(&mut sb), old_cols, old_rows, cols, rows, reflow);
+        self.scrollback = sb;
+        // Alternate screen: no reflow, no scrollback.
+        resize_screen(&mut self.alt, None, old_cols, old_rows, cols, rows, false);
         self.cols = cols;
         self.rows = rows;
         self.top = 0;
         self.bottom = rows - 1;
-        self.tabs = default_tabs(cols);
+        if cols != old_cols {
+            self.tabs = default_tabs(cols);
+        }
         self.viewport = 0;
         if self.modes.in_band_resize {
             self.size_report_2048();
@@ -605,6 +653,20 @@ impl Terminal {
         }
     }
 
+    /// As libghostty's insert/delete lines: shifted rows lose their soft
+    /// wraps, and a spacer head at the end becomes a plain cell.
+    fn unwrap_rows(&mut self, top: u16, bottom: u16) {
+        for l in &mut self.scr().lines[top as usize..=bottom as usize] {
+            l.wrapped = false;
+            l.cont = false;
+            if let Some(c) = l.cells.last_mut() {
+                if c.wide == Wide::SpacerHead {
+                    c.wide = Wide::Narrow;
+                }
+            }
+        }
+    }
+
     /// Which rows of the viewport changed since the last call (as
     /// libghostty's render state keeps them); every row after a resize, a
     /// screen switch, a viewport scroll or new colours.
@@ -619,6 +681,18 @@ impl Terminal {
     }
 
     fn print_char(&mut self, c: char) {
+        if self.modes.grapheme_cluster && self.cluster(c) {
+            return;
+        }
+        let w = width(c);
+        if w == 0 {
+            // Under 2027 a zero-width character that starts a cluster is
+            // dropped (as libghostty).
+            if !self.modes.grapheme_cluster {
+                self.combine(c);
+            }
+            return;
+        }
         let c = {
             let cur = self.scr().cursor;
             let g = self.single_shift.take().unwrap_or(cur.gl);
@@ -628,11 +702,6 @@ impl Terminal {
                 c
             }
         };
-        let w = width(c);
-        if w == 0 {
-            self.combine(c);
-            return;
-        }
         let autowrap = self.modes.autowrap;
         let cols = self.cols;
         if self.scr().cursor.pending_wrap && autowrap {
@@ -649,8 +718,7 @@ impl Terminal {
             let (x, y) = (self.scr().cursor.x, self.scr().cursor.y);
             let style = self.scr().cursor.style;
             self.clear_wide_at(x, y);
-            self.line(y).cells[x as usize] =
-                Cell { text: String::new(), style: Style { flags: 0, ..style }, wide: Wide::SpacerHead };
+            self.line(y).cells[x as usize] = Cell { text: String::new(), style, wide: Wide::SpacerHead };
             self.wrap_line();
         }
         let (x, y, style) = {
@@ -677,6 +745,106 @@ impl Terminal {
         } else {
             cur.x = nx;
         }
+    }
+
+    /// Mode 2027, as libghostty's `print`: a character that does not start a
+    /// new grapheme cluster joins the cell before the cursor, which becomes
+    /// wide (VS16, a part that has width of its own) or narrow (VS15). True
+    /// when the character was taken (joined, or dropped as a variation
+    /// selector the base does not have).
+    fn cluster(&mut self, c: char) -> bool {
+        let (cols, autowrap) = (self.cols, self.modes.autowrap);
+        let cur = self.scr().cursor;
+        if (c as u32) <= 0xff || cur.x == 0 {
+            return false;
+        }
+        let y = cur.y as usize;
+        let left: u16 = if autowrap {
+            (!cur.pending_wrap) as u16
+        } else if cur.x != cols - 1 {
+            1
+        } else {
+            self.screen_ref().lines[y].cells[cur.x as usize].text.is_empty() as u16
+        };
+        let mut px = cur.x - left;
+        let mut pleft = left;
+        if self.screen_ref().lines[y].cells[px as usize].wide == Wide::SpacerTail && px > 0 {
+            px -= 1;
+            pleft += 1;
+        }
+        let text = self.screen_ref().lines[y].cells[px as usize].text.clone();
+        let mut chars = text.chars();
+        let Some(first) = chars.next() else { return false };
+        let mut state = grapheme::State::Default;
+        let mut prev = first;
+        for c2 in chars {
+            grapheme::breaks(grapheme::class(prev), grapheme::class(c2), &mut state);
+            prev = c2;
+        }
+        if grapheme::breaks(grapheme::class(prev), grapheme::class(c), &mut state) {
+            return false;
+        }
+        let pen = self.scr().cursor.style;
+        // Where the cluster is now (it moves when it wraps).
+        let (mut cx, mut cy) = (px, cur.y);
+        if matches!(c, '\u{fe0e}' | '\u{fe0f}') && !width::vs_base(prev) {
+            return true;
+        }
+        let wide = if matches!(c, '\u{fe0e}' | '\u{fe0f}') {
+            Some(c == '\u{fe0f}')
+        } else {
+            (!zero_in_grapheme(c)).then_some(true)
+        };
+        match wide {
+            Some(true) if self.screen_ref().lines[y].cells[px as usize].wide != Wide::Wide => {
+                self.cur().x = px;
+                self.cur().pending_wrap = false;
+                if px == cols - 1 {
+                    if !autowrap {
+                        return true;
+                    }
+                    // No room: the cluster goes to the next row, wide.
+                    let old = self.line(cur.y).cells[px as usize].clone();
+                    let head_style = if text.chars().count() > 1 { old.style } else { pen };
+                    self.line(cur.y).cells[px as usize] =
+                        Cell { text: String::new(), style: head_style, wide: Wide::SpacerHead };
+                    self.wrap_line();
+                    let ny = self.scr().cursor.y;
+                    self.clear_wide_at(0, ny);
+                    self.line(ny).cells[0] = Cell { text: text.clone(), style: pen, wide: Wide::Wide };
+                    cx = 0;
+                    cy = ny;
+                } else {
+                    self.line(cur.y).cells[px as usize].wide = Wide::Wide;
+                }
+                let x = self.scr().cursor.x + 1;
+                let yy = self.scr().cursor.y;
+                self.clear_wide_at(x, yy);
+                self.line(yy).cells[x as usize] = Cell { text: String::new(), style: pen, wide: Wide::SpacerTail };
+                if x == cols - 1 {
+                    self.cur().x = x;
+                    self.cur().pending_wrap = true;
+                } else {
+                    self.cur().x = x + 1;
+                }
+            }
+            Some(false) if self.screen_ref().lines[y].cells[px as usize].wide == Wide::Wide => {
+                let l = self.line(cur.y);
+                l.cells[px as usize].wide = Wide::Narrow;
+                let tail = (cur.x + 1 - pleft) as usize;
+                if tail < l.cells.len() {
+                    l.cells[tail].wide = Wide::Narrow;
+                }
+                if cur.x == cols - 1 {
+                    self.cur().pending_wrap = false;
+                } else {
+                    self.cur().x = cur.x - 1;
+                }
+            }
+            _ => {}
+        }
+        self.line(cy).cells[cx as usize].text.push(c);
+        true
     }
 
     /// A zero-width character joins the cell before the cursor (dropped at
@@ -709,20 +877,25 @@ impl Terminal {
     /// Writing over half of a wide character clears the other half.
     fn clear_wide_at(&mut self, x: u16, y: u16) {
         let cols = self.cols as usize;
-        let l = self.line(y);
         let i = x as usize;
         if i >= cols {
             return;
         }
+        // In the pen's background, as libghostty.
+        let pen = self.scr().cursor.style;
+        // A wide character in the first column that came from the row above:
+        // that row's spacer head goes too.
+        if i == 0 && y > 0 && self.screen_ref().lines[y as usize].cells[0].wide == Wide::Wide {
+            if let Some(c) = self.line(y - 1).cells.last_mut() {
+                if c.wide == Wide::SpacerHead {
+                    c.wide = Wide::Narrow;
+                }
+            }
+        }
+        let l = self.line(y);
         match l.cells[i].wide {
-            Wide::Wide if i + 1 < cols => {
-                let s = l.cells[i + 1].style;
-                l.cells[i + 1] = blank(s);
-            }
-            Wide::SpacerTail if i > 0 => {
-                let s = l.cells[i - 1].style;
-                l.cells[i - 1] = blank(s);
-            }
+            Wide::Wide if i + 1 < cols => l.cells[i + 1] = blank(pen),
+            Wide::SpacerTail if i > 0 => l.cells[i - 1] = blank(pen),
             _ => {}
         }
     }
@@ -733,6 +906,8 @@ impl Terminal {
         self.cur().x = 0;
         self.cur().pending_wrap = false;
         self.linefeed();
+        let y = self.scr().cursor.y;
+        self.line(y).cont = true;
     }
 
     fn linefeed(&mut self) {
@@ -778,6 +953,12 @@ impl Terminal {
             self.viewport = (self.viewport + n).min(self.scrollback.len());
         }
         self.moved(top as u16, bottom as u16);
+        // A region from the top scrolls as lines leaving the screen do;
+        // any other is a deletion of lines.
+        let full = top == 0 && (!self.modes.alt_screen || bottom == self.rows as usize - 1);
+        if !full {
+            self.unwrap_rows(top as u16, bottom as u16);
+        }
     }
 
     fn scroll_down(&mut self, n: u16) {
@@ -790,6 +971,7 @@ impl Terminal {
             self.scr().lines.insert(top, Line::new(cols, bg));
         }
         self.moved(top as u16, bottom as u16);
+        self.unwrap_rows(top as u16, bottom as u16);
     }
 
     fn insert_blanks(&mut self, x: u16, y: u16, n: u16) {
@@ -939,6 +1121,7 @@ impl Terminal {
         }
         self.top = top;
         self.moved(y, self.bottom);
+        self.unwrap_rows(y, self.bottom);
         self.cur().x = 0;
         self.cur().pending_wrap = false;
     }
@@ -955,6 +1138,7 @@ impl Terminal {
             self.scr().lines.insert(b, Line::new(cols, bg));
         }
         self.moved(y, self.bottom);
+        self.unwrap_rows(y, self.bottom);
         self.cur().x = 0;
         self.cur().pending_wrap = false;
     }
@@ -1019,23 +1203,24 @@ impl Terminal {
     }
 
     fn save_cursor(&mut self) {
-        let s = Saved { cursor: self.scr().cursor, origin: self.modes.origin, autowrap: self.modes.autowrap };
+        let s = Saved { cursor: self.scr().cursor, origin: self.modes.origin };
         self.scr().saved = Some(s);
     }
 
     fn restore_cursor(&mut self) {
-        let s = self.scr().saved.unwrap_or(Saved {
-            cursor: Cursor { charsets: [b'B'; 4], ..Default::default() },
-            origin: false,
-            autowrap: true,
-        });
+        let s = self
+            .scr()
+            .saved
+            .unwrap_or(Saved { cursor: Cursor { charsets: [b'B'; 4], ..Default::default() }, origin: false });
         let (cols, rows) = (self.cols, self.rows);
         let cur = self.cur();
+        // The shape is not part of what DECSC saves.
+        let shape = cur.shape;
         *cur = s.cursor;
+        cur.shape = shape;
         cur.x = cur.x.min(cols - 1);
         cur.y = cur.y.min(rows - 1);
         self.modes.origin = s.origin;
-        self.modes.autowrap = s.autowrap;
     }
 
     fn set_region(&mut self, top: u16, bottom: u16) {
@@ -1050,6 +1235,15 @@ impl Terminal {
     }
 
     fn set_alt_screen(&mut self, on: bool, save: bool, clear: bool) {
+        if on && self.modes.alt_screen && save {
+            // As libghostty: 1049 again saves the cursor and erases the
+            // screen (in the pen's background; entering gives a fresh one).
+            self.save_cursor();
+            let (cols, rows, pen) = (self.cols, self.rows, self.scr().cursor.style);
+            self.alt.lines = (0..rows).map(|_| Line::new(cols, pen)).collect();
+            self.all_dirty = true;
+            return;
+        }
         if on == self.modes.alt_screen {
             return;
         }
@@ -1070,9 +1264,14 @@ impl Terminal {
                 let (cols, rows) = (self.cols, self.rows);
                 self.alt.lines = (0..rows).map(|_| Line::new(cols, Style::default())).collect();
             }
+            // As libghostty: without a saved cursor (47, 1047) the cursor
+            // stays where it is on the alternate screen.
+            let alt_cursor = self.alt.cursor;
             self.modes.alt_screen = false;
             if save {
                 self.restore_cursor();
+            } else {
+                self.primary.cursor = alt_cursor;
             }
         }
         self.viewport = 0;
@@ -1121,8 +1320,12 @@ impl Terminal {
             9 => self.modes.mouse_x10 = on,
             12 => self.modes.cursor_blink = on,
             25 => self.modes.cursor_visible = on,
-            47 => self.set_alt_screen(on, false, false),
+            47 => {
+                self.modes.alt_modes[0] = on;
+                self.set_alt_screen(on, false, false)
+            }
             66 => self.modes.app_keypad = on,
+            69 => self.modes.lr_margins = on,
             1000 => self.modes.mouse_normal = on,
             1002 => self.modes.mouse_button = on,
             1003 => self.modes.mouse_any = on,
@@ -1131,7 +1334,10 @@ impl Terminal {
             1006 => self.modes.mouse_sgr = on,
             1015 => self.modes.mouse_urxvt = on,
             1016 => self.modes.mouse_sgr_pixels = on,
-            1047 => self.set_alt_screen(on, false, true),
+            1047 => {
+                self.modes.alt_modes[1] = on;
+                self.set_alt_screen(on, false, true)
+            }
             1048 => {
                 if on {
                     self.save_cursor()
@@ -1139,18 +1345,26 @@ impl Terminal {
                     self.restore_cursor()
                 }
             }
-            1049 => self.set_alt_screen(on, true, true),
+            // As libghostty, leaving restores the cursor even when the
+            // alternate screen was not on.
+            1049 if !on && !self.modes.alt_screen => {
+                self.modes.alt_modes[2] = false;
+                self.restore_cursor()
+            }
+            1049 => {
+                self.modes.alt_modes[2] = on;
+                self.set_alt_screen(on, true, true)
+            }
             2004 => self.modes.bracketed_paste = on,
             2026 => self.modes.sync_output = on,
             2027 => self.modes.grapheme_cluster = on,
             2031 => self.modes.color_scheme_report = on,
-            2048 => {
-                self.modes.in_band_resize = on;
-                if on {
-                    self.size_report_2048();
-                }
-            }
+            // Reports come with resizes only (as libghostty, none on enabling).
+            2048 => self.modes.in_band_resize = on,
             _ => {}
+        }
+        if let Some(i) = OTHER_MODES.iter().position(|m| m.0 == mode) {
+            self.modes.other[i] = on;
         }
     }
 
@@ -1166,8 +1380,11 @@ impl Terminal {
             9 => m.mouse_x10,
             12 => m.cursor_blink,
             25 => m.cursor_visible,
-            47 | 1047 | 1049 => m.alt_screen,
+            47 => m.alt_modes[0],
+            1047 => m.alt_modes[1],
+            1049 => m.alt_modes[2],
             66 => m.app_keypad,
+            69 => m.lr_margins,
             1000 => m.mouse_normal,
             1002 => m.mouse_button,
             1003 => m.mouse_any,
@@ -1181,7 +1398,10 @@ impl Terminal {
             2027 => m.grapheme_cluster,
             2031 => m.color_scheme_report,
             2048 => m.in_band_resize,
-            _ => return 0,
+            _ => match OTHER_MODES.iter().position(|m| m.0 == mode) {
+                Some(i) => m.other[i],
+                None => return 0,
+            },
         };
         if v {
             1
@@ -1192,30 +1412,54 @@ impl Terminal {
 
     // ------------------------------------------------------------ SGR
 
-    /// SGR over the first `count` parameters (vte adds an empty last one
-    /// libghostty does not count).
-    fn sgr(&mut self, params: &vte::Params, count: usize) {
-        let ps: Vec<&[u16]> = params.iter().take(count).collect();
-        let mut it = ps.iter().copied().peekable();
+    /// SGR, parsed from the raw parameter bytes (`csi_raw`): libghostty tells
+    /// an empty field from a 0 (`48:5:` is void, `38:2::R:G:B` is not),
+    /// which vte's parameters cannot.
+    fn sgr(&mut self) {
+        let groups = sgr_groups(&self.csi_raw);
         let mut style = self.scr().cursor.style;
-        if count == 0 {
+        if groups.is_empty() {
             style = Style::default();
         }
-        while let Some(p) = it.next() {
-            match p[0] {
-                38 | 48 | 58 => {
-                    let c = extended_color(p, &mut it);
-                    match (p[0], c) {
-                        (38, Some(c)) => style.fg = c,
-                        (48, Some(c)) => style.bg = c,
-                        _ => {} // the underline colour is not in the snapshot
+        let mut i = 0;
+        while i < groups.len() {
+            let g = &groups[i];
+            i += 1;
+            let v = g[0].unwrap_or(0);
+            if g.len() > 1 {
+                if matches!(v, 38 | 48 | 58) {
+                    let (c, rest) = colon_colour(g);
+                    set_colour(&mut style, v, c);
+                    // As libghostty: what the colon form leaves over counts
+                    // as an SGR of its own when it is one value.
+                    if let [Some(r)] = rest {
+                        sgr_simple(&mut style, &[*r]);
                     }
-                    if let Some(v) = unknown_colour_rest(p) {
-                        sgr_simple(&mut style, v);
-                    }
+                } else if v == 4 && g.len() == 2 {
+                    sgr_simple(&mut style, &[4, g[1].unwrap_or(0)]);
                 }
-                _ => sgr_simple(&mut style, p),
+                // Sub-parameters on anything else make it void.
+                continue;
             }
+            if matches!(v, 38 | 48 | 58) {
+                // `38;5;N`, `38;2;R;G;B`; with too few values or another kind
+                // only the 38 goes, as libghostty.
+                let val = |k: usize| groups.get(i + k).map(|g| g[0].unwrap_or(0));
+                match val(0) {
+                    Some(5) if val(1).is_some() => {
+                        set_colour(&mut style, v, Some(Color::Index(val(1).unwrap_or(0) as u8)));
+                        i += 2;
+                    }
+                    Some(2) if val(3).is_some() => {
+                        let c = [val(1), val(2), val(3)].map(|x| x.unwrap_or(0) as u8);
+                        set_colour(&mut style, v, Some(Color::Rgb(c)));
+                        i += 4;
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            sgr_simple(&mut style, &[v]);
         }
         self.cur().style = style;
     }
@@ -1249,10 +1493,17 @@ impl Terminal {
 /// What the scanner saw end at a byte.
 enum Pre {
     None,
-    /// A CSI's final byte, with its parameter count (see `csi_count`).
-    CsiEnd(usize),
+    /// A CSI's final byte, with its parameter count (see `csi_count`) and
+    /// whether a colon was among the parameters.
+    CsiEnd(usize, bool),
     /// An APC string (`ESC _ … ESC \`); its contents are in `buf`.
     Apc,
+    /// A byte 0x80–0x9F outside a UTF-8 sequence.
+    RawC1,
+    /// A C0 byte 0x10–0x1F (not ESC) in the ground state.
+    GroundC0,
+    /// A C1 byte inside an escape or CSI sequence: vte gets its 7-bit form.
+    C1(u8),
 }
 
 /// Follows the byte stream as vte's parser does, as far as CSI and APC go:
@@ -1264,22 +1515,88 @@ struct Scanner {
     csi_seps: usize,
     /// A digit or `:` since the last `;`.
     csi_trailing: bool,
+    csi_colon: bool,
+    /// The CSI's parameter bytes (for SGR, see `Terminal::sgr`).
+    csi_raw: Vec<u8>,
+    /// An APC a C1 byte ended (dispatched by `feed`).
+    apc_done: Option<Vec<u8>>,
+    /// UTF-8 continuation bytes still expected in the ground state, and the
+    /// range the next one must be in.
+    utf8_need: u8,
+    utf8_next: (u8, u8),
     buf: Vec<u8>,
 }
 
 impl Scanner {
+    fn keep_param(&mut self, b: u8) {
+        if self.csi_raw.len() < 512 {
+            self.csi_raw.push(b);
+        }
+    }
+
+    /// Follows UTF-8 in the ground state as vte's decoder does, to tell a raw
+    /// C1 byte from a continuation byte.
+    fn ground(&mut self, b: u8) -> Pre {
+        if self.utf8_need > 0 {
+            if (self.utf8_next.0..=self.utf8_next.1).contains(&b) {
+                self.utf8_need -= 1;
+                self.utf8_next = (0x80, 0xbf);
+                return Pre::None;
+            }
+            self.utf8_need = 0;
+        }
+        match b {
+            0x1b => self.state = Self::ESC,
+            0x10..=0x1f => return Pre::GroundC0,
+            0x80..=0x9f => return Pre::RawC1,
+            0xc2..=0xdf => (self.utf8_need, self.utf8_next) = (1, (0x80, 0xbf)),
+            0xe0 => (self.utf8_need, self.utf8_next) = (2, (0xa0, 0xbf)),
+            0xed => (self.utf8_need, self.utf8_next) = (2, (0x80, 0x9f)),
+            0xe1..=0xef => (self.utf8_need, self.utf8_next) = (2, (0x80, 0xbf)),
+            0xf0 => (self.utf8_need, self.utf8_next) = (3, (0x90, 0xbf)),
+            0xf1..=0xf3 => (self.utf8_need, self.utf8_next) = (3, (0x80, 0xbf)),
+            0xf4 => (self.utf8_need, self.utf8_next) = (3, (0x80, 0x8f)),
+            _ => {}
+        }
+        Pre::None
+    }
+
     const GROUND: u8 = 0;
     const ESC: u8 = 1;
     const APC: u8 = 2;
-    const APC_ESC: u8 = 3;
+    /// After ESC and an intermediate byte (`ESC (`, `ESC #` …).
+    const ESC_INT: u8 = 3;
     const CSI: u8 = 4;
+    /// SOS or PM string (`ESC X`, `ESC ^`): skipped.
+    const STR: u8 = 5;
+    /// DCS, its header and data.
+    const DCS: u8 = 6;
     /// Only the control part matters; the payload is not kept past this.
     const KEEP: usize = 4096;
 
     fn byte(&mut self, b: u8) -> Pre {
+        // As libghostty (a VT500 parser): inside an escape or CSI sequence a
+        // C1 byte acts as its 7-bit form, ESC and b - 0x40 (vte ignores it).
+        // The same in SOS/PM/APC strings and DCS (not in OSC, whose
+        // payload is UTF-8).
+        if matches!(self.state, Self::ESC | Self::ESC_INT | Self::CSI | Self::STR | Self::DCS | Self::APC)
+            && (0x80..=0x9f).contains(&b)
+        {
+            // An APC ends there and is dispatched (as libghostty).
+            if self.state == Self::APC {
+                self.apc_done = Some(std::mem::take(&mut self.buf));
+            }
+            self.state = Self::ESC;
+            let _ = self.byte(b - 0x40);
+            return Pre::C1(b);
+        }
         match (self.state, b) {
-            (Self::GROUND, 0x1b) => self.state = Self::ESC,
-            (Self::GROUND, _) => {}
+            (Self::GROUND, _) => return self.ground(b),
+            (Self::ESC | Self::ESC_INT | Self::CSI | Self::STR | Self::DCS, 0x1b) => self.state = Self::ESC,
+            (Self::ESC | Self::ESC_INT | Self::CSI | Self::STR | Self::DCS, 0x18 | 0x1a) => self.state = Self::GROUND,
+            (Self::STR | Self::DCS, _) => {}
+            (Self::ESC, b'X' | b'^') => self.state = Self::STR,
+            (Self::ESC, b'P') => self.state = Self::DCS,
             (Self::ESC, b'_') => {
                 self.state = Self::APC;
                 self.buf.clear();
@@ -1288,46 +1605,52 @@ impl Scanner {
                 self.state = Self::CSI;
                 self.csi_seps = 0;
                 self.csi_trailing = false;
+                self.csi_colon = false;
+                self.csi_raw.clear();
             }
-            (Self::ESC, 0x1b) => {}
-            (Self::ESC, _) => self.state = Self::GROUND,
+            (Self::ESC | Self::ESC_INT, 0x20..=0x2f) => self.state = Self::ESC_INT,
+            (Self::ESC | Self::ESC_INT, 0x30..=0x7e) => self.state = Self::GROUND,
+            // C0 controls execute inside the sequence; DEL and 0xA0–0xFF
+            // are ignored.
+            (Self::ESC | Self::ESC_INT, _) => {}
             (Self::CSI, b';') => {
                 self.csi_seps += 1;
                 self.csi_trailing = false;
+                self.keep_param(b);
             }
-            (Self::CSI, 0x30..=0x3a) => self.csi_trailing = true,
+            (Self::CSI, b':') => {
+                self.csi_trailing = true;
+                self.csi_colon = true;
+                self.keep_param(b);
+            }
+            (Self::CSI, 0x30..=0x39) => {
+                self.csi_trailing = true;
+                self.keep_param(b);
+            }
             (Self::CSI, 0x40..=0x7e) => {
                 self.state = Self::GROUND;
-                return Pre::CsiEnd(self.csi_seps + self.csi_trailing as usize);
+                return Pre::CsiEnd(self.csi_seps + self.csi_trailing as usize, self.csi_colon);
             }
-            (Self::CSI, 0x1b) => self.state = Self::ESC,
-            (Self::CSI, 0x18 | 0x1a) => self.state = Self::GROUND,
             (Self::CSI, _) => {}
-            (Self::APC, 0x1b) => self.state = Self::APC_ESC,
-            (Self::APC, 0x18 | 0x1a) => self.state = Self::GROUND,
-            (Self::APC, _) => {
-                if self.buf.len() < Self::KEEP {
-                    self.buf.push(b)
-                }
-            }
-            (_, b'\\') => {
-                self.state = Self::GROUND;
+            // As libghostty, the ESC that starts the terminator ends the APC
+            // (whatever follows it).
+            (Self::APC, 0x1b) => {
+                self.state = Self::ESC;
                 return Pre::Apc;
             }
-            (_, b'_') => {
-                self.state = Self::APC;
-                self.buf.clear();
-            }
-            (_, b'[') => {
-                self.state = Self::CSI;
-                self.csi_seps = 0;
-                self.csi_trailing = false;
-            }
-            (_, 0x1b) => self.state = Self::ESC,
-            _ => self.state = Self::GROUND,
+            (Self::APC, 0x18 | 0x1a) => self.state = Self::GROUND,
+            (Self::APC, _) if self.buf.len() < Self::KEEP => self.buf.push(b),
+            _ => {}
         }
         Pre::None
     }
+}
+
+/// Takes no width inside a grapheme cluster (uucode's
+/// `wcwidth_zero_in_grapheme`: zero-width characters, emoji modifiers,
+/// Prepend).
+fn zero_in_grapheme(c: char) -> bool {
+    width(c) == 0 || matches!(grapheme::class(c), grapheme::Gb::EmojiModifier | grapheme::Gb::Prepend)
 }
 
 /// The DEC special graphics set (`ESC ( 0`) for 0x60–0x7e.
@@ -1338,16 +1661,28 @@ fn dec_special(c: char) -> char {
     ];
     match c {
         '\u{60}'..='\u{7e}' => MAP[c as usize - 0x60],
+        // As libghostty: the set covers one byte; anything above prints as
+        // a space (in the width of the character it replaces).
+        c if c as u32 > 0xff => ' ',
         _ => c,
     }
 }
 
-fn default_tabs(cols: u16) -> Vec<bool> {
-    (0..cols).map(|x| x > 0 && x % 8 == 0).collect()
+/// A line cut or extended to `cols` (as libghostty, a wide character cut
+/// in half stays, without its spacer).
+fn cut_line(mut l: Line, cols: u16) -> Line {
+    let n = cols as usize;
+    if l.cells.len() > n {
+        l.cells.truncate(n);
+    } else {
+        l.cells.resize(n, blank(Style::default()));
+    }
+    l.dirty = true;
+    l
 }
 
-fn is_blank(l: &Line) -> bool {
-    !l.wrapped && l.cells.iter().all(|c| c.text.is_empty() && c.style == Style::default())
+fn default_tabs(cols: u16) -> Vec<bool> {
+    (0..cols).map(|x| x > 0 && x % 8 == 0).collect()
 }
 
 /// A wide character cut in two by an insert or delete loses both halves.
@@ -1405,141 +1740,300 @@ fn sgr_simple(style: &mut Style, p: &[u16]) {
     }
 }
 
-/// `38;5;N`, `38;2;R;G;B`, also the colon forms (`38:5:N`, `38:2::R:G:B`).
-/// As libghostty: values wrap to a byte, and with any other kind (or too few
-/// values) only the 38 is dropped, the parameters after it count on their own.
-fn extended_color<'a>(
-    p: &[u16],
-    it: &mut std::iter::Peekable<impl Iterator<Item = &'a [u16]> + Clone>,
-) -> Option<Color> {
-    if p.len() > 1 {
-        return match p[1] {
-            5 if p.len() > 2 => Some(Color::Index(p[2] as u8)),
-            2 if p.len() >= 5 => {
-                let v = &p[p.len() - 3..];
-                Some(Color::Rgb([v[0] as u8, v[1] as u8, v[2] as u8]))
-            }
-            _ => None,
-        };
+/// SGR parameters as groups of fields (`;` between groups, `:` between
+/// fields; an empty field is `None`). As libghostty, an empty last group is
+/// not a parameter.
+fn sgr_groups(raw: &[u8]) -> Vec<Vec<Option<u16>>> {
+    if raw.is_empty() {
+        return Vec::new();
     }
-    let kind = it.peek().map(|q| q[0])?;
-    let mut ahead = it.clone();
-    ahead.next();
-    match kind {
-        5 => {
-            let n = ahead.next()?[0];
-            it.next();
-            it.next();
-            Some(Color::Index(n as u8))
-        }
-        2 => {
-            let r = ahead.next()?[0];
-            let g = ahead.next()?[0];
-            let b = ahead.next()?[0];
-            for _ in 0..4 {
-                it.next();
-            }
-            Some(Color::Rgb([r as u8, g as u8, b as u8]))
-        }
-        _ => None,
+    let mut groups: Vec<Vec<Option<u16>>> = raw
+        .split(|&c| c == b';')
+        .map(|g| {
+            g.split(|&c| c == b':')
+                .map(|f| {
+                    if f.is_empty() {
+                        None
+                    } else {
+                        Some(f.iter().fold(0u32, |n, &d| (n * 10 + (d.wrapping_sub(b'0') as u32 % 10)).min(65535))
+                            as u16)
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    if groups.last().is_some_and(|g| g.len() == 1 && g[0].is_none()) {
+        groups.pop();
+    }
+    groups
+}
+
+fn set_colour(style: &mut Style, which: u16, c: Option<Color>) {
+    match (which, c) {
+        (38, Some(c)) => style.fg = c,
+        (48, Some(c)) => style.bg = c,
+        _ => {} // no colour, or the underline colour (not in the snapshot)
     }
 }
 
-/// The colon form with a kind libghostty does not know (`38:9`): it reads the
-/// value after the 38 as an SGR of its own.
-fn unknown_colour_rest(p: &[u16]) -> Option<&[u16]> {
-    match p.get(1) {
-        Some(2) if p.len() >= 5 => None,
-        Some(5) if p.len() > 2 => None,
-        Some(_) => Some(&p[1..2]),
-        None => None,
+/// A colon form `38:5:N`, `38:2:R:G:B`, `38:2:ID:R:G:B`: the colour, and
+/// what is left over (all after the 38 when the kind is unknown or the values
+/// too few; nothing when there are too many or a needed value is empty).
+fn colon_colour(g: &[Option<u16>]) -> (Option<Color>, &[Option<u16>]) {
+    let byte = |f: Option<u16>| f.unwrap_or(0) as u8;
+    match (g.get(1).copied().flatten(), g.len()) {
+        (None, _) => (None, &[]),
+        (Some(5), n) if n >= 3 => match g[2] {
+            Some(x) => (Some(Color::Index(x as u8)), &g[3..]),
+            None => (None, &[]),
+        },
+        (Some(2), 5) => (Some(Color::Rgb([byte(g[2]), byte(g[3]), byte(g[4])])), &[]),
+        (Some(2), 6) => (Some(Color::Rgb([byte(g[3]), byte(g[4]), byte(g[5])])), &[]),
+        (Some(2), n) if n >= 7 => (None, &[]),
+        _ => (None, &g[1..]),
     }
 }
 
-/// Reflows lines (scrollback and screen together) to a new width: soft-wrapped
-/// lines are joined and cut again. Returns the lines and the cursor's place.
-fn reflow(lines: Vec<Line>, old: u16, new: u16, cursor: (u16, usize)) -> (Vec<Line>, (u16, usize)) {
-    if old == new {
-        return (lines, cursor);
+/// A place followed through a resize: an absolute line (scrollback first)
+/// and a column.
+#[derive(Clone, Copy)]
+struct Pin {
+    line: usize,
+    x: u16,
+}
+
+/// A cell without content (as libghostty's `isEmpty`: no text, not part of
+/// a wide character, no background).
+fn empty(c: &Cell) -> bool {
+    c.text.is_empty() && c.wide == Wide::Narrow && c.style.bg == Color::Default
+}
+
+/// One screen through a resize (see `Terminal::resize`). `sb`: its
+/// scrollback (`None`: lines pushed out are dropped).
+fn resize_screen(
+    s: &mut Screen,
+    sb: Option<&mut VecDeque<Line>>,
+    old_cols: u16,
+    old_rows: u16,
+    cols: u16,
+    rows: u16,
+    reflow: bool,
+) {
+    let keep_history = sb.is_some();
+    let mut all: Vec<Line> = match &sb {
+        Some(sb) => sb.iter().cloned().collect(),
+        None => Vec::new(),
+    };
+    let hist = all.len();
+    all.extend(std::mem::take(&mut s.lines));
+    let mut cursor = Pin { line: hist + s.cursor.y as usize, x: s.cursor.x };
+    let mut saved = s.saved.map(|v| Pin { line: hist + v.cursor.y as usize, x: v.cursor.x });
+    let mut active_rows = old_rows as usize;
+    if !reflow || cols == old_cols {
+        if cols != old_cols {
+            all = all.into_iter().map(|l| cut_line(l, cols)).collect();
+            cursor.x = cursor.x.min(cols - 1);
+            if let Some(p) = &mut saved {
+                p.x = p.x.min(cols - 1);
+            }
+        }
+        resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref());
+    } else if cols > old_cols {
+        all = reflow_lines(all, active_rows, cols, &mut cursor, saved.as_mut());
+        resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref());
+    } else {
+        resize_rows(&mut all, &mut active_rows, rows as usize, &mut cursor, saved.as_ref());
+        all = reflow_lines(all, active_rows, cols, &mut cursor, saved.as_mut());
     }
-    let mut out: Vec<Line> = Vec::with_capacity(lines.len());
-    let mut cur = (0u16, 0usize);
-    let mut logical: Vec<Cell> = Vec::new();
-    let mut cursor_at: Option<usize> = None;
-    let flush =
-        |out: &mut Vec<Line>, logical: &mut Vec<Cell>, cursor_at: &mut Option<usize>, cur: &mut (u16, usize)| {
-            // Trailing blanks of a logical line are not carried over.
-            let mut len = logical.len();
-            while len > 0 && logical[len - 1].text.is_empty() && logical[len - 1].style == Style::default() {
+    // The active area is the last `rows` lines.
+    while all.len() < rows as usize {
+        all.push(Line::new(cols, Style::default()));
+    }
+    let top = all.len() - rows as usize;
+    let active = |p: Pin| (p.line >= top).then(|| (p.x.min(cols - 1), (p.line - top) as u16));
+    let (cx, cy) = active(cursor).unwrap_or((0, 0));
+    s.cursor.x = cx;
+    s.cursor.y = cy;
+    s.cursor.pending_wrap = false;
+    if let (Some(v), Some(p)) = (&mut s.saved, saved) {
+        match active(p) {
+            Some((x, y)) => {
+                v.cursor.x = x;
+                v.cursor.y = y;
+                if v.cursor.pending_wrap && x != cols - 1 {
+                    v.cursor.pending_wrap = false;
+                    v.cursor.x += 1;
+                }
+            }
+            None => {
+                v.cursor.x = 0;
+                v.cursor.y = 0;
+                v.cursor.pending_wrap = false;
+            }
+        }
+    }
+    s.lines = all.split_off(top);
+    if let Some(sb) = sb {
+        if keep_history {
+            *sb = all.into();
+        }
+    }
+}
+
+/// Rows only (`resizeWithoutReflow`): fewer rows trim blank lines at the
+/// bottom (not the cursor's), the rest of the difference goes to the
+/// scrollback; more rows pull the scrollback down only with the cursor on
+/// the last row, else blank lines come below.
+fn resize_rows(all: &mut Vec<Line>, active_rows: &mut usize, rows: usize, cursor: &mut Pin, saved: Option<&Pin>) {
+    let old = *active_rows;
+    if rows < old {
+        let mut trimmed = 0;
+        while trimmed < old - rows {
+            let i = all.len() - 1;
+            let l = &all[i];
+            if l.cells.iter().any(|c| !c.text.is_empty()) || cursor.line == i || saved.is_some_and(|p| p.line == i) {
+                break;
+            }
+            all.pop();
+            trimmed += 1;
+        }
+    } else if rows > old {
+        let top = all.len().saturating_sub(old);
+        let cols = all.first().map_or(1, |l| l.cells.len()) as u16;
+        if cursor.line < top + old - 1 {
+            for _ in 0..rows - old {
+                all.push(Line::new(cols, Style::default()));
+            }
+        } else {
+            while all.len() < rows {
+                all.push(Line::new(cols, Style::default()));
+            }
+        }
+    }
+    *active_rows = rows;
+}
+
+/// Reflows every line to `cols` (`resizeCols`): soft-wrapped lines join and
+/// are cut again, trailing empty cells of a hard line end are dropped,
+/// blank lines are written only when content follows them, and as many rows
+/// stay below the cursor as before.
+fn reflow_lines(all: Vec<Line>, rows: usize, cols: u16, cursor: &mut Pin, mut saved: Option<&mut Pin>) -> Vec<Line> {
+    let n = cols as usize;
+    let continuation = |all: &[Line], i: usize| all[i].cont;
+    let top = all.len().saturating_sub(rows);
+    let wrapped_in = |all: &[Line], from: usize, to: usize| (from..=to).filter(|&i| continuation(all, i)).count();
+    let (cursor_in, remaining, wrapped_before) = if cursor.line >= top {
+        (true, rows.saturating_sub(cursor.line - top + 1), wrapped_in(&all, top, cursor.line))
+    } else {
+        (false, 0, 0)
+    };
+    let mut out: Vec<Line> = vec![Line::new(cols, Style::default())];
+    let (mut x, mut pending) = (0usize, false);
+    let mut new_rows = 0usize;
+    let (mut cur_new, mut saved_new) = (None, None);
+    for (i, src) in all.iter().enumerate() {
+        let mut len = src.cells.len();
+        if !src.wrapped {
+            while len > 0 && empty(&src.cells[len - 1]) {
                 len -= 1;
             }
-            if let Some(c) = *cursor_at {
-                len = len.max(c + 1).min(logical.len().max(c + 1));
-            }
-            let cells: Vec<Cell> = logical.drain(..).take(len).collect();
-            let start = out.len();
-            let mut i = 0;
-            loop {
-                let mut line = Line::new(new, Style::default());
-                let mut x = 0usize;
-                while i < cells.len() && x < new as usize {
-                    let c = &cells[i];
-                    if c.wide == Wide::SpacerHead {
-                        i += 1;
-                        continue;
-                    }
-                    if c.wide == Wide::Wide && new < 2 {
-                        // One column: a wide character has no room at all.
-                        i += 1;
-                        if cells.get(i).is_some_and(|c| c.wide == Wide::SpacerTail) {
-                            i += 1;
-                        }
-                        continue;
-                    }
-                    if c.wide == Wide::Wide && x + 1 >= new as usize {
-                        line.cells[x] = Cell { wide: Wide::SpacerHead, ..blank(Style::default()) };
-                        break;
-                    }
-                    line.cells[x] = c.clone();
-                    if let Some(cp) = *cursor_at {
-                        if cp == i {
-                            *cur = (x as u16, out.len());
-                        }
-                    }
-                    x += 1;
-                    i += 1;
-                }
-                let more = i < cells.len();
-                line.wrapped = more;
-                out.push(line);
-                if !more {
-                    break;
-                }
-            }
-            if let Some(cp) = *cursor_at {
-                if cp >= cells.len() {
-                    // The cursor stood past the text: keep its column on the last row.
-                    let last = out.len() - 1;
-                    let col = cp - (cells.len() / new as usize) * new as usize;
-                    *cur = ((col as u16).min(new - 1), last.max(start));
-                }
-            }
-            *cursor_at = None;
-        };
-    for (n, l) in lines.into_iter().enumerate() {
-        if n == cursor.1 {
-            cursor_at = Some(logical.len() + cursor.0 as usize);
         }
-        let wrapped = l.wrapped;
-        logical.extend(l.cells);
-        if !wrapped {
-            flush(&mut out, &mut logical, &mut cursor_at, &mut cur);
+        if let Some(p) = saved.as_deref_mut() {
+            if p.line == i {
+                if p.x as usize >= len {
+                    let room = if pending { 0 } else { n.saturating_sub(1 + x) };
+                    p.x = p.x.min(room as u16);
+                }
+                len = len.max(p.x as usize + 1).min(src.cells.len());
+            }
+        }
+        if cursor.line == i {
+            len = len.max(cursor.x as usize + 1).min(src.cells.len());
+        }
+        if len == 0 {
+            if !continuation(&all, i) {
+                new_rows += 1;
+            }
+            continue;
+        }
+        while new_rows > 0 {
+            out.push(Line::new(cols, Style::default()));
+            x = 0;
+            pending = false;
+            new_rows -= 1;
+        }
+        let mut sx = 0;
+        while sx < len {
+            if pending {
+                out.last_mut().expect("a line").wrapped = true;
+                out.push(Line { cont: true, ..Line::new(cols, Style::default()) });
+                x = 0;
+                pending = false;
+            }
+            let here = Pin { line: out.len() - 1, x: x as u16 };
+            if cursor.line == i && cursor.x as usize == sx {
+                cur_new = Some(here);
+            }
+            if saved.as_deref().is_some_and(|p| p.line == i && p.x as usize == sx) {
+                saved_new = Some(here);
+            }
+            let c = &src.cells[sx];
+            match c.wide {
+                Wide::SpacerHead => {
+                    sx += 1;
+                    continue;
+                }
+                // One column: a wide character becomes an empty cell, its
+                // spacer goes.
+                Wide::Wide if n < 2 => {
+                    out.last_mut().expect("a line").cells[x] = blank(c.style);
+                    pending = true;
+                    sx += 2;
+                    continue;
+                }
+                Wide::Wide if x == n - 1 => {
+                    out.last_mut().expect("a line").cells[x] =
+                        Cell { wide: Wide::SpacerHead, ..blank(Style::default()) };
+                    pending = true;
+                    continue;
+                }
+                _ => {}
+            }
+            out.last_mut().expect("a line").cells[x] = c.clone();
+            if x + 1 >= n {
+                pending = true;
+            } else {
+                x += 1;
+            }
+            sx += 1;
+        }
+        if !src.wrapped {
+            new_rows += 1;
         }
     }
-    if !logical.is_empty() || cursor_at.is_some() {
-        flush(&mut out, &mut logical, &mut cursor_at, &mut cur);
+    if let Some(p) = cur_new {
+        *cursor = p;
     }
-    (out, cur)
+    if let (Some(p), Some(v)) = (saved_new, saved) {
+        *v = p;
+    }
+    // Rows below the cursor as before (fewer by the rows its own line or
+    // those above it gained by wrapping).
+    if cursor_in {
+        while out.len() < rows {
+            out.push(Line::new(cols, Style::default()));
+        }
+        let top = out.len() - rows;
+        if cursor.line >= top {
+            let wrapped = wrapped_in(&out, top, cursor.line);
+            let current = rows.saturating_sub(cursor.line - top + 1);
+            let req = remaining.saturating_sub(wrapped.saturating_sub(wrapped_before)).saturating_sub(current);
+            for _ in 0..req {
+                out.push(Line::new(cols, Style::default()));
+            }
+        }
+    }
+    out
 }
 
 fn param(params: &vte::Params, i: usize, default: u16) -> u16 {
@@ -1551,6 +2045,9 @@ fn param(params: &vte::Params, i: usize, default: u16) -> u16 {
 
 impl vte::Perform for Terminal {
     fn print(&mut self, c: char) {
+        if width(c) > 0 {
+            self.last_char = Some(c);
+        }
         self.print_char(c);
     }
 
@@ -1576,6 +2073,21 @@ impl vte::Perform for Terminal {
             }
             0x0e => self.cur().gl = 1,
             0x0f => self.cur().gl = 0,
+            // As libghostty: C0 controls it has no action for, from 0x10 up,
+            // print as a cell when they come between characters.
+            0x10..=0x1f if self.ground_c0 => {
+                let c = char::from(b);
+                self.last_char = Some(c);
+                self.print_char(c);
+            }
+            // vte executes C1 controls; libghostty prints a raw C1 byte as
+            // U+FFFD (invalid UTF-8) and U+0080–U+009F sent as UTF-8 as the
+            // character itself.
+            0x80..=0x9f => {
+                let c = if self.raw_c1 { '\u{fffd}' } else { char::from(b) };
+                self.last_char = Some(c);
+                self.print_char(c);
+            }
             _ => {}
         }
     }
@@ -1613,6 +2125,10 @@ impl vte::Perform for Terminal {
             | ([b'?', b'$'], 'p') => 1,
             _ => usize::MAX,
         };
+        // As libghostty: colons are for SGR only.
+        if self.csi_colon && action != 'm' {
+            return;
+        }
         let count = self.csi_count.min(params.len());
         if count > most {
             return;
@@ -1620,6 +2136,8 @@ impl vte::Perform for Terminal {
         let p0 = |d: u16| param(params, 0, d);
         let private = inter.first() == Some(&b'?');
         match (inter, action) {
+            // As libghostty, an explicit 0 moves nothing for HPR and VPR.
+            ([], 'a' | 'e') if count > 0 && param(params, 0, 0) == 0 => {}
             ([], '@') => {
                 let (x, y) = (self.scr().cursor.x, self.scr().cursor.y);
                 self.insert_blanks(x, y, p0(1));
@@ -1669,11 +2187,9 @@ impl vte::Perform for Terminal {
             }
             ([], 'Z') => self.back_tab(p0(1)),
             ([], 'b') => {
-                // REP: the last printed character again.
-                let c = self.scr().cursor;
-                let x = if c.pending_wrap { c.x } else { c.x.saturating_sub(1) };
-                let ch = self.screen_ref().lines[c.y as usize].cells[x as usize].text.chars().next();
-                if let Some(ch) = ch {
+                // REP: the last printed character again, as written (the
+                // charset in force now applies), wide ones included.
+                if let Some(ch) = self.last_char {
                     for _ in 0..p0(1) {
                         self.print_char(ch);
                     }
@@ -1706,8 +2222,9 @@ impl vte::Perform for Terminal {
                     self.set_mode(private, p[0], false);
                 }
             }
-            ([], 'm') => self.sgr(params, count),
+            ([], 'm') => self.sgr(),
             ([] | [b'?'], 'n') => self.device_status(private, param(params, 0, 0)),
+            ([b'?', b'$'], 'p') if count == 0 => {}
             ([b'?', b'$'], 'p') => {
                 let m = param(params, 0, 0);
                 let s = self.mode_state(m);
@@ -1715,7 +2232,8 @@ impl vte::Perform for Terminal {
             }
             ([b' '], 'q') => {
                 let (shape, blink) = match param(params, 0, 0) {
-                    0 | 1 => (CursorShape::Block, true),
+                    0 => (CursorShape::Block, false),
+                    1 => (CursorShape::Block, true),
                     2 => (CursorShape::Block, false),
                     3 => (CursorShape::Underline, true),
                     4 => (CursorShape::Underline, false),
@@ -1723,7 +2241,7 @@ impl vte::Perform for Terminal {
                     6 => (CursorShape::Bar, false),
                     _ => return,
                 };
-                self.cursor_shape = shape;
+                self.cur().shape = shape;
                 self.modes.cursor_blink = blink;
             }
             ([b'>'], 'q') => {
@@ -1733,7 +2251,15 @@ impl vte::Perform for Terminal {
             ([], 'r') => self.set_region(param(params, 0, 1), param(params, 1, 0)),
             // As libghostty: only without parameters (with them it would be
             // DECSLRM, which needs mode 69).
-            ([], 's') if count == 0 => self.save_cursor(),
+            ([], 's') if count == 0 && !self.modes.lr_margins => self.save_cursor(),
+            // DECSLRM (margins not implemented): the cursor goes home.
+            ([], 's') if self.modes.lr_margins => {
+                // A valid pair (left < right ≤ columns) is accepted.
+                let (l, r) = (param(params, 0, 1), param(params, 1, self.cols));
+                if l < r && r <= self.cols {
+                    self.goto(0, 0);
+                }
+            }
             ([], 't') => {
                 let (r, c, cw, ch) = (self.rows as u32, self.cols as u32, self.cell.0 as u32, self.cell.1 as u32);
                 match param(params, 0, 0) {
@@ -1748,8 +2274,12 @@ impl vte::Perform for Terminal {
                 let f = self.kitty_flags();
                 self.reply(format!("\x1b[?{f}u").as_bytes());
             }
+            // As libghostty: flags above 31 make the whole push or set void,
+            // and popping 0 entries pops none.
+            ([b'>' | b'='], 'u') if param(params, 0, 0) > 31 => {}
+            ([b'<'], 'u') if count > 0 && param(params, 0, 0) == 0 => {}
             ([b'>'], 'u') => {
-                let f = param(params, 0, 0) as u8 & 0x1f;
+                let f = param(params, 0, 0) as u8;
                 let k = &mut self.scr().kitty;
                 if k.len() >= 8 {
                     k.remove(0);
@@ -1768,7 +2298,7 @@ impl vte::Perform for Terminal {
                 }
             }
             ([b'='], 'u') => {
-                let f = param(params, 0, 0) as u8 & 0x1f;
+                let f = param(params, 0, 0) as u8;
                 let mode = param(params, 1, 1);
                 let k = self.scr().kitty.last_mut().expect("kitty stack");
                 *k = match mode {
@@ -1810,12 +2340,21 @@ impl vte::Perform for Terminal {
             ([], b'=') => self.modes.app_keypad = true,
             ([], b'>') => self.modes.app_keypad = false,
             ([b'#'], b'8') => {
+                // In the current colours (no attributes), as libghostty.
                 let (cols, rows) = (self.cols, self.rows);
+                let style = Style { flags: 0, ..self.scr().cursor.style };
                 for y in 0..rows {
                     for x in 0..cols {
-                        self.line(y).cells[x as usize] = Cell { text: "E".into(), ..Default::default() };
+                        self.line(y).cells[x as usize] = Cell { text: "E".into(), style, wide: Wide::Narrow };
                     }
+                    let l = self.line(y);
+                    l.wrapped = false;
+                    l.cont = false;
                 }
+                self.cur().style.flags = 0;
+                // DECALN also resets the scroll region.
+                self.top = 0;
+                self.bottom = rows - 1;
                 self.goto(0, 0);
             }
             ([g @ (b'(' | b')' | b'*' | b'+')], set) => {
@@ -1828,6 +2367,10 @@ impl vte::Perform for Terminal {
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell: bool) {
         let Some(code) = params.first().and_then(|p| std::str::from_utf8(p).ok()) else { return };
+        // As libghostty: an OSC that is not valid UTF-8 is dropped whole.
+        if params.iter().any(|p| std::str::from_utf8(p).is_err()) {
+            return;
+        }
         if matches!(code, "4" | "10" | "11" | "12" | "104" | "110" | "111" | "112") {
             // Colours of cells already drawn may change.
             self.all_dirty = true;
