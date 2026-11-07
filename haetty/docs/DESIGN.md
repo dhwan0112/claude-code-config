@@ -892,7 +892,7 @@ exists.
 
 ## 5. Milestones
 
-1. GUI, one window one session (HANDOFF.md §6), with this document's theme,
+1. GUI, one window one session (`docs/history/2026-11-04-05-milestone-1.md`), with this document's theme,
    padding and decoration rules.
 2. Daemon split, IPC, tabs, saved/restored tab sets, `install-desktop`.
 3. Claude Code adapter: hook/status-line subcommands, status panel, diff

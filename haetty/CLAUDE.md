@@ -22,7 +22,8 @@ the start of a session.
 - libghostty-vt objects are `!Send`: they live only on the engine thread in
   `haetty-core`. Frontends use `SessionHandle`, `SessionEvent` and `Snapshot`
   — and nothing else of a session, so sessions can move into a daemon behind
-  a local socket later (`docs/HANDOFF.md` §7–§8).
+  a local socket later (`docs/history/2026-11-04-05-milestone-1.md`, old
+  HANDOFF §7–§8).
 - Never read, store or forward Claude credentials or OAuth tokens; run the
   user's installed `claude` and observe it only through hooks, the status
   line and transcripts. Logs must not record typed text.
@@ -170,5 +171,9 @@ is how rendering can be checked without a screen capture.
 - State what was verified and how (command and observed result); mark what
   was not verified, especially anything Windows-only, which cannot be run
   from Linux.
-- Keep `docs/HANDOFF.md` current: move finished tasks to the status section,
-  add new pitfalls when found.
+- Keep `docs/HANDOFF.md` short (under 400 lines): current state, rules in
+  short, open defects and tasks, the person's checks (§6.1), the pitfall
+  list (one line each). Dated progress records, measurements and solved
+  defects go to the newest file in `docs/history/`; new pitfalls get one
+  line in HANDOFF §4 (details in the record). When moving text, check with
+  `tools/check-moved-lines.py OLD NEW…` that no line was lost.

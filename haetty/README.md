@@ -820,7 +820,7 @@ Milestone 1, verified on Linux (x86_64):
 
 Windows 11 (native, x86_64): the PTY checks of `scripts/windows-smoke.ps1`
 pass (embedded ConPTY 1.25); its Claude Code checks need a prepared Claude
-Code config (see `docs/HANDOFF.md` §3) and pass with one, run through
+Code config (see `docs/history/2026-11-04-05-milestone-1.md`, old HANDOFF §3) and pass with one, run through
 `haetty-headless` (fullscreen renderer, kitty keyboard flags 5 included).
 The `haetty` window runs Claude Code (typing, Shift+Enter, Ctrl+V paste,
 exit code passed on), and the GUI unit tests pass there.
