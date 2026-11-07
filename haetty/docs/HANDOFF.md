@@ -15,6 +15,8 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 
 
+> **In progress:** stage e2 (branch `haetty/e2`, worktree `~/projects/claude-code-config-wt/e2`). Remaining: E2 core engine in haetty-vt (screen, cursor, SGR, regions, alt screen, wide chars, modes, replies, sync, render state), width table from libghostty; vtdiff to 0 on the corpus; then E3
+
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
