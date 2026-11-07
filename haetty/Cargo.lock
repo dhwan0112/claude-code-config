@@ -630,6 +630,7 @@ name = "haetty-vtdiff"
 version = "0.2.0"
 dependencies = [
  "haetty-core",
+ "haetty-vt",
  "libghostty-vt",
 ]
 

@@ -1428,7 +1428,7 @@ included); the native engine should stay well under that.
 
 ### 10.7 E3: a wider harness, the engine as an option, encoders, memory (2026-11-07)
 
-- vtdiff got wider before the engine went further, as advised:
+- vtdiff got wider before the engine went further:
   - the fuzz test's generators (escape-sequence grammar, Claude-Code-like
     stream, mutations with corpus bytes spliced in;
     `haetty-core/tests/common/vtgen.rs`, shared);
@@ -1546,6 +1546,10 @@ included); the native engine should stay well under that.
   - `engine = ghostty | native` in the config file, `CreateSpec.engine`
     (protocol 9), `haetty-headless --engine`; a build without libghostty
     runs native with a warning.
+- Colour parsing (themes, OSC) equals libghostty's: `vtdiff --colors`
+  compares 3219 specifications and 97 palette entries (X11 names in
+  several spellings, every hex/`rgb:`/`rgbi:` form, junk, every line of
+  the built-in themes): all identical.
 - Encoders (`haetty-core/src/encode.rs`): ports of libghostty's key
   (legacy, modifyOtherKeys, kitty), mouse, paste and focus encoders. `vtdiff
   --encoders` compares, byte for byte:
@@ -1574,7 +1578,9 @@ included); the native engine should stay well under that.
     libghostty answers them; Claude Code sends only the query);
   - left/right margins (DECLRMM is kept for DECRQM, DECSLRM only homes the
     cursor; fuzz2 leaves mode 69 out);
-  - the behaviour of the DECRQM-only modes (DECCOLM, reverse wrap…).
+  - the behaviour of the DECRQM-only modes (DECCOLM, reverse wrap…);
+  - `dump` in VT and HTML form (`haetty-headless --dump vt|html`): the
+    native engine gives plain text for all three.
 - Selection needs nothing from the engine: haetty never sets one in
   libghostty (§10.1; its own selection is a known gap, HANDOFF §6.2).
 - Results (`docs/vtdiff/2026-11-07-e3.md`, `--fuzz 200` per kind):
@@ -1625,5 +1631,6 @@ included); the native engine should stay well under that.
     memory);
   - throughput: now 65–75 % of libghostty's;
   - the e2e suite (`run-all.sh`) and a soak with `--engine native`;
+  - VT and HTML dumps;
   - finding 3 (stale rows) is libghostty's and concerns the default engine
     today, whatever is decided.

@@ -8,8 +8,6 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage e3b (branch `haetty/e3b`, worktree `~/projects/claude-code-config-wt/e3b`). Remaining: E3 follow-up: colour parser checked against libghostty, open defect for stale grapheme rows, native dump gap, e2e on the default engine
-
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
@@ -125,6 +123,7 @@ Windows, WSL and the dev machine:
 - Scripts on `\\wsl.localhost` are unsigned: a new window needs `-ExecutionPolicy Bypass` (U5b).
 - PowerShell function names are case-insensitive: a function `Git` calling `git` recursed forever (T5).
 - From Git Bash, `printf > /mnt/c/...` can fail silently: write Windows files through their Windows path.
+- `heavy.ps1` from Git Bash (E3): `-Label … -- pwsh …` printed pwsh's help; dot-sourcing it in `pwsh -Command` left `Enter-HaettyHeavy` undefined. Not yet understood.
 - Claude Code may stop idle background shells when memory runs low (seen on Windows too, against its docs, U3): keep long runs outside Claude Code.
 
 ## 6. Next tasks
@@ -148,6 +147,9 @@ Windows, WSL and the dev machine:
   **Open risk:** the Wayland waiting path has not run on a compositor yet
   (WSLg needs an idle desktop; kramers §6.1 item 32).
 - winit#4746 workaround to remove once winit has the fix (§4).
+- **libghostty stale rows (E3, DESIGN §10.7 finding 3):** a combining mark, VS16 or ZWJ
+  arriving in a later PTY read than its base shows only when the row changes again. Proposed
+  fix (fresh render state for such writes) waits for the user's approval.
 - A test daemon can outlive an abnormally ended test run: a `threads`
   test daemon ran 12 h with its folder gone (found in V5). Tests should
   stop their daemon in a guard that runs on panic too.

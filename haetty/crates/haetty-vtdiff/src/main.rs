@@ -21,6 +21,7 @@
 //!   --gen-width FILE             writes `haetty-vt`'s width tables from libghostty-vt
 //!   --gen-keys FILE              writes haetty-core's key and mouse types (`keys.rs`) from libghostty-vt
 //!   --encoders [--report FILE]   key, mouse, paste and focus encoding of both engines, compared
+//!   --colors                     colour and palette-entry parsing (themes, OSC) against libghostty-vt's
 //!   --dump NAME [BYTES]          the named input's bytes (escaped), resizes marked
 
 use std::collections::BTreeMap;
@@ -748,6 +749,114 @@ fn probe(bytes: &[u8], cols: u16, rows: u16) {
     }
 }
 
+/// `--colors`: colour specifications and palette entries parsed by haetty
+/// (`haetty_vt::color`, what themes and OSC use) and by libghostty-vt's
+/// `RgbColor::parse` / `Palette::parse_palette_entry`, compared: every X11
+/// name in several spellings, the hex, `rgb:` and `rgbi:` forms, junk, and
+/// every value of every built-in theme file.
+fn colors() {
+    use libghostty_vt::style::{Palette, RgbColor};
+    let mut specs: Vec<String> = Vec::new();
+    let rgb_txt = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../haetty-vt/src/x11_colors.rs"))
+        .unwrap_or_default();
+    for line in rgb_txt.lines() {
+        if let Some(n) = line.trim().strip_prefix("(\"").and_then(|l| l.split('"').next()) {
+            specs.push(n.into());
+            specs.push(n.to_uppercase());
+            specs.push(format!(" \t{n} "));
+            let mixed: String =
+                n.chars().enumerate().map(|(i, c)| if i % 2 == 0 { c.to_ascii_uppercase() } else { c }).collect();
+            specs.push(mixed);
+        }
+    }
+    let hexes = ["0", "7", "a", "F", "1e", "80", "ff", "abc", "801", "fff", "0000", "8001", "ffff"];
+    for d in [1usize, 2, 3, 4] {
+        for h in hexes.iter().filter(|h| h.len() == d) {
+            specs.push(format!("#{}", h.repeat(3)));
+            specs.push(format!("rgb:{h}/{h}/{h}"));
+            specs.push(format!("rgb:{h}/0/{h}"));
+            if d == 1 || d == 2 {
+                specs.push(h.repeat(3));
+            }
+        }
+    }
+    for v in ["0", "1", "0.5", "0.25", "0.999", "1.5", "-0.1", "", "x", ".5"] {
+        specs.push(format!("rgbi:{v}/{v}/{v}"));
+    }
+    for j in [
+        "",
+        " ",
+        "#",
+        "#ff",
+        "#fffff",
+        "#ffffffff",
+        "rgb:",
+        "rgb:1/2",
+        "rgb:1/2/3/4",
+        "rgb:12345/0/0",
+        "rgba:1/2/3",
+        "#ggg",
+        "red ",
+        "nosuchcolor",
+        "rgb:/1/2",
+        "１２３",
+    ] {
+        specs.push(j.into());
+    }
+    let mut entries: Vec<String> = Vec::new();
+    for n in ["0", "15", "16", "255", "256", "0x0f", "0o17", "0b1111", " 3 ", "-1", "x", ""] {
+        for c in ["#123456", "red", "rgb:1/2/3", "zz"] {
+            entries.push(format!("{n}={c}"));
+        }
+    }
+    entries.push("no equals".into());
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/themes");
+    let mut theme_lines = 0;
+    for f in std::fs::read_dir(dir).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
+        let text = std::fs::read_to_string(f.path()).unwrap_or_default();
+        for line in text.lines() {
+            if let Some((k, v)) = line.split_once('=') {
+                let (k, v) = (k.trim(), v.trim());
+                theme_lines += 1;
+                if k == "palette" {
+                    entries.push(v.into());
+                } else {
+                    specs.push(v.into());
+                }
+            }
+        }
+    }
+    let (mut same, mut diff) = (0, Vec::new());
+    for s in &specs {
+        let a = RgbColor::parse(s).ok().map(|c| [c.r, c.g, c.b]);
+        let b = haetty_vt::parse_color(s);
+        if a == b {
+            same += 1;
+        } else {
+            diff.push(format!("colour {s:?}: libghostty {a:?} / haetty {b:?}"));
+        }
+    }
+    for e in &entries {
+        let a = Palette::parse_palette_entry(e).ok().map(|(i, c)| (i.0, [c.r, c.g, c.b]));
+        let b = haetty_vt::parse_palette_entry(e);
+        if a == b {
+            same += 1;
+        } else {
+            diff.push(format!("palette {e:?}: libghostty {a:?} / haetty {b:?}"));
+        }
+    }
+    println!(
+        "colours: {} specifications, {} palette entries ({theme_lines} theme lines included): {same} identical, {} differ",
+        specs.len(),
+        entries.len(),
+        diff.len()
+    );
+    for d in diff.iter().take(40) {
+        println!("- {d}");
+    }
+    std::process::exit(if diff.is_empty() { 0 } else { 1 });
+}
+
 /// `--encoders`: what each engine sends for keys, mouse, paste and focus,
 /// compared byte for byte (DESIGN.md §10.7). Both engines get the same
 /// modes first (fed as escape sequences), then the same inputs.
@@ -1257,6 +1366,9 @@ fn bisect(inp: &Input) {
 
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    if raw.first().map(String::as_str) == Some("--colors") {
+        colors();
+    }
     if raw.first().map(String::as_str) == Some("--encoders") {
         encoders(raw.get(1).filter(|a| *a == "--report").and(raw.get(2)).cloned());
         return;

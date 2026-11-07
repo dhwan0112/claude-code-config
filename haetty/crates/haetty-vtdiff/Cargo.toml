@@ -11,3 +11,4 @@ publish = false
 [dependencies]
 haetty-core = { workspace = true, features = ["ghostty"] }
 libghostty-vt.workspace = true
+haetty-vt.workspace = true
