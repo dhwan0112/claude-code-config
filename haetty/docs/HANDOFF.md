@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage e5pre (branch `haetty/e5pre`, worktree `~/projects/claude-code-config-wt/e5pre`). Remaining: E5 before the overnight soak: HANDOFF tag decision (63822de itself), VPA/VPR entry approved, new FAIL baseline. After the overnight: the tag, then E5a-E5e.
+> **In progress:** E5, paused for the user's overnight soak (2026-11-08). Done: stage e5pre (tag decision in "Next session", VPA/VPR approved). Nothing runs; both heavy slots are free; no worktree. Next: the tag steps below once `latest.txt` exists, then E5a–E5e (§6.0).
 
 ## 1. Current state
 
