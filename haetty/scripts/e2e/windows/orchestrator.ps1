@@ -30,7 +30,9 @@ if ((Worker).state -eq "running") { Ok "UserPromptSubmit -> running" } else { Ba
 Keys "%1"; Keys "%2"
 $n = ((Last)[1] -split "`t")[0]
 if ($n -eq "… Fix the parser") { Ok "tab name: … Fix the parser" } else { Bad "tab name" $n }
-if (((Last)[1] -split "`t")[3] -eq "") { Ok "the tab set stores no task prompt" } else { Bad "saved args" "not empty" }
+# The worker command's own arguments (here powershell's -File fake.ps1) are saved; the task prompt never is.
+$saved = ((Last)[1] -split "`t")[3]
+if ($saved -notmatch 'Fix the parser|STATUS') { Ok "the tab set stores no task prompt" } else { Bad "saved args" "the task prompt is in them" }
 # 3. A question waits: the orchestrator holds.
 Report $S "hook PermissionRequest" '{"session_id":"cc-1","tool_name":"Bash"}'; Start-Sleep 0.4
 Palette "message"

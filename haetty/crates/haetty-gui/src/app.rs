@@ -1516,6 +1516,19 @@ impl Win {
                 self.run(a, Origin::Human);
                 return;
             }
+        } else if self.palette.is_some() {
+            // A key with text but no key name (Windows VK_PACKET: SendInput
+            // Unicode, on-screen keyboards, AutoHotkey) goes into the palette
+            // like an IME commit — never past it into the program (it did:
+            // Hangul typed into "Rename tab" reached the shell, V6).
+            if let Some(t) = input::palette_text(ev.text.as_deref()) {
+                if let Some(p) = self.palette.as_mut() {
+                    p.query.push_str(t);
+                    p.selected = 0;
+                }
+                self.recompose();
+            }
+            return;
         }
         if self.diff.is_some() {
             if ev.state == ElementState::Pressed {

@@ -3,8 +3,9 @@
 #   overnight-soak-linux.sh check                        other heavy work running? (prints it; exit 1 if so)
 #   overnight-soak-linux.sh build COMMIT WINOUT          a checkout of COMMIT, its release build for Linux and
 #                                                        Windows; haetty.exe copied to WINOUT\bin (a Windows path)
-#   overnight-soak-linux.sh soak MINUTES XROOT WINOUT    the Linux soak v2 (scripts/e2e/soak.sh of that checkout,
-#                                                        under Xvfb) with that build; output and CSV to WINOUT;
+#   overnight-soak-linux.sh soak MINUTES XROOT WINOUT    the Linux soak v2 (this checkout's scripts/e2e/soak.sh —
+#                                                        the current harness — under Xvfb) with the commit's build;
+#                                                        output and CSV to WINOUT;
 #                                                        XROOT (HAETTY_XROOT) relative to $HOME unless absolute
 #   overnight-soak-linux.sh clean                        removes the checkout and the test files (keeps the target)
 # Everything lives in /tmp/haetty-overnight: the checkout (wt), the build (target, kept for the next night),
@@ -39,7 +40,7 @@ build)
 soak)
   min=$2 xroot=$3 out=$(wslpath -u "$4")
   case "$xroot" in /*) ;; *) xroot=$HOME/$xroot ;; esac
-  cd $B/wt/haetty || exit 2
+  cd "$top/haetty" || exit 2
   rm -rf $B/test; mkdir -p $B/test
   export HAETTY_BIN=$B/target/release/haetty HAETTY_HEADLESS_BIN=$B/target/release/haetty-headless HAETTY_TEST_TMP=$B/test
   [ -d "$xroot" ] && export HAETTY_XROOT=$xroot

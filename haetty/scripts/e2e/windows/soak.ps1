@@ -5,7 +5,8 @@
 # task worktrees left. Keys go through SendInput (lib.ps1): it runs only on an idle desktop and stops at once if
 # the haetty window loses the foreground. Run with pwsh:
 #   $env:HAETTY_TEST_TMP = "$env:PUBLIC\haetty-test"; pwsh -File soak.ps1 -Exe C:\...\haetty.exe -Out soak.csv
-# Verdict (written before the first run): threads last <= first + 3 (Windows' own pool threads), handles last <=
+# Verdict (written before the first run; the baseline moved from t=0 to 5 min in V6, see below): threads last <=
+# base + 3 (Windows' own pool threads), handles last <=
 # first + 20; descendants and sessions last = first; worktrees 0; private working set: GUI last <= GUI at 15 min +
 # 4 MB, daemon last <= daemon at 45 min + 4 MB; every operation done; window and daemon alive.
 param([Parameter(Mandatory = $true)][string]$Exe, [Parameter(Mandatory = $true)][string]$Out, [int]$Dur = 3600)
@@ -85,12 +86,16 @@ Write-Host "operations: tabs $script:tabs, detach $script:dets, tasks $script:ta
 $rows = Import-Csv $Out | ForEach-Object { $o = @{}; foreach ($p in $_.PSObject.Properties) { $o[$p.Name] = [int]$p.Value }; $o }
 $first = $rows[0]; $last = $rows[-1]
 function At([int]$t) { $rows | Sort-Object { [Math]::Abs($_.t_s - $t) } | Select-Object -First 1 }
+# Threads and handles are compared with the sample at 5 min, after the window's warm-up: at t=0 the GUI has not
+# yet opened what it keeps (V6: 243 handles at 4 s, 278 a little later, then flat over 60 tab opens/closes).
+# A run without a later sample compares with t=0.
+$base = if ($rows.Count -ge 3) { At 300 } else { $first }
 $ok = $true
 function Check($name, $cond, $detail) { $script:ok = $script:ok -and $cond; Write-Host "$(if ($cond) { 'PASS' } else { 'FAIL' }) ${name}: $detail" }
-Check "gui_threads" ($last.gui_threads -le $first.gui_threads + 3) "$($first.gui_threads) -> $($last.gui_threads)"
-Check "daemon_threads" ($last.daemon_threads -le $first.daemon_threads + 3) "$($first.daemon_threads) -> $($last.daemon_threads)"
-Check "gui_handles" ($last.gui_handles -le $first.gui_handles + 20) "$($first.gui_handles) -> $($last.gui_handles)"
-Check "daemon_handles" ($last.daemon_handles -le $first.daemon_handles + 20) "$($first.daemon_handles) -> $($last.daemon_handles)"
+Check "gui_threads" ($last.gui_threads -le $base.gui_threads + 3) "$($base.gui_threads) at $($base.t_s) s -> $($last.gui_threads)"
+Check "daemon_threads" ($last.daemon_threads -le $base.daemon_threads + 3) "$($base.daemon_threads) at $($base.t_s) s -> $($last.daemon_threads)"
+Check "gui_handles" ($last.gui_handles -le $base.gui_handles + 20) "$($base.gui_handles) at $($base.t_s) s -> $($last.gui_handles)"
+Check "daemon_handles" ($last.daemon_handles -le $base.daemon_handles + 20) "$($base.daemon_handles) at $($base.t_s) s -> $($last.daemon_handles)"
 Check "daemon_descendants" ($last.daemon_descendants -eq $first.daemon_descendants) "$($first.daemon_descendants) -> $($last.daemon_descendants)"
 Check "sessions" ($last.sessions -eq $first.sessions) "$($first.sessions) -> $($last.sessions)"
 Check "worktrees" ($last.worktrees -eq 0) "$($last.worktrees)"

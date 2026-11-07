@@ -35,6 +35,12 @@ pub struct RawKey<'a> {
     pub mods: ModifiersState,
 }
 
+/// Text a key without a key name types into the palette (Windows VK_PACKET):
+/// printable only.
+pub fn palette_text(text: Option<&str>) -> Option<&str> {
+    text.filter(|t| !t.is_empty() && t.chars().all(|c| !c.is_control()))
+}
+
 /// Build the engine's key event. Text is kept only when it is printable and
 /// was not produced together with Ctrl/Alt/Super (the encoder derives those
 /// sequences from the key and the unshifted character), except for AltGr on
@@ -382,5 +388,14 @@ mod tests {
         assert_eq!(w.notches(MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 27.0)), 18), -2);
         assert_eq!(wheel_lines(-1, true), -1);
         assert_eq!(wheel_lines(-1, false), -3);
+    }
+
+    #[test]
+    fn unnamed_keys_type_printable_text_into_the_palette() {
+        assert_eq!(palette_text(Some("한")), Some("한"));
+        assert_eq!(palette_text(Some("ab")), Some("ab"));
+        assert_eq!(palette_text(Some("\r")), None);
+        assert_eq!(palette_text(Some("")), None);
+        assert_eq!(palette_text(None), None);
     }
 }
