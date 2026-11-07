@@ -52,7 +52,6 @@ from the overnight run of §6.1 item 30 (commit `63822de`):
 
 
 
-> **In progress:** stage v1 (branch `haetty/v1`, worktree `~/projects/claude-code-config-wt/v1`). Remaining: V1 overnight verdict, V2 HANDOFF diet, V3 observe-only interface, V4 DESIGN 9 stable update design, V5 CLI help/completions/config table, V6 overnight GUI e2e
 
 ## 1. Goal
 
@@ -2456,6 +2455,23 @@ regression list, measurements), then committed, pushed and mirrored.
   - The crates are unchanged since `63822de` (`git diff --stat 63822de
     HEAD -- haetty/crates haetty/Cargo.*` empty): no new dependency, the
     dist sizes are those of `63822de`.
+
+- **2026-11-07 V1 — overnight verdict: the run did not take place; no
+  tag.**
+  - `C:\Users\Public\haetty-overnight\` does not exist (no `latest.txt`,
+    no `progress.log`, no `result-*.txt` anywhere under `C:\Users\Public`).
+  - The heavy-job log (`/tmp/haetty-heavy/heavy.log`) shows only the two
+    5-minute trials of U4 (01:13 and 01:20, both holds released at 01:20
+    and 01:29), and `/tmp/haetty-overnight` holds only the build cache from
+    01:15.
+  - So `tools/overnight-soak.ps1` was not started after U4. This is neither
+    a tool defect nor a haetty defect, and nothing stopped a Windows run
+    (no screen-lock or input trace exists).
+  - U6 conditions: RESULT lines missing → no `haetty-v0.2.0` tag.
+    Candidate unchanged: `63822de`. `git diff 63822de HEAD -- haetty/crates
+    haetty/Cargo.toml haetty/Cargo.lock` is still empty.
+  - Next night: §6.1 items 29–30 (V6 adds the Windows GUI e2e after the
+    soaks). The U6 steps at the top of this file stay valid.
 
 ### ccx comparison (milestone 3)
 
