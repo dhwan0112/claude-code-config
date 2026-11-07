@@ -11,7 +11,6 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 
 
-> **In progress:** stage v6 (branch `haetty/v6`, worktree `~/projects/claude-code-config-wt/v6`). Remaining: V6 overnight GUI e2e; then V7 kramers checks and A7, E0-E3 native engine
 
 ## 1. Current state
 
@@ -255,43 +254,53 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     again — both conversations resume. On Windows also check that no
     `node`/`claude` or `OpenConsole` process of those tabs stays.
 
-29. **Windows GUI end-to-end runs** (T5; need a desktop nobody uses): with
-    the computer idle (no input for 2 minutes; do not touch it while they
-    run), run `scripts/e2e/windows/tabs.ps1` and
-    `scripts/e2e/windows/orchestrator.ps1` (scripts/e2e/README.md,
-    Windows) against the candidate's `haetty.exe`; both must end with 0
-    failed. They skip by themselves when the desktop is in use.
+29. **Windows GUI end-to-end runs** (`tabs.ps1`, `orchestrator.ps1`; T5).
+    They need a desktop nobody uses, so they now run at night with item
+    30: add `-GuiE2E` to its command. They report `RESULT GUI-TABS` and
+    `RESULT GUI-ORCHESTRATOR`, each run after 120 s without input and
+    stopped at once by any input.
+    - Expect `GUI-TABS FAIL` (rename) for `63822de`: the Hangul-rename
+      defect found in V6 is fixed only after it (`6a67b22`). With today's
+      `main` build both passed, 14/14 and 17/17 (V6).
+    - By hand instead: `pwsh -ExecutionPolicy Bypass -File
+      scripts\e2e\windows\tabs.ps1 -Exe <haetty.exe>` (and
+      `orchestrator.ps1`), on an idle desktop.
 
-30. **Overnight soak v2 on the 0.2.0 candidate** (`63822de`; needed for
-    the `haetty-v0.2.0` tag). Before going to bed, close what you do not
-    need (nothing else heavy may run) and start, **from a PowerShell
-    window — not from Claude Code**:
+30. **Overnight soak v2 on the 0.2.0 candidate** (`63822de`; needed for the
+    `haetty-v0.2.0` tag — see "Next session" and §1 about where the tag can
+    go). Before going to bed, close what you do not need (nothing else
+    heavy may run) and run, **from a PowerShell window — not from Claude
+    Code**:
     ```powershell
-    pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<user>\projects\claude-code-config\haetty\tools\overnight-soak.ps1
+    pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<user>\projects\claude-code-config\haetty\tools\overnight-soak.ps1 -GuiE2E
     ```
     (this machine: `<distro>` = `Ubuntu`). `-ExecutionPolicy Bypass` is
-    needed: the script on `\\wsl.localhost` is unsigned, and this
-    machine's policy (RemoteSigned, LocalMachine) refuses it in a new
-    window — checked 2026-11-07. It checks that no heavy job runs
-    and holds both heavy-job slots. It builds `63822de` for Linux and
-    Windows, runs the Linux soak v2 alone in WSL for an hour, then waits up
-    to 4 hours for a desktop untouched for 120 s and runs the Windows soak
-    v2 for an hour.
-    - Any key or mouse movement of yours stops the Windows part at once (it
+    needed: the script on `\\wsl.localhost` is unsigned, and this machine's
+    policy (RemoteSigned, LocalMachine) refuses it in a new window
+    (checked 2026-11-07).
+    - What it does: checks that no heavy job runs and holds both
+      heavy-job slots; builds `63822de` for Linux and Windows (the test
+      scripts are the current checkout's, the program is the commit's);
+      runs the Linux soak v2 alone in WSL for an hour; waits up to 4 hours
+      for a desktop untouched for 120 s and runs the Windows soak v2 for an
+      hour; with `-GuiE2E`, then item 29.
+    - Any key or mouse movement of yours stops a Windows part at once (it
       then counts as not passed). Leave the computer alone until the
-      morning.
-    - Sleep and the screen lock are prevented while it runs, so the screen
-      stays on. Normal power settings return when it ends.
-    - It takes about 2 h 10 min when the desktop is idle at once.
+      morning. Sleep and the screen lock are prevented while it runs, so
+      the screen stays on.
+    - Time: about **2 h 10 min** when the desktop is idle at once. Measured
+      in the V6 trials: build 2–2.5 min, each soak its hour plus about
+      15 s, GUI e2e tabs 45 s and orchestrator 40 s, each after a 2 min
+      quiet wait.
     - Result: `C:\Users\Public\haetty-overnight\latest.txt` (a copy of
-      `result-<date-time>.txt` there). The first two lines are `RESULT
-      LINUX PASS|FAIL|NOT-RUN …` and `RESULT WINDOWS …`, then the builds'
-      `--version`, both soak outputs (operations, every check, `VERDICT`)
-      and both CSV time series (a sample every 5 min). Progress:
+      `result-<date-time>.txt`). First lines: `RESULT LINUX
+      PASS|FAIL|NOT-RUN …`, `RESULT WINDOWS …`, `RESULT GUI-TABS …`,
+      `RESULT GUI-ORCHESTRATOR …`. Then the builds' `--version`, the
+      harness commit, both soak outputs (every check, `VERDICT`) with their
+      CSV series (a sample every 5 min), and the e2e output. Progress:
       `progress.log` in the same folder.
-    - Options: `-Minutes`, `-IdleWaitMinutes`, `-Commit`, `-OutDir`.
-    - The steps for the next session are under "Next session" at the top
-      of this file.
+    - Options: `-Minutes`, `-IdleWaitMinutes`, `-Commit`, `-OutDir`,
+      `-GuiE2E`.
 
 31. **Observing a tab** (V3): palette "Observing: allow or stop for this
     tab" — a dim `◦` appears after the tab's number (grey, also on the
