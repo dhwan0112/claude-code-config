@@ -147,9 +147,9 @@ Windows, WSL and the dev machine:
   figures are kept as recorded.
 - **A7 (kramers 2026-11-06): on Wayland at a fractional scale the first
   window was about 1/scale of the requested grid** (`--cols 80 --rows 24`
-  gave 64x19 at 125 %). Fixed in V7 (DESIGN §3.10); tested at 100–200 % on
-  X11 (`scale.sh`) and in a unit test. The Wayland case itself waits for
-  §6.1 item 32.
+  gave 64x19 at 125 %). Fix in V7 (DESIGN §3.10), passing on X11 (`scale.sh`).
+  **Open risk:** the Wayland waiting path has not run on a compositor yet
+  (WSLg needs an idle desktop; kramers §6.1 item 32).
 - winit#4746 workaround to remove once winit has the fix (§4).
 - A test daemon can outlive an abnormally ended test run: a `threads`
   test daemon ran 12 h with its folder gone (found in V5). Tests should
