@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn title_row_cells() {
         let g = Greys::from(Rgb { r: 220, g: 220, b: 220 }, Rgb { r: 30, g: 30, b: 30 });
-        let one = [TabView { name: "bash", exited: false, attention: Attention::None }];
+        let one = [TabView { name: "bash", exited: false, attention: Attention::None, observed: false }];
         let b = ButtonLayout::default();
         let r = row(&one, 0, 40, g, "haetty", &b, Some(Button::Close), false);
         let text: String = r.iter().map(|c| if c.text.is_empty() { " ".into() } else { c.text.clone() }).collect();
@@ -305,7 +305,7 @@ mod tests {
             (Some(g.dim), Some(g.dim), Some(g.dim), Some(g.strong))
         );
         // Maximized: the restore glyph; two tabs: the tab bar in the tab area.
-        let two = [one[0].clone(), TabView { name: "vim", exited: false, attention: Attention::None }];
+        let two = [one[0].clone(), TabView { name: "vim", exited: false, attention: Attention::None, observed: false }];
         let r = row(&two, 1, 40, g, "x", &b, None, true);
         let text: String = r.iter().map(|c| if c.text.is_empty() { " ".into() } else { c.text.clone() }).collect();
         assert!(text.contains("1 bash") && text.contains("2 vim") && text.contains('■'), "{text:?}");

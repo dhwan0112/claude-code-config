@@ -98,6 +98,9 @@ struct Tab {
     git_read: Option<(String, Instant)>,
     /// An orchestrator worker: its task's id and title.
     task: Option<(String, String)>,
+    /// Observe-only readers may see it (DESIGN.md §6.1); the daemon keeps the
+    /// flag, this is the window's copy for the tab bar.
+    observable: bool,
 }
 
 impl Tab {
@@ -240,6 +243,8 @@ struct Win {
     /// OS notification (Linux `notify-send`) besides the taskbar/urgency
     /// hint when Claude Code waits and the window is unfocused.
     notifications: bool,
+    /// New tabs start observable (`observe-new-tabs`, DESIGN.md §6.1).
+    observe_new_tabs: bool,
     /// Status panel: open, width in columns (persisted in the state dir).
     panel_open: bool,
     panel_width: u16,
@@ -392,6 +397,7 @@ impl App {
             scrollback_limit: self.opts.config.scrollback_limit,
             claude_integration: self.opts.config.claude_integration,
             notifications: self.opts.config.notifications,
+            observe_new_tabs: self.opts.config.observe_new_tabs,
             panel_open: ui_state.0,
             panel_width: ui_state.1,
             diff: None,
@@ -514,6 +520,9 @@ impl Win {
         let size = self.term_grid_for(integrated, self.tabs.len() + 1);
         log::info!("reattaching session {} ({})", s.id, s.program);
         self.add_tab(s.id.clone(), spec, size, integrated)?;
+        if let Some(t) = self.tabs.iter_mut().find(|t| t.session.id == s.id) {
+            t.observable = s.observable;
+        }
         // It may have been started with other colours (a theme changed while
         // no window showed it): give it the current ones.
         if let Some(t) = self.tabs.iter().find(|t| t.session.id == s.id) {
@@ -692,7 +701,20 @@ impl Win {
         };
         let id = self.client.create(create).map_err(|e| e.to_string())?;
         let spec = TabSpec { cwd, once: vec![], ..spec };
-        self.add_tab(id, spec, size, integrated)
+        self.add_tab(id.clone(), spec, size, integrated)?;
+        if self.observe_new_tabs {
+            self.set_observable(self.tabs.len() - 1, true);
+        }
+        Ok(())
+    }
+
+    /// Allows or stops observe-only readers for tab `i` (DESIGN.md §6.1).
+    fn set_observable(&mut self, i: usize, on: bool) {
+        let Some(t) = self.tabs.get_mut(i) else { return };
+        match self.client.set_observable(&t.session.id, on) {
+            Ok(()) => t.observable = on,
+            Err(e) => log::warn!("observable {}: {e}", t.session.id),
+        }
     }
 
     /// Attaches session `id` as a new, selected tab.
@@ -736,6 +758,7 @@ impl Win {
             git_name: None,
             git_read: None,
             task: None,
+            observable: false,
         };
         tab.task = tab
             .spec
@@ -1052,6 +1075,19 @@ impl Win {
                 self.recompose();
             }
             Action::DetachTab => self.detach_tab(),
+            Action::ToggleObserve => {
+                let on = !self.tab().observable;
+                self.set_observable(self.active, on);
+                self.show_hint(if self.tab().observable == on && on {
+                    "observing allowed: haetty screen and haetty events can read this tab (the palette again stops it)"
+                        .into()
+                } else if self.tab().observable == on {
+                    "observing stopped for this tab".into()
+                } else {
+                    "observing could not be changed (see the log)".into()
+                });
+                self.recompose();
+            }
             Action::NewTask => {
                 // Prefilled: the active tab's repository and its branch.
                 let prefill = self
@@ -1371,7 +1407,12 @@ impl Win {
             let views: Vec<TabView> = names
                 .iter()
                 .zip(&self.tabs)
-                .map(|(n, t)| TabView { name: n, exited: t.exited.is_some(), attention: t.attention() })
+                .map(|(n, t)| TabView {
+                    name: n,
+                    exited: t.exited.is_some(),
+                    attention: t.attention(),
+                    observed: t.observable,
+                })
                 .collect();
             if self.integrated {
                 let title = self.title_text();

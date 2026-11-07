@@ -46,6 +46,9 @@ pub enum Action {
     MessageWorker,
     /// `git worktree remove` for a task whose worker is closed.
     RemoveTaskWorktree,
+    /// Allow or stop observe-only readers (`haetty screen`, `haetty events`)
+    /// for the active tab (DESIGN.md §6.1).
+    ToggleObserve,
 }
 
 impl Action {
@@ -74,6 +77,7 @@ impl Action {
             Action::NewTask => "new_task".into(),
             Action::MessageWorker => "message_worker".into(),
             Action::RemoveTaskWorktree => "remove_task_worktree".into(),
+            Action::ToggleObserve => "toggle_observe".into(),
         }
     }
 
@@ -102,6 +106,7 @@ impl Action {
             Action::NewTask => "New task (a worker in a git worktree)".into(),
             Action::MessageWorker => "Message the worker".into(),
             Action::RemoveTaskWorktree => "Remove a task's worktree".into(),
+            Action::ToggleObserve => "Observing: allow or stop for this tab (haetty screen, haetty events)".into(),
         }
     }
 
@@ -128,6 +133,7 @@ impl Action {
             "new_task" => Action::NewTask,
             "message_worker" => Action::MessageWorker,
             "remove_task_worktree" => Action::RemoveTaskWorktree,
+            "toggle_observe" => Action::ToggleObserve,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -148,6 +154,7 @@ impl Action {
             Action::RenameTab,
             Action::ReopenClosedTab,
             Action::DetachTab,
+            Action::ToggleObserve,
         ];
         v.extend((1..=9).map(Action::GotoTab));
         v.extend([

@@ -36,6 +36,8 @@ them.
 haetty [gui] [--font FAMILY] [--font-size PT] [--cols N] [--rows N] [--KEY VALUE]... [--] [PROGRAM [ARGS...]]
 haetty daemon
 haetty status [--json | --screen ID]
+haetty events [--follow] [--json] [--since CURSOR]   (observable tabs only)
+haetty screen [--json] SESSION                       (observable tabs only)
 haetty install-desktop
 haetty hook EVENT        (run by Claude Code)
 haetty statusline        (run by Claude Code)
@@ -45,7 +47,7 @@ haetty statusline        (run by Claude Code)
   else `cmd.exe`); `haetty claude` runs a program directly. `haetty gui ...`
   is the same as `haetty ...`.
 - Subcommands must be the first word. The names `gui`, `daemon`, `status`,
-  `install-desktop`, `hook`, `statusline` are subcommands, and `run` and
+  `events`, `screen`, `install-desktop`, `hook`, `statusline` are subcommands, and `run` and
   `headless` are reserved (they end with "not implemented yet", exit code 2).
   To run a program with one of these names, put it after `--`:
   `haetty -- status`.
@@ -69,6 +71,9 @@ haetty statusline        (run by Claude Code)
   `haetty status`). It is read-only and never starts a daemon: without one
   it prints `no daemon running` (with `--json`:
   `{"daemon_pid":null,"sessions":[]}`).
+- `haetty events` and `haetty screen` are for programs that watch haetty
+  without being able to touch it, and see only tabs you allowed — see
+  [Observing a tab](#observing-a-tab-read-only).
 - If a daemon of another version is still running (after an upgrade), the
   window says so and does not connect. That daemon exits by itself 10 s after
   its last window closes; ending the `haetty daemon` process also ends its
@@ -197,6 +202,7 @@ keybind = ctrl+shift+n=new_tab
 | `restore-tabs` | `true` / `false` — reopen the previous run's tabs at start | `true` |
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |
 | `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
+| `observe-new-tabs` | `true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only)) | `false` |
 | `keybind` | `CHORD=ACTION` or `CHORD=unbind` (file only, may repeat) | see [Tabs and keys](#tabs-and-keys) |
 | `theme` | a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes)) | `IBM 5153 CGA` |
 | `palette` | `N=COLOR`, N 0–15 (may repeat) — on top of the theme | the theme's |
@@ -519,6 +525,32 @@ settings or trust records either.
 restart the worker's conversation is resumed (`--resume`) without the task
 being submitted again. Tasks are files in the `tasks` folder of the state
 directory (`haetty status --json` lists them even when no window is open).
+
+### Observing a tab (read-only)
+
+Other programs — a script, later a remote adapter (DESIGN.md §6) — can
+watch a tab without being able to type into it, and only a tab you allowed.
+
+- Allow it: palette "Observing: allow or stop for this tab" (the same entry
+  stops it), or `observe-new-tabs = true` for every new tab. An observable
+  tab shows a dim `◦` after its number in the tab bar. The permission
+  belongs to the running session: it survives detaching and reattaching,
+  but not a restart from a tab set (allow it again).
+- `haetty screen [--json] SESSION`: the screen text and the state — title,
+  folder, program, size, cursor and, for Claude Code tabs, its attention
+  mark, busy, turns and the last worker report's status. A tab that is not
+  observable is refused (exit 3). Session ids come from `haetty status`.
+- `haetty events [--json] [--since CURSOR] [--follow]`: haetty's event log
+  (session started, exited, closed, attention changes, latency summaries,
+  observe on/off) for observable tabs only, and only from when they were
+  observable. One line per event (`--json`: one JSON object, with its
+  `seq`); `--since` continues after a `seq`; `--follow` keeps printing new
+  events until the daemon ends.
+- Never in either: what you type, prompts, tool input, transcripts or
+  credentials. `events` has no screen contents at all.
+- Both connect as an observer: they cannot send keys, paste, resize, close
+  a tab or allow observing. That is checked by the daemon and by the client
+  type they are built on. There is no network listener.
 
 ### Desktop integration
 

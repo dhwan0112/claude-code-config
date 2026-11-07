@@ -14,6 +14,7 @@
 //! | `claude-integration` | `true` / `false`: hooks and status line in Claude Code tabs | `true` |
 //! | `notifications` | `true` / `false`: desktop notification when Claude Code waits and the window is unfocused (Linux `notify-send`) | `true` |
 //! | `restore-tabs` | `true` / `false`: reopen the previous run's tabs at start | `true` |
+//! | `observe-new-tabs` | `true` / `false`: new tabs start observable (`haetty screen`, `haetty events`; DESIGN.md §6.1) | `false` |
 //! | `worker-command` | the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1) | `claude` |
 //! | `scrollback-limit` | bytes of scrollback per session (as Ghostty; ~1.1 KB per 120-column row) | 12000000 |
 //! | `theme` | a built-in theme name, a theme file's name in `<config dir>/themes/`, or a path (with `/` or `\`; relative to the config directory) | [`haetty_core::theme::DEFAULT_THEME`] |
@@ -93,6 +94,8 @@ pub struct Config {
     pub scrollback_limit: usize,
     /// Reopen the previous run's tabs (tab set "previous") at start.
     pub restore_tabs: bool,
+    /// New tabs start observable (DESIGN.md §6.1).
+    pub observe_new_tabs: bool,
     /// Claude Code tabs get haetty's hooks and status line.
     pub claude_integration: bool,
     /// The orchestrator's worker command (DESIGN.md §8.1).
@@ -117,6 +120,7 @@ impl Default for Config {
             decorations: Decorations::Auto,
             scrollback_limit: haetty_core::DEFAULT_SCROLLBACK_LIMIT,
             restore_tabs: true,
+            observe_new_tabs: false,
             claude_integration: true,
             worker_command: "claude".into(),
             notifications: true,
@@ -136,6 +140,7 @@ pub const KEYS: &[&str] = &[
     "decorations",
     "scrollback-limit",
     "restore-tabs",
+    "observe-new-tabs",
     "claude-integration",
     "worker-command",
     "notifications",
@@ -167,6 +172,7 @@ impl Config {
                 }
             }
             "restore-tabs" => self.restore_tabs = parse_bool(value).ok_or_else(bad)?,
+            "observe-new-tabs" => self.observe_new_tabs = parse_bool(value).ok_or_else(bad)?,
             "claude-integration" => self.claude_integration = parse_bool(value).ok_or_else(bad)?,
             "worker-command" => {
                 if value.trim().is_empty() {

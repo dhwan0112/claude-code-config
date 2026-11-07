@@ -917,6 +917,53 @@ have durable ids; orchestrator events go to an append-only log readable from a
 cursor. Remote parties never approve Claude Code permission prompts; approvals
 stay with a human.
 
+### 6.1 Observe-only interface (first step, 2026-11-07; no network)
+
+The local base the later adapters (CLI over SSH, MCP) stand on. Written with
+the code (stage V3); the role table change is a protected-area change,
+approved for this scope.
+
+- **Consent per session, off by default.** A session is observable only
+  after the person allowed it: palette "Observing: allow or stop for this
+  tab", or `observe-new-tabs = true` for new tabs. The flag lives in the
+  daemon (`SessionInfo.observable`, `SetObservable`, Control only), so it
+  survives detach and reattach; tab sets do not store it (a restored tab
+  is a new session and asks again).
+- **Display.** One dim glyph `◦` after the tab number (`ui::tab_bar`), in
+  the dim grey on every tab, active or not — never an accent colour
+  (§2.2); no hint stays on screen. With nothing observable the screen is
+  unchanged (the reference frames do not move).
+- **What an observer sees.**
+  - `GetScreen` (`haetty screen [--json] SESSION`): the visible screen
+    text and the state — title, folder, program, size, cursor, and for
+    Claude Code tabs the attention mark, busy, turns, name, model and the
+    report's STATUS. Denied for a session that is not observable. The text
+    travels as `Secret` (never logged).
+  - `ReadEvents { cursor, follow }` (`haetty events [--follow] [--json]
+    [--since CURSOR]`): `events.log` lines after the cursor, only events of
+    a session written while it was observable. The daemon keeps per session
+    the `seq` ranges of consent (from the "observe on" line to the "observe
+    off" line). Nothing from before consent, after it was withdrawn, or from
+    an earlier daemon run (those ranges are not kept across a restart; the
+    sequence and the cursor continue). Daemon-wide lines (start, stop,
+    friction) are never shown. With `follow` each new visible event is sent
+    as it is written. The log holds derived fields only (§3.8): no typed
+    text, prompts, tool input or screen contents.
+- **Roles.** `ReadEvents` and `GetScreen` are Observe's alone (Control and
+  Report are denied); `SetObservable` is Control's; every input or session
+  message from Observe stays denied (§3.7, unchanged), and the permission
+  rule for Program input is untouched.
+- **Client type.** `haetty_proto::ObserverClient` is the observe-only
+  client of §3.7's rule for remote adapters: it says `Hello` as Observe and
+  can only build `ReadEvents`, `GetScreen` and `ListSessions`. It has no
+  method taking a `ClientMsg`, no session handle and no input. A unit test
+  checks its source for exactly those message names.
+  `haetty events` / `haetty screen` use it. The older `haetty status
+  --screen` (local scripts and tests) still reads any session through the
+  full client's Observe `Attach`; adapters must not use it.
+- Protocol version 8. Tests: `crates/haetty-gui/tests/observe.rs` (real
+  daemon and CLI).
+
 ## 8. Orchestrator (milestone 4, first step)
 
 (Numbered 8 as asked when it was commissioned; 7 is unused.) Written

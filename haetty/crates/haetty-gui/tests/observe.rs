@@ -38,6 +38,16 @@ fn wait_screen(o: &mut ObserverClient, id: &str, needle: &str) -> String {
     }
 }
 
+/// The `haetty` command line against the test daemon.
+fn cli(dir: &std::path::Path, ep: &haetty_proto::paths::Endpoint) -> std::process::Command {
+    let mut c = std::process::Command::new(bin());
+    c.env("HAETTY_INSTANCE", "dev").env("HAETTY_SOCKET", &ep.0).env("HAETTY_STATE_DIR", dir.join("state"));
+    #[cfg(unix)]
+    c.env("XDG_RUNTIME_DIR", dir.join("rt"));
+    c.stdin(std::process::Stdio::null());
+    c
+}
+
 fn kinds(ev: &[LogEvent]) -> Vec<String> {
     ev.iter()
         .map(|e| {
@@ -76,6 +86,23 @@ fn observe_only_interface() {
     let list = o.sessions().unwrap();
     let flag = |id: &str| list.iter().find(|s| s.id == id).map(|s| s.observable);
     assert_eq!((flag(&a), flag(&b)), (Some(false), Some(true)));
+
+    // The command line: `screen` refuses A, shows B; `events` lists B only.
+    let out = cli(&dir, &ep).args(["screen", "--json", &a]).output().unwrap();
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("is not observable"), "{out:?}");
+    let out = cli(&dir, &ep).args(["screen", "--json", &b]).output().unwrap();
+    let j = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(out.status.success() && j.contains(&format!(r#"{{"id":"{b}""#)) && j.contains("shown-b"), "{out:?}");
+    assert!(j.contains(r#""state":"running""#) && j.contains(r#""claude":null"#), "{j}");
+    let out = cli(&dir, &ep).args(["events", "--json"]).output().unwrap();
+    let lines: Vec<String> = String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect();
+    assert!(out.status.success() && !lines.is_empty(), "{out:?}");
+    assert!(lines.iter().all(|l| l.contains(&format!(r#""session":"{b}""#))), "{lines:?}");
+    assert!(
+        lines[0].contains(r#""kind":"observe","session":"#) && lines[0].contains(r#""fields":{"on":"1"}"#),
+        "{lines:?}"
+    );
 
     // Events: only B's, and only from the moment it was allowed.
     let (ev, cursor) = o.events(0).unwrap();
@@ -117,7 +144,21 @@ fn observe_only_interface() {
             !(e.kind == "observe" && e.fields.iter().any(|(k, v)| k == "on" && v == "1"))
         })
     });
-    std::thread::sleep(Duration::from_millis(300));
+    // …and the same through `haetty events --follow --json --since CURSOR`.
+    let mut fcli = cli(&dir, &ep)
+        .args(["events", "--follow", "--json", "--since", &cursor.to_string()])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stdout = fcli.stdout.take().unwrap();
+    let (ltx, lrx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for l in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+            let _ = ltx.send(l);
+        }
+    });
+    std::thread::sleep(Duration::from_millis(500));
     c.set_observable(&b, false).unwrap();
     c.close(&a).unwrap();
     c.close(&b).unwrap();
@@ -126,6 +167,18 @@ fn observe_only_interface() {
     follower.join().unwrap().unwrap();
     let got: Vec<LogEvent> = rx.try_iter().collect();
     assert_eq!(kinds(&got), [format!("{b}:observe:on=0"), format!("{dd}:observe:on=1")]);
+    let mut followed = vec![];
+    let end = Instant::now() + Duration::from_secs(10);
+    while followed.len() < 2 && Instant::now() < end {
+        if let Ok(l) = lrx.recv_timeout(Duration::from_millis(200)) {
+            followed.push(l);
+        }
+    }
+    fcli.kill().unwrap();
+    fcli.wait().unwrap();
+    assert_eq!(followed.len(), 2, "{followed:?}");
+    assert!(followed[0].contains(&format!(r#""session":"{b}","fields":{{"on":"0"}}"#)), "{followed:?}");
+    assert!(followed[1].contains(&format!(r#""session":"{dd}","fields":{{"on":"1"}}"#)), "{followed:?}");
 
     // The cursor continues: only what came after it.
     let (after, cursor2) = o.events(cursor).unwrap();

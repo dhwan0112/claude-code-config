@@ -265,10 +265,10 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
         Some((2, 3)),
     );
     let tabs = [
-        TabView { name: "bash", exited: false, attention: Attention::None },
-        TabView { name: "Claude Code", exited: false, attention: Attention::Wait },
-        TabView { name: "vim main.rs", exited: false, attention: Attention::None },
-        TabView { name: "cargo test", exited: true, attention: Attention::None },
+        TabView { name: "bash", exited: false, attention: Attention::None, observed: false },
+        TabView { name: "Claude Code", exited: false, attention: Attention::Wait, observed: false },
+        TabView { name: "vim main.rs", exited: false, attention: Attention::None, observed: false },
+        TabView { name: "cargo test", exited: true, attention: Attention::None, observed: false },
     ];
     let bar = ui::tab_bar(&tabs, 0, COLS as usize, g);
     out.push(("tabs", Compose { tab_bar: Some(bar), ..compose(&s) }.build(), None));
@@ -278,10 +278,11 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
     use crate::titlebar::{self, Button, ButtonLayout};
     let b = ButtonLayout::default();
     let s = screen(COLS, ROWS - 1, &["$ ls", "Cargo.toml  README.md  crates  docs", "$ "], Some((2, 2)));
-    let one = [TabView { name: "bash", exited: false, attention: Attention::None }];
+    let one = [TabView { name: "bash", exited: false, attention: Attention::None, observed: false }];
     let row = titlebar::row(&one, 0, COLS as usize, g, "~/projects/haetty", &b, None, false);
     out.push(("integrated-title", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None));
-    let two = [one[0].clone(), TabView { name: "Claude Code", exited: false, attention: Attention::Wait }];
+    let two =
+        [one[0].clone(), TabView { name: "Claude Code", exited: false, attention: Attention::Wait, observed: false }];
     let row = titlebar::row(&two, 0, COLS as usize, g, "", &b, Some(Button::Close), false);
     out.push(("integrated-tabs", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None));
 
@@ -311,9 +312,24 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>)> {
     // glyphs and the panel's WORKERS section for the active worker.
     use haetty_cc::orch::WorkerState as W;
     let tabs = [
-        TabView { name: &format!("{} Fix the parser", W::Verified.glyph()), exited: false, attention: Attention::None },
-        TabView { name: &format!("{} Port the tests", W::Running.glyph()), exited: false, attention: Attention::None },
-        TabView { name: &format!("{} Update docs", W::Blocked.glyph()), exited: false, attention: Attention::None },
+        TabView {
+            name: &format!("{} Fix the parser", W::Verified.glyph()),
+            exited: false,
+            attention: Attention::None,
+            observed: false,
+        },
+        TabView {
+            name: &format!("{} Port the tests", W::Running.glyph()),
+            exited: false,
+            attention: Attention::None,
+            observed: false,
+        },
+        TabView {
+            name: &format!("{} Update docs", W::Blocked.glyph()),
+            exited: false,
+            attention: Attention::None,
+            observed: false,
+        },
     ];
     let bar = ui::tab_bar(&tabs, 0, COLS as usize, g);
     let lines = [

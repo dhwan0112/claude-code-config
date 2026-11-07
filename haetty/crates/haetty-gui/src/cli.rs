@@ -2,7 +2,8 @@
 //! dispatched before any font or windowing code runs (DESIGN.md §3.1).
 
 use haetty_proto::paths::Endpoint;
-use haetty_proto::{Client, ConnectError, Role, SessionInfo, SessionState};
+use haetty_proto::wire::{LogEvent, ScreenView};
+use haetty_proto::{Client, ConnectError, ObserverClient, Role, SessionInfo, SessionState};
 
 /// `haetty daemon`: serve until idle. Another daemon already listening is
 /// not an error (two GUIs may start one at the same time).
@@ -91,6 +92,139 @@ pub fn screen(id: &str) -> (String, i32) {
     (format!("haetty status: no screen from session {id}"), 1)
 }
 
+/// An observer connection for `events` / `screen` (never starts a daemon).
+fn observer(cmd: &str) -> Result<ObserverClient, String> {
+    let ep = Endpoint::default_for_user().map_err(|e| format!("haetty {cmd}: {e}"))?;
+    ObserverClient::connect(&ep, cmd).map_err(|e| match e {
+        ConnectError::NotRunning => format!("haetty {cmd}: no daemon running"),
+        e => format!("haetty {cmd}: {e}"),
+    })
+}
+
+/// `haetty events [--follow] [--json] [--since CURSOR]` (DESIGN.md §6.1):
+/// the event log after CURSOR, only events of sessions while they were
+/// observable — derived fields, never typed or shown text. One line per
+/// event (`--json`: one JSON object per line); `--follow` keeps printing new
+/// ones until the daemon ends.
+pub fn events(follow: bool, json: bool, since: u64, out: &mut dyn std::io::Write) -> Result<(), String> {
+    let mut o = observer("events")?;
+    let line = |e: &LogEvent| if json { event_json(e) } else { event_text(e) };
+    if follow {
+        let mut failed = None;
+        o.follow(since, |e| match writeln!(out, "{}", line(e)).and_then(|_| out.flush()) {
+            Ok(()) => true,
+            Err(err) => {
+                failed = Some(err);
+                false
+            }
+        })
+        .map_err(|e| format!("haetty events: {e}"))?;
+        // A closed pipe (`| head`) ends quietly.
+        return match failed {
+            Some(e) if e.kind() != std::io::ErrorKind::BrokenPipe => Err(format!("haetty events: {e}")),
+            _ => Ok(()),
+        };
+    }
+    let (list, _) = o.events(since).map_err(|e| format!("haetty events: {e}"))?;
+    for e in &list {
+        if writeln!(out, "{}", line(e)).is_err() {
+            break;
+        }
+    }
+    Ok(())
+}
+
+pub fn event_json(e: &LogEvent) -> String {
+    let fields: Vec<String> = e.fields.iter().map(|(k, v)| format!("{}:{}", json_str(k), json_str(v))).collect();
+    format!(
+        r#"{{"seq":{},"ms":{},"time":{},"kind":{},"session":{},"fields":{{{}}}}}"#,
+        e.seq,
+        e.ms,
+        json_str(&rfc3339(e.ms)),
+        json_str(&e.kind),
+        json_str(&e.session),
+        fields.join(",")
+    )
+}
+
+fn event_text(e: &LogEvent) -> String {
+    let mut s = format!("{}  {}  {}  {}", e.seq, rfc3339(e.ms), e.kind, e.session);
+    for (k, v) in &e.fields {
+        s.push_str(&format!("  {k}={v}"));
+    }
+    s
+}
+
+/// `haetty screen [--json] SESSION` (DESIGN.md §6.1): the screen text and
+/// state of a session the person made observable; refused otherwise.
+pub fn observe_screen(id: &str, json: bool) -> (String, i32) {
+    let mut o = match observer("screen") {
+        Ok(o) => o,
+        Err(e) => return (e, 1),
+    };
+    match o.screen(id) {
+        Ok(v) if json => (screen_json(&v), 0),
+        Ok(v) => (screen_text(&v), 0),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => (
+            format!(
+                "haetty screen: session {id} is not observable (allow it in its tab: palette \"Observing: allow or stop for this tab\")"
+            ),
+            3,
+        ),
+        Err(e) => (format!("haetty screen: {e}"), 1),
+    }
+}
+
+pub fn screen_json(v: &ScreenView) -> String {
+    let (state, code) = match v.state {
+        SessionState::Running => ("running", "null".to_string()),
+        SessionState::Exited { code } => ("exited", code.map_or("null".into(), |c| c.to_string())),
+    };
+    let cursor = v.cursor.map_or("null".into(), |(x, y)| format!(r#"{{"x":{x},"y":{y}}}"#));
+    let claude = v.claude.as_ref().map_or("null".into(), |c| {
+        format!(
+            r#"{{"attention":"{:?}","busy":{},"turns":{},"name":{},"model":{},"report_status":{}}}"#,
+            c.attention,
+            c.busy,
+            c.turns,
+            json_str(&c.name),
+            json_str(&c.model),
+            c.report_status.as_deref().map_or("null".into(), json_str)
+        )
+    });
+    let lines: Vec<String> = v.text.0.split('\n').map(json_str).collect();
+    format!(
+        r#"{{"id":{},"program":{},"title":{},"cwd":{},"state":"{state}","exit_code":{code},"cols":{},"rows":{},"cursor":{cursor},"claude":{claude},"lines":[{}]}}"#,
+        json_str(&v.id),
+        json_str(&v.program),
+        json_str(&v.title),
+        json_str(&v.cwd),
+        v.cols,
+        v.rows,
+        lines.join(",")
+    )
+}
+
+fn screen_text(v: &ScreenView) -> String {
+    let state = match v.state {
+        SessionState::Running => "running".to_string(),
+        SessionState::Exited { code } => format!("exited {}", code.map_or("?".into(), |c| c.to_string())),
+    };
+    let mut s = format!("{}  {}  {}  {}x{}  {}\ntitle: {}\n", v.id, v.program, state, v.cols, v.rows, v.cwd, v.title);
+    if let Some(c) = &v.claude {
+        s.push_str(&format!(
+            "claude: attention {:?}, {}, {} turn(s){}\n",
+            c.attention,
+            if c.busy { "busy" } else { "idle" },
+            c.turns,
+            c.report_status.as_deref().map(|r| format!(", report {r}")).unwrap_or_default()
+        ));
+    }
+    s.push('\n');
+    s.push_str(&v.text.0);
+    s
+}
+
 fn status_text(pid: u32, list: &[SessionInfo]) -> String {
     let mut out = format!("daemon pid {pid}, {} session(s)", list.len());
     for s in list {
@@ -112,7 +246,7 @@ pub fn status_json(pid: u32, list: &[SessionInfo]) -> String {
                 SessionState::Exited { code } => ("exited", code.map_or("null".into(), |c| c.to_string())),
             };
             format!(
-                r#"{{"id":{},"title":{},"cwd":{},"state":"{state}","exit_code":{code},"created_ms":{},"created":{},"program":{},"pid":{},"cols":{},"rows":{},"attached":{},"claude_session":{},"attention":"{:?}"}}"#,
+                r#"{{"id":{},"title":{},"cwd":{},"state":"{state}","exit_code":{code},"created_ms":{},"created":{},"program":{},"pid":{},"cols":{},"rows":{},"attached":{},"claude_session":{},"attention":"{:?}","observable":{}}}"#,
                 json_str(&s.id),
                 json_str(&s.title),
                 json_str(&s.cwd),
@@ -124,7 +258,8 @@ pub fn status_json(pid: u32, list: &[SessionInfo]) -> String {
                 s.rows,
                 s.attached,
                 json_str(&s.claude_session),
-                s.attention
+                s.attention,
+                s.observable
             )
         })
         .collect();
@@ -235,7 +370,7 @@ mod tests {
         };
         let j = status_json(7, &[s]);
         assert!(j.starts_with(r#"{"daemon_pid":7,"sessions":[{"id":"x-1","title":"✳ Claude Code","cwd":"/tmp/p","state":"exited","exit_code":3,"#), "{j}");
-        assert!(j.ends_with(r#""program":"claude","pid":42,"cols":120,"rows":36,"attached":0,"claude_session":"","attention":"None"}]}"#), "{j}");
+        assert!(j.ends_with(r#""program":"claude","pid":42,"cols":120,"rows":36,"attached":0,"claude_session":"","attention":"None","observable":false}]}"#), "{j}");
     }
 
     #[test]

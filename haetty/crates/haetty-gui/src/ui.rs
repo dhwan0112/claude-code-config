@@ -161,6 +161,8 @@ pub struct TabView<'a> {
     pub name: &'a str,
     pub exited: bool,
     pub attention: Attention,
+    /// Observe-only readers may see this tab (DESIGN.md §6.1): a dim `◦`.
+    pub observed: bool,
 }
 
 /// Cells per tab in a tab bar `cols` wide with `n` tabs (equal shares, 6–32).
@@ -201,6 +203,10 @@ pub fn tab_bar(tabs: &[TabView], active: usize, cols: usize, g: Greys) -> Vec<Ce
         };
         let num = format!("{} ", i + 1);
         let mut cx = put(&mut row[..end], x + 1, &num, fg, bg, is_active);
+        // Observable: one dim glyph, never an accent colour (§2.2).
+        if t.observed {
+            cx = put(&mut row[..end], cx, "◦ ", g.dim, bg, false);
+        }
         if let Some((m, color)) = mark {
             cx = put(&mut row[..end], cx, m, color, bg, true);
         }
@@ -838,11 +844,30 @@ mod tests {
     }
 
     #[test]
+    fn observable_tab_has_one_dim_mark() {
+        let g = Greys::new(
+            Rgb { r: 200, g: 200, b: 200 },
+            Rgb { r: 20, g: 20, b: 20 },
+            &haetty_core::theme::Theme::base().palette,
+        );
+        let tabs = [
+            TabView { name: "one", exited: false, attention: Attention::None, observed: true },
+            TabView { name: "two", exited: false, attention: Attention::None, observed: false },
+        ];
+        let row = tab_bar(&tabs, 0, 40, g);
+        let text: String = row.iter().map(|c| if c.text.is_empty() { " " } else { c.text.as_str() }).collect();
+        assert!(text.starts_with(" 1 ◦ one"), "{text:?}");
+        assert_eq!(text.matches('◦').count(), 1, "only the observable tab: {text:?}");
+        let mark = row.iter().find(|c| c.text == "◦").unwrap();
+        assert_eq!(mark.fg, Some(g.dim), "dim, not an accent colour, even on the active tab");
+    }
+
+    #[test]
     fn tab_bar_marks_active_tab_without_accent_colours() {
         let g = Greys::from(FG, BG);
         let tabs = [
-            TabView { name: "one", exited: false, attention: Attention::None },
-            TabView { name: "two", exited: true, attention: Attention::None },
+            TabView { name: "one", exited: false, attention: Attention::None, observed: false },
+            TabView { name: "two", exited: true, attention: Attention::None, observed: false },
         ];
         let row = tab_bar(&tabs, 0, 40, g);
         let text: String = row.iter().map(|c| if c.text.is_empty() { " ".into() } else { c.text.clone() }).collect();
@@ -905,7 +930,7 @@ mod tests {
         s.cells = vec![Cell { text: "x".into(), ..Default::default() }; 8];
         s.cursor = Some(Cursor { x: 1, y: 1, shape: haetty_core::CursorShape::Block, blinking: false });
         let g = Greys::from(FG, BG);
-        let tv = |name| TabView { name, exited: false, attention: Attention::None };
+        let tv = |name| TabView { name, exited: false, attention: Attention::None, observed: false };
         let bar = tab_bar(&[tv("a"), tv("b")], 1, 4, g);
         let out = Compose {
             screen: &s,
@@ -968,7 +993,7 @@ mod tests {
     #[test]
     fn tab_bar_on_the_body_background_with_the_active_tab_underlined() {
         let g = Greys::from(FG, BG);
-        let tv = |name| TabView { name, exited: false, attention: Attention::None };
+        let tv = |name| TabView { name, exited: false, attention: Attention::None, observed: false };
         let row = tab_bar(&[tv("one"), tv("two"), tv("three")], 1, 60, g);
         assert!(row.iter().all(|c| c.bg == Some(g.bg)), "no band: the terminal's background everywhere");
         let line = |c: &Cell| c.flags.has(CellFlags::TAB_ACTIVE);
@@ -983,9 +1008,9 @@ mod tests {
     fn attention_marks_only_on_other_tabs() {
         let g = Greys::from(FG, BG);
         let tabs = [
-            TabView { name: "a", exited: false, attention: Attention::Wait },
-            TabView { name: "b", exited: false, attention: Attention::Wait },
-            TabView { name: "c", exited: false, attention: Attention::Ask },
+            TabView { name: "a", exited: false, attention: Attention::Wait, observed: false },
+            TabView { name: "b", exited: false, attention: Attention::Wait, observed: false },
+            TabView { name: "c", exited: false, attention: Attention::Ask, observed: false },
         ];
         let row = tab_bar(&tabs, 0, 60, g);
         let t = text(&row);
@@ -1001,9 +1026,9 @@ mod tests {
     fn ui_colours_follow_the_theme() {
         use haetty_core::theme::Theme;
         let tabs = [
-            TabView { name: "a", exited: false, attention: Attention::None },
-            TabView { name: "b", exited: false, attention: Attention::Wait },
-            TabView { name: "c", exited: false, attention: Attention::Ask },
+            TabView { name: "a", exited: false, attention: Attention::None, observed: false },
+            TabView { name: "b", exited: false, attention: Attention::Wait, observed: false },
+            TabView { name: "c", exited: false, attention: Attention::Ask, observed: false },
         ];
         let mut seen = vec![];
         for name in ["IBM 5153 CGA", "IBM 5153 CGA (Black)", "haetty classic"] {

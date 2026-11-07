@@ -88,8 +88,9 @@ fn default_shell() -> CommandSpec {
 /// as a first word they end with an error instead of running a program of
 /// that name, so adding them later does not change what a command line does.
 pub const SUBCOMMANDS: &[&str] =
-    &["gui", "daemon", "hook", "statusline", "run", "headless", "install-desktop", "status"];
-pub const IMPLEMENTED: &[&str] = &["gui", "daemon", "status", "install-desktop", "hook", "statusline"];
+    &["gui", "daemon", "hook", "statusline", "run", "headless", "install-desktop", "status", "events", "screen"];
+pub const IMPLEMENTED: &[&str] =
+    &["gui", "daemon", "status", "install-desktop", "hook", "statusline", "events", "screen"];
 
 /// What the command line asks for.
 #[derive(Debug)]
@@ -104,6 +105,18 @@ pub enum Command {
         id: String,
     },
     InstallDesktop,
+    /// `events [--follow] [--json] [--since CURSOR]`: the event log of
+    /// observable sessions (DESIGN.md §6.1).
+    Events {
+        follow: bool,
+        json: bool,
+        since: u64,
+    },
+    /// `screen [--json] SESSION`: an observable session's screen and state.
+    Observe {
+        id: String,
+        json: bool,
+    },
 }
 
 fn parse_command(args: Vec<String>) -> Result<Command, String> {
@@ -117,6 +130,28 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
             [j] if j == "--json" => Ok(Command::Status { json: true }),
             [s, id] if s == "--screen" => Ok(Command::Screen { id: id.clone() }),
             _ => Err("usage: haetty status [--json | --screen ID]".into()),
+        },
+        Some("events") => {
+            let (mut follow, mut json, mut since) = (false, false, 0);
+            let mut it = args[1..].iter();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--follow" | "-f" => follow = true,
+                    "--json" => json = true,
+                    "--since" => {
+                        since = it.next().and_then(|v| v.parse().ok()).ok_or("--since needs a number (a seq)")?;
+                    }
+                    _ => return Err("usage: haetty events [--follow] [--json] [--since CURSOR]".into()),
+                }
+            }
+            Ok(Command::Events { follow, json, since })
+        }
+        Some("screen") => match &args[1..] {
+            [id] if !id.starts_with('-') => Ok(Command::Observe { id: id.clone(), json: false }),
+            [j, id] | [id, j] if j == "--json" && !id.starts_with('-') => {
+                Ok(Command::Observe { id: id.clone(), json: true })
+            }
+            _ => Err("usage: haetty screen [--json] SESSION".into()),
         },
         Some("install-desktop") => match args.len() {
             1 => Ok(Command::InstallDesktop),
@@ -136,6 +171,7 @@ const USAGE: &str =
      theme NAME|FILE (Ghostty theme format), palette N=COLOR, background/foreground/cursor-color/cursor-text/\n\
      selection-background/selection-foreground COLOR, minimum-contrast 1-21 (default 1 = off)\n\
      subcommands: haetty gui [OPTIONS] [PROGRAM...], haetty daemon, haetty status [--json | --screen ID],\n\
+     haetty events [--follow] [--json] [--since CURSOR], haetty screen [--json] SESSION (observable tabs only),\n\
      haetty install-desktop; run by Claude Code: hook EVENT, statusline; reserved: run, headless;\n\
      to run a program with a subcommand's name: haetty [OPTIONS] -- NAME [ARGS...]";
 
@@ -453,6 +489,21 @@ fn main() {
             let (text, code) = cli::screen(&id);
             exit_with(&text, code)
         }
+        Command::Observe { id, json } => {
+            init_log(None);
+            let (text, code) = cli::observe_screen(&id, json);
+            exit_with(&text, code)
+        }
+        Command::Events { follow, json, since } => {
+            init_log(None);
+            #[cfg(windows)]
+            windows_console(false);
+            let mut out = std::io::stdout().lock();
+            match cli::events(follow, json, since, &mut out) {
+                Ok(()) => std::process::exit(0),
+                Err(msg) => exit_with(&msg, 1),
+            }
+        }
         Command::Gui(o) => {
             init_log(None);
             #[cfg(windows)]
@@ -528,6 +579,16 @@ mod tests {
         assert!(c == "unknown" || (c.len() == 12 && c.chars().all(|x| x.is_ascii_hexdigit())), "{c}");
         assert!(matches!(parse_command(vec!["status".into(), "--json".into()]), Ok(Command::Status { json: true })));
         assert!(parse_command(vec!["status".into(), "--xml".into()]).is_err());
+        let v = |s: &[&str]| parse_command(s.iter().map(|s| s.to_string()).collect());
+        assert!(matches!(v(&["events"]), Ok(Command::Events { follow: false, json: false, since: 0 })));
+        assert!(matches!(
+            v(&["events", "--json", "--follow", "--since", "42"]),
+            Ok(Command::Events { follow: true, json: true, since: 42 })
+        ));
+        assert!(v(&["events", "--since", "x"]).is_err() && v(&["events", "--bogus"]).is_err());
+        assert!(matches!(v(&["screen", "--json", "a-1"]), Ok(Command::Observe { id, json: true }) if id == "a-1"));
+        assert!(matches!(v(&["screen", "a-1"]), Ok(Command::Observe { id, json: false }) if id == "a-1"));
+        assert!(v(&["screen"]).is_err() && v(&["screen", "--json"]).is_err());
         assert!(parse_command(vec!["daemon".into(), "x".into()]).is_err());
         assert!(
             matches!(parse_command(vec!["status".into(), "--screen".into(), "a-1".into()]), Ok(Command::Screen { id }) if id == "a-1")
