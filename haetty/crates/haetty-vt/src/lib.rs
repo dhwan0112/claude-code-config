@@ -1586,7 +1586,11 @@ impl Terminal {
         let (x, y, bottom) = (self.scr().cursor.x, self.scr().cursor.y, self.bottom);
         if y == bottom {
             if x >= self.left && x <= self.right {
-                self.scroll_up(1);
+                // As libghostty's index: a full-width region moves its rows
+                // up as they are (`cursorScrollRegionUp`: soft wraps and
+                // spacer heads stay); with left/right margins it is a
+                // deletion of lines.
+                self.scroll_up_as(1, false);
                 kitty::region_scrolled(self, 1, true);
             }
         } else if y + 1 < self.rows {
@@ -1712,6 +1716,13 @@ impl Terminal {
     /// of the primary screen go to the scrollback (as libghostty, whatever the
     /// region's bottom).
     fn scroll_up(&mut self, n: u16) {
+        self.scroll_up_as(n, true);
+    }
+
+    /// `deletion`: rows of a region that does not start at the top lose
+    /// their soft wraps and spacer heads, as lines deleted (SU); else they
+    /// keep them (a line feed at the bottom of a full-width region).
+    fn scroll_up_as(&mut self, n: u16, deletion: bool) {
         if self.lr() {
             let (left, top) = (self.left, self.top);
             self.at_corner(left, top, |t| t.delete_lines(n));
@@ -1740,8 +1751,9 @@ impl Terminal {
         }
         self.moved(top as u16, bottom as u16);
         // A region from the top scrolls as lines leaving the screen do;
-        // any other is a deletion of lines.
-        if !full {
+        // any other is a deletion of lines (SU), or rows moved up as they
+        // are (a line feed).
+        if !full && deletion {
             self.shift_flags(top as u16, bottom as u16, n as u16, &old);
         }
     }
