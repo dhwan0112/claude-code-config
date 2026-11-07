@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage e4b (branch `haetty/e4b`, worktree `~/projects/claude-code-config-wt/e4b`). Remaining: E4b: vtdiff KNOWN/FAIL with the approved list, candidates file; UTF-8 decoding, SD+resize, kitty graphics replies, left/right margins
+
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
