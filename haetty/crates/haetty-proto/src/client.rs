@@ -182,6 +182,12 @@ impl Client {
         Reporter(self.shared.clone())
     }
 
+    /// Allows or stops observe-only readers for a session (Control only;
+    /// DESIGN.md §6.1).
+    pub fn set_observable(&self, id: &str, on: bool) -> io::Result<()> {
+        self.send(&ClientMsg::SetObservable { session: id.to_owned(), on })
+    }
+
     pub fn clear_attention(&self, id: &str) -> io::Result<()> {
         self.send(&ClientMsg::ClearAttention { session: id.to_owned() })
     }

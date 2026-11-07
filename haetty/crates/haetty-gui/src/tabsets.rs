@@ -249,6 +249,7 @@ mod tests {
             busy: false,
             turns: 0,
             report: None,
+            observable: false,
         }
     }
 

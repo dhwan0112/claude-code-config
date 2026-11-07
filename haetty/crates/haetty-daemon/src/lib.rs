@@ -144,6 +144,8 @@ struct Cli {
     name: String,
     tx: Sender<DaemonMsg>,
     subs: HashMap<SessionId, Sub>,
+    /// An observer that asked to follow the event log (`ReadEvents`).
+    follows: bool,
 }
 
 /// Binds the endpoint and serves until idle. `AddrInUse` means another
@@ -185,8 +187,17 @@ pub fn run(cfg: Config) -> io::Result<()> {
         }
     })?;
     log::info!("daemon {} listening on {}", std::process::id(), cfg.endpoint.0.display());
-    let mut d = Daemon { sessions: HashMap::new(), clients: HashMap::new(), tx, log, counter: 0, run_dir: cfg.run_dir };
-    d.log.write("daemon_start", "", &[("pid", &std::process::id().to_string())]);
+    let mut d = Daemon {
+        sessions: HashMap::new(),
+        clients: HashMap::new(),
+        tx,
+        log,
+        events_path: cfg.state_dir.join("events.log"),
+        observed: HashMap::new(),
+        counter: 0,
+        run_dir: cfg.run_dir,
+    };
+    d.event("daemon_start", "", &[("pid", &std::process::id().to_string())]);
     d.run(rx, cfg.idle_exit);
     let ids: Vec<SessionId> = d.sessions.keys().cloned().collect();
     for id in ids {
@@ -194,7 +205,7 @@ pub fn run(cfg: Config) -> io::Result<()> {
             d.log_latency(&id, f);
         }
     }
-    d.log.write("daemon_stop", "", &[]);
+    d.event("daemon_stop", "", &[]);
     Ok(())
 }
 
@@ -279,6 +290,12 @@ struct Daemon {
     clients: HashMap<ClientId, Cli>,
     tx: Sender<Ev>,
     log: EventLog,
+    events_path: PathBuf,
+    /// Per session, the event-log ranges (`seq` from, to) during which the
+    /// person allowed observing it (DESIGN.md §6.1): observe-only readers see
+    /// a session's events only from those times — not what happened before it
+    /// was allowed, after it was stopped, or in a daemon run before this one.
+    observed: HashMap<SessionId, Vec<(u64, u64)>>,
     counter: u64,
     run_dir: PathBuf,
 }
@@ -306,6 +323,91 @@ impl Daemon {
         format!("{:x}-{:x}", now_ms(), self.counter)
     }
 
+    /// Writes an event to the log and hands it to following observers when
+    /// they may see it.
+    fn event(&mut self, kind: &str, session: &str, fields: &[(&str, &str)]) {
+        let e = self.log.write(kind, session, fields);
+        if !self.visible(&e) {
+            return;
+        }
+        for c in self.clients.values().filter(|c| c.follows && c.role == Role::Observe) {
+            let _ = c.tx.send(DaemonMsg::Events { events: vec![e.clone()], cursor: e.seq });
+        }
+    }
+
+    /// Whether observe-only readers may see `e`: an event of a session,
+    /// written while that session was observable.
+    fn visible(&self, e: &LogEvent) -> bool {
+        self.observed.get(&e.session).is_some_and(|r| r.iter().any(|&(a, b)| (a..=b).contains(&e.seq)))
+    }
+
+    fn set_observable(&mut self, session: SessionId, on: bool) {
+        let Some(s) = self.sessions.get_mut(&session) else { return };
+        if s.info.observable == on {
+            return;
+        }
+        s.info.observable = on;
+        if on {
+            // From the "observe on" line itself.
+            self.observed.entry(session.clone()).or_default().push((self.log.seq() + 1, u64::MAX));
+            self.event("observe", &session, &[("on", "1")]);
+        } else {
+            self.event("observe", &session, &[("on", "0")]);
+            let last = self.log.seq();
+            if let Some(r) = self.observed.get_mut(&session).and_then(|v| v.last_mut()) {
+                r.1 = last;
+            }
+        }
+    }
+
+    fn read_events(&mut self, c: ClientId, cursor: u64, follow: bool) {
+        let (all, last) = EventLog::events_after(&self.events_path, cursor).unwrap_or((vec![], cursor));
+        let events: Vec<LogEvent> = all.into_iter().filter(|e| self.visible(e)).collect();
+        self.reply(c, DaemonMsg::Events { events, cursor: last.max(cursor) });
+        if follow {
+            if let Some(cl) = self.clients.get_mut(&c) {
+                cl.follows = true;
+            }
+        }
+    }
+
+    /// An observable session's screen text and state; anything else is denied.
+    fn screen(&mut self, c: ClientId, session: SessionId) {
+        let Some(s) = self.sessions.get_mut(&session) else {
+            self.reply(c, DaemonMsg::NoSession { session });
+            return;
+        };
+        if !s.info.observable {
+            self.denied(c, &format!("GetScreen: session {session} is not observable"));
+            return;
+        }
+        if s.latest.is_none() {
+            s.latest = s.session.handle.snapshot().map(Arc::new);
+        }
+        let snap = s.latest.clone().unwrap_or_default();
+        let claude = s.claude.as_ref().map(|cl| ObservedClaude {
+            attention: cl.info.attention,
+            busy: cl.info.busy,
+            turns: cl.info.turns,
+            name: cl.info.name.clone(),
+            model: cl.info.model.clone(),
+            report_status: cl.info.report.as_ref().map(|r| r.status.clone()),
+        });
+        let view = ScreenView {
+            id: session,
+            program: s.info.program.clone(),
+            title: s.info.title.clone(),
+            cwd: s.info.cwd.clone(),
+            state: s.info.state,
+            cols: snap.cols,
+            rows: snap.rows,
+            text: Secret(snap.text()),
+            cursor: snap.cursor.map(|k| (k.x, k.y)),
+            claude,
+        };
+        self.reply(c, DaemonMsg::Screen(Box::new(view)));
+    }
+
     fn reply(&self, c: ClientId, m: DaemonMsg) {
         if let Some(cl) = self.clients.get(&c) {
             let _ = cl.tx.send(m);
@@ -316,7 +418,7 @@ impl Daemon {
         match ev {
             Ev::Hello(id, role, name, tx) => {
                 log::info!("client {id} ({name}) connected as {role:?}");
-                self.clients.insert(id, Cli { role, name, tx, subs: HashMap::new() });
+                self.clients.insert(id, Cli { role, name, tx, subs: HashMap::new(), follows: false });
             }
             Ev::Gone(id) => {
                 if let Some(c) = self.clients.remove(&id) {
@@ -349,7 +451,7 @@ impl Daemon {
                 self.push_frames(&sid);
                 if let Some(d) = slow {
                     let ms = format!("{:.1}", d.as_secs_f64() * 1000.0);
-                    self.log.write("slow_input", &sid, &[("key_to_screen_ms", &ms), ("budget_ms", "16")]);
+                    self.event("slow_input", &sid, &[("key_to_screen_ms", &ms), ("budget_ms", "16")]);
                 }
                 if let Some(f) = summary {
                     self.log_latency(&sid, f);
@@ -367,14 +469,17 @@ impl Daemon {
                     self.log_latency(&sid, f);
                 }
                 let code = st.code.map(|c| c.to_string()).unwrap_or_default();
-                self.log.write("session_exited", &sid, &[("code", &code)]);
+                self.event("session_exited", &sid, &[("code", &code)]);
             }
             SessionEvent::Title(t) => {
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     s.info.title.clone_from(t);
                 }
             }
-            SessionEvent::Error(e) => self.log.write("error", &sid, &[("what", e)]),
+            SessionEvent::Error(e) => {
+                let what = e.clone();
+                self.event("error", &sid, &[("what", &what)]);
+            }
             _ => {}
         }
         if let Some(we) = event_to_wire(&e) {
@@ -418,6 +523,10 @@ impl Daemon {
             (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. }, _) => false,
             (ClientMsg::Sync, _) => true,
             (_, Role::Report) => false,
+            // Observe-only readers' requests (DESIGN.md §6.1): Observe alone —
+            // and the daemon serves only sessions the person made observable.
+            (ClientMsg::ReadEvents { .. } | ClientMsg::GetScreen { .. }, Role::Observe) => true,
+            (ClientMsg::ReadEvents { .. } | ClientMsg::GetScreen { .. }, _) => false,
             (
                 ClientMsg::ListSessions
                 | ClientMsg::Attach { .. }
@@ -426,7 +535,8 @@ impl Daemon {
                 _,
             ) => true,
             (_, Role::Observe) => false,
-            // Everything else, SetTheme included, is Control's alone.
+            // Everything else, SetTheme and SetObservable included, is
+            // Control's alone.
             (_, Role::Control) => true,
         };
         if !allowed {
@@ -494,7 +604,7 @@ impl Daemon {
                     if let Some(f) = s.lat.summary() {
                         self.log_latency(&session, f);
                     }
-                    self.log.write("session_closed", &session, &[]);
+                    self.event("session_closed", &session, &[]);
                     for cl in self.clients.values_mut() {
                         if cl.subs.remove(&session).is_some() {
                             let _ = cl.tx.send(DaemonMsg::NoSession { session: session.clone() });
@@ -523,13 +633,16 @@ impl Daemon {
                 self.reply(c, DaemonMsg::Edit { session, edit });
             }
             ClientMsg::Sync => self.reply(c, DaemonMsg::Synced),
+            ClientMsg::SetObservable { session, on } => self.set_observable(session, on),
+            ClientMsg::ReadEvents { cursor, follow } => self.read_events(c, cursor, follow),
+            ClientMsg::GetScreen { session } => self.screen(c, session),
             ClientMsg::Friction { kind, fields } => {
                 // Kinds and field names from the GUI: short, printable.
                 let clean = |s: &str| s.chars().filter(|c| !c.is_control()).take(200).collect::<String>();
                 let kind = format!("gui_{}", clean(&kind));
                 let f: Vec<(String, String)> = fields.iter().take(8).map(|(k, v)| (clean(k), clean(v))).collect();
                 let refs: Vec<(&str, &str)> = f.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-                self.log.write(&kind, "", &refs);
+                self.event(&kind, "", &refs);
             }
             input => self.input(c, input),
         }
@@ -624,14 +737,14 @@ impl Daemon {
         }
         let now = cl.info.attention;
         if now != attention {
-            self.log.write("attention", &sid, &[("event", what), ("attention", &format!("{now:?}"))]);
+            self.event("attention", &sid, &[("event", what), ("attention", &format!("{now:?}"))]);
         }
         self.push_claude(&sid);
     }
 
     fn log_latency(&mut self, sid: &str, f: Vec<(&'static str, String)>) {
         let refs: Vec<(&str, &str)> = f.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        self.log.write("latency", sid, &refs);
+        self.event("latency", sid, &refs);
     }
 
     fn push_claude(&self, sid: &str) {
@@ -715,6 +828,7 @@ impl Daemon {
                     busy: false,
                     turns: 0,
                     report: None,
+                    observable: false,
                 };
                 let events = session.events.clone();
                 let tx = self.tx.clone();
@@ -726,7 +840,7 @@ impl Daemon {
                         }
                     }
                 });
-                self.log.write("session_created", &id, &[("program", &spec.program), ("cwd", &info.cwd)]);
+                self.event("session_created", &id, &[("program", &spec.program), ("cwd", &info.cwd)]);
                 log::info!("session {id}: {} (pid {:?}) in {:?}", spec.program, info.pid, spec.cwd);
                 let (claude, settings_file) = match claude {
                     Some((_, p)) => (Some(Claude::default()), Some(p)),
@@ -742,7 +856,7 @@ impl Daemon {
                 if let Some((_, p)) = claude {
                     let _ = std::fs::remove_file(p);
                 }
-                self.log.write("error", &id, &[("what", "create failed"), ("program", &spec.program)]);
+                self.event("error", &id, &[("what", "create failed"), ("program", &spec.program)]);
                 self.reply(c, DaemonMsg::CreateFailed { req, error: format!("cannot start {:?}: {e}", spec.program) })
             }
         }
@@ -774,6 +888,9 @@ fn msg_name(m: &ClientMsg) -> &'static str {
         ClientMsg::GetEdit { .. } => "GetEdit",
         ClientMsg::Sync => "Sync",
         ClientMsg::Friction { .. } => "Friction",
+        ClientMsg::SetObservable { .. } => "SetObservable",
+        ClientMsg::ReadEvents { .. } => "ReadEvents",
+        ClientMsg::GetScreen { .. } => "GetScreen",
     }
 }
 

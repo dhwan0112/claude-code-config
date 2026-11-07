@@ -231,6 +231,7 @@ mod tests {
             busy: false,
             turns: 0,
             report: None,
+            observable: false,
         };
         let j = status_json(7, &[s]);
         assert!(j.starts_with(r#"{"daemon_pid":7,"sessions":[{"id":"x-1","title":"✳ Claude Code","cwd":"/tmp/p","state":"exited","exit_code":3,"#), "{j}");
@@ -272,6 +273,8 @@ mod tests {
                 evidence: Secret("cargo test: ok".into()),
                 ..Default::default()
             }),
+
+            observable: false,
         };
         let j = workers_json(&[t], &[s]);
         assert!(j.starts_with(r#"[{"id":"t1","title":"Fix \"it\"","repository":"/r""#), "{j}");

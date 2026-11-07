@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 7;
+pub const VERSION: u32 = 8;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -157,6 +157,9 @@ pub struct SessionInfo {
     pub turns: u32,
     /// Claude Code: the latest turn's worker report (DESIGN.md §8.2).
     pub report: Option<WorkerReport>,
+    /// The person allowed observe-only readers (`haetty screen`, `haetty
+    /// events`) to see this session (DESIGN.md §6.1; default off). Version 8.
+    pub observable: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -268,6 +271,63 @@ pub enum ClientMsg {
         session: SessionId,
         colors: WireColors,
     },
+    /// Allow or stop observe-only readers for a session (Control only;
+    /// DESIGN.md §6.1; version 8).
+    SetObservable {
+        session: SessionId,
+        on: bool,
+    },
+    /// Observe only: the event log after `cursor` (a `seq`), only events of
+    /// sessions while they were observable; answered with `Events`. With
+    /// `follow`, every later such event comes as `Events` too.
+    ReadEvents {
+        cursor: u64,
+        follow: bool,
+    },
+    /// Observe only: an observable session's screen text and state
+    /// (`Screen`); `Denied` when the session is not observable.
+    GetScreen {
+        session: SessionId,
+    },
+}
+
+/// One line of the daemon's event log (DESIGN.md §3.8): derived fields only
+/// — never typed or shown text.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct LogEvent {
+    pub seq: u64,
+    pub ms: u64,
+    pub kind: String,
+    pub session: SessionId,
+    pub fields: Vec<(String, String)>,
+}
+
+/// What an observe-only reader sees of a session (DESIGN.md §6.1).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ScreenView {
+    pub id: SessionId,
+    pub program: String,
+    pub title: String,
+    pub cwd: String,
+    pub state: SessionState,
+    pub cols: u16,
+    pub rows: u16,
+    /// The visible screen, one line per row (trailing blank rows dropped).
+    pub text: Secret<String>,
+    pub cursor: Option<(u16, u16)>,
+    /// Claude Code with the integration: its state and attention mark.
+    pub claude: Option<ObservedClaude>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ObservedClaude {
+    pub attention: Attention,
+    pub busy: bool,
+    pub turns: u32,
+    pub name: String,
+    pub model: String,
+    /// The latest worker report's `STATUS` (`verified`, `blocked`, …).
+    pub report_status: Option<String>,
 }
 
 /// [`haetty_core::TermColors`] on the wire.
@@ -524,6 +584,14 @@ pub enum DaemonMsg {
         edit: Option<Box<EditView>>,
     },
     Synced,
+    /// Event-log lines for an observe-only reader; `cursor` = the highest
+    /// `seq` the daemon looked at (continue from there).
+    Events {
+        events: Vec<LogEvent>,
+        cursor: u64,
+    },
+    /// Answer to `GetScreen`.
+    Screen(Box<ScreenView>),
 }
 
 // ---------------------------------------------------------------- framing

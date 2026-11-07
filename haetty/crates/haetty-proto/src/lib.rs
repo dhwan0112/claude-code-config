@@ -4,10 +4,12 @@
 //! pipe) and a client that mirrors `haetty_core::SessionHandle` over it.
 
 pub mod client;
+pub mod observer;
 pub mod paths;
 pub mod product;
 pub mod transport;
 pub mod wire;
 
 pub use client::{Client, ConnectError, RemoteHandle, RemoteSession, Reporter};
+pub use observer::ObserverClient;
 pub use wire::{ClientMsg, DaemonMsg, Origin, Role, SessionInfo, SessionState};

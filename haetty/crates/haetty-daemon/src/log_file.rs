@@ -7,6 +7,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
+use haetty_proto::wire::LogEvent;
+
 pub struct EventLog {
     path: PathBuf,
     file: Option<File>,
@@ -16,6 +18,41 @@ pub struct EventLog {
 /// Tabs, newlines and backslashes escaped so a line stays one record.
 fn esc(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\t', "\\t").replace('\n', "\\n").replace('\r', "\\r")
+}
+
+fn unesc(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars();
+    while let Some(c) = it.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match it.next() {
+            Some('t') => out.push('\t'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some(o) => out.push(o),
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+/// One log line back into its fields (`None`: not an event line).
+pub fn parse_line(line: &str) -> Option<LogEvent> {
+    let mut it = line.split('\t');
+    let seq = it.next()?.parse().ok()?;
+    let ms = it.next()?.parse().ok()?;
+    let kind = unesc(it.next()?);
+    let session = unesc(it.next().unwrap_or(""));
+    let fields = it
+        .map(|kv| match kv.split_once('=') {
+            Some((k, v)) => (unesc(k), unesc(v)),
+            None => (unesc(kv), String::new()),
+        })
+        .collect();
+    Some(LogEvent { seq, ms, kind, session, fields })
 }
 
 impl EventLog {
@@ -33,9 +70,16 @@ impl EventLog {
         Ok(EventLog { path: path.to_owned(), file: Some(file), seq })
     }
 
-    pub fn write(&mut self, kind: &str, session: &str, fields: &[(&str, &str)]) {
+    /// The last sequence number written (or found in the file).
+    pub fn seq(&self) -> u64 {
+        self.seq
+    }
+
+    /// Appends one event and returns it (for live readers).
+    pub fn write(&mut self, kind: &str, session: &str, fields: &[(&str, &str)]) -> LogEvent {
         self.seq += 1;
-        let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+        let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+            as u64;
         let mut line = format!("{}\t{ms}\t{}\t{}", self.seq, esc(kind), esc(session));
         for (k, v) in fields {
             line.push('\t');
@@ -49,6 +93,25 @@ impl EventLog {
                 log::warn!("{}: {e}", self.path.display());
             }
         }
+        LogEvent {
+            seq: self.seq,
+            ms,
+            kind: kind.to_owned(),
+            session: session.to_owned(),
+            fields: fields.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+        }
+    }
+
+    /// The events with a sequence number greater than `cursor`, and the
+    /// highest sequence number in the file (at least `cursor`).
+    pub fn events_after(path: &Path, cursor: u64) -> io::Result<(Vec<LogEvent>, u64)> {
+        let mut last = cursor;
+        let mut v = vec![];
+        for e in Self::read_from(path, cursor)?.iter().filter_map(|l| parse_line(l)) {
+            last = last.max(e.seq);
+            v.push(e);
+        }
+        Ok((v, last))
     }
 
     /// Lines with a sequence number greater than `cursor`.
@@ -81,6 +144,11 @@ mod tests {
         assert!(all[0].ends_with("title=x\\ty\\nz"));
         assert!(all[2].starts_with("3\t"));
         assert_eq!(EventLog::read_from(&p, 2).unwrap().len(), 1);
+        let (ev, last) = EventLog::events_after(&p, 0).unwrap();
+        assert_eq!(last, 3);
+        assert_eq!(ev[0].fields, vec![("title".to_string(), "x\ty\nz".to_string())]);
+        assert_eq!((ev[2].seq, ev[2].kind.as_str(), ev[2].session.as_str()), (3, "c", "s2"));
+        assert_eq!(EventLog::events_after(&p, 3).unwrap(), (vec![], 3));
         haetty_testkit::remove_dir_all(&dir);
     }
 }
