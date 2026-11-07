@@ -99,6 +99,7 @@ try {
     $wdst = Join-Path $OutDir "scripts"; Remove-Item -Recurse -Force $wdst -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force "$wdst\e2e\windows" | Out-Null
     Copy-Item "$wsrc\test-guard.ps1" $wdst; Copy-Item "$wsrc\e2e\windows\*.ps1" "$wdst\e2e\windows"
+    Copy-Item (Join-Path $PSScriptRoot "heavy.ps1") "$wdst\e2e\windows\heavy.ps1"   # lib.ps1 looks beside itself too
     $env:HAETTY_TEST_TMP = Join-Path $env:PUBLIC "haetty-test"
     $why = Wait-Desktop
     if ($why) {

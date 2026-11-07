@@ -6,6 +6,7 @@
 param([Parameter(Mandatory = $true)][string]$Exe)
 . (Join-Path $PSScriptRoot "lib.ps1")
 $W = New-HaettyRun "tabs"
+if (-not $W) { throw "tabs.ps1: no run folder (lib.ps1 failed)" }
 $R = "$W\proj"; New-Item -ItemType Directory $R | Out-Null
 RepoGit $R init -q -b main; Set-Content "$R\a.txt" "one`ntwo`nthree" -NoNewline -Encoding ascii
 RepoGit $R add .; RepoGit $R commit -qm one; RepoGit $R checkout -qb feat/x

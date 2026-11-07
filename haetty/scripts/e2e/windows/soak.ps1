@@ -12,6 +12,7 @@
 param([Parameter(Mandatory = $true)][string]$Exe, [Parameter(Mandatory = $true)][string]$Out, [int]$Dur = 3600)
 . (Join-Path $PSScriptRoot "lib.ps1")
 $W = New-HaettyRun "soak"
+if (-not $W) { throw "soak.ps1: no run folder (lib.ps1 failed)" }
 $R = "$W\proj"; New-Item -ItemType Directory $R | Out-Null
 RepoGit $R init -q -b main; Set-Content "$R\a.txt" "one" -Encoding ascii; RepoGit $R add .; RepoGit $R commit -qm one
 $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
