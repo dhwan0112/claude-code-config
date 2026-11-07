@@ -9,6 +9,8 @@ measurements, solved defects, milestone 1's record — is in
 New progress records go to the newest file in `docs/history/`, not here.
 
 
+> **In progress:** stage v4 (branch `haetty/v4`, worktree `~/projects/claude-code-config-wt/v4`). Remaining: V4 DESIGN 9 stable update design, V5 CLI and config table, V6 overnight GUI e2e, then V7 and E0-E3
+
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
