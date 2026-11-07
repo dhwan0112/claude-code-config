@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage e5pre (branch `haetty/e5pre`, worktree `~/projects/claude-code-config-wt/e5pre`). Remaining: E5 before the overnight soak: HANDOFF tag decision (63822de itself), VPA/VPR entry approved, new FAIL baseline. After the overnight: the tag, then E5a-E5e.
+
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
