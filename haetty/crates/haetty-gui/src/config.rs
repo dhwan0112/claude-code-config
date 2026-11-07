@@ -443,7 +443,12 @@ mod tests {
     #[test]
     fn readme_config_table_is_generated() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md");
-        let readme = std::fs::read_to_string(path).unwrap();
+        // A test binary run away from its source tree (Windows, built in WSL):
+        // nothing to compare; the Linux gate checks it.
+        let Ok(readme) = std::fs::read_to_string(path) else {
+            eprintln!("SKIP: {path} not found");
+            return;
+        };
         let (a, b) = ("<!-- config-table:start", "<!-- config-table:end -->");
         let i = readme.find(a).expect("README.md: config-table:start marker");
         let i = i + readme[i..].find("-->\n").unwrap() + 4;

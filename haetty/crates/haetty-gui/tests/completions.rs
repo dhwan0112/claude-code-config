@@ -57,20 +57,26 @@ fn powershell_completes() {
     let dir = haetty_testkit::run_dir("completions");
     let f = dir.join("haetty.ps1");
     std::fs::write(&f, script("powershell")).unwrap();
+    // pwsh 7 when there is one; Windows PowerShell 5.1 calls no native
+    // completer for a bare `-` / `--` (its own limit), so that case is skipped.
+    let pwsh = Command::new("pwsh").args(["-NoProfile", "-Command", "exit 0"]).status().is_ok_and(|s| s.success());
+    let exe = if pwsh { "pwsh" } else { "powershell.exe" };
     for (line, want) in CASES {
+        if !pwsh && line.ends_with(" --") {
+            continue;
+        }
         let cmd = format!(
             ". '{}'; $r = TabExpansion2 -inputScript '{line}' -cursorColumn {}; ($r.CompletionMatches | ForEach-Object CompletionText) -join ' '",
             f.display(),
             line.len()
         );
-        let out =
-            match Command::new("powershell.exe").args(["-NoProfile", "-NonInteractive", "-Command", &cmd]).output() {
-                Ok(o) => o,
-                Err(_) => {
-                    eprintln!("SKIP: no powershell");
-                    return;
-                }
-            };
+        let out = match Command::new(exe).args(["-NoProfile", "-NonInteractive", "-Command", &cmd]).output() {
+            Ok(o) => o,
+            Err(_) => {
+                eprintln!("SKIP: no powershell");
+                return;
+            }
+        };
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), *want, "{line:?}: {out:?}");
     }
     haetty_testkit::remove_dir_all(&dir);

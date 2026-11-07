@@ -60,7 +60,8 @@ haetty statusline        (run by Claude Code)
     `compinit`);
   - fish: `haetty completions fish > ~/.config/fish/completions/haetty.fish`;
   - PowerShell: `haetty completions powershell | Out-String |
-    Invoke-Expression` in `$PROFILE`.
+    Invoke-Expression` in `$PROFILE` (Windows PowerShell 5.1 completes no
+    bare `-` or `--`: type the first letter; PowerShell 7 does).
 - `--font`, `--font-size` (points, 4–96), `--cols` and `--rows` (default
   120x36) exist on the command line only. Every other option is a setting
   (`--KEY VALUE` or `--KEY=VALUE`, see [Config file](#config-file)).

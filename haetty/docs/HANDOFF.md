@@ -10,7 +10,6 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 
 
-> **In progress:** stage v5 (branch `haetty/v5`, worktree `~/projects/claude-code-config-wt/v5`). Remaining: V5 CLI help and completions, config table single source; V6 overnight GUI e2e; then V7, E0-E3
 
 ## 1. Current state
 
@@ -158,6 +157,9 @@ Windows, WSL and the dev machine:
 - The S4 soak may have shared an X server with `crashrun.sh` (T4); its
   figures are kept as recorded.
 - winit#4746 workaround to remove once winit has the fix (§4).
+- A test daemon can outlive an abnormally ended test run: a `threads`
+  test daemon ran 12 h with its folder gone (found in V5). Tests should
+  stop their daemon in a guard that runs on panic too.
 
 ### 6.1 Manual checks (by a person; regrouped 2026-11-05 after the rename)
 
