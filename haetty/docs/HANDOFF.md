@@ -8,7 +8,6 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage v3 (branch `haetty/v3`, worktree `~/projects/claude-code-config-wt/v3`). Remaining: V3 observe-only interface, V4 DESIGN 9, V5 CLI and config table, V6 overnight GUI e2e
 
 ## 1. Current state
 
@@ -280,6 +279,13 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     - Options: `-Minutes`, `-IdleWaitMinutes`, `-Commit`, `-OutDir`.
     - The steps for the next session are under "Next session" at the top
       of this file.
+
+31. **Observing a tab** (V3): palette "Observing: allow or stop for this
+    tab" — a dim `◦` appears after the tab's number (grey, also on the
+    active tab; no colour) and goes again with the same entry; `haetty
+    screen --json <id>` (id from `haetty status`) shows that tab and refuses
+    another one; `haetty events --follow` prints its events while you work
+    in it (never what you type). Linux and Windows.
 
 #### B. Linux with a real account (Claude Code logged in)
 
