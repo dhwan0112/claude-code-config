@@ -13,7 +13,6 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 
 
-> **In progress:** stage e0 (branch `haetty/e0`, worktree `~/projects/claude-code-config-wt/e0`). Remaining: E0 DESIGN 10 native engine design (inventory, crates and sizes, memory, engine boundary); then E1 differential tool, E2 core engine, E3 encoders
 
 ## 1. Current state
 
