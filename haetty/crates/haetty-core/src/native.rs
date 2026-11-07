@@ -175,17 +175,38 @@ impl VtEngine for NativeEngine {
     }
 
     fn encode_key(&mut self, k: &KeyInput, out: &mut Vec<u8>) {
-        if k.action != KeyAction::Release {
-            if let Some(t) = &k.text {
-                out.extend_from_slice(t.as_bytes());
-            }
-        }
+        let m = &self.term.modes;
+        let o = crate::encode::KeyOptions {
+            cursor_app: m.app_cursor_keys,
+            keypad_app: m.app_keypad,
+            backarrow: m.other(67),
+            ignore_keypad_with_numlock: m.other(1035),
+            alt_esc_prefix: m.other(1036),
+            modify_other_keys_2: m.modify_other_keys_2,
+            kitty: self.term.kitty_flags(),
+        };
+        crate::encode::key(k, &o, out);
     }
 
-    fn encode_mouse(&mut self, _m: &MouseInput, _size: GridSize, _out: &mut Vec<u8>) {}
+    fn encode_mouse(&mut self, m: &MouseInput, gs: GridSize, out: &mut Vec<u8>) {
+        let o = crate::encode::MouseOptions {
+            event: self.term.modes.mouse_event,
+            format: self.term.modes.mouse_format,
+            screen_w: gs.cols as u32 * gs.cell_width as u32,
+            screen_h: gs.rows as u32 * gs.cell_height as u32,
+            cell_w: gs.cell_width as u32,
+            cell_h: gs.cell_height as u32,
+            cols: gs.cols,
+            rows: gs.rows,
+        };
+        // No motion dedupe: GhosttyEngine sets the encoder's options and
+        // size before every event, and libghostty clears its last cell on
+        // both, so motion within a cell is reported there too.
+        crate::encode::mouse(m, &o, &mut None, out);
+    }
 
     fn encode_paste(&mut self, text: &str, out: &mut Vec<u8>) {
-        out.extend_from_slice(text.as_bytes());
+        crate::encode::paste(text, self.term.modes.bracketed_paste, out);
     }
 
     fn encode_focus(&mut self, focused: bool, out: &mut Vec<u8>) {

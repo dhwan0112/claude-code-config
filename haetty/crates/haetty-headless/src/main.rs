@@ -54,11 +54,12 @@ struct Args {
     env: Vec<(String, String)>,
     cwd: Option<PathBuf>,
     theme: Option<String>,
+    engine: Option<vt::EngineKind>,
     program: Vec<String>,
 }
 
 fn usage(msg: &str) -> ! {
-    eprintln!("haetty-headless: {msg}\nusage: haetty-headless [--cols N] [--rows N] [--script FILE] [-e STEP]... [--raw-log FILE] [--trace] [--dump plain|vt|html|grid|none] [--timeout S] [--env K=V]... [--cwd DIR] [--theme NAME|FILE] -- PROGRAM [ARGS...]");
+    eprintln!("haetty-headless: {msg}\nusage: haetty-headless [--cols N] [--rows N] [--script FILE] [-e STEP]... [--raw-log FILE] [--trace] [--dump plain|vt|html|grid|none] [--timeout S] [--env K=V]... [--cwd DIR] [--theme NAME|FILE] [--engine ghostty|native] -- PROGRAM [ARGS...]");
     std::process::exit(2);
 }
 
@@ -74,6 +75,7 @@ fn parse_args() -> Args {
         env: vec![],
         cwd: None,
         theme: None,
+        engine: None,
         program: vec![],
     };
     let mut it = std::env::args().skip(1);
@@ -105,6 +107,11 @@ fn parse_args() -> Args {
             }
             "--cwd" => a.cwd = Some(val("--cwd").into()),
             "--theme" => a.theme = Some(val("--theme")),
+            "--engine" => {
+                a.engine = Some(
+                    vt::EngineKind::parse(&val("--engine")).unwrap_or_else(|| usage("--engine is ghostty or native")),
+                )
+            }
             "--" => {
                 a.program = it.by_ref().collect();
                 break;
@@ -448,6 +455,9 @@ fn main() {
     cfg.size = size;
     cfg.trace_replies = args.trace;
     cfg.raw_log = args.raw_log.clone();
+    if let Some(e) = args.engine {
+        cfg.engine = e;
+    }
     if let Some(name) = &args.theme {
         match theme::load(name, None, None) {
             Ok((t, bad)) => {

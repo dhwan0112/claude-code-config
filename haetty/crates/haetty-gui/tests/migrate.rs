@@ -90,6 +90,7 @@ fn old_settings_are_copied_and_an_old_daemon_is_left_alone() {
             palette: vec![],
             cursor_color: None,
             claude_integration: false,
+            engine: String::new(),
         })
         .unwrap();
 

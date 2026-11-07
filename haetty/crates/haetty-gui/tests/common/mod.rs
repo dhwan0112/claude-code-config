@@ -78,6 +78,7 @@ pub fn spec(program: &str, args: &[&str]) -> CreateSpec {
         palette: vec![],
         cursor_color: None,
         claude_integration: false,
+        engine: String::new(),
     }
 }
 

@@ -94,7 +94,7 @@ pub fn lines(text: &str) -> impl Iterator<Item = (usize, Result<(&str, &str), St
 
 /// A colour in Ghostty's syntax.
 pub fn parse_color(v: &str) -> Result<Rgb, String> {
-    libghostty_vt::style::RgbColor::parse(v).map(Into::into).map_err(|_| format!("invalid colour {v:?}"))
+    haetty_vt::parse_color(v).map(|[r, g, b]| Rgb { r, g, b }).ok_or_else(|| format!("invalid colour {v:?}"))
 }
 
 impl Theme {
@@ -118,9 +118,9 @@ impl Theme {
     /// `#dcdcdc` on `#1e1e1e`: haetty's colours before themes, the base every
     /// theme file starts from. Equal to the built-in "haetty classic".
     pub fn base() -> Theme {
-        let p = libghostty_vt::style::Palette::default();
+        let p = haetty_vt::DEFAULT_16;
         Theme {
-            palette: std::array::from_fn(|i| p.0[i].into()),
+            palette: std::array::from_fn(|i| Rgb { r: p[i][0], g: p[i][1], b: p[i][2] }),
             background: Rgb { r: 0x1e, g: 0x1e, b: 0x1e },
             foreground: Rgb { r: 0xdc, g: 0xdc, b: 0xdc },
             cursor_color: None,
@@ -146,13 +146,13 @@ impl Theme {
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
         match key {
             "palette" => {
-                let (i, c) = libghostty_vt::style::Palette::parse_palette_entry(value)
-                    .map_err(|_| format!("invalid palette entry {value:?} (N=COLOR)"))?;
+                let (i, [r, g, b]) = haetty_vt::parse_palette_entry(value)
+                    .ok_or_else(|| format!("invalid palette entry {value:?} (N=COLOR)"))?;
                 let slot = self
                     .palette
-                    .get_mut(i.0 as usize)
-                    .ok_or_else(|| format!("palette {}: only colours 0–15 are themed (16–255 stay xterm's)", i.0))?;
-                *slot = c.into();
+                    .get_mut(i as usize)
+                    .ok_or_else(|| format!("palette {i}: only colours 0–15 are themed (16–255 stay xterm's)"))?;
+                *slot = Rgb { r, g, b };
             }
             "background" => self.background = parse_color(value)?,
             "foreground" => self.foreground = parse_color(value)?,

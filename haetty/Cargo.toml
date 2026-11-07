@@ -22,10 +22,12 @@ rust-version = "1.90"
 
 [workspace.dependencies]
 haetty-pty = { path = "crates/haetty-pty" }
-haetty-core = { path = "crates/haetty-core" }
-haetty-proto = { path = "crates/haetty-proto" }
-haetty-daemon = { path = "crates/haetty-daemon" }
-haetty-cc = { path = "crates/haetty-cc" }
+# The engine features (`ghostty`, the default) are each crate's own and
+# forward down, so `--no-default-features` leaves libghostty out (DESIGN.md §10.4).
+haetty-core = { path = "crates/haetty-core", default-features = false }
+haetty-proto = { path = "crates/haetty-proto", default-features = false }
+haetty-daemon = { path = "crates/haetty-daemon", default-features = false }
+haetty-cc = { path = "crates/haetty-cc", default-features = false }
 haetty-testkit = { path = "crates/haetty-testkit" }
 haetty-vt = { path = "crates/haetty-vt" }
 libghostty-vt = "=0.2.2"

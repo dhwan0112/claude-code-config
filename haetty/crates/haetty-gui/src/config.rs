@@ -94,6 +94,8 @@ pub struct Config {
     pub colors: Vec<(String, String)>,
     /// 1–21 (Ghostty's `minimum-contrast`; 1 = off).
     pub minimum_contrast: f32,
+    /// The terminal engine of new tabs (DESIGN.md §10.4).
+    pub engine: haetty_core::vt::EngineKind,
 }
 
 impl Default for Config {
@@ -108,6 +110,7 @@ impl Default for Config {
             restore_tabs: true,
             observe_new_tabs: false,
             claude_integration: true,
+            engine: haetty_core::vt::EngineKind::default_kind(),
             worker_command: "claude".into(),
             notifications: true,
             theme: theme::DEFAULT_THEME.to_string(),
@@ -148,6 +151,11 @@ pub const SETTINGS: &[Setting] = &[
         "`12000000`",
     ),
     row(&["restore-tabs"], "`true` / `false` — reopen the previous run's tabs at start", "`true`"),
+    row(
+        &["engine"],
+        "`ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native)",
+        "`ghostty`",
+    ),
     row(&["claude-integration"], "`true` / `false` — hooks and status line in Claude Code tabs", "`true`"),
     row(
         &["worker-command"],
@@ -236,6 +244,7 @@ pub const KEYS: &[&str] = &[
     "decorations",
     "scrollback-limit",
     "restore-tabs",
+    "engine",
     "observe-new-tabs",
     "claude-integration",
     "worker-command",
@@ -301,6 +310,7 @@ impl Config {
                     _ => return Err(bad()),
                 }
             }
+            "engine" => self.engine = haetty_core::vt::EngineKind::parse(value).ok_or_else(bad)?,
             "scrollback-limit" => {
                 // Plain bytes; `_` separators allowed (12_000_000).
                 let v: u64 = value.replace('_', "").parse().map_err(|_| bad())?;

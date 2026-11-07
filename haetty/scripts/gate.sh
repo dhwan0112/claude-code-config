@@ -18,6 +18,13 @@ step() { echo "== $*"; }
 step "fmt check"; cargo fmt --all -- --check > "$HAETTY_TEST_TMP/gate-fmt.log" 2>&1 || { echo "FMT DIFF"; head -40 "$HAETTY_TEST_TMP/gate-fmt.log"; fail=1; echo "GATE STEP FAILED: fmt"; }
 step "build linux release"; cargo build --release 2>&1 | tail -3 || { fail=1; echo "GATE STEP FAILED: build linux"; }
 step "build windows release"; cargo build --release --target x86_64-pc-windows-gnu 2>&1 | tail -3 || { fail=1; echo "GATE STEP FAILED: build windows"; }
+# The native-only build (DESIGN.md §10.4): no libghostty in the graph, and it builds with no Zig on PATH.
+# Its own target dir, so the default build's cache stays as it is.
+step "build native-only (no zig)"
+nozig=$(echo "$PATH" | tr ':' '\n' | grep -v '\.local/bin' | paste -sd:)
+if PATH=$nozig command -v zig > /dev/null; then echo "zig still on the filtered PATH"; fail=1; echo "GATE STEP FAILED: native-only"
+elif cargo tree -q -p haetty-gui -p haetty-headless --no-default-features -e normal 2>/dev/null | grep -q ghostty; then echo "libghostty in the native-only graph"; fail=1; echo "GATE STEP FAILED: native-only"
+else PATH=$nozig CARGO_TARGET_DIR=$CARGO_TARGET_DIR-native cargo build --release -p haetty-gui -p haetty-headless --no-default-features 2>&1 | tail -3 || { fail=1; echo "GATE STEP FAILED: native-only"; }; fi
 # One clippy run per target, judged on its own output (a second run could replay or not replay cached
 # warnings). Our crates' sources are touched first so every warning is reported, not only fresh ones.
 find crates -name '*.rs' -exec touch {} +

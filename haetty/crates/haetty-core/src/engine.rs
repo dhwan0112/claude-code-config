@@ -158,6 +158,7 @@ pub(crate) struct EngineConfig {
     pub xtversion: String,
     pub trace_replies: bool,
     pub raw_log: Option<File>,
+    pub engine: crate::vt::EngineKind,
 }
 
 pub(crate) fn run(
@@ -184,8 +185,13 @@ pub(crate) fn run(
         color_scheme: cfg.color_scheme,
         xtversion: cfg.xtversion.clone(),
     };
-    let mut term: Box<dyn VtEngine> = match crate::ghostty::GhosttyEngine::new(&init) {
-        Ok(t) => Box::new(t),
+    let mut term: Box<dyn VtEngine> = match crate::vt::new_engine(cfg.engine, &init) {
+        Ok((t, warning)) => {
+            if let Some(w) = warning {
+                log::warn!("{w}");
+            }
+            t
+        }
         Err(e) => {
             let _ = events.send(SessionEvent::Error(e));
             return;

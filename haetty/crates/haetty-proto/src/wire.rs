@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 8;
+pub const VERSION: u32 = 9;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -123,6 +123,9 @@ pub struct CreateSpec {
     /// Claude Code integration (hooks, status line) when the program is
     /// Claude Code (DESIGN.md §3.13).
     pub claude_integration: bool,
+    /// The terminal engine, `ghostty` or `native` (empty: the daemon's
+    /// default; DESIGN.md §10.4). Version 9.
+    pub engine: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]

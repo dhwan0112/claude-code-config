@@ -2,8 +2,7 @@
 //! are `!Send`, so nothing from that crate crosses the thread boundary except
 //! `Copy` enums and bitflags.
 
-pub use libghostty_vt::key::{Action as KeyAction, Key, KittyKeyFlags, Mods};
-pub use libghostty_vt::mouse::{Action as MouseAction, Button as MouseButton};
+pub use crate::keys::{Key, KeyAction, KittyKeyFlags, Mods, MouseAction, MouseButton};
 
 pub const MAX_COLS: u16 = 4096;
 pub const MAX_ROWS: u16 = 2048;
@@ -41,12 +40,6 @@ pub struct Rgb {
     pub r: u8,
     pub g: u8,
     pub b: u8,
-}
-
-impl From<libghostty_vt::style::RgbColor> for Rgb {
-    fn from(c: libghostty_vt::style::RgbColor) -> Self {
-        Self { r: c.r, g: c.g, b: c.b }
-    }
 }
 
 /// Cell attribute bits.

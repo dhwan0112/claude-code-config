@@ -17,3 +17,7 @@ log.workspace = true
 [dev-dependencies]
 haetty-testkit.workspace = true
 postcard = { version = "1.1", default-features = false, features = ["use-std"] }
+
+[features]
+default = ["ghostty"]
+ghostty = ["haetty-core/ghostty", "haetty-proto/ghostty", "haetty-cc/ghostty"]

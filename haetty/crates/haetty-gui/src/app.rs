@@ -252,6 +252,7 @@ struct Win {
     /// The config file's modification time at the last (re)load.
     config_mtime: Option<SystemTime>,
     scrollback_limit: usize,
+    engine: haetty_core::vt::EngineKind,
     claude_integration: bool,
     /// OS notification (Linux `notify-send`) besides the taskbar/urgency
     /// hint when Claude Code waits and the window is unfocused.
@@ -421,6 +422,7 @@ impl App {
             settings: self.opts.settings.clone(),
             config_mtime: crate::config::file_mtime(),
             scrollback_limit: self.opts.config.scrollback_limit,
+            engine: self.opts.config.engine,
             claude_integration: self.opts.config.claude_integration,
             notifications: self.opts.config.notifications,
             observe_new_tabs: self.opts.config.observe_new_tabs,
@@ -797,6 +799,7 @@ impl Win {
             palette: self.theme.palette.iter().map(|c| rgb(*c)).collect(),
             cursor_color: self.theme.cursor_color.map(rgb),
             claude_integration: self.claude_integration,
+            engine: self.engine.name().into(),
         };
         let id = self.client.create(create).map_err(|e| e.to_string())?;
         let spec = TabSpec { cwd, once: vec![], ..spec };

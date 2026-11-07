@@ -809,6 +809,9 @@ impl Daemon {
             cfg.palette = Some(p.map(from_rgb));
         }
         cfg.cursor_color = spec.cursor_color.map(from_rgb);
+        if let Some(e) = haetty_core::vt::EngineKind::parse(&spec.engine) {
+            cfg.engine = e;
+        }
         match Session::spawn(cfg) {
             Ok(session) => {
                 let info = SessionInfo {

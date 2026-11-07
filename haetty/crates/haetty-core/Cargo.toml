@@ -8,8 +8,10 @@ rust-version.workspace = true
 
 [dependencies]
 haetty-pty.workspace = true
-libghostty-vt.workspace = true
-haetty-vt = { workspace = true, optional = true }
+libghostty-vt = { workspace = true, optional = true }
+haetty-vt.workspace = true
+# Already in the tree (libghostty-vt, winit): the key modifier and kitty flag types.
+bitflags = "2"
 crossbeam-channel.workspace = true
 log.workspace = true
 
@@ -17,5 +19,9 @@ log.workspace = true
 haetty-testkit.workspace = true
 
 [features]
-# haetty's own engine (DESIGN.md §10): not used by sessions yet.
-native = ["dep:haetty-vt"]
+default = ["ghostty"]
+# libghostty-vt, the default engine (needs Zig to build). haetty's own engine
+# (haetty-vt) is always there; without this feature it is the only one.
+ghostty = ["dep:libghostty-vt"]
+# Kept for builds that name it; the native engine needs no feature.
+native = []

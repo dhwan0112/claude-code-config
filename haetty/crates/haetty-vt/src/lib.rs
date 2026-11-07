@@ -9,13 +9,16 @@
 //! scroll regions, the alternate screen, wide characters, modes, replies to
 //! queries. Encoders and the rest are stage E3.
 
+pub mod color;
 mod grapheme;
 pub mod grapheme_table;
 mod width;
 pub mod width_table;
+mod x11_colors;
 
 use std::collections::VecDeque;
 
+pub use color::{parse_color, parse_palette_entry};
 pub use width::width;
 
 /// A colour as the program set it.
@@ -182,6 +185,14 @@ pub struct Modes {
     pub other: [bool; OTHER_MODES.len()],
     /// 47, 1047 and 1049 as set (DECRQM reports each).
     pub alt_modes: [bool; 3],
+    /// xterm modifyOtherKeys state 2 (`CSI > 4 ; 2 m`).
+    pub modify_other_keys_2: bool,
+    /// Mouse reporting as libghostty keeps it, one value each (the last mode
+    /// set wins; resetting any goes back to none / X10): event 0 none, 1 X10,
+    /// 2 normal, 3 button, 4 any; format 0 X10, 1 UTF-8, 2 SGR, 3 urxvt,
+    /// 4 SGR pixels.
+    pub mouse_event: u8,
+    pub mouse_format: u8,
 }
 
 /// Modes libghostty answers DECRQM for that haetty-vt only keeps (no
@@ -233,13 +244,21 @@ impl Default for Modes {
             lr_margins: false,
             other: OTHER_MODES.map(|m| m.1),
             alt_modes: [false; 3],
+            modify_other_keys_2: false,
+            mouse_event: 0,
+            mouse_format: 0,
         }
     }
 }
 
 impl Modes {
     pub fn mouse_tracking(&self) -> bool {
-        self.mouse_x10 || self.mouse_normal || self.mouse_button || self.mouse_any
+        self.mouse_event != 0
+    }
+
+    /// A mode from `OTHER_MODES` (DECRQM-only modes).
+    pub fn other(&self, mode: u16) -> bool {
+        OTHER_MODES.iter().position(|m| m.0 == mode).is_some_and(|i| self.other[i])
     }
 }
 
@@ -1317,7 +1336,10 @@ impl Terminal {
                 self.goto(0, 0);
             }
             7 => self.modes.autowrap = on,
-            9 => self.modes.mouse_x10 = on,
+            9 => {
+                self.modes.mouse_x10 = on;
+                self.modes.mouse_event = if on { 1 } else { 0 };
+            }
             12 => self.modes.cursor_blink = on,
             25 => self.modes.cursor_visible = on,
             47 => {
@@ -1326,14 +1348,35 @@ impl Terminal {
             }
             66 => self.modes.app_keypad = on,
             69 => self.modes.lr_margins = on,
-            1000 => self.modes.mouse_normal = on,
-            1002 => self.modes.mouse_button = on,
-            1003 => self.modes.mouse_any = on,
+            1000 => {
+                self.modes.mouse_normal = on;
+                self.modes.mouse_event = if on { 2 } else { 0 };
+            }
+            1002 => {
+                self.modes.mouse_button = on;
+                self.modes.mouse_event = if on { 3 } else { 0 };
+            }
+            1003 => {
+                self.modes.mouse_any = on;
+                self.modes.mouse_event = if on { 4 } else { 0 };
+            }
             1004 => self.modes.focus_events = on,
-            1005 => self.modes.mouse_utf8 = on,
-            1006 => self.modes.mouse_sgr = on,
-            1015 => self.modes.mouse_urxvt = on,
-            1016 => self.modes.mouse_sgr_pixels = on,
+            1005 => {
+                self.modes.mouse_utf8 = on;
+                self.modes.mouse_format = if on { 1 } else { 0 };
+            }
+            1006 => {
+                self.modes.mouse_sgr = on;
+                self.modes.mouse_format = if on { 2 } else { 0 };
+            }
+            1015 => {
+                self.modes.mouse_urxvt = on;
+                self.modes.mouse_format = if on { 3 } else { 0 };
+            }
+            1016 => {
+                self.modes.mouse_sgr_pixels = on;
+                self.modes.mouse_format = if on { 4 } else { 0 };
+            }
             1047 => {
                 self.modes.alt_modes[1] = on;
                 self.set_alt_screen(on, false, true)
@@ -2223,6 +2266,16 @@ impl vte::Perform for Terminal {
                 }
             }
             ([], 'm') => self.sgr(),
+            // xterm's modify-key formats, as far as libghostty takes them:
+            // only `CSI > 4 ; 2 m` turns modifyOtherKeys 2 on.
+            ([b'>'], 'm') => {
+                if count == 0 {
+                    self.modes.modify_other_keys_2 = false;
+                } else if matches!(param(params, 0, 0), 0 | 1 | 2 | 4) && count <= 2 {
+                    self.modes.modify_other_keys_2 = param(params, 0, 0) == 4 && count == 2 && param(params, 1, 0) == 2;
+                }
+            }
+            ([b'>'], 'n') => self.modes.modify_other_keys_2 = false,
             ([] | [b'?'], 'n') => self.device_status(private, param(params, 0, 0)),
             ([b'?', b'$'], 'p') if count == 0 => {}
             ([b'?', b'$'], 'p') => {
@@ -2450,34 +2503,6 @@ impl vte::Perform for Terminal {
             _ => {}
         }
     }
-}
-
-/// `#rgb`, `#rrggbb`, `rgb:r/g/b` (1–4 hex digits each).
-pub fn parse_color(s: &str) -> Option<[u8; 3]> {
-    if let Some(h) = s.strip_prefix('#') {
-        let n = h.len() / 3;
-        if n == 0 || h.len() % 3 != 0 || n > 4 {
-            return None;
-        }
-        let part = |i: usize| scale_hex(&h[i * n..(i + 1) * n]);
-        return Some([part(0)?, part(1)?, part(2)?]);
-    }
-    if let Some(r) = s.strip_prefix("rgb:") {
-        let v: Vec<&str> = r.split('/').collect();
-        if v.len() == 3 {
-            return Some([scale_hex(v[0])?, scale_hex(v[1])?, scale_hex(v[2])?]);
-        }
-    }
-    None
-}
-
-fn scale_hex(h: &str) -> Option<u8> {
-    if h.is_empty() || h.len() > 4 {
-        return None;
-    }
-    let v = u32::from_str_radix(h, 16).ok()?;
-    let max = (1u32 << (4 * h.len())) - 1;
-    Some(((v * 255 + max / 2) / max) as u8)
 }
 
 fn base64(s: &[u8]) -> Option<Vec<u8>> {

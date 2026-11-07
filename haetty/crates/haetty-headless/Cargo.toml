@@ -12,3 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 haetty-core.workspace = true
+
+[features]
+default = ["ghostty"]
+ghostty = ["haetty-core/ghostty"]

@@ -13,9 +13,11 @@
 //! receives [`SessionEvent`]s; on [`SessionEvent::Wakeup`] it asks for a
 //! [`Snapshot`] and draws it. No libghostty object leaves the engine thread.
 
+mod encode;
 mod engine;
+#[cfg(feature = "ghostty")]
 pub mod ghostty;
-#[cfg(feature = "native")]
+pub mod keys;
 pub mod native;
 pub mod osc;
 pub mod theme;
@@ -107,6 +109,8 @@ pub struct SessionConfig {
     pub trace_replies: bool,
     /// Append all PTY output to this file (debugging).
     pub raw_log: Option<PathBuf>,
+    /// The terminal engine (DESIGN.md §10.4).
+    pub engine: vt::EngineKind,
 }
 
 impl SessionConfig {
@@ -126,6 +130,7 @@ impl SessionConfig {
             terminal_env: true,
             trace_replies: false,
             raw_log: None,
+            engine: vt::EngineKind::default_kind(),
         };
         c.apply_theme(&theme::Theme::default());
         c
@@ -262,6 +267,7 @@ impl Session {
             xtversion: XTVERSION.to_owned(),
             trace_replies: cfg.trace_replies,
             raw_log,
+            engine: cfg.engine,
         };
         let writer = spawned.writer;
         let control = spawned.control;

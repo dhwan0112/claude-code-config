@@ -49,6 +49,7 @@ fn spec() -> CreateSpec {
         palette: vec![],
         cursor_color: None,
         claude_integration: false,
+        engine: String::new(),
     }
 }
 

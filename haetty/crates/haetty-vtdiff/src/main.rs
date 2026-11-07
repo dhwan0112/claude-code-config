@@ -19,6 +19,8 @@
 //!   --bisect NAME                the named input byte by byte: the first byte after which they differ,
 //!                                and a minimal input that still differs (delta debugging)
 //!   --gen-width FILE             writes `haetty-vt`'s width tables from libghostty-vt
+//!   --gen-keys FILE              writes haetty-core's key and mouse types (`keys.rs`) from libghostty-vt
+//!   --encoders [--report FILE]   key, mouse, paste and focus encoding of both engines, compared
 //!   --dump NAME [BYTES]          the named input's bytes (escaped), resizes marked
 
 use std::collections::BTreeMap;
@@ -746,6 +748,309 @@ fn probe(bytes: &[u8], cols: u16, rows: u16) {
     }
 }
 
+/// `--encoders`: what each engine sends for keys, mouse, paste and focus,
+/// compared byte for byte (DESIGN.md §10.7). Both engines get the same
+/// modes first (fed as escape sequences), then the same inputs.
+fn encoders(report: Option<String>) {
+    use haetty_core::{Key, KeyAction, KeyInput, Mods, MouseAction, MouseButton, MouseInput};
+    struct Cat {
+        name: &'static str,
+        cases: u64,
+        equal: u64,
+        firsts: Vec<String>,
+    }
+    let mut cats: Vec<Cat> = Vec::new();
+    let mut tally = |cat: &str, what: String, a: &[u8], b: &[u8]| {
+        let i = match cats.iter().position(|c| c.name == cat) {
+            Some(i) => i,
+            None => {
+                let name: &'static str = Box::leak(cat.to_string().into_boxed_str());
+                cats.push(Cat { name, cases: 0, equal: 0, firsts: vec![] });
+                cats.len() - 1
+            }
+        };
+        let c = &mut cats[i];
+        c.cases += 1;
+        if a == b {
+            c.equal += 1;
+        } else if c.firsts.len() < 6 {
+            c.firsts.push(format!("{what}: reference {} / native {}", show(a), show(b)));
+        }
+    };
+    let engines = |setup: &[u8]| {
+        let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
+        let mut b = NativeEngine::new(&init(80, 24));
+        a.feed(setup);
+        b.feed(setup);
+        let _ = (a.take_replies(), b.take_replies());
+        (a, b)
+    };
+    let mod_sets: Vec<Mods> = (0..16u16)
+        .map(|i| {
+            let mut m = Mods::empty();
+            for (bit, f) in [(1, Mods::SHIFT), (2, Mods::CTRL), (4, Mods::ALT), (8, Mods::SUPER)] {
+                if i & bit != 0 {
+                    m |= f;
+                }
+            }
+            m
+        })
+        .collect();
+    // A key's text on a US layout, as a frontend gives it.
+    let text_of = |k: Key, m: Mods| -> Option<(String, char)> {
+        let s = format!("{k:?}");
+        let base = if s.len() == 1 {
+            s.chars().next()?.to_ascii_lowercase()
+        } else if let Some(d) = s.strip_prefix("Digit") {
+            d.chars().next()?
+        } else {
+            match k {
+                Key::Space => ' ',
+                Key::Minus => '-',
+                Key::Equal => '=',
+                Key::Comma => ',',
+                Key::Period => '.',
+                Key::Slash => '/',
+                Key::Semicolon => ';',
+                Key::Quote => '\'',
+                Key::Backquote => '`',
+                Key::BracketLeft => '[',
+                Key::BracketRight => ']',
+                Key::Backslash => '\\',
+                _ => return None,
+            }
+        };
+        let shifted =
+            if m.contains(Mods::SHIFT) && base.is_ascii_lowercase() { base.to_ascii_uppercase() } else { base };
+        Some((shifted.to_string(), base))
+    };
+    // Keys: legacy modes, then every kitty flag set.
+    let mut setups: Vec<(String, Vec<u8>)> = vec![
+        ("legacy".into(), vec![]),
+        ("legacy DECCKM".into(), b"\x1b[?1h".to_vec()),
+        ("legacy keypad".into(), b"\x1b[?66h\x1b[?1035l".to_vec()),
+        ("legacy modifyOtherKeys 2".into(), b"\x1b[>4;2m".to_vec()),
+        ("legacy DECBKM".into(), b"\x1b[?67h".to_vec()),
+        ("legacy no alt prefix".into(), b"\x1b[?1036l".to_vec()),
+    ];
+    for f in 1..32u8 {
+        setups.push((format!("kitty {f}"), format!("\x1b[={f};1u").into_bytes()));
+    }
+    for (label, setup) in &setups {
+        let cat =
+            if label.starts_with("kitty") { "keys (kitty flags 1–31)" } else { "keys (legacy, modifyOtherKeys)" };
+        let (mut a, mut b) = engines(setup);
+        for k in Key::ALL {
+            for m in &mod_sets {
+                for act in [KeyAction::Press, KeyAction::Repeat, KeyAction::Release] {
+                    for with_text in [false, true] {
+                        let mut ev = KeyInput { action: act, mods: *m, ..KeyInput::press(k) };
+                        if with_text {
+                            match text_of(k, *m) {
+                                Some((t, base)) => {
+                                    ev.text = Some(t);
+                                    ev.unshifted = Some(base);
+                                    if m.contains(Mods::SHIFT) {
+                                        ev.consumed_mods = Mods::SHIFT;
+                                    }
+                                }
+                                None => continue,
+                            }
+                        }
+                        let (mut x, mut y) = (vec![], vec![]);
+                        a.encode_key(&ev, &mut x);
+                        b.encode_key(&ev, &mut y);
+                        tally(cat, format!("{label} {k:?} {m:?} {act:?} text {:?}", ev.text), &x, &y);
+                    }
+                }
+            }
+        }
+    }
+    // Mouse: every reporting mode and format; per button and action, a
+    // press, a motion in the same cell, a motion to another, a release.
+    let events =
+        [("off", ""), ("9", "\x1b[?9h"), ("1000", "\x1b[?1000h"), ("1002", "\x1b[?1002h"), ("1003", "\x1b[?1003h")];
+    let formats = [
+        ("x10", ""),
+        ("1005", "\x1b[?1005h"),
+        ("1006", "\x1b[?1006h"),
+        ("1015", "\x1b[?1015h"),
+        ("1016", "\x1b[?1016h"),
+    ];
+    let gs = GridSize::new(80, 24).with_cell(9, 18);
+    let wide = GridSize::new(300, 24).with_cell(9, 18);
+    for (en, es) in events {
+        for (fname, fs) in formats {
+            let setup = format!("{es}{fs}");
+            for size in [gs, wide] {
+                let (mut a, mut b) = engines(setup.as_bytes());
+                for button in [
+                    None,
+                    Some(MouseButton::Left),
+                    Some(MouseButton::Middle),
+                    Some(MouseButton::Right),
+                    Some(MouseButton::Four),
+                    Some(MouseButton::Five),
+                    Some(MouseButton::Six),
+                    Some(MouseButton::Seven),
+                    Some(MouseButton::Eight),
+                    Some(MouseButton::Nine),
+                    Some(MouseButton::Ten),
+                ] {
+                    for mods in
+                        [Mods::empty(), Mods::SHIFT, Mods::ALT, Mods::CTRL, Mods::SHIFT | Mods::CTRL | Mods::ALT]
+                    {
+                        let xs: [f32; 6] = [4.5, 13.0, 2010.0, 2700.0, -3.0, 18200.0];
+                        for (i, x) in xs.iter().enumerate() {
+                            let y = [9.0f32, 30.0, 200.0, 420.0, 431.0, -1.0][i];
+                            for (act, pressed, dx) in [
+                                (MouseAction::Press, true, 0.0),
+                                (MouseAction::Motion, true, 1.0),
+                                (MouseAction::Motion, true, 40.0),
+                                (MouseAction::Release, false, 40.0),
+                                (MouseAction::Motion, false, 90.0),
+                            ] {
+                                let ev = MouseInput { action: act, button, mods, x: x + dx, y, any_pressed: pressed };
+                                let (mut p, mut q) = (vec![], vec![]);
+                                a.encode_mouse(&ev, size, &mut p);
+                                b.encode_mouse(&ev, size, &mut q);
+                                tally(
+                                    "mouse",
+                                    format!(
+                                        "{en}/{fname} {}x {button:?} {mods:?} {act:?} at {:.0},{y:.0}",
+                                        size.cols, ev.x
+                                    ),
+                                    &p,
+                                    &q,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Paste and focus.
+    let pastes = [
+        "plain",
+        "two\nlines\r\n",
+        "tab\there",
+        "esc\x1b[201~inside",
+        "ctrl \x03\x04\x08\x7f\x15\x1a end",
+        "한글 😀",
+        "",
+    ];
+    for setup in ["", "\x1b[?2004h"] {
+        let (mut a, mut b) = engines(setup.as_bytes());
+        for p in pastes {
+            let (mut x, mut y) = (vec![], vec![]);
+            a.encode_paste(p, &mut x);
+            b.encode_paste(p, &mut y);
+            tally("paste", format!("{} {p:?}", if setup.is_empty() { "plain" } else { "bracketed" }), &x, &y);
+        }
+        let (mut a, mut b) = engines(if setup.is_empty() { b"" } else { b"\x1b[?1004h" });
+        for f in [true, false] {
+            let (mut x, mut y) = (vec![], vec![]);
+            a.encode_focus(f, &mut x);
+            b.encode_focus(f, &mut y);
+            tally("focus", format!("{} {f}", if setup.is_empty() { "off" } else { "1004" }), &x, &y);
+        }
+    }
+    let pct = |n: u64, d: u64| if d == 0 { 100.0 } else { n as f64 * 100.0 / d as f64 };
+    let mut out = String::from("# vtdiff --encoders: libghostty-vt (reference) vs haetty's encoders (native)\n\n| Category | Cases | Identical |\n|---|---|---|\n");
+    for c in &cats {
+        let _ = writeln!(out, "| {} | {} | {} ({:.2} %) |", c.name, c.cases, c.equal, pct(c.equal, c.cases));
+    }
+    for c in cats.iter().filter(|c| !c.firsts.is_empty()) {
+        let _ = writeln!(out, "\n## First differences: {}\n", c.name);
+        for f in &c.firsts {
+            let _ = writeln!(out, "- {f}");
+        }
+    }
+    print!("{out}");
+    if let Some(p) = report {
+        let _ = std::fs::write(p, &out);
+    }
+    std::process::exit(if cats.iter().all(|c| c.cases == c.equal) { 0 } else { 1 });
+}
+
+/// `--gen-keys FILE`: haetty-core's key and mouse types (`keys.rs`), the
+/// same variants and numbering as libghostty-vt's, so the wire format and the
+/// conversions in `ghostty.rs` stay plain casts (DESIGN.md §10.4).
+fn gen_keys(path: &str) {
+    use libghostty_vt::{key, mouse};
+    use std::fmt::Write as _;
+    fn variants<T: std::fmt::Debug>(get: impl Fn(u32) -> Option<T>) -> Vec<(u32, String)> {
+        (0..1024u32).filter_map(|v| get(v).map(|t| (v, format!("{t:?}")))).collect()
+    }
+    fn enum_src(out: &mut String, doc: &str, name: &str, vs: &[(u32, String)]) {
+        let _ = writeln!(out, "/// {doc}");
+        let _ = writeln!(out, "#[repr(u32)]\n#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]\npub enum {name} {{");
+        for (v, n) in vs {
+            let _ = writeln!(out, "    {n} = {v},");
+        }
+        let _ = writeln!(
+            out,
+            "}}\n\nimpl {name} {{\n    /// Every variant, in numbering order.\n    pub const ALL: [{name}; {}] = [",
+            vs.len()
+        );
+        for (_, n) in vs {
+            let _ = writeln!(out, "        {name}::{n},");
+        }
+        let _ = writeln!(out, "    ];\n}}\n\nimpl TryFrom<u32> for {name} {{\n    type Error = u32;\n    fn try_from(v: u32) -> Result<Self, u32> {{\n        match v {{");
+        for (v, n) in vs {
+            let _ = writeln!(out, "            {v} => Ok({name}::{n}),");
+        }
+        let _ = writeln!(out, "            _ => Err(v),\n        }}\n    }}\n}}\n");
+    }
+    let mut out = String::from(
+        "//! Key and mouse types with libghostty-vt 0.2.2's variants and numbering, generated by\n\
+         //! `haetty-vtdiff --gen-keys` (DESIGN.md §10.4): haetty-core owns them, so a build without\n\
+         //! libghostty (feature `native` only) has them too. Do not edit.\n\n",
+    );
+    enum_src(
+        &mut out,
+        "A physical key (W3C UI Events KeyboardEvent code).",
+        "Key",
+        &variants(|v| key::Key::try_from(v).ok()),
+    );
+    enum_src(&mut out, "Key event action.", "KeyAction", &variants(|v| key::Action::try_from(v).ok()));
+    enum_src(&mut out, "Mouse event action.", "MouseAction", &variants(|v| mouse::Action::try_from(v).ok()));
+    enum_src(&mut out, "Mouse button.", "MouseButton", &variants(|v| mouse::Button::try_from(v).ok()));
+    let mods = [
+        ("SHIFT", key::Mods::SHIFT),
+        ("ALT", key::Mods::ALT),
+        ("CTRL", key::Mods::CTRL),
+        ("SUPER", key::Mods::SUPER),
+        ("CAPS_LOCK", key::Mods::CAPS_LOCK),
+        ("NUM_LOCK", key::Mods::NUM_LOCK),
+        ("SHIFT_SIDE", key::Mods::SHIFT_SIDE),
+        ("ALT_SIDE", key::Mods::ALT_SIDE),
+        ("CTRL_SIDE", key::Mods::CTRL_SIDE),
+        ("SUPER_SIDE", key::Mods::SUPER_SIDE),
+    ];
+    let kitty = [
+        ("DISABLED", key::KittyKeyFlags::DISABLED),
+        ("DISAMBIGUATE", key::KittyKeyFlags::DISAMBIGUATE),
+        ("REPORT_EVENTS", key::KittyKeyFlags::REPORT_EVENTS),
+        ("REPORT_ALTERNATES", key::KittyKeyFlags::REPORT_ALTERNATES),
+        ("REPORT_ALL", key::KittyKeyFlags::REPORT_ALL),
+        ("REPORT_ASSOCIATED", key::KittyKeyFlags::REPORT_ASSOCIATED),
+        ("ALL", key::KittyKeyFlags::ALL),
+    ];
+    let _ = writeln!(out, "bitflags::bitflags! {{\n    /// Keyboard modifiers.\n    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]\n    pub struct Mods: u16 {{");
+    for (n, m) in mods {
+        let _ = writeln!(out, "        const {n} = {:#06x};", m.bits());
+    }
+    let _ = writeln!(out, "    }}\n\n    /// Kitty keyboard protocol flags.\n    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]\n    pub struct KittyKeyFlags: u8 {{");
+    for (n, m) in kitty {
+        let _ = writeln!(out, "        const {n} = {:#04x};", m.bits());
+    }
+    let _ = writeln!(out, "    }}\n}}");
+    std::fs::write(path, out).expect("write");
+    println!("{path}: written");
+}
+
 /// `--gen-width FILE`: the width libghostty-vt gives every code point, as the
 /// range tables of `haetty-vt` (DESIGN.md §10.2). Each character is written
 /// after an `a` on a cleared line; the cursor then says its width (column 1:
@@ -952,6 +1257,14 @@ fn bisect(inp: &Input) {
 
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    if raw.first().map(String::as_str) == Some("--encoders") {
+        encoders(raw.get(1).filter(|a| *a == "--report").and(raw.get(2)).cloned());
+        return;
+    }
+    if raw.first().map(String::as_str) == Some("--gen-keys") {
+        gen_keys(raw.get(1).map_or("keys.rs", String::as_str));
+        return;
+    }
     if raw.first().map(String::as_str) == Some("--gen-width") {
         gen_width(raw.get(1).map_or("width_table.rs", String::as_str));
         return;

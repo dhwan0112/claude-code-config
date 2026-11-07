@@ -30,3 +30,7 @@ windows-sys = { version = "0.59", features = [
 
 [dev-dependencies]
 haetty-testkit.workspace = true
+
+[features]
+default = ["ghostty"]
+ghostty = ["haetty-core/ghostty"]

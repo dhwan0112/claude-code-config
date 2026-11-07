@@ -52,6 +52,7 @@ fn main() {
             palette: vec![],
             cursor_color: None,
             claude_integration: false,
+            engine: String::new(),
         })
         .expect("create");
     let s = c.attach(&id, None).expect("attach");

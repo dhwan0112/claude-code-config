@@ -48,3 +48,7 @@ smithay-clipboard = { version = "=0.7.2", default-features = false }
 
 [dev-dependencies]
 haetty-testkit.workspace = true
+
+[features]
+default = ["ghostty"]
+ghostty = ["haetty-core/ghostty", "haetty-proto/ghostty", "haetty-daemon/ghostty", "haetty-cc/ghostty"]

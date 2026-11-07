@@ -150,10 +150,10 @@ impl VtEngine for GhosttyEngine {
     fn encode_key(&mut self, k: &KeyInput, out: &mut Vec<u8>) {
         let start = out.len();
         self.key_ev
-            .set_action(k.action)
-            .set_key(k.key)
-            .set_mods(k.mods)
-            .set_consumed_mods(k.consumed_mods)
+            .set_action(lg_key_action(k.action))
+            .set_key(lg_key(k.key))
+            .set_mods(lg_mods(k.mods))
+            .set_consumed_mods(lg_mods(k.consumed_mods))
             .set_composing(k.composing)
             .set_utf8(k.text.clone());
         self.key_ev.set_unshifted_codepoint(k.unshifted.unwrap_or('\0'));
@@ -185,9 +185,9 @@ impl VtEngine for GhosttyEngine {
             .set_any_button_pressed(m.any_pressed)
             .set_track_last_cell(true);
         self.mouse_ev
-            .set_action(m.action)
-            .set_button(m.button)
-            .set_mods(m.mods)
+            .set_action(lg_mouse_action(m.action))
+            .set_button(m.button.map(lg_mouse_button))
+            .set_mods(lg_mods(m.mods))
             .set_position(mouse::Position { x: m.x, y: m.y });
         let _ = self.mouse_enc.encode_to_vec(&self.mouse_ev, out);
     }
@@ -456,4 +456,57 @@ fn build_snapshot(e: &mut GhosttyEngine) -> Snapshot {
     }
     snap.cells.resize(cols as usize * rows as usize, Cell::default());
     snap
+}
+
+// haetty-core's key and mouse types have libghostty-vt's numbering
+// (`keys.rs`, generated from it), so these are casts.
+
+impl From<libghostty_vt::style::RgbColor> for Rgb {
+    fn from(c: libghostty_vt::style::RgbColor) -> Self {
+        Self { r: c.r, g: c.g, b: c.b }
+    }
+}
+
+fn lg_key(k: Key) -> key::Key {
+    key::Key::try_from(k as u32).unwrap_or(key::Key::Unidentified)
+}
+
+fn lg_key_action(a: KeyAction) -> key::Action {
+    key::Action::try_from(a as u32).unwrap_or(key::Action::Press)
+}
+
+fn lg_mods(m: Mods) -> key::Mods {
+    key::Mods::from_bits_truncate(m.bits())
+}
+
+fn lg_mouse_action(a: MouseAction) -> mouse::Action {
+    mouse::Action::try_from(a as u32).unwrap_or(mouse::Action::Motion)
+}
+
+fn lg_mouse_button(b: MouseButton) -> mouse::Button {
+    mouse::Button::try_from(b as u32).unwrap_or(mouse::Button::Unknown)
+}
+
+#[cfg(test)]
+mod keys_match_libghostty {
+    use super::*;
+
+    /// Every variant converts to the libghostty one with the same name.
+    #[test]
+    fn same_numbering() {
+        for k in Key::ALL {
+            assert_eq!(format!("{k:?}"), format!("{:?}", lg_key(k)));
+        }
+        for a in KeyAction::ALL {
+            assert_eq!(format!("{a:?}"), format!("{:?}", lg_key_action(a)));
+        }
+        for a in MouseAction::ALL {
+            assert_eq!(format!("{a:?}"), format!("{:?}", lg_mouse_action(a)));
+        }
+        for b in MouseButton::ALL {
+            assert_eq!(format!("{b:?}"), format!("{:?}", lg_mouse_button(b)));
+        }
+        assert_eq!(lg_mods(Mods::all()).bits(), key::Mods::all().bits());
+        assert_eq!(KittyKeyFlags::ALL.bits(), key::KittyKeyFlags::ALL.bits());
+    }
 }

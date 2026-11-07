@@ -73,6 +73,7 @@ fn permission_request_is_in_the_daemon_before_the_hook_exits() {
             palette: vec![],
             cursor_color: None,
             claude_integration: true,
+            engine: String::new(),
         })
         .unwrap();
     let path = |p: &Path| p.to_string_lossy().into_owned();

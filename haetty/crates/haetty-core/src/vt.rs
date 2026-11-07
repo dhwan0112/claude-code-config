@@ -18,6 +18,60 @@ pub struct VtInit {
     pub xtversion: String,
 }
 
+/// Which terminal engine a session runs on (`engine =` in the config,
+/// DESIGN.md §10.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EngineKind {
+    /// libghostty-vt (feature `ghostty`, the default).
+    Ghostty,
+    /// haetty's own engine (`haetty-vt`).
+    Native,
+}
+
+impl EngineKind {
+    pub const NAMES: [&'static str; 2] = ["ghostty", "native"];
+
+    /// libghostty-vt when this build has it, else the native engine.
+    pub fn default_kind() -> EngineKind {
+        if cfg!(feature = "ghostty") {
+            EngineKind::Ghostty
+        } else {
+            EngineKind::Native
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<EngineKind> {
+        match s {
+            "ghostty" => Some(EngineKind::Ghostty),
+            "native" => Some(EngineKind::Native),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            EngineKind::Ghostty => "ghostty",
+            EngineKind::Native => "native",
+        }
+    }
+}
+
+/// An engine of the kind asked for. A build without libghostty runs
+/// `ghostty` sessions on the native engine, with a warning (the second
+/// value) instead of failing.
+pub fn new_engine(kind: EngineKind, init: &VtInit) -> Result<(Box<dyn VtEngine>, Option<String>), String> {
+    match kind {
+        #[cfg(feature = "ghostty")]
+        EngineKind::Ghostty => Ok((Box::new(crate::ghostty::GhosttyEngine::new(init)?), None)),
+        #[cfg(not(feature = "ghostty"))]
+        EngineKind::Ghostty => Ok((
+            Box::new(crate::native::NativeEngine::new(init)),
+            Some("engine = ghostty: this build has no libghostty-vt; the session runs on the native engine".into()),
+        )),
+        EngineKind::Native => Ok((Box::new(crate::native::NativeEngine::new(init)), None)),
+    }
+}
+
 /// A mode the engine thread needs to know.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VtMode {
