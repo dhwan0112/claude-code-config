@@ -20,30 +20,44 @@ New progress records go to the newest file in `docs/history/`, not here.
 - **Candidate `haetty-v0.2.0` = `63822de`**, not tagged. Every check of
   T7 passed on its own build ([history](history/2026-11-06-07-stages-t-u-v.md),
   T7). Still missing: the overnight soak on both platforms (§6.1 item 30).
-  The tag is approved in advance on the conditions in "Next session" below.
-- Since V3 the crates differ from `63822de` (observe-only interface,
-  protocol 8; V6's palette fix): see "Next session" for the tag.
+- **The tag goes on `63822de` itself** (the user, E5 instructions,
+  2026-11-08), approved on the conditions in "Next session" below.
+- **Everything after `63822de` is the v0.3.0 candidate** (V3's
+  observe-only interface and protocol 8, V6's palette fix, E1–E5: the
+  native engine). The workspace version on `main` still reads 0.2.0; it
+  is not bumped yet.
 - Last stages (records in [history](history/2026-11-06-07-stages-t-u-v.md)):
-  T1–T7, U1–U6, V1–V7.
+  T1–T7, U1–U6, V1–V7, E0–E4.
 
 ## Next session: the `haetty-v0.2.0` tag after the overnight soak (U6)
 
-Approved in advance (U6, 2026-11-07) for `63822de`; the steps as first
-written are kept in [history](history/2026-11-06-07-stages-t-u-v.md) (V7).
+Approved for `63822de` itself (the user, E5 instructions, 2026-11-08:
+"haetty-v0.2.0 태그는 63822de 자체에 붙인다"). The earlier steps are kept
+in [history](history/2026-11-06-07-stages-t-u-v.md) (V7).
+
+**Until `latest.txt` exists, `main` is tonight's test harness:** the
+overnight run builds `63822de` but uses `main`'s scripts. Do not change
+`tools/overnight-soak.ps1`, `tools/overnight-soak-linux.sh`,
+`tools/heavy.*`, `scripts/e2e/soak.sh`, `scripts/e2e/lib.sh` or
+`scripts/e2e/windows/` before it has run (E5c's soak rule and E5d's engine
+argument wait for that).
+
 When `C:\Users\Public\haetty-overnight\latest.txt` exists:
 
-1. Record its `RESULT` lines and series in the newest history file (commit
-   R; gate and push as usual).
-2. Tag only if `RESULT LINUX PASS` and `RESULT WINDOWS PASS`, `tools/check-range.sh
-   haetty-v0.1.1..R` ends with **0 failing** (KNOWN does not count), and no
-   crate change since `63822de` — **since V3 that last condition fails for
-   every R: ask the user where the tag goes** (`63822de` itself, or a new
-   candidate checked and soaked again).
-3. If it may be tagged: `git tag -a haetty-v0.2.0 <commit> -m "haetty
-   0.2.0"` with the user's identity; push the tag only.
+1. Record its `RESULT` lines and series in the newest history file (gate,
+   commit and push as usual).
+2. Tag only if:
+   - `RESULT LINUX PASS` and `RESULT WINDOWS PASS`;
+   - `tools/check-range.sh haetty-v0.1.1..63822de` ends with **0 failing**
+     (KNOWN does not count).
+   `GUI-TABS FAIL` is expected for `63822de` (§6.1 item 29) and is not a
+   condition; neither are the GUI e2e lines.
+3. If both hold: after the record of step 1 is pushed,
+   `git tag -a haetty-v0.2.0 63822de -m "haetty 0.2.0"` with the user's
+   identity (no AI lines in the message); push the tag only
+   (`git push origin haetty-v0.2.0`).
 4. Otherwise no tag: find the cause (the failed check, the CSV series,
-   `gui.log`) and report. `GUI-TABS FAIL` is expected for `63822de` (§6.1
-   item 29) and is not a tag condition.
+   `gui.log`) and report.
 5. Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
@@ -133,7 +147,15 @@ Windows, WSL and the dev machine:
 
 ### 6.0 Open defects and tasks (2026-11-07)
 
-- `haetty-v0.2.0`: waits for the overnight soak (item 30, "Next session").
+- `haetty-v0.2.0`: waits for the overnight soak (item 30, "Next session");
+  the tag goes on `63822de` itself.
+- E5 (the user's instructions, 2026-11-08), after the overnight soak:
+  E5a FAIL runs and kitty cases to 0 unexplained; E5b underline styles,
+  underline colour and OSC 8 hyperlinks (DESIGN §2 change, approved);
+  E5c wrapped-line throughput ≥ 60 % and a 2-hour native soak with the
+  soak rule judged after scrollback is full; E5d native on Windows and an
+  engine argument for the overnight script; E5e libghostty-vt release
+  survey (no version change). The default engine stays libghostty.
 - The Windows soak v2 (`scripts/e2e/windows/soak.ps1`) has never run end to
   end, and the Windows GUI e2e (item 29) ran once, 13/14: its first full
   runs are on an idle desktop.

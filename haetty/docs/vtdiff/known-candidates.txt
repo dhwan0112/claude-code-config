@@ -2,8 +2,4 @@
 # Same format as known-vt-differences.txt; the reasoning for each is in known.md. Moving an entry to the approved
 # list needs the person's approval (CLAUDE.md).
 
-[origin-row-moves-only-row]
-pattern = CSI d|e with DECSET 6
-fields = text width fg bg flags cursor scrollback history
-compat = origin-row-moves-column
-basis = ECMA-48 §8.3.158 VPA moves to line position n "in the active character position" and §8.3.160 VPR moves by n line positions "in a direction parallel to the line progression"; neither changes the column. xterm ctlseqs: VPA "[row] (default = [1,column])", VPR "[rows] (default = [row+1,column])". libghostty implements both as setCursorPos(row, cursor.x + 1); under origin mode setCursorPos adds the left margin to the column, and for VPR the region's top to the row. Seen in vtdiff with left/right margins (DECLRMM) and origin mode.
+# (none at present)

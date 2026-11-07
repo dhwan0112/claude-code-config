@@ -60,8 +60,6 @@ self-test (`cargo test -p haetty-vtdiff`) adds such a bug and expects FAIL.
     "[columns] (default = [row,col+1])".
 - Approved 2026-11-07, in the user's E4 instructions (as above).
 
-## Candidates (not approved; counted FAIL)
-
 ### origin-row-moves-only-row — VPA and VPR under origin mode
 
 - What happens: with origin mode set and left/right margins (DECLRMM,
@@ -85,4 +83,10 @@ self-test (`cargo test -p haetty-vtdiff`) adds such a bug and expects FAIL.
 - Found in E4 once margins were in vtdiff's inputs (`\e[?69h\e[3;7s\e[?6h\e[3dX`).
 - Ghostty `main` (`5813c94`) routes VPA and VPR through `cursorPosForSet`,
   which would fix it as well (docs/upstream/).
-- Needs the user's approval to move to `known-vt-differences.txt`.
+- Approved 2026-11-08, in the user's E5 instructions: "VPA·VPR
+  후보(origin-row-moves-only-row)를 known-vt-differences.txt로 옮기는 것을
+  승인한다."
+
+## Candidates (not approved; counted FAIL)
+
+None at present.
