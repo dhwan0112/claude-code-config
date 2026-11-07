@@ -12,7 +12,6 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 
 
-> **In progress:** stage v7 (branch `haetty/v7`, worktree `~/projects/claude-code-config-wt/v7`). Remaining: V7 kramers check results into docs/checks, section 6.1 links; A7 Wayland fractional-scale window size fix and tests; then E0-E3 native engine
 
 ## 1. Current state
 
@@ -25,43 +24,30 @@ New progress records go to the newest file in `docs/history/`, not here.
   T7 passed on its own build ([history](history/2026-11-06-07-stages-t-u-v.md),
   T7). Still missing: the overnight soak on both platforms (§6.1 item 30).
   The tag is approved in advance on the conditions in "Next session" below.
-- Until V2, `main` after `63822de` changed only tools, scripts and docs.
-  **V3 (`3fcbfec`, `58994a4`) changed the crates** (observe-only
-  interface, protocol 8). So U6's third condition (no crate change between
-  `63822de` and the recording commit R) can no longer hold for any later
-  R, and the steps below would refuse the tag even after a passing night.
-  **The user decides** where `haetty-v0.2.0` goes: on `63822de` itself
-  (the soaked code), or a new candidate that includes V3 and is checked
-  and soaked again.
-- Last stages: T1–T7 (check-range, harness in the repository, optimized
-  engine, Windows tests, orchestrator guide, soak v2 scripts), U1–U5 (known
-  gate failures, heavy-job slots, memory, overnight script, dev-run,
-  SELF-HOSTING.md), V1 (the overnight run had not been started: no tag).
+- Since V3 the crates differ from `63822de` (observe-only interface,
+  protocol 8; V6's palette fix): see "Next session" for the tag.
+- Last stages (records in [history](history/2026-11-06-07-stages-t-u-v.md)):
+  T1–T7, U1–U6, V1–V7.
 
 ## Next session: the `haetty-v0.2.0` tag after the overnight soak (U6)
 
-The user approved this conditional tag in advance (instruction U6,
-2026-11-07). When `C:\Users\Public\haetty-overnight\latest.txt` exists
-from the overnight run of §6.1 item 30 (commit `63822de`):
+Approved in advance (U6, 2026-11-07) for `63822de`; the steps as first
+written are kept in [history](history/2026-11-06-07-stages-t-u-v.md) (V7).
+When `C:\Users\Public\haetty-overnight\latest.txt` exists:
 
-1. Read it. Note both `RESULT` lines and each `VERDICT`. Record the
-   results and the time-series summary in §6.4. That HANDOFF commit, call
-   it R, goes through the gate and the push as usual.
-2. Tag only if all of these hold:
-   - `RESULT LINUX PASS` and `RESULT WINDOWS PASS`;
-   - `tools/check-range.sh haetty-v0.1.1..R` ends with **0 failing** (U1:
-     KNOWN entries of `tools/known-gate-failures` do not count);
-   - `git diff --stat 63822de R -- haetty/crates haetty/Cargo.toml
-     haetty/Cargo.lock` is empty, so R's program is the code that was
-     soaked (only tools, scripts and docs changed after `63822de`).
-3. If they all hold: `git tag -a haetty-v0.2.0 R -m "haetty 0.2.0"` with
-   the user's identity, then `git push origin haetty-v0.2.0` (the tag
-   only).
-4. If any one fails, a NOT-RUN included: no tag. Find the cause in the
-   result file (which check failed, the CSV series, the soak's
-   `gui.log`) and report it.
-5. Do not touch the "current stable" section until the user says the new
-   version is installed.
+1. Record its `RESULT` lines and series in the newest history file (commit
+   R; gate and push as usual).
+2. Tag only if `RESULT LINUX PASS` and `RESULT WINDOWS PASS`, `tools/check-range.sh
+   haetty-v0.1.1..R` ends with **0 failing** (KNOWN does not count), and no
+   crate change since `63822de` — **since V3 that last condition fails for
+   every R: ask the user where the tag goes** (`63822de` itself, or a new
+   candidate checked and soaked again).
+3. If it may be tagged: `git tag -a haetty-v0.2.0 <commit> -m "haetty
+   0.2.0"` with the user's identity; push the tag only.
+4. Otherwise no tag: find the cause (the failed check, the CSV series,
+   `gui.log`) and report. `GUI-TABS FAIL` is expected for `63822de` (§6.1
+   item 29) and is not a tag condition.
+5. Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
 
@@ -159,12 +145,22 @@ Windows, WSL and the dev machine:
   docs say it does not (U3).
 - The S4 soak may have shared an X server with `crashrun.sh` (T4); its
   figures are kept as recorded.
+- **A7 (kramers 2026-11-06): on Wayland at a fractional scale the first
+  window is about 1/scale of the requested grid** (`--cols 80 --rows 24`
+  gave 64x19 at 125 %). The size came from `primary_monitor()`, which
+  Wayland does not report. Fix and tests: V7.
 - winit#4746 workaround to remove once winit has the fix (§4).
 - A test daemon can outlive an abnormally ended test run: a `threads`
   test daemon ran 12 h with its folder gone (found in V5). Tests should
   stop their daemon in a guard that runs on panic too.
 
 ### 6.1 Manual checks (by a person; regrouped 2026-11-05 after the rename)
+
+**Results so far** (newest first; files in [`docs/checks/`](checks/)):
+
+| Date, machine, build | Pass | Fail | Pending | File |
+|---|---|---|---|---|
+| 2026-11-06 kramers (ThinkPad T480, Ubuntu 26.04 GNOME Wayland, lid closed, one monitor at 125 %), 0.1.1 | 3, 9, 10 | **7** (window size at a fractional scale: §6.0) | 1 (automatic part passes), 2 (n/a: no ccterm), 4–6, 8 (copying works), 11–17 | [2026-11-06-kramers.md](checks/2026-11-06-kramers.md) |
 
 What automation could not show: real keyboards, IMEs, displays, desktops,
 and a logged-in Claude Code (the tests use a fake key, so Claude Code never
@@ -280,27 +276,13 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     needed: the script on `\\wsl.localhost` is unsigned, and this machine's
     policy (RemoteSigned, LocalMachine) refuses it in a new window
     (checked 2026-11-07).
-    - What it does: checks that no heavy job runs and holds both
-      heavy-job slots; builds `63822de` for Linux and Windows (the test
-      scripts are the current checkout's, the program is the commit's);
-      runs the Linux soak v2 alone in WSL for an hour; waits up to 4 hours
-      for a desktop untouched for 120 s and runs the Windows soak v2 for an
-      hour; with `-GuiE2E`, then item 29.
-    - Any key or mouse movement of yours stops a Windows part at once (it
-      then counts as not passed). Leave the computer alone until the
-      morning. Sleep and the screen lock are prevented while it runs, so
-      the screen stays on.
-    - Time: about **2 h 10 min** when the desktop is idle at once. Measured
-      in the V6 trials: build 2–2.5 min, each soak its hour plus about
-      15 s, GUI e2e tabs 45 s and orchestrator 40 s, each after a 2 min
-      quiet wait.
-    - Result: `C:\Users\Public\haetty-overnight\latest.txt` (a copy of
-      `result-<date-time>.txt`). First lines: `RESULT LINUX
-      PASS|FAIL|NOT-RUN …`, `RESULT WINDOWS …`, `RESULT GUI-TABS …`,
-      `RESULT GUI-ORCHESTRATOR …`. Then the builds' `--version`, the
-      harness commit, both soak outputs (every check, `VERDICT`) with their
-      CSV series (a sample every 5 min), and the e2e output. Progress:
-      `progress.log` in the same folder.
+    - It builds `63822de`, runs the Linux soak (1 h), then on an untouched
+      desktop the Windows soak (1 h) and, with `-GuiE2E`, item 29 — the
+      steps are in the script's header. **Any input of yours stops a Windows
+      part** (counted as not passed); the screen stays on. About **2 h 10
+      min** (V6 trials).
+    - Result: `C:\Users\Public\haetty-overnight\latest.txt`, first lines
+      `RESULT LINUX|WINDOWS|GUI-TABS|GUI-ORCHESTRATOR …`; `progress.log` beside it.
     - Options: `-Minutes`, `-IdleWaitMinutes`, `-Commit`, `-OutDir`,
       `-GuiE2E`.
 
