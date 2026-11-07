@@ -18,6 +18,9 @@
 //!   --probe 'BYTES' [COLS ROWS]  both engines' state after BYTES (`\e`, `\xNN`, `\\`), and what differs
 //!   --bisect NAME                the named input byte by byte: the first byte after which they differ,
 //!                                and a minimal input that still differs (delta debugging)
+//!   --bisect-dump NAME           the shortest prefix of the named input whose dumps differ, minimised
+//!   --diverge NAME               where the named input's engines first part, hidden state included (their
+//!                                answers to state queries before each ESC), minimised under that
 //!   --gen-width FILE             writes `haetty-vt`'s width tables from libghostty-vt
 //!   --gen-keys FILE              writes haetty-core's key and mouse types (`keys.rs`) from libghostty-vt
 //!   --encoders [--report FILE]   key, mouse, paste and focus encoding of both engines, compared
@@ -2044,6 +2047,222 @@ fn show_all(b: &[u8]) -> String {
     b.chunks(160).map(show).collect()
 }
 
+/// What `--diverge` appends to a prefix to read the engines' hidden state:
+/// queries both engines answer (cursor, DECRQSS for the pen, margins, cursor
+/// style and protection, DECRQM for the modes, the saved cursor, tab stops),
+/// then a print (pen, charset, wrap, insert mode on screen). Every query
+/// starts with ESC: a prefix is cut only before an ESC of the input, so the
+/// parser goes on as it would have.
+fn state_probe() -> Vec<u8> {
+    let mut p: Vec<u8> = b"\x1b[6n\x1b[?6n".to_vec();
+    for q in ["m", "r", "s", " q", "\"q"] {
+        p.extend_from_slice(format!("\x1bP$q{q}\x1b\\").as_bytes());
+    }
+    for m in [4u16, 20] {
+        p.extend_from_slice(format!("\x1b[{m}$p").as_bytes());
+    }
+    for m in [
+        1u16, 5, 6, 7, 12, 25, 45, 47, 66, 67, 69, 1000, 1002, 1003, 1004, 1005, 1006, 1015, 1016, 1035, 1036, 1047,
+        1048, 1049, 2004, 2026, 2027, 2031, 2048,
+    ] {
+        p.extend_from_slice(format!("\x1b[?{m}$p").as_bytes());
+    }
+    // The saved cursor (DECRC), the tab stops of its row, then a print.
+    p.extend_from_slice(b"\x1b8\x1b[6n\x1b[1G\t\x1b[6n\t\x1b[6n\t\x1b[6n\x1b8a`q");
+    p
+}
+
+/// The engines after `evs` (from 80x24), then `extra`: the first difference
+/// (field, place, both values), or `None`.
+fn first_difference(evs: &[Ev], extra: &[u8]) -> Option<(String, String, String, String)> {
+    let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
+    let _ = a.take_replies();
+    let mut b = NativeEngine::new(&init(80, 24));
+    let (mut ra, mut rb) = (Vec::new(), Vec::new());
+    let mut run = Vec::new();
+    for e in evs.iter().chain(std::iter::once(&Ev::R(0, 0))) {
+        match *e {
+            Ev::B(c) => run.push(c),
+            Ev::R(c, r) => {
+                a.feed(&run);
+                b.feed(&run);
+                run.clear();
+                if c > 0 {
+                    let gs = GridSize::new(c, r).with_cell(9, 18);
+                    a.resize(gs);
+                    b.resize(gs);
+                }
+                ra.extend(a.take_replies());
+                rb.extend(b.take_replies());
+            }
+        }
+    }
+    let n = (ra.len(), rb.len());
+    a.feed(extra);
+    b.feed(extra);
+    ra.extend(a.take_replies());
+    rb.extend(b.take_replies());
+    let (sa, sb) = (a.snapshot_fresh(), b.snapshot());
+    let d = compare(&sa, &sb, a.scrollback_rows(), b.scrollback_rows(), &ra, &rb);
+    d.into_iter().next().map(|d| {
+        // For replies, the probe's part only when the input's own agreed.
+        let (x, y) = if d.field == "replies" && ra[..n.0] == rb[..n.1] {
+            (show(&ra[n.0..]), show(&rb[n.1..]))
+        } else {
+            (d.reference, d.native)
+        };
+        (d.field.to_string(), d.at, x, y)
+    })
+}
+
+/// `--diverge NAME`: where the named input's engines first part, hidden or
+/// not (development aid for inputs whose minimal form stays long). Feeds
+/// the input up to its first visible difference, then cuts it before each
+/// ESC and asks both engines about their state ([`state_probe`]): the first
+/// cut where the answers differ is where the states parted. Then minimises
+/// the input up to there, under "the answers differ".
+fn diverge(inp: &Input) {
+    let mut evs: Vec<Ev> = Vec::new();
+    for step in &inp.steps {
+        match step {
+            Step::Bytes(v) => evs.extend(v.iter().map(|&c| Ev::B(c))),
+            Step::Resize(c, r) => evs.push(Ev::R(*c, *r)),
+        }
+    }
+    // The first visible difference (as --bisect, in steps of 64 then 1).
+    let visible = |k: usize| first_difference(&evs[..k], b"").is_some();
+    let mut hi = None;
+    let mut k = 0;
+    while k < evs.len() {
+        k = (k + 64).min(evs.len());
+        if visible(k) {
+            hi = Some(k);
+            break;
+        }
+    }
+    let Some(mut hi) = hi else {
+        println!("{}: no difference", inp.name);
+        return;
+    };
+    while hi > 0 && visible(hi - 1) {
+        hi -= 1;
+    }
+    println!("{}: visible after step {hi} of {}", inp.name, evs.len());
+    let probe = state_probe();
+    let cuts: Vec<usize> = (0..=hi).filter(|&k| k == hi || matches!(evs.get(k), Some(Ev::B(0x1b)))).collect();
+    let hidden = cuts.iter().copied().find(|&k| first_difference(&evs[..k], &probe).is_some()).unwrap_or(hi);
+    let (field, at, x, y) = first_difference(&evs[..hidden], &probe).unwrap_or_default();
+    println!(
+        "{}: states part by step {hidden} ({} steps before it shows): {field} {at} — reference {x} / native {y}",
+        inp.name,
+        hi - hidden
+    );
+    println!("steps before: {}", show_evs(&evs[hidden.saturating_sub(160)..hidden]));
+    let mut v = evs[..hidden].to_vec();
+    let probed = |c: &[Ev]| first_difference(c, &probe).is_some();
+    let mut n = v.len() / 2;
+    while n >= 1 {
+        let (mut i, mut changed) = (0, false);
+        while i < v.len() {
+            let mut c = v.clone();
+            c.drain(i..(i + n).min(v.len()));
+            if probed(&c) {
+                v = c;
+                changed = true;
+            } else {
+                i += n;
+            }
+        }
+        if !changed {
+            n /= 2;
+        }
+    }
+    let (field, at, x, y) = first_difference(&v, &probe).unwrap_or_default();
+    println!("minimal ({} steps, + probe): {}", v.len(), show_evs(&v));
+    println!("  probe answer: {field} {at} — reference {x} / native {y}");
+    let plain = first_difference(&v, b"");
+    println!(
+        "  without the probe: {}",
+        plain.map_or("identical".into(), |d| format!("{} {} — {} / {}", d.0, d.1, d.2, d.3))
+    );
+}
+
+/// The engines' dumps (plain, VT, HTML) after `evs` (from 80x24): the first
+/// that differs, as text.
+fn dump_difference(evs: &[Ev]) -> Option<String> {
+    let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
+    let mut b = NativeEngine::new(&init(80, 24));
+    let mut run = Vec::new();
+    for e in evs.iter().chain(std::iter::once(&Ev::R(0, 0))) {
+        match *e {
+            Ev::B(c) => run.push(c),
+            Ev::R(c, r) => {
+                a.feed(&run);
+                b.feed(&run);
+                run.clear();
+                if c > 0 {
+                    let gs = GridSize::new(c, r).with_cell(9, 18);
+                    a.resize(gs);
+                    b.resize(gs);
+                }
+            }
+        }
+    }
+    dumps(&mut a, &mut b)
+        .into_iter()
+        .zip(DUMPS)
+        .find_map(|(d, (n, _))| d.map(|d| format!("{n} [{}] {}", d.cause, d.text)))
+}
+
+/// `--bisect-dump NAME`: the shortest prefix of the named input after which
+/// the dumps differ (binary search over prefixes), then that prefix
+/// minimised under "the dumps differ" (development aid for differences the
+/// screen fields do not show, e.g. links in the scrollback).
+fn bisect_dump(inp: &Input) {
+    let mut evs: Vec<Ev> = Vec::new();
+    for step in &inp.steps {
+        match step {
+            Step::Bytes(v) => evs.extend(v.iter().map(|&c| Ev::B(c))),
+            Step::Resize(c, r) => evs.push(Ev::R(*c, *r)),
+        }
+    }
+    if dump_difference(&evs).is_none() {
+        println!("{}: dumps identical", inp.name);
+        return;
+    }
+    let (mut lo, mut hi) = (0, evs.len());
+    while lo + 1 < hi {
+        let mid = (lo + hi) / 2;
+        if dump_difference(&evs[..mid]).is_some() {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    println!("{}: dumps differ after step {hi} of {}", inp.name, evs.len());
+    println!("steps before: {}", show_evs(&evs[hi.saturating_sub(200)..hi]));
+    let mut v = evs[..hi].to_vec();
+    let mut n = v.len() / 2;
+    while n >= 1 {
+        let (mut i, mut changed) = (0, false);
+        while i < v.len() {
+            let mut c = v.clone();
+            c.drain(i..(i + n).min(v.len()));
+            if dump_difference(&c).is_some() {
+                v = c;
+                changed = true;
+            } else {
+                i += n;
+            }
+        }
+        if !changed {
+            n /= 2;
+        }
+    }
+    println!("minimal ({} steps): {}", v.len(), show_evs(&v));
+    println!("  {}", dump_difference(&v).unwrap_or_default());
+}
+
 /// `--bisect NAME`: feeds the named input one byte at a time and stops at the
 /// first byte after which the engines differ (development aid): prints the
 /// difference and the bytes that led to it.
@@ -2120,6 +2339,8 @@ fn main() {
     let mut args = raw.into_iter();
     let (mut corpus, mut nfuzz, mut chunk, mut every, mut report) = (None, 20u64, 4096usize, 1024u64, None);
     let mut bisect_name: Option<String> = None;
+    let mut diverge_name: Option<String> = None;
+    let mut bisect_dump_name: Option<String> = None;
     let mut dump: Option<(String, usize)> = None;
     let mut refresh_only = false;
     let docs = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/vtdiff");
@@ -2136,6 +2357,8 @@ fn main() {
             "--known" => known_path = args.next().unwrap_or_default(),
             "--candidates" => cand_path = args.next().unwrap_or_default(),
             "--bisect" => bisect_name = args.next(),
+            "--diverge" => diverge_name = args.next(),
+            "--bisect-dump" => bisect_dump_name = args.next(),
             "--dump" => {
                 let n = args.next().unwrap_or_default();
                 let len = args.next().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
@@ -2200,6 +2423,20 @@ fn main() {
                     break;
                 }
             }
+        }
+        return;
+    }
+    if let Some(n) = bisect_dump_name {
+        match inputs.iter().find(|i| i.name == n) {
+            Some(i) => bisect_dump(i),
+            None => eprintln!("no input named {n:?}"),
+        }
+        return;
+    }
+    if let Some(n) = diverge_name {
+        match inputs.iter().find(|i| i.name == n) {
+            Some(i) => diverge(i),
+            None => eprintln!("no input named {n:?}"),
         }
         return;
     }
