@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage e3b (branch `haetty/e3b`, worktree `~/projects/claude-code-config-wt/e3b`). Remaining: E3 follow-up: colour parser checked against libghostty, open defect for stale grapheme rows, native dump gap, e2e on the default engine
+
 ## 1. Current state
 
 - **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
