@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** E5, paused for the user's overnight soak (2026-11-08). Done: stage e5pre (tag decision in "Next session", VPA/VPR approved). Nothing runs; both heavy slots are free; no worktree. Next: the tag steps below once `latest.txt` exists, then E5a–E5e (§6.0).
+> **In progress:** stage v020tag (branch `haetty/v020tag`, worktree `~/projects/claude-code-config-wt/v020tag`). Remaining: Record the overnight soak of 63822de (LINUX PASS, WINDOWS PASS), check-range haetty-v0.1.1..63822de, then tag haetty-v0.2.0 on 63822de and push the tag; then E5a-E5e.
 
 ## 1. Current state
 
