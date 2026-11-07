@@ -14,9 +14,11 @@
 //! [`Snapshot`] and draws it. No libghostty object leaves the engine thread.
 
 mod engine;
+pub mod ghostty;
 pub mod osc;
 pub mod theme;
 pub mod types;
+pub mod vt;
 
 use std::ffi::OsString;
 use std::io::Read;
