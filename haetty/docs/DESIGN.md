@@ -2030,3 +2030,15 @@ LINUX PASS (soak, 60 min); WINDOWS PASS (soak, 60 min: the first real run of `so
   `DCS 1 $ r 0 m ST`; 220 of the fuzz2 first differences); text and replies in fuzz2 and mutated (not yet classified).
 - **Not changed in this stage:** the native engine, the default engine (libghostty), the protocol, the stable
   instance. F2 is next.
+### 10.13 F2: haetty-vt moved to the newest Ghostty where it had followed 0.2.2 (2026-11-09)
+
+- **Changes** (`docs/vtdiff/2026-11-09-f2.md`): C0 controls 0x10–0x1F do nothing in ground state (F2a); from 0x80 in a
+  DCS string the bytes are payload, and a C1 control sent as UTF-8 is ignored (F2b); DECRQSS answered for SGR, DECSTBM,
+  DECSCUSR and DECSLRM (F2b). Each is the newest Ghostty's behaviour at e035beb, with its source location in the record.
+- **Result**: ghostty-main FAIL 877 -> 744; identical 1189 -> 1322 (64.0 %). The corpus is 4 of 4 under both references.
+  ghostty-0.2.2 FAIL 79 -> 883 (its differences are classified, not fixed: 172 runs are 0.2.2 defects, where haetty
+  agrees with ghostty-main).
+- **Not reached**: the target (no unexplained difference under ghostty-main). The 744 are in kitty graphics responses
+  and XTWINOPS size reports (about 200 first differences), other replies, and grammar and mutated text (not yet
+  bisected to causes). Next: the kitty graphics pass, then the text causes.
+

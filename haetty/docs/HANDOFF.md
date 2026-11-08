@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage f2 (branch `haetty/f2`, worktree `~/projects/claude-code-config-wt/f2`). Remaining: F2: classify the ghostty-main FAILs (877 at F1: CAN while a UTF-8 sequence is incomplete, DECRQSS for SGR, text and replies in fuzz2/mutated) and change haetty-vt where main is the target, one cause at a time; corpus at 0 under both references; the 0.2.2 side classified only. Then F3 (SGR throughput), F4 (native-only dist, transition table), F5 (v0.3.0 candidate, CHANGELOG), F6 (issue drafts 01-03).
+> **In progress:** none (F2 done 2026-11-09 in part: 744 FAIL under ghostty-main; the rest is classified, DESIGN.md section 10.13).
 
 ## 1. Current state
 
@@ -29,17 +29,13 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 ## Next session
 
-- F0 is done (DESIGN.md section 10.11): the soak rule is per session (full, then 30 min at +4 MB) with a
-  test-only 800 kB scrollback limit. Both one-hour Linux runs PASS, and so does the night run of 2026-11-09 on
-  native (§6.1 item 30): Linux, Windows, GUI-TABS 14/14 and GUI-ORCHESTRATOR 17/17.
-- F1 is done (DESIGN.md section 10.12; docs/vtdiff/2026-11-09-f1.md): the newest Ghostty is the default reference
-  (`tools/ghostty-ref`, pinned `e035beb`, Zig 0.17.0); ghostty-0.2.2 runs side by side and still reproduces E5's 79.
-  Under ghostty-main there are 877 FAIL (798 where haetty follows 0.2.2; 79 E5's remainder). Causes so far: CAN
-  while a UTF-8 sequence is incomplete; DECRQSS for SGR; text and replies in fuzz2 and mutated.
-- F2 is next: classify the FAILs under ghostty-main and change haetty-vt where main is the target, one cause at a
-  time, corpus at 0 under both references. Then F3 (SGR throughput), F4 (native-only dist, transition table), F5
-  (the v0.3.0 candidate and CHANGELOG; the tag only after both night parts PASS on the candidate), F6 (issue drafts
-  01–03).
+- F0 done (DESIGN.md section 10.11); the night run of 2026-11-09 passed on native (§6.1 item 30).
+- F1 done (section 10.12): ghostty-main (e035beb, `tools/ghostty-ref`) is the default reference; 0.2.2 side by side.
+- F2 done in part (section 10.13): ghostty-main FAIL 877 -> 744. Not done: the kitty graphics responses and XTWINOPS
+  size reports (about 200 first differences), other replies, grammar and mutated text (to bisect). The target is not
+  reached and the stage is closed on that record.
+- Next: F3 (SGR throughput to 80 % of libghostty), F4 (native-only dist and the transition table), F5 (the v0.3.0
+  candidate and CHANGELOG; the tag only after both night parts PASS on the candidate), F6 (issue drafts 01-03).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
