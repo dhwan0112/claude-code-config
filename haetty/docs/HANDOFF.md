@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** none. E5 done (2026-11-08, DESIGN §10.10); waiting for the user: the two KNOWN candidates, the soak rule question (§6.0), the next overnight run (§6.1 item 30, native).
+> **In progress:** stage f0 (branch `haetty/f0`, worktree `~/projects/claude-code-config-wt/f0`). Remaining: F0: the soak rule (per-session scrollback full, then 30 min at +4 MB, both engines, test-only 800 kB limit), its tests on synthetic series, two 1-hour Linux soaks, the overnight command (HEAD by default). Then F1-F6.
 
 ## 1. Current state
 
