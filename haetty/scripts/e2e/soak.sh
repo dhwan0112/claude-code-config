@@ -8,19 +8,19 @@
 # Every 300 s, between operations (no tab of an operation open): the GUI's and the daemon's threads, file
 # descriptors and anonymous memory, the daemon's descendant processes, the sessions, the task worktrees left.
 #   HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/xvfb.sh bash scripts/e2e/soak.sh OUT.csv [DUR]
-# Verdict (written before the first run; "no growth"):
-#   threads, fds: the last sample equals the first one (t=0, the four tabs open), GUI and daemon (± 0);
-#   descendants of the daemon and sessions: the last sample equals the first one; task worktrees: 0 at the end;
-#   anonymous memory: GUI last <= GUI at 15 min + 4 MB; daemon last <= daemon when the scrollback is full + 4 MB.
-#   "Full" (E5c): the first sample at which the largest session scrollback (`status --json` "scrollback", the
-#   burst tab's) has stopped growing (no more than 1 % over the sample before); there must be at least 15 min of
-#   samples after it, else the check FAILS (not judged is not passed). How long filling takes depends on the
-#   engine (libghostty ~40 min; haetty's engine keeps more rows in the same bytes). A build without the field
-#   (protocol < 11) is judged at 45 min, as before E5c, and says so. The slow tab keeps adding ~30 KB a minute,
-#   within its limit;
-#   and every operation done (counts printed), the window and the daemon alive throughout.
+# Verdict: scripts/e2e/soak-verdict.py (its header has the rule; scripts/e2e/windows/soak-verdict.ps1 is the same
+# rule for Windows). In short: threads, fds, descendants and sessions unchanged from the first sample; task worktrees
+# 0; per session, the full time (its rows stop growing); from the last full time on, at least 30 min, and the GUI's
+# and the daemon's anonymous memory at most 4 MB above their values at that time; every operation done; alive.
+# The run's scrollback limit is the test's alone (SOAK_LIMIT, below): the product default is 12 MB.
 . "$(dirname "$0")/lib.sh"
 OUT=$1; DUR=${2:-3600}
+# The test's scrollback limit (bytes), the same for both engines (DESIGN.md section 10.11). The product default is
+# 12 MB. Measured in the one-hour runs of 2026-11-09: the burst tab is full after about 5 min (native 2 578 rows,
+# libghostty 686 at the end), the slow tab after about 15 min (native 3 703 rows at 907 s; libghostty's count goes
+# between about 380 and 730 rows, page-granular, so the rule judges the level it reaches). The rule needs the
+# baseline plus 30 min inside the run, so 800 000 bytes leaves more than 30 min of judged time in a 60 min run.
+SOAK_LIMIT=800000
 W=$HAETTY_RUN/soak; haetty_guard $W; mkdir -p $W/rt $W/state/tabs $W/cfg $W/bin $W/claude; chmod 700 $W/rt
 export HAETTY_INSTANCE=dev HAETTY_SOCKET=$W/rt/d.sock HAETTY_STATE_DIR=$W/state HAETTY_CONFIG_DIR=$W/cfg
 export HAETTY_LOG=info HAETTY_LOG_FILE=$W/gui.log CLAUDE_CONFIG_DIR=$W/claude
@@ -38,7 +38,7 @@ EOF
 chmod +x $W/tab.sh
 # The worker: Claude Code's name, prints a line and ends after 3 s.
 printf '#!/bin/sh\necho "worker in $PWD"\nsleep 3\n' > $W/bin/claude; chmod +x $W/bin/claude
-theme() { printf 'theme = %s\nworker-command = %s\n' "$1" "$W/bin/claude" > $W/cfg/config; }
+theme() { printf 'theme = %s\nscrollback-limit = %s\nworker-command = %s\n' "$1" "$SOAK_LIMIT" "$W/bin/claude" > $W/cfg/config; }
 theme "IBM 5153 CGA"
 for m in 0 1 2; do printf 'tab%s\t%s\t/bin/sh\t%s\x1f%s\t\t0\t0\n' $m $R $W/tab.sh $m; done > $W/state/tabs/last.tsv
 cd $R
@@ -59,8 +59,10 @@ m() { echo "$(ls /proc/$1/task | wc -l),$(ls /proc/$1/fd | wc -l),$(awk '/^RssAn
 wts() { echo $(( $($G worktree list | wc -l) - 1 + $(ls $W/proj-tasks 2>/dev/null | wc -l) )); }
 # The largest scrollback of a session in rows (-1: the build does not report it).
 sbmax() { J | python3 -Ic 'import json,sys; v=[s["scrollback"] for s in json.load(sys.stdin)["sessions"] if "scrollback" in s]; print(max(v) if v else -1)'; }
-echo "t_s,gui_threads,gui_fds,gui_anon_kb,daemon_threads,daemon_fds,daemon_anon_kb,daemon_descendants,sessions,worktrees,tabs_done,detach_done,tasks_done,themes_done,scrollback_rows" > $OUT
-sample() { echo "$1,$(m $GP),$(m $DP),$(desc $DP),$(nsess),$(wts),$tabs,$dets,$tasks,$themes,$(sbmax)" >> $OUT; }
+# id:rows of every session, ';' between (the verdict's per-session rule).
+srows() { J | python3 -Ic 'import json,sys; print(";".join("%s:%d" % (s["id"], s["scrollback"]) for s in json.load(sys.stdin)["sessions"] if "scrollback" in s))'; }
+echo "t_s,gui_threads,gui_fds,gui_anon_kb,daemon_threads,daemon_fds,daemon_anon_kb,daemon_descendants,sessions,worktrees,tabs_done,detach_done,tasks_done,themes_done,scrollback_rows,sessions_rows" > $OUT
+sample() { echo "$1,$(m $GP),$(m $DP),$(desc $DP),$(nsess),$(wts),$tabs,$dets,$tasks,$themes,$(sbmax),$(srows)" >> $OUT; }
 tabs=0 dets=0 tasks=0 themes=0 fails=0
 op_tab() { key ctrl+shift+t; sleep 0.8; KW=0.3 key ctrl+shift+w; KW=0.8 key ctrl+shift+w; tabs=$((tabs+1)); }
 op_detach() { key alt+4; pal "detach"; sleep 0.5; pal "attach detached"; sleep 0.8; dets=$((dets+1)); }
@@ -92,29 +94,4 @@ sleep 3; sample $(( $(date +%s) - t0 ))
 alive=$(kill -0 $GP 2>/dev/null && kill -0 $DP 2>/dev/null && echo yes || echo no)
 kill $GP 2>/dev/null; wait $GP 2>/dev/null; haetty_stop_daemon "$BIN"
 echo "operations: tabs $tabs/200, detach $dets/50, tasks $tasks/20, themes $themes/10; task cleanup failures $fails; alive at the end: $alive"
-python3 -I - "$OUT" <<'PY'
-import csv, sys
-rows = [{k: int(v) for k, v in r.items()} for r in csv.DictReader(open(sys.argv[1]))]
-first, last = rows[0], rows[-1]
-def at(t): return min(rows, key=lambda r: abs(r["t_s"] - t))
-ok = True
-def check(name, cond, detail):
-    global ok; ok &= cond; print(("PASS " if cond else "FAIL ") + name + ": " + detail)
-for k in ["gui_threads", "gui_fds", "daemon_threads", "daemon_fds", "daemon_descendants", "sessions"]:
-    check(k, last[k] == first[k], f"{first[k]} -> {last[k]}")
-check("worktrees", last["worktrees"] == 0, str(last["worktrees"]))
-g15 = at(900)
-check("gui_anon", last["gui_anon_kb"] <= g15["gui_anon_kb"] + 4096, f"{g15['gui_anon_kb']} kB at {g15['t_s']} s -> {last['gui_anon_kb']} kB")
-sb = [r.get("scrollback_rows", -1) for r in rows]
-if min(sb) < 0:
-    d = at(2700)
-    check("daemon_anon", last["daemon_anon_kb"] <= d["daemon_anon_kb"] + 4096, f"{d['daemon_anon_kb']} kB at {d['t_s']} s -> {last['daemon_anon_kb']} kB (at 45 min: this build reports no scrollback)")
-else:
-    full = next((r for p, r in zip(rows, rows[1:]) if r["scrollback_rows"] > 0 and r["scrollback_rows"] <= p["scrollback_rows"] * 1.01), None)
-    if full is None or last["t_s"] - full["t_s"] < 900:
-        when = "never" if full is None else f"only at {full['t_s']} s"
-        check("daemon_anon", False, f"scrollback full {when} ({sb[-1]} rows at the end): less than 15 min after it to judge")
-    else:
-        check("daemon_anon", last["daemon_anon_kb"] <= full["daemon_anon_kb"] + 4096, f"{full['daemon_anon_kb']} kB when the scrollback was full ({full['scrollback_rows']} rows, {full['t_s']} s) -> {last['daemon_anon_kb']} kB")
-print("VERDICT", "PASS" if ok else "FAIL")
-PY
+python3 -I "$E2E/soak-verdict.py" "$OUT" "$DUR" "$alive"

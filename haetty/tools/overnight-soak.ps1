@@ -5,7 +5,8 @@
 # It
 #   1. checks that no other heavy job runs (heavy-job slots, cargo/rustc/zig/Xvfb in WSL) and then holds both
 #      slots for the whole night, so nothing else can start next to it;
-#   2. builds -Commit (default 63822de, the 0.2.0 candidate) in its own checkout, for Linux and Windows; the
+#   2. builds -Commit (default HEAD: the commit main has when the run starts, resolved to its hash in the result
+#      file) in its own checkout, for Linux and Windows; the
 #      test scripts are this checkout's (the current harness, its fixes included), the program is the commit's;
 #   3. runs the Linux soak v2 alone in WSL for -Minutes (default 60);
 #   4. then waits (up to -IdleWaitMinutes, default 240) for a desktop nobody has touched for 120 s and runs the
@@ -23,7 +24,7 @@
 # The first lines of the result file are the verdicts: "RESULT LINUX PASS|FAIL|NOT-RUN …", the same for
 # WINDOWS, then GUI-TABS and GUI-ORCHESTRATOR. Progress goes to -OutDir\progress.log.
 param(
-    [string]$Commit = "63822de",
+    [string]$Commit = "HEAD",
     [int]$Minutes = 60,
     [int]$IdleWaitMinutes = 240,
     [string]$OutDir = (Join-Path $env:PUBLIC "haetty-overnight"),

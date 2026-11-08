@@ -31,6 +31,7 @@ build)
   commit=$2 out=$(wslpath -u "$3")
   git -C "$top" worktree remove --force $B/wt 2> /dev/null; rm -rf $B/wt; mkdir -p $B
   git -C "$top" worktree add -q --detach $B/wt "$commit" || exit 2
+  echo "commit $commit = $(git -C "$top" rev-parse --short=12 "$commit")"
   src=$(ls -d "$top"/haetty/target/*/build/libghostty-vt-sys-*/out/ghostty-src 2> /dev/null | head -1)
   [ -n "$src" ] && export GHOSTTY_SOURCE_DIR=$src   # no network
   export CARGO_TARGET_DIR=$B/target

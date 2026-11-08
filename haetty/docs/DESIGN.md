@@ -1945,3 +1945,54 @@ included); the native engine should stay well under that.
   - the native overnight run on Windows (GUI e2e, soak);
   - a libghostty release built from a later Ghostty would remove the
     approved entries and move many "as libghostty" behaviours.
+
+### 10.11 F0: the soak rule for both engines, one hour each (2026-11-09)
+
+The 2-hour rule of E5c (§10.10) is replaced. A run is judged by how each tab's scrollback behaves, not by its length,
+and the same rule runs on both engines.
+
+- **Test-only limit.** The soaks write `scrollback-limit = 800000` into the config they make (`SOAK_LIMIT` in
+  `soak.sh`, `$SoakLimit` in `soak.ps1`). The product default (12 MB) is unchanged and nothing else reads that value.
+  Calibrated with `examples/mem.rs` (`MEM_SCRIPT`, 120 x 36, 119-character lines) at 800 000 bytes: native 4 761 rows
+  for ticks and 2 439 for bursts, libghostty 507 rows for both. The soaks' own output differs from the calibration
+  lines, so the one-hour runs below are the numbers that count.
+- **The rule.** Per session, from its scrollback rows at each sample:
+  - a session is *full* from the first sample from which its rows no longer grow by more than max(100 rows, 1 %) over
+    the sample it is at; a session that never grew by more than 100 rows does not count;
+  - the *baseline* is the latest full time among the sessions that grew; a session still growing at the last sample
+    means no baseline (FAIL);
+  - from the baseline on, the window is at least 1 800 s, and at the last sample the GUI's and the daemon's anonymous
+    memory (Windows: private working set) is at most 4 MB above its value at the baseline.
+
+  Other checks are unchanged: threads, file descriptors (handles), descendants and sessions as at the first sample;
+  task worktrees 0 at the end; every operation done; the window and the daemon alive. A series without the
+  `sessions_rows` column (an old script) is not judged: FAIL. The short tabs of the operations never appear in a
+  sample, and one-line workers never grow by 100 rows, so neither moves the baseline.
+- **Where it is written.** Linux: `scripts/e2e/soak-verdict.py`, run by `soak.sh` at the end. Windows:
+  `scripts/e2e/windows/soak-verdict.ps1`, dot-sourced by `soak.ps1`. Both judge the same synthetic series
+  (`scripts/e2e/soak-cases`: ten cases, full early, full late, never full, growth after full, legacy column, a closed
+  session, one-line workers, a sawtooth, operations short, no growth). `tools/test-soak-verdict.sh` runs both (Windows
+  through `pwsh`); all ten agree with `expect.txt` on both platforms.
+- **Overnight.** `tools/overnight-soak.ps1` takes `-Commit HEAD` by default (the main checkout's HEAD when the run
+  starts; the Linux build's first line prints its hash, and the result header carries it) and `-Engine`. The command
+  for the night is §6.1 item 30.
+
+**Results of the two one-hour Linux runs.** The binary of `9c517ca` (haetty 0.2.0), the scripts of this stage. The
+samples are in `~/m4/f0-native-1h.csv` and `~/m4/f0-ghostty-1h.csv`.
+
+| | native | libghostty |
+|---|---|---|
+| verdict | PASS, every check | PASS, every check |
+| operations (tabs / detach / tasks / themes) | 200 / 50 / 20 / 10 | 200 / 50 / 20 / 10 |
+| burst tab full at | 308 s (2 578 rows) | 309 s (686 rows at the end) |
+| slow tab full at | 907 s (3 703 rows) | 309 s (701 rows at the end) |
+| baseline; window after it | 907 s; 2 698 s | 309 s; 3 295 s |
+| GUI anonymous memory, baseline to end | 8 144 to 8 000 kB | 8 028 to 8 120 kB |
+| daemon anonymous memory, baseline to end | 7 028 to 7 500 kB (+472 kB) | 9 092 to 10 300 kB (+1 208 kB) |
+
+- libghostty's row counts do not settle: the page-granular eviction moves both tabs between about 380 and 730 rows, so
+  the rule takes the level a session reaches, not one value. Its daemon memory keeps rising after the fill, about
+  +0.2 MB per 10 min (+1.2 MB in 55 min, inside the bar). Whether it levels off is what the night run will show.
+- Native's daemon memory rose by 0.47 MB in the 45 min after its baseline.
+- The Windows soak and its verdict have not had a real run; the night run is their first.
+- Unchanged: the default engine (libghostty), the stable instance, the protocol (still 11).

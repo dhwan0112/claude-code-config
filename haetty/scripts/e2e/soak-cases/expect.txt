@@ -1,0 +1,10 @@
+full-early PASS
+full-late FAIL
+never-full FAIL
+grow-after-full FAIL
+legacy FAIL
+closed-session PASS
+workers PASS
+sawtooth PASS
+ops-short FAIL
+no-growth PASS

@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage f0 (branch `haetty/f0`, worktree `~/projects/claude-code-config-wt/f0`). Remaining: F0: the soak rule (per-session scrollback full, then 30 min at +4 MB, both engines, test-only 800 kB limit), its tests on synthetic series, two 1-hour Linux soaks, the overnight command (HEAD by default). Then F1-F6.
+> **In progress:** none (F0 done 2026-11-09; the night run is waiting, §6.1 item 30).
 
 ## 1. Current state
 
@@ -29,10 +29,15 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 ## Next session
 
-- `haetty-v0.2.0` is tagged (§1); the steps that led to it are in
-  [history](history/2026-11-06-07-stages-t-u-v.md) (V7, E5).
+- F0 is done (DESIGN.md section 10.11): the soak rule is now per session (full, then 30 min at +4 MB) with a
+  test-only 800 kB scrollback limit; both one-hour Linux runs PASS.
+- **Night run waiting** (§6.1 item 30). Nothing heavy runs and both heavy slots are free. The night command starts
+  from a PowerShell window, not from Claude Code. No stage may be finished or merged while it runs: it runs from
+  the main checkout.
+- After the night run, or when the user says to go on: F1 (the newest-Ghostty reference, `tools/ghostty-ref`),
+  F2 (`--ref`, the classification), F3 (SGR throughput), F4 (native-only dist, transition table), F5 (the v0.3.0
+  candidate and CHANGELOG; the tag only after both night parts PASS on the candidate), F6 (issue drafts 01–03).
 - Leave "Stable" in §1 until the user says the new version is installed.
-- E5 continues (§6.0).
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
 
@@ -137,7 +142,7 @@ Windows, WSL and the dev machine:
     decides: a longer native soak, a smaller scrollback limit in the soak,
     or an allowance for rows still being added.
   - SGR-heavy throughput 58 % of libghostty (E4 bar 50 %).
-  - Next overnight (§6.1 item 30): `-Commit 6c5e2d6 -Engine native`.
+  - Next overnight (§6.1 item 30): `-Engine native -GuiE2E` (commit HEAD).
   - libghostty-vt after 0.2.2: `docs/upstream/libghostty-update-2026-11.md`.
 - The Windows soak v2 (`scripts/e2e/windows/soak.ps1`) has never run end to
   end, and the Windows GUI e2e (item 29) ran once, 13/14: its first full
@@ -264,36 +269,26 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     GUI-TABS FAIL for `63822de` (the Hangul rename fix is `6a67b22`);
     `main` passed 14/14 and 17/17 (V6).
 
-30. **Overnight soak v2, native engine (next night; E5d).** The 0.2.0
-    run is done (`haetty-v0.2.0` tagged, §1; record in history). Next:
-    the v0.3.0 candidate with every session on haetty's own engine, both
-    platforms, with the Windows GUI e2e runs (item 29). Before going to
-    bed, close what you do not need (nothing else heavy may run) and run,
-    **from a PowerShell window — not from Claude Code**:
+30. **Overnight soak v2, native engine (F0; the night run is waiting).** Nothing heavy runs now. The command, run
+    **from a PowerShell window — not from Claude Code**, with the main checkout at the commit to test (`HEAD`, the
+    default; the result header prints its hash):
     ```powershell
-    pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\Ubuntu\home\denny\projects\claude-code-config\haetty\tools\overnight-soak.ps1 -Commit COMMIT -Engine native -GuiE2E
+    pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\Ubuntu\home\denny\projects\claude-code-config\haetty\tools\overnight-soak.ps1 -Engine native -GuiE2E
     ```
-    with `COMMIT` = `6c5e2d6` (§6.0, "Next overnight"). `-Engine
-    native` passes `--engine native` to every GUI (Linux through
-    `scripts/e2e/engine-gui.sh`, Windows through
-    `scripts/e2e/windows/lib.ps1`); `-Engine ghostty` (default) is the
-    libghostty run. `-ExecutionPolicy Bypass` is needed: the script on
-    `\\wsl.localhost` is unsigned, and this machine's policy (RemoteSigned,
+    `-Engine native` passes `--engine native` to every GUI (Linux through `scripts/e2e/engine-gui.sh`, Windows
+    through `scripts/e2e/windows/lib.ps1`); `-Engine ghostty` (default) is the libghostty run. `-ExecutionPolicy
+    Bypass` is needed: the script on `\\wsl.localhost` is unsigned, and this machine's policy (RemoteSigned,
     LocalMachine) refuses it in a new window (checked 2026-11-07).
-    - It builds the commit, runs the Linux soak (1 h), then on an untouched
-      desktop the Windows soak (1 h) and, with `-GuiE2E`, item 29 — the
-      steps are in the script's header. **Any input of yours stops a Windows
-      part** (counted as not passed); the screen stays on. About **2 h 10
-      min**.
-    - The soaks judge daemon memory after the scrollback is full (E5c): a
-      run where it never fills, or fills in the last 15 min, fails that
-      check. haetty's engine fills later than libghostty (§6.0); `-Minutes
-      120` gives it room.
-    - Result: `C:\Users\Public\haetty-overnight\latest.txt`, first lines
-      `RESULT LINUX|WINDOWS|GUI-TABS|GUI-ORCHESTRATOR …`, then
-      `engine: native`; `progress.log` beside it.
-    - Options: `-Minutes`, `-IdleWaitMinutes`, `-Commit`, `-Engine`,
-      `-OutDir`, `-GuiE2E`.
+    - Before bed, close what you do not need: nothing else heavy may run. Any input of yours stops a Windows part
+      (counted as not passed); the screen stays on. About **2 h 10 min** (Linux soak 60 min, Windows soak 60 min,
+      GUI e2e).
+    - The soaks judge daemon memory with the rule of DESIGN.md section 10.11 (per session: full when its rows stop
+      growing; then at least 30 min, and +4 MB at most). They run with the test-only scrollback limit of 800 kB, so
+      both engines fill within the first 15 min. The Windows soak and `windows/soak-verdict.ps1` have their first
+      real run in this night run.
+    - Result: `C:\Users\Public\haetty-overnight\latest.txt`, first lines `RESULT LINUX|WINDOWS|GUI-TABS|
+      GUI-ORCHESTRATOR …`, then `engine: native`; `progress.log` beside it.
+    - Options: `-Minutes` (default 60), `-IdleWaitMinutes`, `-Commit` (default HEAD), `-Engine`, `-OutDir`, `-GuiE2E`.
 
 31. **Observing a tab** (V3): palette "Observing: allow or stop for this
     tab" — a dim `◦` appears after the tab's number (grey, also on the
