@@ -35,12 +35,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::io::Write as _;
 
 use haetty_core::ghostty::GhosttyEngine;
+mod refs;
 use haetty_core::native::NativeEngine;
 use haetty_core::vt::{VtEngine, VtInit};
 use haetty_core::{ColorSchemePref, DumpFormat, GridSize, Rgb, ScrollTo, Snapshot, TermColors};
 use haetty_vt::Compat;
+use refs::{default_ref, make_ref, set_default_ref, Ref, RefKind};
 
 /// The fuzz test's generators (grammar, Claude-Code-like stream, mutations).
 #[path = "../../haetty-core/tests/common/vtgen.rs"]
@@ -214,7 +217,7 @@ impl Rng {
 }
 
 struct Run<'a> {
-    reference: GhosttyEngine,
+    reference: Box<dyn Ref>,
     native: NativeEngine,
     ra: Vec<u8>,
     rb: Vec<u8>,
@@ -242,10 +245,10 @@ impl Run<'_> {
         if ka > 0 {
             self.reference.scroll_viewport(ScrollTo::Top);
             self.native.scroll_viewport(ScrollTo::Top);
-            let rows = self.reference.snapshot_fresh().rows.max(1) as u64;
+            let rows = self.reference.fresh().rows.max(1) as u64;
             let mut top = 0u64;
             loop {
-                let (a, b) = (self.reference.snapshot_fresh(), self.native.snapshot());
+                let (a, b) = (self.reference.fresh(), self.native.snapshot());
                 let cells = compare(&a, &b, 0, 0, &[], &[])
                     .into_iter()
                     .find(|d| matches!(d.field, "size" | "text" | "width" | "fg" | "bg" | "flags"));
@@ -282,7 +285,7 @@ impl Run<'_> {
     }
 
     fn checkpoint(&mut self, offset: u64) {
-        let (a, b) = (self.reference.snapshot_fresh(), self.native.snapshot());
+        let (a, b) = (self.reference.fresh(), self.native.snapshot());
         self.ra.extend(self.reference.take_replies());
         self.rb.extend(self.native.take_replies());
         let (sa, sb) = (self.reference.scrollback_rows(), self.native.scrollback_rows());
@@ -373,6 +376,7 @@ fn dumps(a: &mut dyn VtEngine, b: &mut dyn VtEngine) -> [Option<DumpDiff>; 3] {
     DUMPS.map(|(_, f)| dump_diff(&a.dump(f), &b.dump(f)))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_input(
     inp: &Input,
     chunk: usize,
@@ -381,8 +385,9 @@ fn run_input(
     tally: &mut Tally,
     cat: &mut Tally,
     compat: Compat,
+    refk: RefKind,
 ) -> Outcome {
-    let mut reference = match GhosttyEngine::new(&init(80, 24)) {
+    let mut reference = match make_ref(refk, &init(80, 24)) {
         Ok(e) => e,
         Err(e) => {
             return Outcome {
@@ -443,7 +448,7 @@ fn run_input(
     }
     r.checkpoint(offset);
     r.history();
-    let dumps = dumps(&mut r.reference, &mut r.native);
+    let dumps = dumps(&mut *r.reference, &mut r.native);
     r.tally.inputs += 1;
     r.by_category.inputs += 1;
     if r.all_equal {
@@ -484,18 +489,22 @@ fn judge(
     base: Compat,
     approved: &[Known],
     candidates: &[Known],
+    refk: RefKind,
 ) -> Verdict {
     if out.first.is_none() {
         return Verdict::Identical;
     }
+    // Only the entries that name this reference explain its differences.
+    let ap: Vec<Known> = approved.iter().filter(|k| k.refs.applies(refk)).cloned().collect();
+    let ca: Vec<Known> = candidates.iter().filter(|k| k.refs.applies(refk)).cloned().collect();
     let mut rerun = |c: Compat| {
         let (mut a, mut b) = (Tally::default(), Tally::default());
-        run_input(inp, chunk, splits, every, &mut a, &mut b, base | c).first.is_none()
+        run_input(inp, chunk, splits, every, &mut a, &mut b, base | c, refk).first.is_none()
     };
-    if let Some(ids) = explained(inp, approved, &out.fields, &mut rerun) {
+    if let Some(ids) = explained(inp, &ap, &out.fields, &mut rerun) {
         return Verdict::Known(ids.into_iter().map(String::from).collect());
     }
-    let both: Vec<Known> = approved.iter().chain(candidates).cloned().collect();
+    let both: Vec<Known> = ap.iter().chain(&ca).cloned().collect();
     Verdict::Fail(explained(inp, &both, &out.fields, &mut rerun).map(|v| v.into_iter().map(String::from).collect()))
 }
 
@@ -515,6 +524,26 @@ struct Known {
     fields: Vec<String>,
     /// The haetty-vt switch that behaves as libghostty does.
     compat: Compat,
+    /// The reference whose differences it explains.
+    refs: Refs,
+}
+
+/// Which reference an entry explains: `refs = ghostty-main`, `ghostty-0.2.2` or `both`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Refs {
+    Main,
+    Old,
+    Both,
+}
+
+impl Refs {
+    fn applies(self, r: RefKind) -> bool {
+        match self {
+            Refs::Both => true,
+            Refs::Main => r == RefKind::Main,
+            Refs::Old => r == RefKind::Old,
+        }
+    }
 }
 
 /// Reads a list: `[id]` sections with `pattern`, `fields`, `compat`, `basis`
@@ -530,7 +559,7 @@ fn load_known(path: &str, need_approval: bool) -> Result<Vec<Known>, String> {
     let finish = |c: Option<(String, BTreeMap<String, String>)>, out: &mut Vec<Known>| -> Result<(), String> {
         let Some((id, kv)) = c else { return Ok(()) };
         let get = |k: &str| kv.get(k).cloned().ok_or_else(|| format!("{path}: [{id}] has no {k}"));
-        for k in ["basis", "pattern", "fields", "compat"] {
+        for k in ["basis", "pattern", "fields", "compat", "refs"] {
             get(k)?;
         }
         if need_approval && kv.get("approved").is_none_or(|a| a.trim().is_empty()) {
@@ -546,6 +575,12 @@ fn load_known(path: &str, need_approval: bool) -> Result<Vec<Known>, String> {
                 .try_fold(Compat::default(), |a, c| c.map(|c| a | c))
         };
         let fields: Vec<String> = get("fields")?.split_whitespace().map(String::from).collect();
+        let refs = match get("refs")?.trim() {
+            "ghostty-main" => Refs::Main,
+            "ghostty-0.2.2" => Refs::Old,
+            "both" => Refs::Both,
+            other => return Err(format!("{path}: [{id}] refs {other:?}: want ghostty-main, ghostty-0.2.2 or both")),
+        };
         for f in &fields {
             if !FIELDS.contains(&f.as_str()) && f != "history" {
                 return Err(format!("{path}: [{id}] unknown field {f:?}"));
@@ -554,7 +589,7 @@ fn load_known(path: &str, need_approval: bool) -> Result<Vec<Known>, String> {
         if t.first() == Some(&"DECRST") {
             let n = t.get(1).and_then(|n| n.parse().ok()).ok_or_else(bad)?;
             let compat = compat_of()?;
-            out.push(Known { id, finals: vec![], p0: None, decset: None, decrst: Some(n), fields, compat });
+            out.push(Known { id, finals: vec![], p0: None, decset: None, decrst: Some(n), fields, compat, refs });
             return Ok(());
         }
         if t.first() != Some(&"CSI") {
@@ -576,7 +611,7 @@ fn load_known(path: &str, need_approval: bool) -> Result<Vec<Known>, String> {
             decset = Some(t.get(i + 2).and_then(|n| n.parse().ok()).ok_or_else(bad)?);
         }
         let compat = compat_of()?;
-        out.push(Known { id, finals, p0, decset, decrst: None, fields, compat });
+        out.push(Known { id, finals, p0, decset, decrst: None, fields, compat, refs });
         Ok(())
     };
     for line in text.lines() {
@@ -1231,7 +1266,7 @@ fn unescape(s: &str) -> Vec<u8> {
 
 /// `--probe BYTES`: both engines' state after BYTES, side by side (development aid).
 fn probe(bytes: &[u8], cols: u16, rows: u16) {
-    let mut a = GhosttyEngine::new(&init(cols, rows)).expect("reference engine");
+    let mut a = make_ref(default_ref(), &init(cols, rows)).expect("reference engine");
     let mut b = NativeEngine::new(&init(cols, rows));
     // VTDIFF_COMPAT=name,…: haetty-vt with those switches (haetty_vt::Compat).
     if let Ok(names) = std::env::var("VTDIFF_COMPAT") {
@@ -1275,8 +1310,8 @@ fn probe(bytes: &[u8], cols: u16, rows: u16) {
     }
     let mut seen = Vec::new();
     // A fresh reference snapshot (see `GhosttyEngine::snapshot_fresh`).
-    let fresh = a.snapshot_fresh();
-    for (name, e) in [("reference", &mut a as &mut dyn VtEngine), ("native", &mut b as &mut dyn VtEngine)] {
+    let fresh = a.fresh();
+    for (name, e) in [("reference", &mut *a as &mut dyn VtEngine), ("native", &mut b as &mut dyn VtEngine)] {
         let s = if name == "reference" && std::env::var("VTDIFF_SPLIT").map_or(true, |v| v != "snap") {
             fresh.clone()
         } else {
@@ -2003,7 +2038,7 @@ enum Ev {
 
 /// The engines differ after these steps (from 80x24).
 fn differs(evs: &[Ev]) -> bool {
-    let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
+    let mut a = make_ref(default_ref(), &init(80, 24)).expect("reference engine");
     let _ = a.take_replies();
     let mut b = NativeEngine::new(&init(80, 24));
     let (mut ra, mut rb) = (Vec::new(), Vec::new());
@@ -2029,7 +2064,7 @@ fn differs(evs: &[Ev]) -> bool {
         ra.extend(a.take_replies());
         rb.extend(b.take_replies());
     }
-    let (sa, sb) = (a.snapshot_fresh(), b.snapshot());
+    let (sa, sb) = (a.fresh(), b.snapshot());
     !compare(&sa, &sb, a.scrollback_rows(), b.scrollback_rows(), &ra, &rb).is_empty()
 }
 
@@ -2109,7 +2144,7 @@ fn state_probe() -> Vec<u8> {
 /// The engines after `evs` (from 80x24), then `extra`: the first difference
 /// (field, place, both values), or `None`.
 fn first_difference(evs: &[Ev], extra: &[u8]) -> Option<(String, String, String, String)> {
-    let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
+    let mut a = make_ref(default_ref(), &init(80, 24)).expect("reference engine");
     let _ = a.take_replies();
     let mut b = NativeEngine::new(&init(80, 24));
     let (mut ra, mut rb) = (Vec::new(), Vec::new());
@@ -2136,7 +2171,7 @@ fn first_difference(evs: &[Ev], extra: &[u8]) -> Option<(String, String, String,
     b.feed(extra);
     ra.extend(a.take_replies());
     rb.extend(b.take_replies());
-    let (sa, sb) = (a.snapshot_fresh(), b.snapshot());
+    let (sa, sb) = (a.fresh(), b.snapshot());
     let d = compare(&sa, &sb, a.scrollback_rows(), b.scrollback_rows(), &ra, &rb);
     d.into_iter().next().map(|d| {
         // For replies, the probe's part only when the input's own agreed.
@@ -2224,7 +2259,7 @@ fn diverge(inp: &Input) {
 /// The engines' dumps (plain, VT, HTML) after `evs` (from 80x24): the first
 /// that differs, as text.
 fn dump_difference(evs: &[Ev]) -> Option<String> {
-    let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
+    let mut a = make_ref(default_ref(), &init(80, 24)).expect("reference engine");
     let mut b = NativeEngine::new(&init(80, 24));
     let mut run = Vec::new();
     for e in evs.iter().chain(std::iter::once(&Ev::R(0, 0))) {
@@ -2242,7 +2277,7 @@ fn dump_difference(evs: &[Ev]) -> Option<String> {
             }
         }
     }
-    dumps(&mut a, &mut b)
+    dumps(&mut *a, &mut b)
         .into_iter()
         .zip(DUMPS)
         .find_map(|(d, (n, _))| d.map(|d| format!("{n} [{}] {}", d.cause, d.text)))
@@ -2301,7 +2336,7 @@ fn bisect_dump(inp: &Input) {
 /// first byte after which the engines differ (development aid): prints the
 /// difference and the bytes that led to it.
 fn bisect(inp: &Input) {
-    let mut a = GhosttyEngine::new(&init(80, 24)).expect("reference engine");
+    let mut a = make_ref(default_ref(), &init(80, 24)).expect("reference engine");
     let _ = a.take_replies();
     let mut b = NativeEngine::new(&init(80, 24));
     let mut fed: Vec<u8> = Vec::new();
@@ -2325,7 +2360,7 @@ fn bisect(inp: &Input) {
             evs.extend(one.iter().map(|&c| Ev::B(c)));
             ra.extend(a.take_replies());
             rb.extend(b.take_replies());
-            let (sa, sb) = (a.snapshot_fresh(), b.snapshot());
+            let (sa, sb) = (a.fresh(), b.snapshot());
             let d = compare(&sa, &sb, a.scrollback_rows(), b.scrollback_rows(), &ra, &rb);
             if let Some(d) = d.first() {
                 println!(
@@ -2349,6 +2384,12 @@ fn bisect(inp: &Input) {
 
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    // The single-reference tools (--probe first) read --ref before anything else.
+    if let Some(v) = raw.iter().position(|a| a == "--ref").and_then(|i| raw.get(i + 1)) {
+        if let Some(k) = RefKind::parse(v) {
+            set_default_ref(k);
+        }
+    }
     if raw.first().map(String::as_str) == Some("--colors") {
         colors();
     }
@@ -2377,6 +2418,8 @@ fn main() {
     let mut bisect_dump_name: Option<String> = None;
     let mut dump: Option<(String, usize)> = None;
     let mut refresh_only = false;
+    let mut refk = RefKind::Main;
+    let mut outcomes_path: Option<String> = None;
     let docs = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/vtdiff");
     let (mut known_path, mut cand_path) =
         (format!("{docs}/known-vt-differences.txt"), format!("{docs}/known-candidates.txt"));
@@ -2387,6 +2430,14 @@ fn main() {
             "--chunk" => chunk = args.next().and_then(|v| v.parse().ok()).unwrap_or(4096),
             "--every" => every = args.next().and_then(|v| v.parse().ok()).unwrap_or(1024),
             "--report" => report = args.next(),
+            "--ref" => {
+                let v = args.next().unwrap_or_default();
+                refk = RefKind::parse(&v).unwrap_or_else(|| {
+                    eprintln!("vtdiff: --ref ghostty-main or ghostty-0.2.2, not {v:?}");
+                    std::process::exit(2)
+                });
+            }
+            "--outcomes" => outcomes_path = args.next(),
             "--refresh" => refresh_only = true,
             "--known" => known_path = args.next().unwrap_or_default(),
             "--candidates" => cand_path = args.next().unwrap_or_default(),
@@ -2399,11 +2450,12 @@ fn main() {
                 dump = Some((n, len));
             }
             _ => {
-                eprintln!("usage: vtdiff [--corpus DIR] [--fuzz N] [--chunk BYTES] [--every BYTES] [--report FILE] [--bisect NAME]");
+                eprintln!("usage: vtdiff [--ref ghostty-main|ghostty-0.2.2] [--outcomes FILE] [--corpus DIR] [--fuzz N] [--chunk BYTES] [--every BYTES] [--report FILE] [--bisect NAME]");
                 std::process::exit(2);
             }
         }
     }
+    set_default_ref(refk);
     let mut inputs: Vec<Input> = Vec::new();
     if let Some(dir) = &corpus {
         let mut files: Vec<_> =
@@ -2489,6 +2541,14 @@ fn main() {
         })
     };
     let (approved, candidates) = (load(&known_path, true), load(&cand_path, false));
+    let mut outcomes: Option<std::fs::File> = outcomes_path.as_ref().map(|p| {
+        let mut f = std::fs::File::create(p).unwrap_or_else(|e| {
+            eprintln!("vtdiff: --outcomes {p}: {e}");
+            std::process::exit(2)
+        });
+        let _ = writeln!(f, "ref\tinput\tcategory\tsplits\tdiffers\tfields\tverdict");
+        f
+    });
     let mut total = Tally::default();
     let mut cats: BTreeMap<String, Tally> = BTreeMap::new();
     let mut firsts = Vec::new();
@@ -2504,7 +2564,7 @@ fn main() {
     for inp in &inputs {
         for splits in [None, Some(7u64)] {
             let cat = cats.entry(inp.category.clone()).or_default();
-            let o = run_input(inp, chunk, splits, every, &mut total, cat, Compat::default());
+            let o = run_input(inp, chunk, splits, every, &mut total, cat, Compat::default(), refk);
             screens_equal += o.first.is_none() as u64;
             for (i, d) in o.dumps.iter().enumerate() {
                 match d {
@@ -2524,7 +2584,23 @@ fn main() {
                     Some(_) => {}
                 }
             }
-            match judge(inp, chunk, splits, every, &o, Compat::default(), &approved, &candidates) {
+            let v = judge(inp, chunk, splits, every, &o, Compat::default(), &approved, &candidates, refk);
+            if let Some(f) = outcomes.as_mut() {
+                let mode = splits.map_or(format!("chunks of {chunk}"), |s| format!("random splits (seed {s})"));
+                let fields: Vec<&str> = o.fields.iter().copied().collect();
+                let _ = writeln!(
+                    f,
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{:?}",
+                    refk.label(),
+                    inp.name,
+                    inp.category,
+                    mode,
+                    o.first.is_some() as u8,
+                    fields.join(","),
+                    v
+                );
+            }
+            match v {
                 Verdict::Identical => {}
                 Verdict::Known(ids) => *known_runs.entry(ids.join(" + ")).or_default() += 1,
                 Verdict::Fail(c) => {
@@ -2544,7 +2620,7 @@ fn main() {
     }
     let pct = |n: u64, d: u64| if d == 0 { 100.0 } else { n as f64 * 100.0 / d as f64 };
     let mut out = String::new();
-    let _ = writeln!(out, "# vtdiff: libghostty-vt (reference) vs haetty-vt (native)\n");
+    let _ = writeln!(out, "# vtdiff: {} (reference) vs haetty-vt (native)\n", refk.label());
     let _ = writeln!(
         out,
         "{} inputs × 2 cuttings, {} checkpoints; inputs identical throughout: {} of {} ({:.1} %)\n",
@@ -2658,9 +2734,9 @@ mod tests {
         std::fs::write(
             &p,
             "[tbc]\npattern = CSI 0 g\nfields = text width fg bg flags cursor scrollback history\n\
-             compat = tbc-toggle\nbasis = test\napproved = test\n\n\
+             compat = tbc-toggle\nbasis = test\nrefs = ghostty-0.2.2\napproved = test\n\n\
              [origin]\npattern = CSI G|`|a with DECSET 6\nfields = text width fg bg flags cursor scrollback history\n\
-             compat = origin-column-moves-row\nbasis = test\napproved = test\n",
+             compat = origin-column-moves-row\nbasis = test\nrefs = ghostty-0.2.2\napproved = test\n",
         )
         .unwrap();
         let l = load_known(p.to_str().unwrap(), true).unwrap();
@@ -2671,8 +2747,8 @@ mod tests {
     fn verdict(b: &[u8], base: Compat) -> Verdict {
         let inp = input("t", b);
         let (mut a, mut c) = (Tally::default(), Tally::default());
-        let o = run_input(&inp, 4096, None, 1024, &mut a, &mut c, base);
-        judge(&inp, 4096, None, 1024, &o, base, &list(), &[])
+        let o = run_input(&inp, 4096, None, 1024, &mut a, &mut c, base, RefKind::Old);
+        judge(&inp, 4096, None, 1024, &o, base, &list(), &[], RefKind::Old)
     }
 
     /// A known behaviour is KNOWN; the same input with an unrelated
@@ -2691,11 +2767,11 @@ mod tests {
         assert_eq!(verdict(b"\x1b[3CY", Compat::default()), Verdict::Identical);
         let inp = input("t", tbc);
         let (mut a, mut c) = (Tally::default(), Tally::default());
-        let o = run_input(&inp, 4096, None, 1024, &mut a, &mut c, Compat::default());
+        let o = run_input(&inp, 4096, None, 1024, &mut a, &mut c, Compat::default(), RefKind::Old);
         let only_origin: Vec<Known> = list().into_iter().filter(|k| k.id == "origin").collect();
         let tbc_cand: Vec<Known> = list().into_iter().filter(|k| k.id == "tbc").collect();
         assert_eq!(
-            judge(&inp, 4096, None, 1024, &o, Compat::default(), &only_origin, &tbc_cand),
+            judge(&inp, 4096, None, 1024, &o, Compat::default(), &only_origin, &tbc_cand, RefKind::Old),
             Verdict::Fail(Some(vec!["tbc".into()]))
         );
     }

@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage f1 (branch `haetty/f1`, worktree `~/projects/claude-code-config-wt/f1`). Remaining: F1: the newest Ghostty as the test reference (tools/ghostty-ref, a helper process, pinned e035beb), vtdiff --ref (ghostty-main by default, 0.2.2 side by side), refs in the known list, the delegation rule in CLAUDE.md. Then F2 (classification and fixes), F3 (SGR throughput), F4 (native-only dist and the transition table), F5 (v0.3.0 candidate and CHANGELOG), F6 (issue drafts 01-03).
+> **In progress:** none (F1 done 2026-11-09; F2 is next, DESIGN.md section 10.12).
 
 ## 1. Current state
 
@@ -29,14 +29,17 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 ## Next session
 
-- F0 is done (DESIGN.md section 10.11): the soak rule is now per session (full, then 30 min at +4 MB) with a
-  test-only 800 kB scrollback limit; both one-hour Linux runs PASS.
-- **Night run waiting** (§6.1 item 30). Nothing heavy runs and both heavy slots are free. The night command starts
-  from a PowerShell window, not from Claude Code. No stage may be finished or merged while it runs: it runs from
-  the main checkout.
-- After the night run, or when the user says to go on: F1 (the newest-Ghostty reference, `tools/ghostty-ref`),
-  F2 (`--ref`, the classification), F3 (SGR throughput), F4 (native-only dist, transition table), F5 (the v0.3.0
-  candidate and CHANGELOG; the tag only after both night parts PASS on the candidate), F6 (issue drafts 01–03).
+- F0 is done (DESIGN.md section 10.11): the soak rule is per session (full, then 30 min at +4 MB) with a
+  test-only 800 kB scrollback limit. Both one-hour Linux runs PASS, and so does the night run of 2026-11-09 on
+  native (§6.1 item 30): Linux, Windows, GUI-TABS 14/14 and GUI-ORCHESTRATOR 17/17.
+- F1 is done (DESIGN.md section 10.12; docs/vtdiff/2026-11-09-f1.md): the newest Ghostty is the default reference
+  (`tools/ghostty-ref`, pinned `e035beb`, Zig 0.17.0); ghostty-0.2.2 runs side by side and still reproduces E5's 79.
+  Under ghostty-main there are 877 FAIL (798 where haetty follows 0.2.2; 79 E5's remainder). Causes so far: CAN
+  while a UTF-8 sequence is incomplete; DECRQSS for SGR; text and replies in fuzz2 and mutated.
+- F2 is next: classify the FAILs under ghostty-main and change haetty-vt where main is the target, one cause at a
+  time, corpus at 0 under both references. Then F3 (SGR throughput), F4 (native-only dist, transition table), F5
+  (the v0.3.0 candidate and CHANGELOG; the tag only after both night parts PASS on the candidate), F6 (issue drafts
+  01–03).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
@@ -269,7 +272,7 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     GUI-TABS FAIL for `63822de` (the Hangul rename fix is `6a67b22`);
     `main` passed 14/14 and 17/17 (V6).
 
-30. **Overnight soak v2, native engine (F0; the night run is waiting).** Nothing heavy runs now. The command, run
+30. **Overnight soak v2, native engine (F0; the night run of 2026-11-09 passed, §10.11).** The command, run
     **from a PowerShell window — not from Claude Code**, with the main checkout at the commit to test (`HEAD`, the
     default; the result header prints its hash):
     ```powershell

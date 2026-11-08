@@ -1,8 +1,10 @@
-# Known differences between libghostty-vt (vtdiff's reference) and haetty-vt that the person approved.
+# Known differences between a vtdiff reference (libghostty-vt, see `refs`) and haetty-vt.
 # vtdiff counts a differing run KNOWN only when (1) an entry's pattern occurs in the input, (2) every field that
 # differed is among the matching entries' fields, and (3) with those entries' haetty-vt switches on (`compat`,
 # haetty_vt::Compat, which make haetty-vt do what libghostty does) the run is identical. Everything else is FAIL.
-# Adding or changing an entry needs the person's approval (CLAUDE.md); proposals go to known-candidates.txt.
+# Adding an entry is delegated (CLAUDE.md: both conditions, with `refs`); changing or removing one needs the
+# person's approval. `refs` names the reference an entry explains: ghostty-main (the newest Ghostty, the default)
+# or ghostty-0.2.2 (the reference of E0-E5, whose differences are its defects where ghostty-main agrees with haetty-vt).
 # The reasoning for each entry is in known.md.
 #
 # pattern = CSI [first parameter] FINAL|FINAL… [with DECSET N]
@@ -11,6 +13,7 @@
 pattern = CSI 0 g
 fields = text width fg bg flags cursor scrollback history
 compat = tbc-toggle
+refs = ghostty-0.2.2
 basis = ECMA-48 (5th ed., 1991) §8.3.154 TBC, Ps = 0: "the character tabulation stop at the active presentation position is cleared"; xterm ctlseqs: "CSI Ps g  Tab Clear (TBC) … Ps = 0 -> Clear Current Column (default)". libghostty's Tabstops.unset XORs the bit, so a column without a stop gains one.
 approved = 2026-11-07, the person's E4 instructions: "발견 1·2(TBC 0, 원점 모드의 CHA·HPA·HPR): 새 엔진은 규격(ECMA-48, xterm)을 따른다 … 발견 1·2는 이번 지시로 승인함"
 
@@ -18,6 +21,7 @@ approved = 2026-11-07, the person's E4 instructions: "발견 1·2(TBC 0, 원점 
 pattern = CSI G|`|a with DECSET 6
 fields = text width fg bg flags cursor scrollback history
 compat = origin-column-moves-row
+refs = ghostty-0.2.2
 basis = ECMA-48 §8.3.9 CHA and §8.3.57 HPA move to character position n "in the active line"; §8.3.59 HPR moves by n character positions in the direction of the character progression; none changes the line. xterm ctlseqs: CHA and HPA "[column] (default = [row,1])", HPR "[columns] (default = [row,col+1])". libghostty implements them as setCursorPos(cursor.y + 1, …), and under origin mode setCursorPos adds the scroll region's top to the row.
 approved = 2026-11-07, the person's E4 instructions (as above)
 
@@ -25,5 +29,22 @@ approved = 2026-11-07, the person's E4 instructions (as above)
 pattern = CSI d|e with DECSET 6
 fields = text width fg bg flags cursor scrollback history
 compat = origin-row-moves-column
+refs = ghostty-0.2.2
 basis = ECMA-48 §8.3.158 VPA moves to line position n "in the active character position" and §8.3.160 VPR moves by n line positions "in a direction parallel to the line progression"; neither changes the column. xterm ctlseqs: VPA "[row] (default = [1,column])", VPR "[rows] (default = [row+1,column])". libghostty implements both as setCursorPos(row, cursor.x + 1); under origin mode setCursorPos adds the left margin to the column, and for VPR the region's top to the row. Seen in vtdiff with left/right margins (DECLRMM) and origin mode.
 approved = 2026-11-08, the person's E5 instructions: "VPA·VPR 후보(origin-row-moves-only-row)를 known-vt-differences.txt로 옮기는 것을 승인한다."
+
+[no-pending-wrap-without-autowrap]
+pattern = DECRST 7
+fields = text width fg bg flags underline link cursor scrollback history
+compat = pending-wrap-without-autowrap
+refs = ghostty-0.2.2
+basis = With autowrap (DECAWM, mode 7) reset, a character written in the last column replaces the one there and the cursor stays: no wrap is pending (DEC STD 070 / VT510: "characters received when the cursor is at the right margin replace previously displayed characters"; xterm sets its wrap flag only with wraparound on). libghostty 0.2.2 (Ghostty a887df4) sets the pending wrap anyway, so a character written after DECAWM is set again goes to the next row. Ghostty fixed it in 42a6564 ("terminal: clear pending wrap when printing with DECAWM off", 2026-10-11).
+approved = 2026-11-09, the person's words in F1 ("지금 후보 no-pending-wrap-without-autowrap, ctc-2-clears는 승인한다.")
+
+[ctc-2-clears]
+pattern = CSI 2 W
+fields = text width fg bg flags underline link cursor scrollback history
+compat = tbc-toggle
+refs = ghostty-0.2.2
+basis = ECMA-48 §8.3.17 CTC, Ps = 2: "the character tabulation stop in the active line is cleared at the active presentation position". libghostty implements it with Tabstops.unset, which XORs the bit (as approved entry tbc-0-clears), so a column without a stop gains one. Ghostty fixed unset in bed20eb ("terminal: clear tabstop bit on unset instead of toggling").
+approved = 2026-11-09, the person's words in F1 ("지금 후보 no-pending-wrap-without-autowrap, ctc-2-clears는 승인한다.")

@@ -1996,3 +1996,34 @@ samples are in `~/m4/f0-native-1h.csv` and `~/m4/f0-ghostty-1h.csv`.
 - Native's daemon memory rose by 0.47 MB in the 45 min after its baseline.
 - The Windows soak and its verdict have not had a real run; the night run is their first.
 - Unchanged: the default engine (libghostty), the stable instance, the protocol (still 11).
+
+**Night run, 2026-11-09 02:00–04:06 (commit `bb61e92`, the same code as `d02cee8`; `-Engine native -GuiE2E`).**
+LINUX PASS (soak, 60 min); WINDOWS PASS (soak, 60 min: the first real run of `soak.ps1` and
+`windows/soak-verdict.ps1`); GUI-TABS PASS 14/14; GUI-ORCHESTRATOR PASS 17/17. Linux: baseline 906 s (slow tab,
+3 703 rows), window 2 700 s, daemon anonymous memory +548 kB, GUI 8 212 to 8 056 kB. Windows: baseline 1 203 s
+(slow tab, 4 761 rows), window 2 404 s, GUI private working set 11 048 to 10 860 kB, daemon 7 812 to 8 100 kB
+(+288 kB). Operations 200/50/20/10 on both. Result file: `C:\Users\Public\haetty-overnight\result-20261109-0200.txt`.
+
+### 10.12 F1: the newest Ghostty as the vtdiff reference (2026-11-09)
+
+- **The reference.** `ghostty-main` is Ghostty `e035beb` (main, 2026-11-08), built with Zig 0.17.0 as a helper
+  program (`tools/ghostty-ref`, README there: pin, protocol, build, refresh). It is the default reference of
+  `haetty-vtdiff`. `ghostty-0.2.2` stays in process for the side-by-side report. The two cannot share one binary:
+  both link as `ghostty-vt`. Neither is linked into dist, the gate or the installers.
+- **The adapter** (`crates/haetty-vtdiff/src/refs.rs`) follows `haetty-core/src/ghostty.rs` field by field. Title and
+  working directory are taken only when they are valid UTF-8, else empty (as `term.title().unwrap_or("")`); cell text
+  and hyperlink targets are decoded with replacement (as `cell_link`). Title report and the glyph protocol stay off
+  (haetty answers neither). Synchronized output ends on every valid resize, as main and 0.2.2's C API both do.
+- **The lists.** Every entry names its reference (`refs`). The five approved entries explain 0.2.2 only. The two
+  candidates were approved by the person on 2026-11-09 and moved. CLAUDE.md now delegates additions under both
+  conditions (ghostty-main agrees with haetty; an ECMA-48 or xterm clause gives the reason); changes still need the
+  person.
+- **Results** (`docs/vtdiff/2026-11-09-f1.md`; 1033 inputs × 2 cuttings). With 0.2.2, the run reproduces E5 exactly:
+  1987 identical, 79 FAIL, 0 KNOWN. With ghostty-main: 1189 identical, 877 FAIL, 0 KNOWN. Of the 877, 798 are runs
+  where haetty agrees with 0.2.2 and main differs, and 79 are E5's remainder. No run has haetty agreeing with main
+  while 0.2.2 differs. The recorded corpus is identical under both.
+- **What the first differences are** (F2's worklist): a C0 control while a UTF-8 sequence is incomplete (grammar, all
+  400: CAN is executed by main, printed as U+0018 by haetty and 0.2.2); DECRQSS for SGR (main answers
+  `DCS 1 $ r 0 m ST`; 220 of the fuzz2 first differences); text and replies in fuzz2 and mutated (not yet classified).
+- **Not changed in this stage:** the native engine, the default engine (libghostty), the protocol, the stable
+  instance. F2 is next.

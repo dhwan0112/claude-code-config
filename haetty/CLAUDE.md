@@ -155,12 +155,16 @@ Zig (the gate checks this). `cargo run -p haetty-vtdiff --release --
 `--bisect NAME` finds the first differing byte and a minimal input,
 `--probe 'BYTES'` shows both engines' state, `--refresh` measures the
 default engine's render-state refresh (DESIGN.md §10.8). A differing run is
-KNOWN only if an entry of `docs/vtdiff/known-vt-differences.txt` explains it
-(pattern in the input, fields covered, identical with the entry's
-`haetty_vt::Compat` switch on); everything else is FAIL. **Adding or changing
-an entry in that list needs the user's approval** (record the date and their
-words in `approved`); proposals go to `docs/vtdiff/known-candidates.txt`
-(counted FAIL, shown "KNOWN if approved"), the reasoning for each in
+KNOWN only if an entry of `docs/vtdiff/known-vt-differences.txt` explains it for the reference it names
+(`refs`: `ghostty-main` or `ghostty-0.2.2`; pattern in the input, fields covered, identical with the entry's
+`haetty_vt::Compat` switch on); everything else is FAIL. The newest Ghostty (`ghostty-main`, the default
+reference) is the target. **Adding an entry is delegated to the agent** when both hold: (a) `ghostty-main`
+behaves as haetty-vt does on the inputs, so the difference lies in the other reference; and (b) an ECMA-48
+clause or an xterm behaviour gives the reason, cited in `basis`. Such an entry goes straight into the list with
+`refs`, `basis` and `approved = <date>, delegated: (a) and (b)`, and is listed in the stage's report. If either
+condition fails, or the sources disagree, the proposal goes to `docs/vtdiff/known-candidates.txt` (counted FAIL,
+shown "KNOWN if approved") and the person decides. **Changing or removing an entry needs the person's
+approval** (record the date and their words in `approved`). The reasoning for each entry is in
 `docs/vtdiff/known.md`. Generated tables:
 `--gen-width`, `--gen-keys`, `tools/gen-grapheme-table.py`,
 `cargo run --release -p haetty-vt --example feed` (the engine's speed alone),
