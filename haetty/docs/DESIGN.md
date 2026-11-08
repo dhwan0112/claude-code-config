@@ -2041,4 +2041,16 @@ LINUX PASS (soak, 60 min); WINDOWS PASS (soak, 60 min: the first real run of `so
 - **Not reached**: the target (no unexplained difference under ghostty-main). The 744 are in kitty graphics responses
   and XTWINOPS size reports (about 200 first differences), other replies, and grammar and mutated text (not yet
   bisected to causes). Next: the kitty graphics pass, then the text causes.
+### 10.14 F3: SGR-heavy throughput (2026-11-09)
+
+- **Measure**: `scripts/e2e`'s session harness of E5 (`e5c-tput.sh`, `sgr` input of 112 MiB, five alternating runs per
+  engine, median), and `examples/feed sgr` for the engine alone.
+- **Result** (session): native 41 -> 57 MiB/s against libghostty 73 -> 69 MiB/s: 56 % -> 82 % of libghostty.
+  (Engine alone: 56 -> 92 MiB/s.)
+- **What the profile said**: vte alone reads this input at 468 MiB/s, about 15 % of the engine's time, so the cost is
+  in haetty's own code: the scanner's byte-by-byte pass over the CSI parameters, and the SGR parser's allocations.
+- **Changes** (all keep the output: vtdiff's outcome files are identical to F2's under both references):
+  - the SGR parameters are parsed in one pass into two buffers the terminal keeps (no allocation per SGR);
+  - a run of CSI parameter bytes (digits, `;`, `:`) is taken in one step, as `byte` would take each of them;
+  - the erased form of a style with the default background is id 0, so the style table is not searched for it.
 

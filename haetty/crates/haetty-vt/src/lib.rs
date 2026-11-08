@@ -259,8 +259,18 @@ impl Styles {
             self.last = (s, i);
             return i;
         }
-        let e = Style { bg: s.bg, ..Style::default() };
-        let eid = if e == s { None } else { Some(self.id(e)) };
+        // The erased form is the default style when the background is the default one: it is always id 0
+        // (`Styles::new` and `compact_styles` keep it first), so the table is not searched for it.
+        let eid = if s.bg == Color::Default {
+            Some(0)
+        } else {
+            let e = Style { bg: s.bg, ..Style::default() };
+            if e == s {
+                None
+            } else {
+                Some(self.id(e))
+            }
+        };
         if self.list.len() >= u16::MAX as usize {
             return eid.unwrap_or(0);
         }
@@ -598,6 +608,8 @@ pub struct Terminal {
     scrollback: VecDeque<Line>,
     /// A DECRQSS request (`DCS $ q …`) while its DCS lasts: its bytes, at most three.
     decrqss: Option<Vec<u8>>,
+    /// SGR parameters of the sequence being dispatched (reused between SGR sequences).
+    sgr_params: SgrParams,
     /// The scroll region, 0-based, inclusive.
     top: u16,
     bottom: u16,
@@ -703,6 +715,7 @@ impl Terminal {
             saved_modes: std::collections::HashMap::new(),
             sb_limit: o.scrollback_limit,
             decrqss: None,
+            sgr_params: SgrParams::default(),
         }
     }
 
@@ -724,6 +737,16 @@ impl Terminal {
         let mut start = k;
         let mut i = 0;
         while i < bytes.len() {
+            // A run of CSI parameter bytes (digits, `;`, `:`) has no action of its own: the scanner takes it in
+            // one step (`csi_params`, the same as `byte` for each of them).
+            if self.pre.state == Scanner::CSI {
+                let run = bytes[i..].iter().take_while(|b| matches!(b, b'0'..=b'9' | b';' | b':')).count();
+                if run > 0 {
+                    self.pre.csi_params(&bytes[i..i + run]);
+                    i += run;
+                    continue;
+                }
+            }
             // A run of printable ASCII in the ground state is written here
             // directly (`print_ascii`, E5c): vte would hand it over one
             // character at a time, and leaves no state for it.
@@ -2473,14 +2496,15 @@ impl Terminal {
     /// an empty field from a 0 (`48:5:` is void, `38:2::R:G:B` is not),
     /// which vte's parameters cannot.
     fn sgr(&mut self) {
-        let groups = sgr_groups(&self.csi_raw);
+        let mut params = std::mem::take(&mut self.sgr_params);
+        params.parse(&self.csi_raw);
         let mut style = self.scr().cursor.style;
-        if groups.is_empty() {
+        if params.groups.is_empty() {
             style = Style::default();
         }
         let mut i = 0;
-        while i < groups.len() {
-            let g = &groups[i];
+        while i < params.groups.len() {
+            let g = &params.vals[params.groups[i].clone()];
             i += 1;
             let v = g[0].unwrap_or(0);
             if g.len() > 1 {
@@ -2501,7 +2525,7 @@ impl Terminal {
             if matches!(v, 38 | 48 | 58) {
                 // `38;5;N`, `38;2;R;G;B`; with too few values or another kind
                 // only the 38 goes, as libghostty.
-                let val = |k: usize| groups.get(i + k).map(|g| g[0].unwrap_or(0));
+                let val = |k: usize| params.groups.get(i + k).map(|r| params.vals[r.start].unwrap_or(0));
                 match val(0) {
                     Some(5) if val(1).is_some() => {
                         set_colour(&mut style, v, Some(Color::Index(val(1).unwrap_or(0) as u8)));
@@ -2521,6 +2545,7 @@ impl Terminal {
         // The hyperlink is not part of the style in libghostty: SGR 0 keeps it.
         style.link = self.scr().cursor.style.link;
         self.cur().style = style;
+        self.sgr_params = params;
     }
 
     // -------------------------------------------------------- replies
@@ -2599,6 +2624,24 @@ struct Scanner {
 }
 
 impl Scanner {
+    /// The CSI parameter bytes (digits, `;`, `:`) of `bytes`, as `byte` takes each of them.
+    fn csi_params(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            match b {
+                b';' => {
+                    self.csi_seps += 1;
+                    self.csi_trailing = false;
+                }
+                b':' => {
+                    self.csi_trailing = true;
+                    self.csi_colon = true;
+                }
+                _ => self.csi_trailing = true,
+            }
+            self.keep_param(b);
+        }
+    }
+
     fn keep_param(&mut self, b: u8) {
         if self.csi_raw.len() < 512 {
             self.csi_raw.push(b);
@@ -2872,29 +2915,57 @@ fn sgr_simple(style: &mut Style, p: &[u16]) {
 /// SGR parameters as groups of fields (`;` between groups, `:` between
 /// fields; an empty field is `None`). As libghostty, an empty last group is
 /// not a parameter.
-fn sgr_groups(raw: &[u8]) -> Vec<Vec<Option<u16>>> {
-    if raw.is_empty() {
-        return Vec::new();
+/// The SGR parameters: `;` separates groups, `:` the values of a group (an empty value is `None`). They are parsed
+/// into two buffers the terminal keeps, so an SGR allocates nothing: `vals` holds the values and `groups` the range
+/// of each group in it.
+#[derive(Default)]
+struct SgrParams {
+    vals: Vec<Option<u16>>,
+    groups: Vec<std::ops::Range<usize>>,
+}
+
+impl SgrParams {
+    /// One pass over the bytes. The scanner keeps only digits, `;` and `:` in `csi_raw`, so every other byte is
+    /// a separator or a digit.
+    fn parse(&mut self, raw: &[u8]) {
+        self.vals.clear();
+        self.groups.clear();
+        if raw.is_empty() {
+            return;
+        }
+        let mut start = 0usize;
+        let mut value: u32 = 0;
+        let mut digits = false;
+        for &c in raw {
+            match c {
+                b'0'..=b'9' => {
+                    value = (value * 10 + (c - b'0') as u32).min(65535);
+                    digits = true;
+                }
+                b':' => {
+                    self.vals.push(digits.then_some(value as u16));
+                    value = 0;
+                    digits = false;
+                }
+                _ => {
+                    // `;`
+                    self.vals.push(digits.then_some(value as u16));
+                    self.groups.push(start..self.vals.len());
+                    start = self.vals.len();
+                    value = 0;
+                    digits = false;
+                }
+            }
+        }
+        self.vals.push(digits.then_some(value as u16));
+        self.groups.push(start..self.vals.len());
+        // A last group that is one empty value is no parameter.
+        if let Some(r) = self.groups.last() {
+            if r.len() == 1 && self.vals[r.start].is_none() {
+                self.groups.pop();
+            }
+        }
     }
-    let mut groups: Vec<Vec<Option<u16>>> = raw
-        .split(|&c| c == b';')
-        .map(|g| {
-            g.split(|&c| c == b':')
-                .map(|f| {
-                    if f.is_empty() {
-                        None
-                    } else {
-                        Some(f.iter().fold(0u32, |n, &d| (n * 10 + (d.wrapping_sub(b'0') as u32 % 10)).min(65535))
-                            as u16)
-                    }
-                })
-                .collect()
-        })
-        .collect();
-    if groups.last().is_some_and(|g| g.len() == 1 && g[0].is_none()) {
-        groups.pop();
-    }
-    groups
 }
 
 fn set_colour(style: &mut Style, which: u16, c: Option<Color>) {

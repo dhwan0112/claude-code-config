@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage f3 (branch `haetty/f3`, worktree `~/projects/claude-code-config-wt/f3`). Remaining: F3: SGR-heavy throughput to at least 80 % of libghostty (58 % at E5: the per-SGR Vec allocations in sgr_groups, the style table lookups after each SGR), measured with e5c-tput.sh; no change to vtdiff results (the outcome files must match); then F4 (native-only dist and the transition table), F5 (v0.3.0 candidate, CHANGELOG), F6 (issue drafts 01-03).
+> **In progress:** none (F3 done 2026-11-09: SGR-heavy throughput 82 % of libghostty, DESIGN.md section 10.14).
 
 ## 1. Current state
 
@@ -29,13 +29,13 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 ## Next session
 
-- F0 done (DESIGN.md section 10.11); the night run of 2026-11-09 passed on native (§6.1 item 30).
-- F1 done (section 10.12): ghostty-main (e035beb, `tools/ghostty-ref`) is the default reference; 0.2.2 side by side.
-- F2 done in part (section 10.13): ghostty-main FAIL 877 -> 744. Not done: the kitty graphics responses and XTWINOPS
-  size reports (about 200 first differences), other replies, grammar and mutated text (to bisect). The target is not
-  reached and the stage is closed on that record.
-- Next: F3 (SGR throughput to 80 % of libghostty), F4 (native-only dist and the transition table), F5 (the v0.3.0
-  candidate and CHANGELOG; the tag only after both night parts PASS on the candidate), F6 (issue drafts 01-03).
+- F0 done (section 10.11); the night run of 2026-11-09 passed on native (§6.1 item 30).
+- F1 done (10.12): ghostty-main is the default reference; 0.2.2 side by side.
+- F2 done in part (10.13): ghostty-main FAIL 877 -> 744; the kitty graphics responses and XTWINOPS reports, other
+  replies, and grammar and mutated text remain (docs/vtdiff/2026-11-09-f2.md).
+- F3 done (10.14): SGR-heavy throughput 82 % of libghostty (session), from 56 %.
+- Next: F4 (native-only dist and the transition table), F5 (the v0.3.0 candidate and CHANGELOG; the tag only after both
+  night parts PASS on the candidate), F6 (issue drafts 01-03).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
