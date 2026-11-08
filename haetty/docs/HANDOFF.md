@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** none (F2 done 2026-11-09 in part: 744 FAIL under ghostty-main; the rest is classified, DESIGN.md section 10.13).
+> **In progress:** stage f3 (branch `haetty/f3`, worktree `~/projects/claude-code-config-wt/f3`). Remaining: F3: SGR-heavy throughput to at least 80 % of libghostty (58 % at E5: the per-SGR Vec allocations in sgr_groups, the style table lookups after each SGR), measured with e5c-tput.sh; no change to vtdiff results (the outcome files must match); then F4 (native-only dist and the transition table), F5 (v0.3.0 candidate, CHANGELOG), F6 (issue drafts 01-03).
 
 ## 1. Current state
 
