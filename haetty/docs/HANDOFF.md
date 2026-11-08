@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** none (F3 done 2026-11-09: SGR-heavy throughput 82 % of libghostty, DESIGN.md section 10.14).
+> **In progress:** stage f4 (branch `haetty/f4`, worktree `~/projects/claude-code-config-wt/f4`). Remaining: F4: native-only candidate default dist (sizes of both builds on Linux; native built without Zig on PATH; installer self-tests; key-to-frame latency of both engines; Windows native build without WSL), the transition table in DESIGN with each condition's status; then F5 (v0.3.0 candidate and CHANGELOG) and F6 (issue drafts 01-03).
 
 ## 1. Current state
 
