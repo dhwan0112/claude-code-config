@@ -10,7 +10,9 @@ PIN=e035beb9437118b803830a5864ea2f4dd7094354
 ZIG=${ZIG:-$HOME/.local/zig-0.17.0/zig}
 SRC=${GHOSTTY_SRC:-$HOME/m4/ghostty-ref/ghostty}   # the pinned checkout; outside the repo and outside /tmp
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-TARGET=$HERE/../../target-ghostty-ref              # git-ignored (/target-*/ in haetty/.gitignore)
+# Build output. Set GHOSTTY_REF_TARGET to keep it outside the stage worktree (a finished stage removes the
+# worktree and everything in it). The default is git-ignored (/target-*/ in haetty/.gitignore).
+TARGET=${GHOSTTY_REF_TARGET:-$HERE/../../target-ghostty-ref}
 PREFIX=$TARGET/install                             # zig's --prefix: lib/, include/, share/
 CACHE=$TARGET/zig-cache
 BUILD=$TARGET/build                                # unstripped helper

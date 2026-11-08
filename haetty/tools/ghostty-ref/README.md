@@ -25,8 +25,9 @@ Zig 0.15.2 (the one haetty's own builds use, `~/.local/bin/zig`) is not used for
 
 It checks the pin and that the checkout is clean, builds libghostty-vt (static, `-Dcpu=baseline`, ReleaseFast) into
 `target-ghostty-ref/install`, links `ghostty-ref.c` against it, and writes the stripped helper to
-`target-ghostty-ref/ghostty-ref`. `target-ghostty-ref/` is git-ignored. haetty-vtdiff looks for the helper there, or at
-`$HAETTY_GHOSTTY_REF`; without it, `--ref ghostty-main` stops with the build command.
+`target-ghostty-ref/ghostty-ref`. `target-ghostty-ref/` is git-ignored. Set `GHOSTTY_REF_TARGET` to build elsewhere (outside a stage worktree, which
+a finished stage removes). haetty-vtdiff looks for the helper in `target-ghostty-ref/`, or at `$HAETTY_GHOSTTY_REF`;
+without it, `--ref ghostty-main` stops with the build command.
 
 ## Protocol
 

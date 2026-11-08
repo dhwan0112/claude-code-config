@@ -1460,7 +1460,10 @@ included); the native engine should stay well under that.
     - C1 bytes inside escape, CSI, DCS and SOS/PM/APC act as their 7-bit
       forms; a raw C1 in ground state is U+FFFD, a UTF-8-encoded one is
       printed;
-    - C0 bytes 0x10–0x1F print as cells in ground state;
+    - C0 bytes 0x10–0x17, 0x19 and 0x1C–0x1F do nothing in ground state, as the newest Ghostty
+      (`src/terminal/stream.zig`, e035beb: "we ignore C0 escapes > 0xF"); 0x18 and 0x1A only cancel an
+      escape. libghostty 0.2.2 printed them as cells between characters, and haetty followed it until F2
+      (docs/vtdiff/2026-11-09-f2.md);
     - a CSI with a colon outside SGR is void;
     - an APC ends at the ESC of its terminator, or at a C1 byte (and is
       dispatched); an OSC that is not valid UTF-8 is dropped;

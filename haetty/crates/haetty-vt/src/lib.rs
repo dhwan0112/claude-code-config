@@ -622,7 +622,6 @@ pub struct Terminal {
     /// The C1 control vte is executing came as a raw byte (see `execute`).
     raw_c1: bool,
     /// The C0 control vte is executing is in the ground state (see `execute`).
-    ground_c0: bool,
     /// Parameters of the CSI being dispatched as libghostty counts them:
     /// `CSI s` has none, `CSI 0 s` and `CSI ; s` one, `CSI 5 ; B` one
     /// (vte would say 1, 1, 2 and 2).
@@ -686,7 +685,6 @@ impl Terminal {
             single_shift: None,
             last_char: None,
             raw_c1: false,
-            ground_c0: false,
             csi_count: 0,
             csi_colon: false,
             csi_raw: Vec::new(),
@@ -767,9 +765,7 @@ impl Terminal {
                 }
                 Pre::GroundC0 => {
                     parser.advance(self, &bytes[start..i]);
-                    self.ground_c0 = true;
                     parser.advance(self, &bytes[i..=i]);
-                    self.ground_c0 = false;
                     start = i + 1;
                 }
                 Pre::Osc => {
@@ -3209,13 +3205,9 @@ impl vte::Perform for Terminal {
             0x0d => self.carriage_return(),
             0x0e => self.cur().gl = 1,
             0x0f => self.cur().gl = 0,
-            // As libghostty: C0 controls it has no action for, from 0x10 up,
-            // print as a cell when they come between characters.
-            0x10..=0x1f if self.ground_c0 => {
-                let c = char::from(b);
-                self.last_char = Some(c);
-                self.print_char(c);
-            }
+            // C0 controls with no action (0x10–0x1f) do nothing: xterm, and the newest Ghostty (`ghostty-main`,
+            // F2). libghostty 0.2.2 printed them as cells between characters; haetty followed it until F2
+            // (docs/vtdiff/2026-11-09-f2.md).
             // vte executes C1 controls; libghostty prints a raw C1 byte as
             // U+FFFD (invalid UTF-8) and U+0080–U+009F sent as UTF-8 as the
             // character itself.
