@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** none (F1 done 2026-11-09; F2 is next, DESIGN.md section 10.12).
+> **In progress:** stage f2 (branch `haetty/f2`, worktree `~/projects/claude-code-config-wt/f2`). Remaining: F2: classify the ghostty-main FAILs (877 at F1: CAN while a UTF-8 sequence is incomplete, DECRQSS for SGR, text and replies in fuzz2/mutated) and change haetty-vt where main is the target, one cause at a time; corpus at 0 under both references; the 0.2.2 side classified only. Then F3 (SGR throughput), F4 (native-only dist, transition table), F5 (v0.3.0 candidate, CHANGELOG), F6 (issue drafts 01-03).
 
 ## 1. Current state
 
