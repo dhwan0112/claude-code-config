@@ -596,6 +596,8 @@ pub struct Terminal {
     primary: Screen,
     alt: Screen,
     scrollback: VecDeque<Line>,
+    /// A DECRQSS request (`DCS $ q …`) while its DCS lasts: its bytes, at most three.
+    decrqss: Option<Vec<u8>>,
     /// The scroll region, 0-based, inclusive.
     top: u16,
     bottom: u16,
@@ -700,6 +702,7 @@ impl Terminal {
             sb_bytes: 0,
             saved_modes: std::collections::HashMap::new(),
             sb_limit: o.scrollback_limit,
+            decrqss: None,
         }
     }
 
@@ -766,6 +769,10 @@ impl Terminal {
                 Pre::GroundC0 => {
                     parser.advance(self, &bytes[start..i]);
                     parser.advance(self, &bytes[i..=i]);
+                    start = i + 1;
+                }
+                Pre::Skip => {
+                    parser.advance(self, &bytes[start..i]);
                     start = i + 1;
                 }
                 Pre::Osc => {
@@ -1136,6 +1143,80 @@ impl Terminal {
     }
 
     // ---------------------------------------------------------- writing
+
+    /// The DECRQSS answer (the newest Ghostty, dcs.zig): `1` for SGR, DECSTBM, DECSCUSR and DECSLRM (the last
+    /// only with left and right margins on); `0` for anything else.
+    fn decrqss_reply(&mut self, req: &[u8]) {
+        let body = match req {
+            b"m" => Some(self.sgr_report()),
+            b"r" => Some(format!("{};{}r", self.top + 1, self.bottom + 1)),
+            b"s" if self.modes.lr_margins => Some(format!("{};{}s", self.left + 1, self.right + 1)),
+            b" q" => {
+                let blink = self.modes.cursor_blink;
+                let code = match (self.screen_ref().cursor.shape, blink) {
+                    (CursorShape::Block, true) => 1,
+                    (CursorShape::Block, false) => 2,
+                    (CursorShape::Underline, true) => 3,
+                    (CursorShape::Underline, false) => 4,
+                    (CursorShape::Bar, true) => 5,
+                    (CursorShape::Bar, false) => 6,
+                };
+                Some(format!("{code} q"))
+            }
+            _ => None,
+        };
+        let reply = match body {
+            Some(b) => format!("\x1bP1$r{b}\x1b\\"),
+            None => "\x1bP0$r\x1b\\".to_string(),
+        };
+        self.reply(reply.as_bytes());
+    }
+
+    /// The pen's SGR as DECRQSS reports it (the newest Ghostty, Terminal.printAttributes): `0`, the attributes
+    /// in its order, the foreground, the background, and `m`.
+    fn sgr_report(&self) -> String {
+        let pen = self.screen_ref().cursor.style;
+        let f = pen.flags;
+        let mut s = String::from("0");
+        for (bit, code) in [
+            (flags::BOLD, 1),
+            (flags::FAINT, 2),
+            (flags::ITALIC, 3),
+            (flags::OVERLINE, 53),
+            (flags::BLINK, 5),
+            (flags::INVERSE, 7),
+            (flags::INVISIBLE, 8),
+            (flags::STRIKETHROUGH, 9),
+        ] {
+            if f & bit != 0 {
+                s.push_str(&format!(";{code}"));
+            }
+        }
+        if f & flags::UNDERLINE != 0 {
+            // Underline kinds other than single keep their number (4:N).
+            if pen.underline > 1 {
+                s.push_str(&format!(";4:{}", pen.underline));
+            } else {
+                s.push_str(";4");
+            }
+        }
+        match pen.fg {
+            Color::Default => {}
+            Color::Index(i) if i >= 16 => s.push_str(&format!(";38:5:{i}")),
+            Color::Index(i) if i >= 8 => s.push_str(&format!(";9{}", i - 8)),
+            Color::Index(i) => s.push_str(&format!(";3{i}")),
+            Color::Rgb([r, g, b]) => s.push_str(&format!(";38:2::{r}:{g}:{b}")),
+        }
+        match pen.bg {
+            Color::Default => {}
+            Color::Index(i) if i >= 16 => s.push_str(&format!(";48:5:{i}")),
+            Color::Index(i) if i >= 8 => s.push_str(&format!(";10{}", i - 8)),
+            Color::Index(i) => s.push_str(&format!(";4{i}")),
+            Color::Rgb([r, g, b]) => s.push_str(&format!(";48:2::{r}:{g}:{b}")),
+        }
+        s.push('m');
+        s
+    }
 
     fn reply(&mut self, b: &[u8]) {
         self.replies.extend_from_slice(b);
@@ -2486,6 +2567,9 @@ enum Pre {
     /// The byte that ends an OSC (BEL, CAN, SUB, ESC): vte dispatches it on
     /// this byte, with its whole payload in `osc`.
     Osc,
+    /// A byte 0x80–0xFF in a DCS string: payload, not a C1 control (the newest Ghostty's parser table,
+    /// dcs_passthrough). It is not given to vte, which would end the string on a C1 byte.
+    Skip,
 }
 
 /// Follows the byte stream as vte's parser does, as far as CSI and APC go:
@@ -2599,11 +2683,14 @@ impl Scanner {
     fn byte(&mut self, b: u8) -> Pre {
         // As libghostty (a VT500 parser): inside an escape or CSI sequence a
         // C1 byte acts as its 7-bit form, ESC and b - 0x40 (vte ignores it).
-        // The same in SOS/PM/APC strings and DCS (not in OSC, whose
-        // payload is UTF-8).
-        if matches!(self.state, Self::ESC | Self::ESC_INT | Self::CSI | Self::DCS | Self::APC)
-            && (0x80..=0x9f).contains(&b)
-        {
+        // The same in SOS/PM/APC strings (not in OSC, whose payload is UTF-8).
+        // In a DCS string the bytes from 0x80 are payload: the newest Ghostty
+        // does not honour 8-bit C1 controls there (parse_table.zig,
+        // dcs_passthrough), so they are skipped.
+        if self.state == Self::DCS && b >= 0x80 {
+            return Pre::Skip;
+        }
+        if matches!(self.state, Self::ESC | Self::ESC_INT | Self::CSI | Self::APC) && (0x80..=0x9f).contains(&b) {
             // An APC ends there and is dispatched (as libghostty).
             if self.state == Self::APC {
                 self.apc_done = Some(std::mem::take(&mut self.buf));
@@ -3180,7 +3267,36 @@ impl Terminal {
 }
 
 impl vte::Perform for Terminal {
+    fn hook(&mut self, _params: &vte::Params, intermediates: &[u8], ignore: bool, action: char) {
+        // DECRQSS: DCS $ q Pt ST. Other DCS strings are not answered.
+        if !ignore && intermediates == b"$" && action == 'q' {
+            self.decrqss = Some(Vec::new());
+        }
+    }
+
+    fn put(&mut self, byte: u8) {
+        if let Some(req) = self.decrqss.as_mut() {
+            // A request of three bytes or more is answered by nothing (as the newest Ghostty).
+            if req.len() < 3 {
+                req.push(byte);
+            }
+        }
+    }
+
+    fn unhook(&mut self) {
+        if let Some(req) = self.decrqss.take() {
+            if req.len() <= 2 {
+                self.decrqss_reply(&req);
+            }
+        }
+    }
+
     fn print(&mut self, c: char) {
+        // A C1 control decoded from UTF-8 is ignored, as in the newest Ghostty (stream.zig: "C1 controls decoded
+        // from UTF-8 are ignored"); 0.2.2 printed it.
+        if ('\u{80}'..='\u{9f}').contains(&c) {
+            return;
+        }
         if width(c) > 0 {
             self.last_char = Some(c);
         }
@@ -3205,16 +3321,13 @@ impl vte::Perform for Terminal {
             0x0d => self.carriage_return(),
             0x0e => self.cur().gl = 1,
             0x0f => self.cur().gl = 0,
-            // C0 controls with no action (0x10–0x1f) do nothing: xterm, and the newest Ghostty (`ghostty-main`,
-            // F2). libghostty 0.2.2 printed them as cells between characters; haetty followed it until F2
-            // (docs/vtdiff/2026-11-09-f2.md).
-            // vte executes C1 controls; libghostty prints a raw C1 byte as
-            // U+FFFD (invalid UTF-8) and U+0080–U+009F sent as UTF-8 as the
-            // character itself.
-            0x80..=0x9f => {
-                let c = if self.raw_c1 { '\u{fffd}' } else { char::from(b) };
-                self.last_char = Some(c);
-                self.print_char(c);
+            // A raw C1 byte is invalid UTF-8 and prints as U+FFFD. vte executes C1 controls; one sent as UTF-8 is
+            // ignored, as in the newest Ghostty (stream.zig: "C1 controls decoded from UTF-8 are ignored").
+            // C0 controls with no action (0x10–0x1f) do nothing, as in xterm and the newest Ghostty (F2; 0.2.2
+            // printed them as cells between characters).
+            0x80..=0x9f if self.raw_c1 => {
+                self.last_char = Some('\u{fffd}');
+                self.print_char('\u{fffd}');
             }
             _ => {}
         }
