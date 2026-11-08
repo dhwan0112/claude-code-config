@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage e5a1 (branch `haetty/e5a1`, worktree `~/projects/claude-code-config-wt/e5a1`). Remaining: E5a FAIL classes: mode 2027 variation-selector bases, kitty deflate distance, then the wide/last-column, resize and UTF-8 classes; E5c throughput; records.
+> **In progress:** none. E5 done (2026-11-08, DESIGN §10.10); waiting for the user: the two KNOWN candidates, the soak rule question (§6.0), the next overnight run (§6.1 item 30, native).
 
 ## 1. Current state
 
@@ -25,7 +25,7 @@ New progress records go to the newest file in `docs/history/`, not here.
   native engine). The workspace version on `main` still reads 0.2.0; it
   is not bumped yet.
 - Last stages (records in [history](history/2026-11-06-07-stages-t-u-v.md)):
-  T1–T7, U1–U6, V1–V7, E0–E4.
+  T1–T7, U1–U6, V1–V7, E0–E5.
 
 ## Next session
 
@@ -116,19 +116,29 @@ Windows, WSL and the dev machine:
 - Build directories other than `target/` (the gate's `target-native`, worktrees' `target-*`) reached the Dropbox mirror until E4; `tools/mirror-dropbox.sh` now skips `target-*/`. Files Dropbox holds are removed from Windows (`rmdir /s /q`), not through `/mnt/c`.
 - `heavy.ps1` from Git Bash (E3): `-Label … -- pwsh …` printed pwsh's help; dot-sourcing it in `pwsh -Command` left `Enter-HaettyHeavy` undefined. Not yet understood.
 - `tools/check-range.sh` builds into the usual target dir, and our crates' artifacts are named the same in every checkout: a build of another worktree into it meanwhile got stale or missing crates (E5). Give other builds their own `CARGO_TARGET_DIR` while it runs.
+- Git Bash turns a `\\wsl.localhost\…` argument into `\wsl.localhost\…`: put such paths inside a PowerShell script file (E5).
+- PowerShell resolves aliases before functions: a function `R` is shadowed by `r` (Invoke-History) (E5).
 - Claude Code may stop idle background shells when memory runs low (seen on Windows too, against its docs, U3): keep long runs outside Claude Code.
 
 ## 6. Next tasks
 
 ### 6.0 Open defects and tasks (2026-11-07)
 
-- E5 (the user's instructions, 2026-11-08), after the overnight soak:
-  E5a FAIL runs and kitty cases to 0 unexplained; E5b underline styles,
-  underline colour and OSC 8 hyperlinks (DESIGN §2 change, approved);
-  E5c wrapped-line throughput ≥ 60 % and a 2-hour native soak with the
-  soak rule judged after scrollback is full; E5d native on Windows and an
-  engine argument for the overnight script; E5e libghostty-vt release
-  survey (no version change). The default engine stays libghostty.
+- E5 (DESIGN §10.10) done; the default engine stays libghostty. Open:
+  - vtdiff FAIL 79 runs (grammar 56, fuzz2 21, decor 2); classes in
+    §10.10. KNOWN candidates no-pending-wrap-without-autowrap and
+    ctc-2-clears wait for the user's decision; the trimmed-rows class
+    (libghostty re-exposes rows a shrink trimmed) has no candidate yet
+    (needs a switch). VPR past the bottom margin without origin mode
+    (`\e[;8r\e[20e`: libghostty to the screen bottom, haetty-vt to the
+    margin) is undecided: xterm's behaviour to confirm.
+  - Native soak rule: the 2-hour run FAILs (+7.4 MB after the burst tab
+    filled) on the slow tab still filling its scrollback (~3 h). The user
+    decides: a longer native soak, a smaller scrollback limit in the soak,
+    or an allowance for rows still being added.
+  - SGR-heavy throughput 58 % of libghostty (E4 bar 50 %).
+  - Next overnight (§6.1 item 30): `-Commit 6c5e2d6 -Engine native`.
+  - libghostty-vt after 0.2.2: `docs/upstream/libghostty-update-2026-11.md`.
 - The Windows soak v2 (`scripts/e2e/windows/soak.ps1`) has never run end to
   end, and the Windows GUI e2e (item 29) ran once, 13/14: its first full
   runs are on an idle desktop.
@@ -263,7 +273,7 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     ```powershell
     pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\Ubuntu\home\denny\projects\claude-code-config\haetty\tools\overnight-soak.ps1 -Commit COMMIT -Engine native -GuiE2E
     ```
-    with `COMMIT` = the commit named in §6.0 ("Next overnight"). `-Engine
+    with `COMMIT` = `6c5e2d6` (§6.0, "Next overnight"). `-Engine
     native` passes `--engine native` to every GUI (Linux through
     `scripts/e2e/engine-gui.sh`, Windows through
     `scripts/e2e/windows/lib.ps1`); `-Engine ghostty` (default) is the

@@ -32,3 +32,5 @@ Versions:
 Findings 1 and 2 also explain why haetty's known-differences list holds them
 (`docs/vtdiff/known.md`). With a libghostty-vt release built from a Ghostty
 commit after the fixes, both entries would no longer be needed.
+
+See also `libghostty-update-2026-11.md` (E5e): what a libghostty-vt update after 0.2.2 would change (survey, no version change).
