@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** none (F0 done 2026-11-09; the night run is waiting, §6.1 item 30).
+> **In progress:** stage f1 (branch `haetty/f1`, worktree `~/projects/claude-code-config-wt/f1`). Remaining: F1: the newest Ghostty as the test reference (tools/ghostty-ref, a helper process, pinned e035beb), vtdiff --ref (ghostty-main by default, 0.2.2 side by side), refs in the known list, the delegation rule in CLAUDE.md. Then F2 (classification and fixes), F3 (SGR throughput), F4 (native-only dist and the transition table), F5 (v0.3.0 candidate and CHANGELOG), F6 (issue drafts 01-03).
 
 ## 1. Current state
 
