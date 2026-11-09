@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage g5c (branch `haetty/g5c`, worktree `~/projects/claude-code-config-wt/g5c`). Remaining: G5c: the dim /clear mark on a worker tab when its context passes clear-hint percent of context-window (display only; the transcript is read, nothing is sent). Then G6 (saving mode, off by default) and G7 (before and after on one task).
+
 ## 1. Current state
 
 - **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
