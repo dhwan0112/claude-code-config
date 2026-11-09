@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** none (F4 done 2026-11-09: native-only dist sizes, Windows build without WSL, transition table in DESIGN.md section 10.15; F5 next).
+> **In progress:** stage f5 (branch `haetty/f5`, worktree `~/projects/claude-code-config-wt/f5`). Remaining: F5: the v0.3.0 candidate (version, CHANGELOG, candidate validation, night runs on both engines; the tag only after they pass), then F6 and G0-G7.
 
 ## 1. Current state
 
