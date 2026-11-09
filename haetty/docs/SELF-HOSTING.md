@@ -57,6 +57,28 @@ path.
    `tools/check-range.sh origin/main..HEAD` ending in "0 failing"
    (`CLAUDE.md`, Commits).
 
+## Windows build without WSL
+
+The Windows build that the installer ships is cross-compiled in WSL (mingw, with libghostty and Zig). A build with
+the native engine alone needs none of that:
+
+1. **Toolchain**: Rust for MSVC (`rustup default stable-x86_64-pc-windows-msvc`), and Visual Studio 2022 Build Tools
+   with the C++ tools (MSVC and the Windows SDK). Find the install with
+   `"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires
+   Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`.
+2. **Source**: a git checkout on Windows at the commit to build. A copy without `.git` builds too, but `--version`
+   then says `commit unknown`.
+3. **Build**, in the checkout:
+   `cargo build --profile dist --no-default-features -p haetty-gui -p haetty-headless`
+   The binaries are `target\dist\haetty.exe` and `target\dist\haetty-headless.exe` (about 4.5 MB and 2.1 MB at
+   `12b5546`).
+4. **Check**: `target\dist\haetty.exe --version`; and
+   `target\dist\haetty-headless.exe --engine native --cols 40 --rows 5 --timeout 20 --dump plain -- cmd /c echo ok`
+   prints `ok`.
+
+The installer (`tools\install-stable.ps1`) has no option for this build yet and installs the default build only. A
+`ghostty` engine request in this build runs on the native engine and logs a warning.
+
 ## Dev → stable
 
 Only you replace the stable binary. The steps:

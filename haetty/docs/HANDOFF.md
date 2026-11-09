@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage f4 (branch `haetty/f4`, worktree `~/projects/claude-code-config-wt/f4`). Remaining: F4: native-only candidate default dist (sizes of both builds on Linux; native built without Zig on PATH; installer self-tests; key-to-frame latency of both engines; Windows native build without WSL), the transition table in DESIGN with each condition's status; then F5 (v0.3.0 candidate and CHANGELOG) and F6 (issue drafts 01-03).
+> **In progress:** none (F4 done 2026-11-09: native-only dist sizes, Windows build without WSL, transition table in DESIGN.md section 10.15; F5 next).
 
 ## 1. Current state
 
@@ -29,13 +29,15 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 ## Next session
 
-- F0 done (section 10.11); the night run of 2026-11-09 passed on native (§6.1 item 30).
+- F0 done (section 10.11); the night run of 2026-11-09 passed on native (§6.1 item 30) at `bb61e92`.
 - F1 done (10.12): ghostty-main is the default reference; 0.2.2 side by side.
-- F2 done in part (10.13): ghostty-main FAIL 877 -> 744; the kitty graphics responses and XTWINOPS reports, other
-  replies, and grammar and mutated text remain (docs/vtdiff/2026-11-09-f2.md).
+- F2 done in part (10.13): ghostty-main FAIL 877 -> 744 (docs/vtdiff/2026-11-09-f2.md).
 - F3 done (10.14): SGR-heavy throughput 82 % of libghostty (session), from 56 %.
-- Next: F4 (native-only dist and the transition table), F5 (the v0.3.0 candidate and CHANGELOG; the tag only after both
-  night parts PASS on the candidate), F6 (issue drafts 01-03).
+- F4 done (10.15): native-only builds pass the e2e suite; the Windows build without WSL works; NOT MET: the 744
+  vtdiff FAILs, key-to-frame latency (0.13 ms over libghostty), the native-only installer path; SGR is at 80 %.
+- Next: F5 (the v0.3.0 candidate and CHANGELOG; the candidate's validation; night runs on both engines on both
+  platforms; the tag only after they pass and check-range shows 0 failing), F6 (issue drafts 01-03), then G0-G7
+  (token saving, the brief of 2026-11-09).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
