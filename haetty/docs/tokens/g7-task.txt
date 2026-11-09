@@ -1,0 +1,10 @@
+Add a small percent helper to the haetty-cc crate, with tests.
+
+1. Create crates/haetty-cc/src/percent.rs with `pub fn percent(part: u64, whole: u64) -> f64`: the percentage that
+   `part` is of `whole`; 0.0 when `whole` is 0.
+2. Add `pub mod percent;` to crates/haetty-cc/src/lib.rs, in the module list, keeping the order.
+3. Add unit tests in percent.rs: 0 of 0 is 0.0; 1 of 4 is 25.0; 3 of 3 is 100.0.
+4. Run `cargo test -p haetty-cc --no-default-features percent -q` from the haetty folder and fix anything that fails.
+   Do not run the whole test suite. Do not commit anything.
+
+End your final message with one line: the test result, and the paths of the files you changed.

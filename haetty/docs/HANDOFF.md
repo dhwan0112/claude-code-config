@@ -8,8 +8,6 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage g7 (branch `haetty/g7`, worktree `~/projects/claude-code-config-wt/g7`). Remaining: G7: the before and after measurement of one small task (docs/tokens/g7-measurement.md). Then the F5 record after the night runs of b1262d2, and the person's checks.
-
 ## 1. Current state
 
 - **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
@@ -36,14 +34,15 @@ New progress records go to the newest file in `docs/history/`, not here.
 - G0 done (2026-11-09): DESIGN by topic in `docs/design/` (index `docs/DESIGN.md`, 65 lines); CLAUDE.md keeps its rules,
   commands and environment moved to `docs/dev-commands.md`; HANDOFF under 400 lines. Token estimates:
   `docs/history/2026-11-09-g0-handoff-trim.md`.
-- G1 to G6 done (2026-11-09): `haetty tokens` and the token status line (G1, G1b; off by default), `haetty run` and
+- G1 to G7 done (2026-11-09): `haetty tokens` and the token status line (G1, G1b; off by default), `haetty run` and
   `haetty log` (G2), `haetty wait` (G3: exit 0 when met, 124 on timeout, 3 when the tab is not observable; the event
   waits follow the daemon's stream), the guide `docs/tokens/claude-guide.md` and the CLAUDE.md section (G4; haetty
   adds the guide to no session), the orchestrator (G5: a task's model and effort are launch arguments, a briefing
   file per task, the report keeps its STATUS block only), the dim `/clear` mark on a worker tab past its context
   share (G5c: `clear-hint`, `context-window`; display only, nothing is sent), and the saving mode (G6: `saving-mode`,
   off by default; BASH_MAX_OUTPUT_LENGTH and MAX_MCP_OUTPUT_TOKENS of 12000 for Claude Code sessions, a dim `◆ saving`
-  mark; the official meanings and sources in `docs/tokens/README.md`). Next: G7 (before and after on one task).
+  mark; sources in `docs/tokens/README.md`), and the G7 measurement (`docs/tokens/g7-measurement.md`, one run each).
+  Next: F5 (the night runs of b1262d2 on both platforms, then the tag `haetty-v0.3.0`), and the person's checks (§6.1).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
