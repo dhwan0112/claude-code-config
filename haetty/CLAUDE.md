@@ -93,6 +93,15 @@ the start of a session.
   `docs/vtdiff/known-candidates.txt` for the person. Changing or removing an entry needs the person's approval.
   Details: `docs/dev-commands.md`.
 
+## Tools for long jobs (haetty)
+
+- Builds and test runs that print much: `haetty run -- COMMAND` (the full output goes to a log; the terminal gets the
+  exit code, the error lines and the last lines). Read the log in parts with `haetty log`.
+- Waiting for a background job or a tab: `haetty wait …` (one line; exit 124 on timeout), not a `sleep` loop.
+- A tab's screen: read it as text (`haetty screen`) before taking an image.
+- Where a session's tokens went: `haetty tokens --top 10 PATH`.
+- The guide for Claude Code is `docs/tokens/claude-guide.md`; haetty adds it to no session.
+
 ## Commands, environment and tools
 
 Commands, environment (Rust, Zig), the vtdiff and end-to-end tools, the stable installs and `haetty-headless`:

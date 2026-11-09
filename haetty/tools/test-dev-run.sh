@@ -46,7 +46,8 @@ if [ -n "${DISPLAY:-}" ]; then
   # From a stable tab (its normal use): a (fake) stable haetty runs dev-run --check as its tab's program, with
   # exactly the environment a stable session passes on (HAETTY_SESSION_ID, an empty HAETTY_INSTANCE, …).
   (env -u HAETTY_INSTANCE setsid "$bin" sh -c "\"$D\" --no-build --check > '$F/from-tab.out' 2>&1; echo rc=\$? >> '$F/from-tab.out'; env | grep -E '^HAETTY_' > '$F/from-tab.env'; sleep 60"      > "$F/stable-gui.log" 2>&1 < /dev/null &)
-  for i in $(seq 1 60); do grep -q '^rc=' "$F/from-tab.out" 2> /dev/null && break; sleep 0.5; done
+  # wait for the script's exit line (a line that starts with rc=), with haetty wait instead of a sleep loop
+  "$bin" wait file "$F/from-tab.out" --contains "$(printf '\nrc=')" --timeout 30 > /dev/null 2>&1
   ok "$(grep -q '^rc=0' "$F/from-tab.out" 2> /dev/null && echo 1 || echo 0)" "from a stable tab: checks pass (tab env: $(paste -sd' ' "$F/from-tab.env" 2> /dev/null | cut -c1-80))"
   ok "$([ -S "$F/rt/haetty/daemon.sock" ] && grep -q "$F/rt/haetty-dev/daemon.sock" "$F/from-tab.out" && echo 1 || echo 0)" "the fake stable daemon is at the stable socket; dev-run chose the dev one"
   sp=$(env -u HAETTY_INSTANCE "$bin" status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["daemon_pid"])')

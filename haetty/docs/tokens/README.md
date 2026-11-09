@@ -52,3 +52,8 @@ total of everything counted (cache reads included); `new` is the input, the cach
 processed fresh; `hit` is the cache's share of the input side. A background thread reads each transcript every
 2 seconds, only what was appended, and keeps nothing else of it. A tab shows no line until its transcript has been
 read.
+
+## For a CLAUDE.md
+
+`claude-guide.md` is the text to copy into your own CLAUDE.md, so that Claude Code uses `haetty run`, `haetty wait`
+and the text of `haetty screen`. haetty does not add it to any session.
