@@ -100,10 +100,11 @@ pub const SUBCOMMANDS: &[&str] = &[
     "status",
     "events",
     "screen",
+    "tokens",
     "completions",
 ];
 pub const IMPLEMENTED: &[&str] =
-    &["gui", "daemon", "status", "install-desktop", "hook", "statusline", "events", "screen", "completions"];
+    &["gui", "daemon", "status", "install-desktop", "hook", "statusline", "events", "screen", "tokens", "completions"];
 
 /// What the command line asks for.
 #[derive(Debug)]
@@ -129,6 +130,11 @@ pub enum Command {
     Observe {
         id: String,
         json: bool,
+    },
+    /// `tokens [--top N] [PATH...]`: the token use of Claude Code transcripts (`haetty_cc::transcript`).
+    Tokens {
+        top: usize,
+        paths: Vec<std::path::PathBuf>,
     },
     /// `completions SHELL`: a completion script (`help.rs`).
     Completions {
@@ -176,6 +182,21 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
             }
             _ => Err("usage: haetty screen [--json] SESSION".into()),
         },
+        Some("tokens") => {
+            let mut top = 10usize;
+            let mut paths = Vec::new();
+            let mut it = args[1..].iter();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--top" => {
+                        top = it.next().and_then(|v| v.parse().ok()).ok_or("--top needs a number")?;
+                    }
+                    p if !p.starts_with('-') => paths.push(std::path::PathBuf::from(p)),
+                    _ => return Err("usage: haetty tokens [--top N] [PATH...]".into()),
+                }
+            }
+            Ok(Command::Tokens { top, paths })
+        }
         Some("completions") => match &args[1..] {
             [sh] if help::SHELLS.contains(&sh.as_str()) => Ok(Command::Completions { shell: sh.clone() }),
             _ => Err(format!("usage: haetty completions {}", help::SHELLS.join("|"))),
@@ -506,6 +527,11 @@ fn main() {
         Command::Screen { id } => {
             init_log(None);
             let (text, code) = cli::screen(&id);
+            exit_with(&text, code)
+        }
+        Command::Tokens { top, paths } => {
+            init_log(None);
+            let (text, code) = cli::tokens(top, &paths);
             exit_with(&text, code)
         }
         Command::Completions { shell } => {

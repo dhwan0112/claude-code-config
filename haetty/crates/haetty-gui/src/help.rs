@@ -62,6 +62,14 @@ pub const SUBS: &[Sub] = &[
         options: &[("--json", "as JSON")],
     },
     Sub {
+        name: "tokens",
+        usage: "haetty tokens [--top N] [PATH...]",
+        about: "token use of Claude Code sessions from their transcripts, read-only; PATH is a .jsonl file or a folder to search (default: the newest under ~/.claude/projects)",
+        options: &[
+            ("--top N", "how many of the largest tool results to list (default 10)"),
+        ],
+    },
+    Sub {
         name: "install-desktop",
         usage: "haetty install-desktop",
         about: "install the desktop entry and icons (Linux; nothing to do on Windows)",

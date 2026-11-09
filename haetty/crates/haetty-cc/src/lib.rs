@@ -10,6 +10,7 @@ pub mod report;
 pub mod resume;
 pub mod settings;
 pub mod state;
+pub mod transcript;
 
 pub use json::Json;
 pub use similar;

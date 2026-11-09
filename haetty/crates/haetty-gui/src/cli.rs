@@ -421,3 +421,106 @@ mod tests {
         assert!(j.contains(r#""evidence":"cargo test: ok""#), "{j}");
     }
 }
+
+/// `haetty tokens`: the token use of Claude Code sessions, from their transcripts (`haetty_cc::transcript`). Read-only:
+/// the text and the exit code. With no PATH, the newest transcript under the Claude Code projects folder.
+pub fn tokens(top: usize, paths: &[std::path::PathBuf]) -> (String, i32) {
+    let files = match transcript_files(paths) {
+        Ok(f) => f,
+        Err(e) => return (format!("haetty tokens: {e}"), 2),
+    };
+    if files.is_empty() {
+        return ("haetty tokens: no transcript (.jsonl) found; give a file or a folder".into(), 1);
+    }
+    let mut reports = Vec::with_capacity(files.len());
+    for f in &files {
+        let name = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let read = std::fs::File::open(f)
+            .and_then(|file| haetty_cc::transcript::analyze_reader(&name, std::io::BufReader::new(file)));
+        match read {
+            Ok(r) => reports.push(r),
+            Err(e) => return (format!("haetty tokens: {}: {e}", f.display()), 2),
+        }
+    }
+    let mut text = String::new();
+    for r in &reports {
+        text.push_str(&haetty_cc::transcript::render(r, top));
+        text.push('\n');
+    }
+    if reports.len() > 1 {
+        let all = haetty_cc::transcript::merge(&format!("all {} transcripts", reports.len()), &reports);
+        text.push_str(&haetty_cc::transcript::render(&all, top));
+    }
+    (text.trim_end().to_string(), 0)
+}
+
+/// The transcripts to read: the files given, the `.jsonl` files in the folders given (recursively, sorted), or with
+/// no PATH the newest `.jsonl` under `~/.claude/projects` (`USERPROFILE` on Windows).
+fn transcript_files(paths: &[std::path::PathBuf]) -> Result<Vec<std::path::PathBuf>, String> {
+    if paths.is_empty() {
+        let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+        let Some(home) = home else {
+            return Err("no home folder (HOME or USERPROFILE)".into());
+        };
+        let dir = std::path::PathBuf::from(home).join(".claude").join("projects");
+        let mut all = Vec::new();
+        collect_jsonl(&dir, 0, &mut all).map_err(|e| format!("{}: {e}", dir.display()))?;
+        return Ok(newest(all).into_iter().collect());
+    }
+    let mut out = Vec::new();
+    for p in paths {
+        let meta = std::fs::metadata(p).map_err(|e| format!("{}: {e}", p.display()))?;
+        if meta.is_dir() {
+            let mut found = Vec::new();
+            collect_jsonl(p, 0, &mut found).map_err(|e| format!("{}: {e}", p.display()))?;
+            found.sort_by(|a, b| a.0.cmp(&b.0));
+            out.extend(found.into_iter().map(|(f, _)| f));
+        } else {
+            out.push(p.clone());
+        }
+    }
+    Ok(out)
+}
+
+/// The `.jsonl` files under `dir` with their modification times; folders deeper than 8 levels are not searched, and
+/// a subfolder that cannot be read is skipped.
+fn collect_jsonl(
+    dir: &std::path::Path,
+    depth: u32,
+    out: &mut Vec<(std::path::PathBuf, std::time::SystemTime)>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            if depth < 8 {
+                let _ = collect_jsonl(&path, depth + 1, out);
+            }
+        } else if path.extension().is_some_and(|e| e == "jsonl") {
+            let t = entry.metadata()?.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            out.push((path, t));
+        }
+    }
+    Ok(())
+}
+
+/// The file modified last.
+fn newest(files: Vec<(std::path::PathBuf, std::time::SystemTime)>) -> Option<std::path::PathBuf> {
+    files.into_iter().max_by_key(|(_, t)| *t).map(|(p, _)| p)
+}
+
+#[cfg(test)]
+mod tokens_tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn the_newest_transcript_is_the_one_modified_last() {
+        let t = |s: u64| SystemTime::UNIX_EPOCH + Duration::from_secs(s);
+        let files =
+            vec![(PathBuf::from("a.jsonl"), t(5)), (PathBuf::from("b.jsonl"), t(9)), (PathBuf::from("c.jsonl"), t(7))];
+        assert_eq!(newest(files), Some(PathBuf::from("b.jsonl")));
+        assert_eq!(newest(Vec::new()), None);
+    }
+}
