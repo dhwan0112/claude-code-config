@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage k3b (branch `haetty/k3b`, worktree `~/projects/claude-code-config-wt/k3b`). Remaining: K3b: a tab keeps its own name per session; the former CCTERM_* environment names are no longer read (the file migration stays one version)
+> **In progress:** stage h (branch `haetty/h`, worktree `~/projects/claude-code-config-wt/h`). Remaining: H: the old ccterm copy is archived outside the projects tree; project read rules for the target folders and the archive; partial-read rules; per-stage operating doc; token method
 
 ## 1. Current state
 
