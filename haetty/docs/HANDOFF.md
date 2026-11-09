@@ -17,9 +17,9 @@ New progress records go to the newest file in `docs/history/`, not here.
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
   check-range `haetty-v0.1.1..63822de` 0 failing; record in
   [history](history/2026-11-06-07-stages-t-u-v.md)).
-- **Stable (installed by the user):** the stable install recorded for the
-  user is v0.1.0. The user installs 0.1.1 / 0.2.0 themselves, and this
-  line changes only when they say so.
+- **Stable (installed by the user):** kramers has **v0.2.0 (`63822de`)**, installed 2026-11-07 with
+  `tools/install-stable.sh 63822de` (checked 2026-11-09: [docs/checks/2026-11-09-kramers.md](checks/2026-11-09-kramers.md)).
+  This line changes only when the user says so.
 - **Everything after `63822de` is the v0.3.0 candidate** (V3's
   observe-only interface and protocol 8, V6's palette fix, E1–E5: the
   native engine, F0-F4). The workspace version is 0.3.0 from the candidate
@@ -29,8 +29,8 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 ## Next session
 
-- F0 to F4 done (DESIGN 10.11 to 10.15). F5: candidate `b1262d2` on main, night run registered for 2026-11-10 02:00;
-  the tag `haetty-v0.3.0` only after both nights PASS, then the F5 record (DESIGN 10.16).
+- F0 to F4 done (DESIGN 10.11 to 10.15). F5: candidate `b1262d2` on main; its night run is registered for 2026-11-10 02:00
+  and had not run at 2026-11-09 21:31. The tag `haetty-v0.3.0` waits for both platforms to PASS, then the F5 record (DESIGN 10.16).
 - F6 done: drafts 01 and 02 fixed upstream (`bed20eb`, `82df0be`); 03 still present (re-run: 5 of 6 cases stale);
   none sent.
 - G0 done (2026-11-09): DESIGN by topic in `docs/design/` (index `docs/DESIGN.md`, 65 lines); CLAUDE.md keeps its rules,
@@ -44,7 +44,8 @@ New progress records go to the newest file in `docs/history/`, not here.
   share (G5c: `clear-hint`, `context-window`; display only, nothing is sent), and the saving mode (G6: `saving-mode`,
   off by default; BASH_MAX_OUTPUT_LENGTH and MAX_MCP_OUTPUT_TOKENS of 12000 for Claude Code sessions, a dim `◆ saving`
   mark; sources in `docs/tokens/README.md`), and the G7 measurement (`docs/tokens/g7-measurement.md`, one run each).
-  Next: F5 (the night runs of b1262d2 on both platforms, then the tag `haetty-v0.3.0`), and the person's checks (§6.1).
+  K0 done (2026-11-09): the kramers results are in §6.1 and §6.0 (`docs/checks/`). Next: K1–K4 and H1–H4 (the v0.3.1
+  candidate); the v0.3.0 tag waits for the night run of 2026-11-10.
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
@@ -137,6 +138,15 @@ Windows, WSL and the dev machine:
 
 ### 6.0 Open defects and tasks (2026-11-07)
 
+- **kramers 2026-11-09 (0.2.0, `63822de`)**, [docs/checks/2026-11-09-kramers.md](checks/2026-11-09-kramers.md).
+  Open failures: 7 (window size on Wayland at 125 %, still in 0.2.0; §6.1 item 32) and 12 (the red `?` comes late
+  and stays; K1). Other observations, not counted as failures: a tab's own name is lost on detach and reattach (K3);
+  a daemon killed with SIGKILL stays a zombie of its window until the window exits (K3); test instances write their
+  per-session settings into the shared `$XDG_RUNTIME_DIR/haetty/` (K3); a tab started inside Claude Code inherits
+  `CLAUDE_CODE_CHILD_SESSION` and the messaging socket and token, so transcript saving is off (K2); the worker mark
+  stays `–` after a restart though its last report is stored (K3); a `WARN` for the empty left button side (cosmetic).
+  Pending: 2 (not applicable), 17 (reboot), 25 (X11, 200 %).
+
 - The default engine stays libghostty. Open for the person (DESIGN §10.15, the transition table): the 744 vtdiff
   FAILs of ghostty-main (`docs/vtdiff/2026-11-09-f2.md`); the native engine's key-to-frame latency (+0.13 ms at the
   median); SGR throughput at the 80 % threshold; no native-only installer option; no Windows soak with libghostty.
@@ -172,6 +182,7 @@ Windows, WSL and the dev machine:
 | Date, machine, build | Pass | Fail | Pending | File |
 |---|---|---|---|---|
 | 2026-11-06 kramers (ThinkPad T480, Ubuntu 26.04 GNOME Wayland, lid closed, one monitor at 125 %), 0.1.1 | 3, 9, 10 | **7** (window size at a fractional scale: §6.0) | 1 (automatic part passes), 2 (n/a: no ccterm), 4–6, 8 (copying works), 11–17 | [2026-11-06-kramers.md](checks/2026-11-06-kramers.md) |
+| 2026-11-09 kramers (ThinkPad T480, Ubuntu 26.04 GNOME Wayland, lid closed, one monitor at 125 %), 0.2.0 (`63822de`) | 1, 3–6, 8–11, 13–17 (17 except the reboot), 25 (Wayland), 26–28 | **7**, **12** | 2 (not applicable), 17 (reboot), 25 (X11, 200 %); not run: 18–24, 29, 31 | [checks/2026-11-09-kramers.md](checks/2026-11-09-kramers.md) |
 
 What automation could not show: real keyboards, IMEs, displays, desktops,
 and a logged-in Claude Code (the tests use a fake key, so Claude Code never
@@ -181,43 +192,43 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 
 #### A. Linux, no real account needed (a shell, `vim`/`less`, or Claude Code's start screen)
 
-1. **Name and icon.** `haetty install-desktop`, then on GNOME/KDE: the
+1. [kramers 2026-11-09: pass] **Name and icon.** `haetty install-desktop`, then on GNOME/KDE: the
    launcher shows "haetty" with the new icon (window with an orange bar,
    grey `❯_`); a started window is matched to it in the dock (X11 and
    Wayland session: `WM_CLASS`/`app_id` = `io.github.dhwan0112.haetty`);
    the icon at the smallest sizes (top bar, Alt+Tab, a 16/24 px panel) —
    `❯`, cursor and orange bar still recognisable.
-2. **Migration from ccterm** (only if you used ccterm): the first `haetty`
+2. [kramers 2026-11-09: not applicable (no ccTerm settings on kramers)] **Migration from ccterm** (only if you used ccterm): the first `haetty`
    start shows "settings and tab sets copied from ccterm"; your
    `~/.config/ccterm/config` settings apply; the palette's "Open the
    previous run's tabs" offers your old tabs; the ccterm files are still
    there. With a `ccterm` window still open: the hint says a ccterm daemon
    is running, and that window keeps working.
-3. **Old variable names**: `CCTERM_LOG=info haetty` still logs, with one
+3. [kramers 2026-11-09: pass] **Old variable names**: `CCTERM_LOG=info haetty` still logs, with one
    line asking to rename it to `HAETTY_LOG`.
-4. **Hangul IME**: ibus or fcitx5 under native Wayland
+4. [kramers 2026-11-09: pass] **Hangul IME**: ibus or fcitx5 under native Wayland
    (`zwp_text_input_v3`) and under X11 (XIM): composition inline at the
    cursor, commit on Space/Enter, Hangul typed into the palette (Ctrl+Shift+P).
-5. **Keys and tabs** with a real keyboard: Ctrl+Shift+T/W (W twice),
+5. [kramers 2026-11-09: pass] **Keys and tabs** with a real keyboard: Ctrl+Shift+T/W (W twice),
    Ctrl+Tab / Ctrl+Shift+Tab, Alt+1..9, Ctrl+Shift+P, Ctrl+Shift+V,
    Shift+Insert; the tab bar and hints legible on your display.
-6. **Mouse**: a wheel notch = one step in a full-screen program; touchpad
+6. [kramers 2026-11-09: pass] **Mouse**: a wheel notch = one step in a full-screen program; touchpad
    scrolling smooth enough.
-7. **Window**: drag the edge to resize (padding while dragging); HiDPI
+7. [kramers 2026-11-09: FAIL, still in 0.2.0 (open, §6.0)] **Window**: drag the edge to resize (padding while dragging); HiDPI
    150–200 % on Wayland and moving between monitors of different scale;
    dark title bar on GNOME/KDE X11 (`_GTK_THEME_VARIANT`) and the dark
    adwaita decorations on Wayland.
-8. **Clipboard** with a real clipboard manager on X11 and Wayland: copy in
+8. [kramers 2026-11-09: pass] **Clipboard** with a real clipboard manager on X11 and Wayland: copy in
    the terminal, paste elsewhere; paste a large text (bracketed paste).
-9. **Fonts**: `--font` with a few families; Hangul next to Latin (size and
+9. [kramers 2026-11-09: pass] **Fonts**: `--font` with a few families; Hangul next to Latin (size and
    baseline), the symbols ⏸ ⚠ ✔ ● (judged from frame dumps only so far).
-10. **Reattach** without Claude Code: open two tabs with shells, `kill -9`
+10. [kramers 2026-11-09: pass] **Reattach** without Claude Code: open two tabs with shells, `kill -9`
     the haetty window (or let it crash), start `haetty` again from the
     launcher — both shells come back as they were (same history), nothing
     restarted; a second window killed → palette "Attach detached sessions"
     takes its tabs.
 
-25. **Integrated title bar on GNOME** (Wayland session, `decorations`
+25. [kramers 2026-11-09: pass on Wayland; X11 and 200 % pending] **Integrated title bar on GNOME** (Wayland session, `decorations`
     unset = auto): one colour from the title row to the bottom (no `#303030`
     bar); the window buttons where GNOME puts them (Ubuntu: minimize,
     maximize, close on the right; change it in Tweaks → Window Titlebars and
@@ -228,7 +239,7 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     see); a right click on the title row does nothing. X11 session: the
     system title bar again (auto = native), dark.
 
-26. **Tab features with a real Claude Code** (stage S2): in a git
+26. [kramers 2026-11-09: pass] **Tab features with a real Claude Code** (stage S2): in a git
     repository a new Claude Code tab is named `repo:branch` until Claude
     Code names the session; `git checkout` elsewhere renames it within a
     few seconds; Ctrl+Shift+R with Korean typed through the IME (fcitx5 /
@@ -240,7 +251,7 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     repository — the working tree view lists what Claude Code changed with
     Bash too, and returns within a moment.
 
-27. **Orchestrator with a real Claude Code** (stage S3; follow README
+27. [kramers 2026-11-09: pass] **Orchestrator with a real Claude Code** (stage S3; follow README
     "Orchestrator: tasks and workers" — steps 1–5 and the safety boundary
     are written for exactly this check): palette "New task"
     in a real repository — the worktree appears beside it on
@@ -256,14 +267,14 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     uncommitted files); restore the tab set — the worker resumes without
     getting the task again.
 
-28. **Daemon crash with real Claude Code tabs** (stage S4): with two Claude
+28. [kramers 2026-11-09: pass] **Daemon crash with real Claude Code tabs** (stage S4): with two Claude
     Code tabs in a dev instance, end the dev daemon by its PID (`haetty
     status --json` → `daemon_pid`); the window stays with the hint, no
     `claude` process of those tabs is left (`ps` / Task Manager); start haetty
     again — both conversations resume. On Windows also check that no
     `node`/`claude` or `OpenConsole` process of those tabs stays.
 
-29. **Windows GUI end-to-end runs** (`tabs.ps1`, `orchestrator.ps1`; need
+29. [kramers 2026-11-09: not run] **Windows GUI end-to-end runs** (`tabs.ps1`, `orchestrator.ps1`; need
     a desktop nobody uses): at night with item 30's `-GuiE2E` (`RESULT
     GUI-TABS` / `GUI-ORCHESTRATOR`), or by hand (`pwsh -ExecutionPolicy
     Bypass -File scripts\e2e\windows\tabs.ps1 -Exe <haetty.exe>`). Expect
@@ -291,14 +302,14 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
       GUI-ORCHESTRATOR …`, then `engine: native`; `progress.log` beside it.
     - Options: `-Minutes` (default 60), `-IdleWaitMinutes`, `-Commit` (default HEAD), `-Engine`, `-OutDir`, `-GuiE2E`.
 
-31. **Observing a tab** (V3): palette "Observing: allow or stop for this
+31. [kramers 2026-11-09: not run] **Observing a tab** (V3): palette "Observing: allow or stop for this
     tab" — a dim `◦` appears after the tab's number (grey, also on the
     active tab; no colour) and goes again with the same entry; `haetty
     screen --json <id>` (id from `haetty status`) shows that tab and refuses
     another one; `haetty events --follow` prints its events while you work
     in it (never what you type). Linux and Windows.
 
-32. **A7 again on kramers** (fixed after `b442fff`): Wayland, lid closed,
+32. [kramers 2026-11-09: open: the 2026-11-09 run was on 0.2.0 and failed (see 7)] **A7 again on kramers** (fixed after `b442fff`): Wayland, lid closed,
     the external monitor at 125 % (then 100 % and 200 %):
     - `haetty --cols 80 --rows 24 bash -c 'sleep 3; tput cols; tput lines;
       sleep 2'` prints 80 and 24;
@@ -309,61 +320,61 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 
 #### B. Linux with a real account (Claude Code logged in)
 
-11. **Ctrl+C twice** right after Claude Code starts, a few times (rare
+11. [kramers 2026-11-09: pass] **Ctrl+C twice** right after Claude Code starts, a few times (rare
     misses were seen only within the first seconds, §3).
-12. **Attention marks**: in a background tab, a permission prompt shows the
+12. [kramers 2026-11-09: FAIL (open, §6.0; K1)] **Attention marks**: in a background tab, a permission prompt shows the
     red `?` *already when the dialog appears* (the hook is synchronous; no
     noticeable delay before the dialog); Stop shows the amber dot;
     selecting the tab clears amber; answering clears `?`.
-13. **Unfocused window**: when Claude Code finishes or asks, the window gets
+13. [kramers 2026-11-09: pass] **Unfocused window**: when Claude Code finishes or asks, the window gets
     the urgency hint and a desktop notification (`notify-send`; off with
     `notifications = false`), with no session text in it.
-14. **Status row and panel**: context %, 5h/7d limits, cost match Claude
+14. [kramers 2026-11-09: pass] **Status row and panel**: context %, 5h/7d limits, cost match Claude
     Code's `/status`; "esc to interrupt" while it works; Ctrl+Shift+S panel
     (reset times, subagents with durations, last edit).
-15. **Edits and diff**: after an Edit or Write by Claude Code, "N files
+15. [kramers 2026-11-09: pass] **Edits and diff**: after an Edit or Write by Claude Code, "N files
     changed · Ctrl+Shift+D"; Ctrl+Shift+D shows exactly that edit (side by
     side at ≥ 110 columns); a multi-MB Write shows no hook error, with and
     without the daemon running.
-16. **Permission prompt and the palette**: while Claude Code asks, the
+16. [kramers 2026-11-09: pass] **Permission prompt and the palette**: while Claude Code asks, the
     palette's "Paste" is refused with a hint; Ctrl+Shift+V typed by you
     goes through.
-17. **Resume and reattach**: kill the window during a long Claude Code turn
+17. [kramers 2026-11-09: pass; the reboot case pending] **Resume and reattach**: kill the window during a long Claude Code turn
     and start haetty again → the same conversation continues in its tab
     (not restarted, no second `--resume`); after a reboot (daemon gone) the
     tabs reopen and each Claude Code tab resumes its conversation once.
 
 #### C. Windows 11 (and 10 where noted)
 
-18. **Name and icon**: `haetty.exe` in Explorer (file icon, Properties),
+18. [kramers 2026-11-09: not run (Windows)] **Name and icon**: `haetty.exe` in Explorer (file icon, Properties),
     pinned to Start and the taskbar, in Alt+Tab, in the title bar — the new
     icon at every size; the window title "haetty"; `haetty install-desktop`
     says nothing is needed. Pin haetty to the taskbar, then start a copy of
     `haetty.exe` from another folder: its window joins the pinned button
     (same AppUserModelID); a `HAETTY_INSTANCE=dev` window gets its own.
-19. **Migration and the old daemon**: with a ccterm installation, the first
+19. [kramers 2026-11-09: not run (Windows)] **Migration and the old daemon**: with a ccterm installation, the first
     start copies `%APPDATA%\ccterm\config` and the tab sets
     (`%LOCALAPPDATA%\ccterm\tabs`); with `ccterm.exe` still open, haetty runs
     beside it (separate pipes) and says so; the ccterm window keeps working.
-20. **Microsoft Korean IME** in `haetty.exe` running Claude Code:
+20. [kramers 2026-11-09: not run (Windows)] **Microsoft Korean IME** in `haetty.exe` running Claude Code:
     composition inline and underlined at the cursor, no caret at the start
     of the syllable, Hanja candidate window next to the cursor, commit on
     Space/Enter, Enter right after a syllable submits once; Ctrl+C while
     composing.
-21. **Keys, mouse, clipboard, fonts, HiDPI** as in 5–9 (Ctrl+V also pastes
+21. [kramers 2026-11-09: not run (Windows)] **Keys, mouse, clipboard, fonts, HiDPI** as in 5–9 (Ctrl+V also pastes
     on Windows); dark title bar on Windows 10 (Windows 11 colours do not
     apply there).
-22. **With a real account**: 11–17 on Windows (taskbar flash instead of a
+22. [kramers 2026-11-09: not run (Windows)] **With a real account**: 11–17 on Windows (taskbar flash instead of a
     notification for 13; the permission dialog after the synchronous hook,
     ~70 ms on the test machine).
-23. **Status line on a machine without Git Bash** (Claude Code then runs it
+23. [kramers 2026-11-09: not run (Windows)] **Status line on a machine without Git Bash** (Claude Code then runs it
     through PowerShell; could not be produced here — Claude Code finds Git
     Bash at its default install location even with Git off `PATH`): with
     haetty in a folder with spaces (e.g. `C:\Program Files\haetty`) or in a
     user folder with a space, the status row at the bottom of a Claude Code
     tab fills (`$ 0.00` …) within a few seconds. The injected command is the
     8.3 short path (checked to run in PowerShell 5.1 and 7 directly).
-24. **Theme** (Linux and Windows): IBM 5153 CGA on your display — text
+24. [kramers 2026-11-09: not run (Windows)] **Theme** (Linux and Windows): IBM 5153 CGA on your display — text
     `#cecece` on `#141414`, colour 3 brown, blue dark; the title bar
     (Windows 11), padding, tab bar and status row in the same greys; the
     waiting mark brown, the question mark red. `theme = haetty classic`
@@ -374,26 +385,9 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     In Claude Code, `/theme` → "Dark mode (ANSI colors only)": its screen
     then uses the theme's colours.
 
-### 6.2 Known gaps (not in milestone 1's scope)
+### 6.2 Known gaps, 6.3 Later milestones
 
-- Own text selection and copy when the application does not track the
-  mouse (plain shell); Shift+drag override while it does.
-- Cursor blink; font size zoom shortcuts.
-- Integrated decorations on Windows (snap layouts need the caption hit
-  test); the title row's window menu (right click).
-- `window-padding-color = extend`: prompt-row heuristic needs shell
-  integration (OSC 133).
-- Glyph shaping (ligatures, ZWJ emoji sequences are drawn as the first
-  character).
-- `scrollback-limit` takes plain bytes; Ghostty-style suffixes (`10MB`)
-  are not parsed.
-
-### 6.3 Later milestones
-
-Done in milestones 2–3 (§6.4). Next: the orchestrator (milestone 4), MCP;
-integrated decorations on Windows (Linux done 2026-11-06, stage S1); diff views against HEAD and the work tree; a
-closed-tabs list; OpenGL renderer if needed.
-- The progress log (old §6.4) is in `docs/history/` (§7).
+Moved to [docs/history/2026-11-09-handoff-6-2-6-3.md](history/2026-11-09-handoff-6-2-6-3.md).
 
 ## 7. Where the old sections went (2026-11-07, V2)
 
