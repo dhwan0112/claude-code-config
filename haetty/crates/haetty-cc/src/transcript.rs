@@ -70,6 +70,8 @@ pub struct Report {
     pub responses: u64,
     pub tool_calls: u64,
     pub totals: Tokens,
+    /// The context the latest response had: its input side (input, cache read and cache write); 0 before one.
+    pub context: u64,
     pub by_tool: BTreeMap<String, ByTool>,
     pub results: Vec<ResultSize>,
 }
@@ -164,6 +166,7 @@ impl Reader {
         };
         self.report.responses += 1;
         self.report.totals.add(&t);
+        self.report.context = t.input + t.cache_read + t.cache_write;
         let key = self.last_result.take().unwrap_or_else(|| NO_TOOL.to_string());
         let e = self.report.by_tool.entry(key).or_default();
         e.responses += 1;
@@ -242,6 +245,8 @@ pub fn merge(name: &str, reports: &[Report]) -> Report {
 pub struct Summary {
     pub responses: u64,
     pub totals: Tokens,
+    /// The context of the latest response (see [`Report`]'s `context`).
+    pub context: u64,
 }
 
 /// A transcript read as it grows. [`Tracker::refresh`] reads the lines appended since the last call, complete lines
@@ -285,7 +290,11 @@ impl Tracker {
 
     /// The totals read so far.
     pub fn summary(&self) -> Summary {
-        Summary { responses: self.reader.report.responses, totals: self.reader.report.totals }
+        Summary {
+            responses: self.reader.report.responses,
+            totals: self.reader.report.totals,
+            context: self.reader.report.context,
+        }
     }
 }
 
@@ -473,5 +482,14 @@ mod tracker_tests {
         t.refresh().unwrap();
         assert_eq!(t.summary().responses, 1);
         haetty_testkit::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_context_is_the_input_side_of_the_latest_response() {
+        let a = r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"x"}],"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000}}}"#;
+        let b = r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"y"}],"usage":{"input_tokens":3,"output_tokens":4,"cache_creation_input_tokens":50,"cache_read_input_tokens":2000}}}"#;
+        assert_eq!(analyze_str("s", &format!("{a}\n{b}\n")).context, 2053);
+        assert_eq!(analyze_str("s", a).context, 1110);
+        assert_eq!(analyze_str("s", "").context, 0);
     }
 }

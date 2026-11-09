@@ -857,8 +857,8 @@ mod tests {
         ui::put(&mut row0, 0, "MMMM blue text", t.palette[4], t.background, false);
         screen.cells[..cols as usize].clone_from_slice(&row0);
         let tabs = [
-            TabView { name: "a", exited: false, attention: Attention::None, observed: false },
-            TabView { name: "b", exited: false, attention: Attention::Ask, observed: false },
+            TabView { name: "a", exited: false, attention: Attention::None, observed: false, clear: false },
+            TabView { name: "b", exited: false, attention: Attention::Ask, observed: false, clear: false },
         ];
         let info = ClaudeInfo { context_pct: Some(42.0), ..Default::default() };
         let composed = Compose {

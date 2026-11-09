@@ -218,6 +218,8 @@ keybind = ctrl+shift+n=new_tab
 | `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
 | `observe-new-tabs` | `true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only)) | `false` |
 | `token-status` | `true` / `false` — the status panel shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md)) | `false` |
+| `clear-hint` | a percentage, 0 for off: a worker tab shows a dim `/clear` once its context has passed that share of `context-window`. A hint only: nothing is sent ([Orchestrator](#orchestrator-tasks-and-workers)) | `60` |
+| `context-window` | the context window of the workers' model, in tokens, for `clear-hint` (at least 1000) | `200000` |
 | `keybind` | `CHORD=ACTION` or `CHORD=unbind` (file only, may repeat) | see [Tabs and keys](#tabs-and-keys) |
 | `theme` | a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes)) | `IBM 5153 CGA` |
 | `palette` | `N=COLOR`, N 0–15 (may repeat) — on top of the theme | the theme's |
@@ -481,6 +483,8 @@ submitted only after that, by Claude Code itself. haetty never types into
 these questions.
 
 The answers are written to a briefing file in haetty's own state folder, not in the repository: the title, the scope, the related files and when the task is done. The worker's first prompt points to that file, and removing the task deletes it. A task's model and effort are passed to Claude Code as launch arguments only; no settings file changes. Claude Code may ask whether it may read the briefing outside the worktree: answer that yourself, because the orchestrator never answers permission prompts.
+
+When a worker's context has passed `clear-hint` percent of `context-window` tokens, its tab shows a dim `/clear`: use `/clear` at a task boundary, not in the middle of a change. haetty only shows the mark; it sends nothing.
 
 **2. Watch the state.** The worker's tab name starts with a mark:
 

@@ -306,10 +306,10 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         Some((2, 3)),
     );
     let tabs = [
-        TabView { name: "bash", exited: false, attention: Attention::None, observed: false },
-        TabView { name: "Claude Code", exited: false, attention: Attention::Wait, observed: false },
-        TabView { name: "vim main.rs", exited: false, attention: Attention::None, observed: false },
-        TabView { name: "cargo test", exited: true, attention: Attention::None, observed: false },
+        TabView { name: "bash", exited: false, attention: Attention::None, observed: false, clear: false },
+        TabView { name: "Claude Code", exited: false, attention: Attention::Wait, observed: false, clear: false },
+        TabView { name: "vim main.rs", exited: false, attention: Attention::None, observed: false, clear: false },
+        TabView { name: "cargo test", exited: true, attention: Attention::None, observed: false, clear: false },
     ];
     let bar = ui::tab_bar(&tabs, 0, COLS as usize, g);
     out.push(("tabs", Compose { tab_bar: Some(bar), ..compose(&s) }.build(), None, None));
@@ -319,11 +319,13 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
     use crate::titlebar::{self, Button, ButtonLayout};
     let b = ButtonLayout::default();
     let s = screen(COLS, ROWS - 1, &["$ ls", "Cargo.toml  README.md  crates  docs", "$ "], Some((2, 2)));
-    let one = [TabView { name: "bash", exited: false, attention: Attention::None, observed: false }];
+    let one = [TabView { name: "bash", exited: false, attention: Attention::None, observed: false, clear: false }];
     let row = titlebar::row(&one, 0, COLS as usize, g, "~/projects/haetty", &b, None, false);
     out.push(("integrated-title", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None, None));
-    let two =
-        [one[0].clone(), TabView { name: "Claude Code", exited: false, attention: Attention::Wait, observed: false }];
+    let two = [
+        one[0].clone(),
+        TabView { name: "Claude Code", exited: false, attention: Attention::Wait, observed: false, clear: false },
+    ];
     let row = titlebar::row(&two, 0, COLS as usize, g, "", &b, Some(Button::Close), false);
     out.push(("integrated-tabs", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None, None));
 
@@ -358,18 +360,21 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
             exited: false,
             attention: Attention::None,
             observed: false,
+            clear: false,
         },
         TabView {
             name: &format!("{} Port the tests", W::Running.glyph()),
             exited: false,
             attention: Attention::None,
             observed: false,
+            clear: false,
         },
         TabView {
             name: &format!("{} Update docs", W::Blocked.glyph()),
             exited: false,
             attention: Attention::None,
             observed: false,
+            clear: false,
         },
     ];
     let bar = ui::tab_bar(&tabs, 0, COLS as usize, g);

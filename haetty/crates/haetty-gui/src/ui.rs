@@ -178,6 +178,8 @@ pub struct TabView<'a> {
     pub attention: Attention,
     /// Observe-only readers may see this tab (DESIGN.md §6.1): a dim `◦`.
     pub observed: bool,
+    /// A worker whose context has passed `clear-hint`: a dim `/clear` at the right end of its share (a hint only).
+    pub clear: bool,
 }
 
 /// Cells per tab in a tab bar `cols` wide with `n` tabs (equal shares, 6–32).
@@ -225,8 +227,13 @@ pub fn tab_bar(tabs: &[TabView], active: usize, cols: usize, g: Greys) -> Vec<Ce
         if let Some((m, color)) = mark {
             cx = put(&mut row[..end], cx, m, color, bg, true);
         }
-        let room = end.saturating_sub(cx + 1);
+        // The dim `/clear` mark at the right end of the share, when the share has room for it and a name.
+        let hint = if t.clear && end.saturating_sub(cx) >= 10 { " /clear" } else { "" };
+        let room = end.saturating_sub(cx + 1 + hint.len());
         put(&mut row[..end], cx, &fit(t.name, room), fg, bg, is_active);
+        if !hint.is_empty() {
+            put(&mut row[..end], end - hint.len(), hint, g.dim, bg, false);
+        }
         if is_active {
             for c in &mut row[x..end] {
                 c.flags.0 |= CellFlags::TAB_ACTIVE;
@@ -931,8 +938,8 @@ mod tests {
             &haetty_core::theme::Theme::base().palette,
         );
         let tabs = [
-            TabView { name: "one", exited: false, attention: Attention::None, observed: true },
-            TabView { name: "two", exited: false, attention: Attention::None, observed: false },
+            TabView { name: "one", exited: false, attention: Attention::None, observed: true, clear: false },
+            TabView { name: "two", exited: false, attention: Attention::None, observed: false, clear: false },
         ];
         let row = tab_bar(&tabs, 0, 40, g);
         let text: String = row.iter().map(|c| if c.text.is_empty() { " " } else { c.text.as_str() }).collect();
@@ -946,8 +953,8 @@ mod tests {
     fn tab_bar_marks_active_tab_without_accent_colours() {
         let g = Greys::from(FG, BG);
         let tabs = [
-            TabView { name: "one", exited: false, attention: Attention::None, observed: false },
-            TabView { name: "two", exited: true, attention: Attention::None, observed: false },
+            TabView { name: "one", exited: false, attention: Attention::None, observed: false, clear: false },
+            TabView { name: "two", exited: true, attention: Attention::None, observed: false, clear: false },
         ];
         let row = tab_bar(&tabs, 0, 40, g);
         let text: String = row.iter().map(|c| if c.text.is_empty() { " ".into() } else { c.text.clone() }).collect();
@@ -1010,7 +1017,7 @@ mod tests {
         s.cells = vec![Cell { text: "x".into(), ..Default::default() }; 8];
         s.cursor = Some(Cursor { x: 1, y: 1, shape: haetty_core::CursorShape::Block, blinking: false });
         let g = Greys::from(FG, BG);
-        let tv = |name| TabView { name, exited: false, attention: Attention::None, observed: false };
+        let tv = |name| TabView { name, exited: false, attention: Attention::None, observed: false, clear: false };
         let bar = tab_bar(&[tv("a"), tv("b")], 1, 4, g);
         let out = Compose {
             screen: &s,
@@ -1074,9 +1081,20 @@ mod tests {
     }
 
     #[test]
+    fn a_worker_past_its_context_share_shows_a_dim_clear_mark() {
+        let g = Greys::from(FG, BG);
+        let mut tab =
+            TabView { name: "t1 Fix", exited: false, attention: Attention::None, observed: false, clear: true };
+        let marked = text(&tab_bar(std::slice::from_ref(&tab), 0, 40, g));
+        assert!(marked.contains("/clear"), "{marked}");
+        tab.clear = false;
+        assert!(!text(&tab_bar(std::slice::from_ref(&tab), 0, 40, g)).contains("/clear"));
+    }
+
+    #[test]
     fn tab_bar_on_the_body_background_with_the_active_tab_underlined() {
         let g = Greys::from(FG, BG);
-        let tv = |name| TabView { name, exited: false, attention: Attention::None, observed: false };
+        let tv = |name| TabView { name, exited: false, attention: Attention::None, observed: false, clear: false };
         let row = tab_bar(&[tv("one"), tv("two"), tv("three")], 1, 60, g);
         assert!(row.iter().all(|c| c.bg == Some(g.bg)), "no band: the terminal's background everywhere");
         let line = |c: &Cell| c.flags.has(CellFlags::TAB_ACTIVE);
@@ -1091,9 +1109,9 @@ mod tests {
     fn attention_marks_only_on_other_tabs() {
         let g = Greys::from(FG, BG);
         let tabs = [
-            TabView { name: "a", exited: false, attention: Attention::Wait, observed: false },
-            TabView { name: "b", exited: false, attention: Attention::Wait, observed: false },
-            TabView { name: "c", exited: false, attention: Attention::Ask, observed: false },
+            TabView { name: "a", exited: false, attention: Attention::Wait, observed: false, clear: false },
+            TabView { name: "b", exited: false, attention: Attention::Wait, observed: false, clear: false },
+            TabView { name: "c", exited: false, attention: Attention::Ask, observed: false, clear: false },
         ];
         let row = tab_bar(&tabs, 0, 60, g);
         let t = text(&row);
@@ -1109,9 +1127,9 @@ mod tests {
     fn ui_colours_follow_the_theme() {
         use haetty_core::theme::Theme;
         let tabs = [
-            TabView { name: "a", exited: false, attention: Attention::None, observed: false },
-            TabView { name: "b", exited: false, attention: Attention::Wait, observed: false },
-            TabView { name: "c", exited: false, attention: Attention::Ask, observed: false },
+            TabView { name: "a", exited: false, attention: Attention::None, observed: false, clear: false },
+            TabView { name: "b", exited: false, attention: Attention::Wait, observed: false, clear: false },
+            TabView { name: "c", exited: false, attention: Attention::Ask, observed: false, clear: false },
         ];
         let mut seen = vec![];
         for name in ["IBM 5153 CGA", "IBM 5153 CGA (Black)", "haetty classic"] {

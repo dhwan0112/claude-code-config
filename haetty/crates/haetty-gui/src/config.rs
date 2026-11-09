@@ -84,6 +84,10 @@ pub struct Config {
     pub observe_new_tabs: bool,
     /// The status panel shows the tokens of the tab and of each worker (`token-status`, DESIGN.md §8.3).
     pub token_status: bool,
+    /// The share of a worker's context (percent of `context_window`) past which its tab shows a dim `/clear`; 0 is off.
+    pub clear_hint: u8,
+    /// The context window in tokens, for `clear_hint`.
+    pub context_window: u64,
     /// Claude Code tabs get haetty's hooks and status line.
     pub claude_integration: bool,
     /// The orchestrator's worker command (DESIGN.md §8.1).
@@ -112,6 +116,8 @@ impl Default for Config {
             restore_tabs: true,
             observe_new_tabs: false,
             token_status: false,
+            clear_hint: 60,
+            context_window: 200_000,
             claude_integration: true,
             engine: haetty_core::vt::EngineKind::default_kind(),
             worker_command: "claude".into(),
@@ -179,6 +185,16 @@ pub const SETTINGS: &[Setting] = &[
         &["token-status"],
         "`true` / `false` — the status panel shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md))",
         "`false`",
+    ),
+    row(
+        &["clear-hint"],
+        "a percentage, 0 for off: a worker tab shows a dim `/clear` once its context has passed that share of `context-window`. A hint only: nothing is sent ([Orchestrator](#orchestrator-tasks-and-workers))",
+        "`60`",
+    ),
+    row(
+        &["context-window"],
+        "the context window of the workers' model, in tokens, for `clear-hint` (at least 1000)",
+        "`200000`",
     ),
     Setting {
         keys: &["keybind"],
@@ -255,6 +271,8 @@ pub const KEYS: &[&str] = &[
     "engine",
     "observe-new-tabs",
     "token-status",
+    "clear-hint",
+    "context-window",
     "claude-integration",
     "worker-command",
     "notifications",
@@ -288,6 +306,10 @@ impl Config {
             "restore-tabs" => self.restore_tabs = parse_bool(value).ok_or_else(bad)?,
             "observe-new-tabs" => self.observe_new_tabs = parse_bool(value).ok_or_else(bad)?,
             "token-status" => self.token_status = parse_bool(value).ok_or_else(bad)?,
+            "clear-hint" => self.clear_hint = parse_percent(value).ok_or_else(bad)?,
+            "context-window" => {
+                self.context_window = value.trim().parse::<u64>().ok().filter(|n| *n >= 1000).ok_or_else(bad)?
+            }
             "claude-integration" => self.claude_integration = parse_bool(value).ok_or_else(bad)?,
             "worker-command" => {
                 if value.trim().is_empty() {
@@ -412,6 +434,11 @@ pub fn reread(settings: &[(String, String)]) -> (Config, Vec<String>) {
     (c, bad)
 }
 
+/// A percentage from 0 to 100 (0 is off).
+fn parse_percent(v: &str) -> Option<u8> {
+    v.trim().parse::<u8>().ok().filter(|n| *n <= 100)
+}
+
 fn parse_bool(v: &str) -> Option<bool> {
     match v {
         "true" | "yes" | "1" => Some(true),
@@ -454,6 +481,8 @@ mod tests {
         assert_eq!(default_of("restore-tabs"), format!("`{}`", d.restore_tabs));
         assert_eq!(default_of("observe-new-tabs"), format!("`{}`", d.observe_new_tabs));
         assert_eq!(default_of("token-status"), format!("`{}`", d.token_status));
+        assert_eq!(default_of("clear-hint"), format!("`{}`", d.clear_hint));
+        assert_eq!(default_of("context-window"), format!("`{}`", d.context_window));
         assert_eq!(default_of("notifications"), format!("`{}`", d.notifications));
         assert_eq!(default_of("claude-integration"), format!("`{}`", d.claude_integration));
     }

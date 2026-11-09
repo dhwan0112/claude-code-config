@@ -63,6 +63,11 @@ impl Watch {
     }
 }
 
+/// Whether a context of `context` tokens has passed `percent` of a `window` (0 percent is off, never).
+pub fn over_share(context: u64, window: u64, percent: u8) -> bool {
+    percent > 0 && context.saturating_mul(100) >= window.saturating_mul(u64::from(percent))
+}
+
 /// The thread: reads the followed transcripts every `EVERY`, and whenever the list changes.
 fn run(rx: mpsc::Receiver<Watched>, totals: Arc<Mutex<HashMap<String, Summary>>>) {
     let mut trackers: HashMap<String, Tracker> = HashMap::new();
@@ -122,8 +127,19 @@ mod tests {
         assert_eq!(short(12_300), "12.30K");
         assert_eq!(short(4_560_000), "4.56M");
         assert_eq!(short(2_078_814_641), "2.08G");
-        let s = Summary { responses: 2, totals: Tokens { input: 10, output: 4, cache_write: 100, cache_read: 1120 } };
+        let s = Summary {
+            responses: 2,
+            context: 0,
+            totals: Tokens { input: 10, output: 4, cache_write: 100, cache_read: 1120 },
+        };
         assert_eq!(line(&s), "tokens 1.23K (new 114) · hit 91.1 %");
         assert_eq!(line(&Summary::default()), "tokens 0 (new 0)");
+    }
+
+    #[test]
+    fn the_clear_mark_starts_at_the_share_and_is_off_at_zero() {
+        assert!(over_share(120_000, 200_000, 60));
+        assert!(!over_share(119_999, 200_000, 60));
+        assert!(!over_share(u64::MAX, 200_000, 0), "0 is off");
     }
 }

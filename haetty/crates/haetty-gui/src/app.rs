@@ -273,6 +273,9 @@ struct Win {
     tokens: crate::tokens::Watch,
     /// `token-status` (the config's), read when the window is made.
     token_status: bool,
+    /// `clear-hint` (percent, 0 off) and `context-window` (tokens): the dim `/clear` mark of worker tabs.
+    clear_hint: u8,
+    context_window: u64,
     /// Status panel: open, width in columns (persisted in the state dir).
     panel_open: bool,
     panel_width: u16,
@@ -403,6 +406,8 @@ impl App {
             tabs: vec![],
             tokens: crate::tokens::Watch::new(),
             token_status: self.opts.config.token_status,
+            clear_hint: self.opts.config.clear_hint,
+            context_window: self.opts.config.context_window,
             active: 0,
             composed: None,
             dirty: vec![],
@@ -985,6 +990,16 @@ impl Win {
     }
 
     /// The token line of a tab's session, when `token-status` is on and its transcript has been read (`tokens.rs`).
+    /// Whether a worker tab's context has passed the `clear-hint` share of `context-window`: the dim `/clear` mark. The
+    /// transcript is read; nothing is sent.
+    fn clear_mark(&self, tab: &Tab) -> bool {
+        tab.task.is_some()
+            && self
+                .tokens
+                .summary(&tab.session.id)
+                .is_some_and(|s| crate::tokens::over_share(s.context, self.context_window, self.clear_hint))
+    }
+
     fn token_line_of(&self, tab: &Tab) -> Option<String> {
         if !self.token_status {
             return None;
@@ -1570,6 +1585,7 @@ impl Win {
                     exited: t.exited.is_some(),
                     attention: t.attention(),
                     observed: t.observable,
+                    clear: self.clear_mark(t),
                 })
                 .collect();
             if self.integrated {
@@ -1586,7 +1602,7 @@ impl Win {
             tab.integrated.then(|| ui::status_row(tab.claude.as_deref(), self.grid.cols as usize, g, &diff_key));
         let pc = self.panel_cols() as usize;
         let area = (self.grid.rows as usize).saturating_sub(self.top() as usize + usize::from(status.is_some()));
-        if self.token_status && pc > 0 {
+        if (self.token_status || self.clear_hint > 0) && pc > 0 {
             self.tokens.follow(self.watched_transcripts());
         }
         let workers = if pc > 0 { self.worker_lines() } else { vec![] };
