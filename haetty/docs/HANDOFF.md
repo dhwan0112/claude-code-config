@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage k2 (branch `haetty/k2`, worktree `~/projects/claude-code-config-wt/k2`). Remaining: K2: the Claude Code child markers are not passed on to new sessions (CHILD_MARKERS in the GUI session environment; interactive check: transcript saving on, --resume works). Then K3 (observations), K1 (the attention marks and the input block, approved scope), H1-H4, K4.
+> **In progress:** stage k1 (branch `haetty/k1`, worktree `~/projects/claude-code-config-wt/k1`). Remaining: K1: the attention mark and the input hold are separate; the input opens only after a person answered and the turn ended, or at the next prompt (kramers 12)
 
 ## 1. Current state
 
