@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage g7 (branch `haetty/g7`, worktree `~/projects/claude-code-config-wt/g7`). Remaining: G7: the before and after measurement of one small task (docs/tokens/g7-measurement.md). Then the F5 record after the night runs of b1262d2, and the person's checks.
+
 ## 1. Current state
 
 - **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
