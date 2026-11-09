@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** F5 candidate `b1262d2` is on `main`; its night run is registered for 2026-11-10 02:00 (both engines, -GuiE2E; task `haetty-overnight-f5`, transcript in `C:\Users\Public\haetty-overnight\f5-night-transcript.txt`); the tag `haetty-v0.3.0` only after both nights PASS. F6 done 2026-11-09 (upstream drafts; none sent).
+> **In progress:** stage g0 (branch `haetty/g0`, worktree `~/projects/claude-code-config-wt/g0`). Remaining: G0: DESIGN.md split by topic into docs/design/ (index of at most 200 lines; every old line kept, checked by check-moved-lines.py); CLAUDE.md shortened to its rules; HANDOFF under 400 lines; session-start token estimates before and after. Then G1-G7 (token saving, the brief of 2026-11-09).
 
 ## 1. Current state
 
