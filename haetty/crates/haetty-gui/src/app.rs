@@ -269,6 +269,10 @@ struct Win {
     notifications: bool,
     /// New tabs start observable (`observe-new-tabs`, DESIGN.md §6.1).
     observe_new_tabs: bool,
+    /// The transcripts read for the token lines, in the background (`tokens.rs`).
+    tokens: crate::tokens::Watch,
+    /// `token-status` (the config's), read when the window is made.
+    token_status: bool,
     /// Status panel: open, width in columns (persisted in the state dir).
     panel_open: bool,
     panel_width: u16,
@@ -397,6 +401,8 @@ impl App {
             client,
             proxy: self.proxy.clone(),
             tabs: vec![],
+            tokens: crate::tokens::Watch::new(),
+            token_status: self.opts.config.token_status,
             active: 0,
             composed: None,
             dirty: vec![],
@@ -973,6 +979,39 @@ impl Win {
             .unwrap_or(WorkerState::NoReport)
     }
 
+    /// The worker's tab: the one whose task is `task` (DESIGN.md §8.1).
+    fn worker_tab(&self, task: &str) -> Option<&Tab> {
+        self.tabs.iter().find(|x| x.task.as_ref().is_some_and(|(id, _)| id.as_str() == task))
+    }
+
+    /// The token line of a tab's session, when `token-status` is on and its transcript has been read (`tokens.rs`).
+    fn token_line_of(&self, tab: &Tab) -> Option<String> {
+        if !self.token_status {
+            return None;
+        }
+        let id = tab.claude.as_ref().map(|c| c.claude_session.as_str()).filter(|s| !s.is_empty())?;
+        self.tokens.summary(id).map(|s| crate::tokens::line(&s))
+    }
+
+    /// The transcripts the token lines need: the active tab's, and each worker's.
+    fn watched_transcripts(&self) -> crate::tokens::Watched {
+        let file = |t: &Tab| -> Option<(String, std::path::PathBuf)> {
+            let id = t.claude.as_ref().map(|c| c.claude_session.clone()).filter(|s| !s.is_empty())?;
+            let folder = t.folder()?;
+            let path = haetty_cc::resume::transcript_path(&folder, &id)?;
+            Some((id, path))
+        };
+        let mut out: Vec<(String, std::path::PathBuf)> = file(self.tab()).into_iter().collect();
+        for t in &self.tasks {
+            if let Some(f) = self.worker_tab(&t.id).and_then(file) {
+                if !out.iter().any(|(id, _)| *id == f.0) {
+                    out.push(f);
+                }
+            }
+        }
+        out
+    }
+
     /// The WORKERS section of the status panel.
     fn worker_lines(&self) -> Vec<ui::WorkerLine> {
         let active = self.tab().task.as_ref().map(|(id, _)| id.clone());
@@ -988,6 +1027,7 @@ impl Win {
                     text: format!("{} {} {} · {}", st.glyph(), t.id, t.title, st.name()),
                     blockers: report.as_ref().map(|r| first(&r.blockers.0)).filter(|s| !s.is_empty()),
                     next: report.as_ref().map(|r| first(&r.next_action.0)).filter(|s| !s.is_empty()),
+                    tokens: self.worker_tab(&t.id).and_then(|w| self.token_line_of(w)),
                 }
             })
             .collect()
@@ -1546,8 +1586,13 @@ impl Win {
             tab.integrated.then(|| ui::status_row(tab.claude.as_deref(), self.grid.cols as usize, g, &diff_key));
         let pc = self.panel_cols() as usize;
         let area = (self.grid.rows as usize).saturating_sub(self.top() as usize + usize::from(status.is_some()));
+        if self.token_status && pc > 0 {
+            self.tokens.follow(self.watched_transcripts());
+        }
         let workers = if pc > 0 { self.worker_lines() } else { vec![] };
-        let panel = (pc > 0).then(|| ui::panel(tab.claude.as_deref(), &workers, pc, area, g, now_ms()));
+        let tab_tokens = self.token_line_of(tab);
+        let panel =
+            (pc > 0).then(|| ui::panel(tab.claude.as_deref(), &workers, pc, area, g, now_ms(), tab_tokens.as_deref()));
         let next = Compose {
             screen,
             accents: &self.theme.palette,

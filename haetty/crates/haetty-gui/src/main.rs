@@ -50,6 +50,7 @@ mod render;
 mod tabsets;
 mod tasks;
 mod titlebar;
+mod tokens;
 mod ui;
 
 use std::io::Write;

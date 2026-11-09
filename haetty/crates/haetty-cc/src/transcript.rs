@@ -237,6 +237,58 @@ pub fn merge(name: &str, reports: &[Report]) -> Report {
     m
 }
 
+/// The totals of a transcript, as the window shows them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Summary {
+    pub responses: u64,
+    pub totals: Tokens,
+}
+
+/// A transcript read as it grows. [`Tracker::refresh`] reads the lines appended since the last call, complete lines
+/// only (a line still being written waits for its newline); a file that became shorter starts again.
+pub struct Tracker {
+    path: std::path::PathBuf,
+    offset: u64,
+    reader: Reader,
+}
+
+impl Tracker {
+    pub fn new(path: impl Into<std::path::PathBuf>) -> Tracker {
+        Tracker { path: path.into(), offset: 0, reader: Reader::default() }
+    }
+
+    /// Reads what was appended. A file that does not exist (yet) counts as empty.
+    pub fn refresh(&mut self) -> std::io::Result<()> {
+        use std::io::{Seek, SeekFrom};
+        let mut file = match std::fs::File::open(&self.path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        if file.metadata()?.len() < self.offset {
+            self.offset = 0;
+            self.reader = Reader::default();
+        }
+        file.seek(SeekFrom::Start(self.offset))?;
+        let mut input = std::io::BufReader::new(file);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            if input.read_until(b'\n', &mut buf)? == 0 || buf.last() != Some(&b'\n') {
+                break;
+            }
+            self.offset += buf.len() as u64;
+            self.reader.push(String::from_utf8_lossy(&buf).trim_end());
+        }
+        Ok(())
+    }
+
+    /// The totals read so far.
+    pub fn summary(&self) -> Summary {
+        Summary { responses: self.reader.report.responses, totals: self.reader.report.totals }
+    }
+}
+
 /// A number with thousands separators (`1,234,567`).
 pub fn grouped(n: u64) -> String {
     let s = n.to_string();
@@ -383,5 +435,43 @@ mod tests {
         assert!(text.contains("cache hit 96.4 %"), "{text}");
         assert!(text.contains("Bash"), "{text}");
         assert!(text.contains("cargo test"), "{text}");
+    }
+}
+
+#[cfg(test)]
+mod tracker_tests {
+    use super::*;
+    use std::io::Write as _;
+
+    #[test]
+    fn follows_the_appended_lines_and_waits_for_a_newline() {
+        let dir = haetty_testkit::run_dir("transcript-tracker");
+        let path = dir.join("s.jsonl");
+        let _ = std::fs::remove_file(&path);
+        let line = r#"{"type":"assistant","message":{"id":"m","content":[],"usage":{"input_tokens":2,"output_tokens":3,"cache_creation_input_tokens":4,"cache_read_input_tokens":5}}}"#;
+        let mut t = Tracker::new(&path);
+        t.refresh().unwrap();
+        assert_eq!(t.summary(), Summary::default());
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        t.refresh().unwrap();
+        assert_eq!(t.summary().responses, 1);
+        assert_eq!(t.summary().totals, Tokens { input: 2, output: 3, cache_write: 4, cache_read: 5 });
+        // a line without its newline is read once the newline comes
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        write!(f, "{}", line.replace("\"m\"", "\"n\"")).unwrap();
+        drop(f);
+        t.refresh().unwrap();
+        assert_eq!(t.summary().responses, 1);
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        writeln!(f).unwrap();
+        drop(f);
+        t.refresh().unwrap();
+        assert_eq!(t.summary().responses, 2);
+        assert_eq!(t.summary().totals.input, 4);
+        // a file that became shorter starts again
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        t.refresh().unwrap();
+        assert_eq!(t.summary().responses, 1);
+        haetty_testkit::remove_dir_all(&dir);
     }
 }

@@ -586,6 +586,8 @@ pub struct WorkerLine {
     /// The active worker's report: BLOCKERS and NEXT_ACTION first lines.
     pub blockers: Option<String>,
     pub next: Option<String>,
+    /// `token-status`: the worker's tokens line (`tokens.rs`), when it is shown.
+    pub tokens: Option<String>,
 }
 
 pub fn panel(
@@ -595,6 +597,7 @@ pub fn panel(
     h: usize,
     g: Greys,
     now_ms: u64,
+    tokens: Option<&str>,
 ) -> Vec<Vec<Cell>> {
     let bg = g.bar;
     let mut rows = vec![vec![blank(g.normal, bg); w]; h];
@@ -605,6 +608,9 @@ pub fn panel(
     }
     let mut lines: Vec<(String, String, Rgb)> = vec![];
     let mut add = |k: &str, v: String, c: Rgb| lines.push((k.to_string(), v, c));
+    if let Some(t) = tokens {
+        add("tokens", t.to_string(), g.normal);
+    }
     let add_workers = |add: &mut dyn FnMut(&str, String, Rgb)| {
         if workers.is_empty() {
             return;
@@ -612,6 +618,9 @@ pub fn panel(
         add("workers", format!("{} task(s)", workers.len()), g.normal);
         for wl in workers {
             add("", wl.text.clone(), g.normal);
+            if let Some(t) = &wl.tokens {
+                add("tokens", t.clone(), g.dim);
+            }
             if let Some(b) = &wl.blockers {
                 add("blockers", b.clone(), g.normal);
             }
@@ -1170,7 +1179,7 @@ mod tests {
             ended_ms: None,
         });
         i.updated_ms = 5000;
-        let p = panel(Some(&i), &[], 40, 12, g, 66_000);
+        let p = panel(Some(&i), &[], 40, 12, g, 66_000, None);
         let all: Vec<String> = p.iter().map(|r| text(r)).collect();
         let joined = all.join("\n");
         assert!(joined.contains("context   42% of 200k"), "{joined}");
@@ -1184,10 +1193,11 @@ mod tests {
                 text: "✓ t1 Fix · verified".into(),
                 blockers: Some("none".into()),
                 next: Some("merge".into()),
+                tokens: None,
             },
             WorkerLine { text: "… t2 Port · running".into(), ..Default::default() },
         ];
-        let joined = panel(None, &wl, 40, 12, g, 0).iter().map(|r| text(r)).collect::<Vec<_>>().join("\n");
+        let joined = panel(None, &wl, 40, 12, g, 0, None).iter().map(|r| text(r)).collect::<Vec<_>>().join("\n");
         assert!(joined.contains("workers   2 task(s)"), "{joined}");
         assert!(joined.contains("✓ t1 Fix · verified") && joined.contains("next      merge"), "{joined}");
         assert_eq!(when(0), "01-01 00:00 UTC");

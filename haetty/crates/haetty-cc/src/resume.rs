@@ -29,6 +29,15 @@ pub fn transcript_exists(cwd: &str, id: &str) -> bool {
         && claude_dir().is_some_and(|d| d.join("projects").join(project_key(cwd)).join(format!("{id}.jsonl")).is_file())
 }
 
+/// Where Claude Code keeps a session's transcript (`<claude dir>/projects/<project key of cwd>/<id>.jsonl`); None
+/// for an id that is not a session id, or with no home folder.
+pub fn transcript_path(cwd: &str, id: &str) -> Option<std::path::PathBuf> {
+    if !valid_id(id) {
+        return None;
+    }
+    claude_dir().map(|d| d.join("projects").join(project_key(cwd)).join(format!("{id}.jsonl")))
+}
+
 /// Claude Code arguments for a restored tab: the saved ones without an
 /// earlier resume/continue request, plus `--resume ID`.
 pub fn resume_args(args: &[String], id: &str) -> Vec<String> {

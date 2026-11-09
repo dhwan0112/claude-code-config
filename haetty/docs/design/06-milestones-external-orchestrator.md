@@ -163,6 +163,12 @@ automatic decomposition, no automatic merging, no MCP / Rakazo (§6).
   repository, base, branch, worktree, session, state and the report's five
   fields).
 
+- Tokens (`token-status`, off by default; stage G1b): with it on, the status panel's first line is the active tab's
+  tokens, and each worker's entry in WORKERS has its own (`crates/haetty-gui/src/tokens.rs`). The totals come from the
+  session's Claude Code transcript, read by a background thread every 2 seconds, only what was appended. Nothing is
+  shown until a transcript has been read. With the setting off the panel is as before (the reference frames do not
+  change), and no thread runs.
+
 ### 8.4 Safety boundary (protected area, approved for this scope)
 
 - Everything the orchestrator sends to a worker is `Origin::Program`;

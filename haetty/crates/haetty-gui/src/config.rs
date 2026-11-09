@@ -82,6 +82,8 @@ pub struct Config {
     pub restore_tabs: bool,
     /// New tabs start observable (DESIGN.md §6.1).
     pub observe_new_tabs: bool,
+    /// The status panel shows the tokens of the tab and of each worker (`token-status`, DESIGN.md §8.3).
+    pub token_status: bool,
     /// Claude Code tabs get haetty's hooks and status line.
     pub claude_integration: bool,
     /// The orchestrator's worker command (DESIGN.md §8.1).
@@ -109,6 +111,7 @@ impl Default for Config {
             scrollback_limit: haetty_core::DEFAULT_SCROLLBACK_LIMIT,
             restore_tabs: true,
             observe_new_tabs: false,
+            token_status: false,
             claude_integration: true,
             engine: haetty_core::vt::EngineKind::default_kind(),
             worker_command: "claude".into(),
@@ -170,6 +173,11 @@ pub const SETTINGS: &[Setting] = &[
     row(
         &["observe-new-tabs"],
         "`true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only))",
+        "`false`",
+    ),
+    row(
+        &["token-status"],
+        "`true` / `false` — the status panel shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md))",
         "`false`",
     ),
     Setting {
@@ -246,6 +254,7 @@ pub const KEYS: &[&str] = &[
     "restore-tabs",
     "engine",
     "observe-new-tabs",
+    "token-status",
     "claude-integration",
     "worker-command",
     "notifications",
@@ -278,6 +287,7 @@ impl Config {
             }
             "restore-tabs" => self.restore_tabs = parse_bool(value).ok_or_else(bad)?,
             "observe-new-tabs" => self.observe_new_tabs = parse_bool(value).ok_or_else(bad)?,
+            "token-status" => self.token_status = parse_bool(value).ok_or_else(bad)?,
             "claude-integration" => self.claude_integration = parse_bool(value).ok_or_else(bad)?,
             "worker-command" => {
                 if value.trim().is_empty() {
@@ -443,6 +453,7 @@ mod tests {
         assert_eq!(default_of("worker-command"), format!("`{}`", d.worker_command));
         assert_eq!(default_of("restore-tabs"), format!("`{}`", d.restore_tabs));
         assert_eq!(default_of("observe-new-tabs"), format!("`{}`", d.observe_new_tabs));
+        assert_eq!(default_of("token-status"), format!("`{}`", d.token_status));
         assert_eq!(default_of("notifications"), format!("`{}`", d.notifications));
         assert_eq!(default_of("claude-integration"), format!("`{}`", d.claude_integration));
     }

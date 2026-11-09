@@ -43,3 +43,12 @@ total.
 The output contains the commands and paths of your work and the token counts. Commands can contain secrets. The
 command writes nothing to disk and sends nothing anywhere; keep that in mind before pasting its output into a shared
 place.
+
+## In the window (`token-status`)
+
+`token-status = true` (off by default) adds the tokens to the status panel: the active tab's line at the top
+(`tokens 2.08G (new 20.10M) · hit 99.3 %`), and each worker's line under its entry in WORKERS. `tokens` is the
+total of everything counted (cache reads included); `new` is the input, the cache writes and the output, what was
+processed fresh; `hit` is the cache's share of the input side. A background thread reads each transcript every
+2 seconds, only what was appended, and keeps nothing else of it. A tab shows no line until its transcript has been
+read.
