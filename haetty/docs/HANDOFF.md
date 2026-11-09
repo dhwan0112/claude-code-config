@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage k2b (branch `haetty/k2b`, worktree `~/projects/claude-code-config-wt/k2b`). Remaining: K2b: the child markers are removed in Session::spawn too (the GUI filter does not see the environment the daemon was started with)
+> **In progress:** stage k3a (branch `haetty/k3a`, worktree `~/projects/claude-code-config-wt/k3a`). Remaining: K3a: a killed daemon is reaped by its window; a test instance writes its settings beside its own socket; a resumed session shows its stored report
 
 ## 1. Current state
 
