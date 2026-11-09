@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage g1 (branch `haetty/g1`, worktree `~/projects/claude-code-config-wt/g1`). Remaining: G1: haetty tokens (CLI over the Claude Code transcripts: per tool, largest results, cache hit ratio; reuses haetty-cc json, no new dependency); the measurement report in docs/tokens/; the status line and the workers totals (GUI, hidden by default) if they fit. Then G2-G7.
+> **In progress:** stage g1b (branch `haetty/g1b`, worktree `~/projects/claude-code-config-wt/g1b`). Remaining: G1b: the status panel shows the tokens of the active tab and the WORKERS their totals (token-status, off by default; transcript tracked in a background thread; no accent colour). Then G2-G7.
 
 ## 1. Current state
 
