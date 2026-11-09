@@ -142,8 +142,9 @@ Windows, WSL and the dev machine:
   Open failures: 7 (window size on Wayland at 125 %, still in 0.2.0; §6.1 item 32) and 12 (the red `?` comes late
   and stays; K1). Other observations, not counted as failures: a tab's own name is lost on detach and reattach (K3);
   a daemon killed with SIGKILL stays a zombie of its window until the window exits (K3); test instances write their
-  per-session settings into the shared `$XDG_RUNTIME_DIR/haetty/` (K3); a tab started inside Claude Code inherits
-  `CLAUDE_CODE_CHILD_SESSION` and the messaging socket and token, so transcript saving is off (K2); the worker mark
+  per-session settings into the shared `$XDG_RUNTIME_DIR/haetty/` (K3); a tab started inside Claude Code inherited
+  `CLAUDE_CODE_CHILD_SESSION` and the messaging socket and token, so transcript saving was off (fixed in K2: the child
+  markers are not passed on, docs/history/2026-11-09-k2-child-markers.md); the worker mark
   stays `–` after a restart though its last report is stored (K3); a `WARN` for the empty left button side (cosmetic).
   Pending: 2 (not applicable), 17 (reboot), 25 (X11, 200 %).
 

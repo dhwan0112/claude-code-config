@@ -801,15 +801,12 @@ impl Win {
         }
     }
 
-    /// The environment of a new session: haetty's own, and in saving mode the output limits for Claude Code (the
-    /// values `config::SAVING_ENV` names replace any the environment has).
+    /// The environment of a new session: haetty's own without the variables that mark a Claude Code child
+    /// (`config::CHILD_MARKERS`), and in saving mode the output limits for Claude Code (`config::SAVING_ENV`).
     fn session_env(&self, program: &str) -> Vec<(String, String)> {
-        let mut env: Vec<(String, String)> =
+        let inherited: Vec<(String, String)> =
             std::env::vars_os().filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?))).collect();
-        if self.saving_mode && haetty_cc::settings::is_claude(program) {
-            crate::config::saving_env(&mut env);
-        }
-        env
+        crate::config::child_env(inherited, self.saving_mode && haetty_cc::settings::is_claude(program))
     }
 
     fn open_spec(&mut self, spec: TabSpec) -> Result<(), String> {

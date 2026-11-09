@@ -444,6 +444,33 @@ pub fn reread(settings: &[(String, String)]) -> (Config, Vec<String>) {
     (c, bad)
 }
 
+/// Variables of a Claude Code session that mark it as a child of another one, or belong to that parent. haetty does not
+/// pass them on: a tab started from inside Claude Code would turn transcript saving off ("inherited
+/// CLAUDE_CODE_CHILD_SESSION marker") and could not be resumed. The names were read from a Claude Code session's
+/// environment on 2026-11-09 (the values are never printed). CLAUDE_CODE_ENTRYPOINT, CLAUDE_CODE_EXECPATH and
+/// CLAUDE_EFFORT are not here: they are not child markers. docs/history/2026-11-09-k2-child-markers.md has the test.
+pub const CHILD_MARKERS: [&str; 8] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_BRIDGE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_PID",
+];
+
+/// The environment of a new session: the inherited variables without the child markers, then the saving mode's limits
+/// when `saving` is on (the caller decides that: a Claude Code program in saving mode).
+pub fn child_env(inherited: Vec<(String, String)>, saving: bool) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> =
+        inherited.into_iter().filter(|(k, _)| !CHILD_MARKERS.contains(&k.as_str())).collect();
+    if saving {
+        saving_env(&mut env);
+    }
+    env
+}
+
 /// Saving mode's environment: the Bash output read back into a result, and the MCP tool output in tokens. The values
 /// are from the G1 measurement (docs/tokens/README.md, "Saving mode"); the meanings are the official ones.
 pub const SAVING_ENV: [(&str, &str); 2] = [("BASH_MAX_OUTPUT_LENGTH", "12000"), ("MAX_MCP_OUTPUT_TOKENS", "12000")];
@@ -660,5 +687,19 @@ mod tests {
         assert_eq!(get("MAX_MCP_OUTPUT_TOKENS").as_deref(), Some("12000"));
         assert_eq!(get("PATH").as_deref(), Some("/bin"));
         assert_eq!(env.len(), 3);
+    }
+
+    #[test]
+    fn child_markers_are_not_passed_on_and_saving_mode_applies_on_top() {
+        let inherited = vec![
+            ("CLAUDE_CODE_CHILD_SESSION".to_string(), "1".to_string()),
+            ("CLAUDE_CODE_MESSAGING_TOKEN".to_string(), "x".to_string()),
+            ("HOME".to_string(), "/h".to_string()),
+        ];
+        assert_eq!(child_env(inherited.clone(), false), vec![("HOME".to_string(), "/h".to_string())]);
+        let saved = child_env(inherited, true);
+        assert!(saved.iter().any(|(k, v)| k == "BASH_MAX_OUTPUT_LENGTH" && v == "12000"));
+        assert!(!saved.iter().any(|(k, _)| CHILD_MARKERS.contains(&k.as_str())));
+        assert_eq!(saved.len(), 3, "HOME and the two limits");
     }
 }
