@@ -8,8 +8,6 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage g6 (branch `haetty/g6`, worktree `~/projects/claude-code-config-wt/g6`). Remaining: G6: the opt-in saving mode (off by default): Claude Code sessions haetty starts get BASH_MAX_OUTPUT_LENGTH and MAX_MCP_OUTPUT_TOKENS (values from the G1 measurement; official meaning and sources recorded), and the status row shows a dim saving mark. Then G7 (before and after on one task).
-
 ## 1. Current state
 
 - **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
@@ -36,13 +34,14 @@ New progress records go to the newest file in `docs/history/`, not here.
 - G0 done (2026-11-09): DESIGN by topic in `docs/design/` (index `docs/DESIGN.md`, 65 lines); CLAUDE.md keeps its rules,
   commands and environment moved to `docs/dev-commands.md`; HANDOFF under 400 lines. Token estimates:
   `docs/history/2026-11-09-g0-handoff-trim.md`.
-- G1 to G5c done (2026-11-09): `haetty tokens` and the token status line (G1, G1b; off by default), `haetty run` and
+- G1 to G6 done (2026-11-09): `haetty tokens` and the token status line (G1, G1b; off by default), `haetty run` and
   `haetty log` (G2), `haetty wait` (G3: exit 0 when met, 124 on timeout, 3 when the tab is not observable; the event
   waits follow the daemon's stream), the guide `docs/tokens/claude-guide.md` and the CLAUDE.md section (G4; haetty
   adds the guide to no session), the orchestrator (G5: a task's model and effort are launch arguments, a briefing
-  file per task, the report keeps its STATUS block only), and the dim `/clear` mark on a worker tab past its context
-  share (G5c: `clear-hint`, `context-window`; display only, nothing is sent). Next: G6 (saving mode, off by default),
-  G7 (before and after on one task).
+  file per task, the report keeps its STATUS block only), the dim `/clear` mark on a worker tab past its context
+  share (G5c: `clear-hint`, `context-window`; display only, nothing is sent), and the saving mode (G6: `saving-mode`,
+  off by default; BASH_MAX_OUTPUT_LENGTH and MAX_MCP_OUTPUT_TOKENS of 12000 for Claude Code sessions, a dim `◆ saving`
+  mark; the official meanings and sources in `docs/tokens/README.md`). Next: G7 (before and after on one task).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)

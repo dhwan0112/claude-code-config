@@ -220,6 +220,7 @@ keybind = ctrl+shift+n=new_tab
 | `token-status` | `true` / `false` — the status panel shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md)) | `false` |
 | `clear-hint` | a percentage, 0 for off: a worker tab shows a dim `/clear` once its context has passed that share of `context-window`. A hint only: nothing is sent ([Orchestrator](#orchestrator-tasks-and-workers)) | `60` |
 | `context-window` | the context window of the workers' model, in tokens, for `clear-hint` (at least 1000) | `200000` |
+| `saving-mode` | `true` / `false` — saving mode: Claude Code sessions haetty starts get `BASH_MAX_OUTPUT_LENGTH=12000` and `MAX_MCP_OUTPUT_TOKENS=12000`, the official limits on Bash output read back and on MCP tool output ([the values and sources](docs/tokens/README.md#saving-mode)); the status row shows a dim `◆ saving` | `false` |
 | `keybind` | `CHORD=ACTION` or `CHORD=unbind` (file only, may repeat) | see [Tabs and keys](#tabs-and-keys) |
 | `theme` | a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes)) | `IBM 5153 CGA` |
 | `palette` | `N=COLOR`, N 0–15 (may repeat) — on top of the theme | the theme's |
@@ -551,6 +552,14 @@ settings or trust records either.
 restart the worker's conversation is resumed (`--resume`) without the task
 being submitted again. Tasks are files in the `tasks` folder of the state
 directory (`haetty status --json` lists them even when no window is open).
+
+### Saving mode (opt-in)
+
+With `saving-mode = true` (off by default), the Claude Code sessions haetty starts get two output limits in their
+environment: `BASH_MAX_OUTPUT_LENGTH=12000` (Bash output read back into a result) and `MAX_MCP_OUTPUT_TOKENS=12000`.
+The status row of a Claude Code tab shows a dim `◆ saving` while it is on. The official meaning of both variables,
+the basis of the values in the token measurement, and the caveat that a `bashOutputMaxChars` setting overrides the
+first are in `docs/tokens/README.md` (section "Saving mode").
 
 ### Quiet runs and run logs (`haetty run`, `haetty log`)
 

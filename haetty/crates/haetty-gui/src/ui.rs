@@ -506,7 +506,7 @@ fn has_status(i: &ClaudeInfo) -> bool {
 /// has sent anything (`None`) the row is blank on the terminal's background:
 /// it is reserved (its arrival must not resize the program, DESIGN §3.10)
 /// but shows nothing.
-pub fn status_row(info: Option<&ClaudeInfo>, cols: usize, g: Greys, diff_key: &str) -> Vec<Cell> {
+pub fn status_row_with(info: Option<&ClaudeInfo>, cols: usize, g: Greys, diff_key: &str, saving: bool) -> Vec<Cell> {
     let Some(i) = info.filter(|i| has_status(i)) else {
         return vec![blank(g.bg, g.bg); cols];
     };
@@ -545,6 +545,13 @@ pub fn status_row(info: Option<&ClaudeInfo>, cols: usize, g: Greys, diff_key: &s
             x = put(&mut row, x, &format!(" · {diff_key}"), g.dim, bg, false);
         }
     }
+    // Saving mode (`saving-mode`): a dim mark after the items, so the person sees the limits are on.
+    if saving {
+        if x > 1 {
+            x = sep(&mut row, x);
+        }
+        x = put(&mut row, x, "◆ saving", g.dim, bg, false);
+    }
     let _ = x;
     if i.busy {
         let t = "esc to interrupt";
@@ -552,6 +559,12 @@ pub fn status_row(info: Option<&ClaudeInfo>, cols: usize, g: Greys, diff_key: &s
         put(&mut row, at, t, g.dim, bg, false);
     }
     row
+}
+
+/// The status row without the saving mark (the tests and the reference frames; the window uses `status_row_with`).
+#[cfg(test)]
+pub fn status_row(info: Option<&ClaudeInfo>, cols: usize, g: Greys, diff_key: &str) -> Vec<Cell> {
+    status_row_with(info, cols, g, diff_key, false)
 }
 
 /// "1.2M", "200k", "950".
@@ -1157,6 +1170,15 @@ mod tests {
         assert_eq!(seen[0].2, Rgb { r: 0xd0, g: 0x8c, b: 0x1b }, "CGA brown");
         assert_eq!(cga.palette[9], Rgb { r: 0xdc, g: 0x4e, b: 0x4e });
         assert!(seen[0] != seen[1] && seen[0] != seen[2], "another theme, other UI colours");
+    }
+
+    #[test]
+    fn the_saving_mark_is_dim_and_only_in_saving_mode() {
+        let g = Greys::from(FG, BG);
+        let info = ClaudeInfo { context_pct: Some(40.0), ..ClaudeInfo::default() };
+        let on = text(&status_row_with(Some(&info), 60, g, "", true));
+        assert!(on.contains("◆ saving"), "{on}");
+        assert!(!text(&status_row_with(Some(&info), 60, g, "", false)).contains("saving"));
     }
 
     #[test]

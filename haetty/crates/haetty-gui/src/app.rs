@@ -275,6 +275,7 @@ struct Win {
     token_status: bool,
     /// `clear-hint` (percent, 0 off) and `context-window` (tokens): the dim `/clear` mark of worker tabs.
     clear_hint: u8,
+    saving_mode: bool,
     context_window: u64,
     /// Status panel: open, width in columns (persisted in the state dir).
     panel_open: bool,
@@ -407,6 +408,7 @@ impl App {
             tokens: crate::tokens::Watch::new(),
             token_status: self.opts.config.token_status,
             clear_hint: self.opts.config.clear_hint,
+            saving_mode: self.opts.config.saving_mode,
             context_window: self.opts.config.context_window,
             active: 0,
             composed: None,
@@ -799,6 +801,17 @@ impl Win {
         }
     }
 
+    /// The environment of a new session: haetty's own, and in saving mode the output limits for Claude Code (the
+    /// values `config::SAVING_ENV` names replace any the environment has).
+    fn session_env(&self, program: &str) -> Vec<(String, String)> {
+        let mut env: Vec<(String, String)> =
+            std::env::vars_os().filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?))).collect();
+        if self.saving_mode && haetty_cc::settings::is_claude(program) {
+            crate::config::saving_env(&mut env);
+        }
+        env
+    }
+
     fn open_spec(&mut self, spec: TabSpec) -> Result<(), String> {
         // The active tab's folder: what its program reported (OSC 7), else
         // where the tab started — Claude Code reports no folder, so a new tab
@@ -814,9 +827,7 @@ impl Win {
             cwd: cwd.clone(),
             // The daemon may run in an older environment: the child gets ours
             // (never stored, DESIGN.md §3.6).
-            env: std::env::vars_os()
-                .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
-                .collect(),
+            env: self.session_env(&spec.program),
             size: size.into(),
             scrollback_limit: self.scrollback_limit as u64,
             default_fg: rgb(self.theme.foreground),
@@ -1598,8 +1609,9 @@ impl Win {
         });
         let tab = self.tab();
         let diff_key = self.keys.chord_for(Action::DiffView).map(|c| c.to_string()).unwrap_or_default();
-        let status =
-            tab.integrated.then(|| ui::status_row(tab.claude.as_deref(), self.grid.cols as usize, g, &diff_key));
+        let status = tab.integrated.then(|| {
+            ui::status_row_with(tab.claude.as_deref(), self.grid.cols as usize, g, &diff_key, self.saving_mode)
+        });
         let pc = self.panel_cols() as usize;
         let area = (self.grid.rows as usize).saturating_sub(self.top() as usize + usize::from(status.is_some()));
         if (self.token_status || self.clear_hint > 0) && pc > 0 {

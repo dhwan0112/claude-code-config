@@ -86,6 +86,8 @@ pub struct Config {
     pub token_status: bool,
     /// The share of a worker's context (percent of `context_window`) past which its tab shows a dim `/clear`; 0 is off.
     pub clear_hint: u8,
+    /// Saving mode (`saving-mode`): Claude Code sessions start with the output limits of `SAVING_ENV`.
+    pub saving_mode: bool,
     /// The context window in tokens, for `clear_hint`.
     pub context_window: u64,
     /// Claude Code tabs get haetty's hooks and status line.
@@ -117,6 +119,7 @@ impl Default for Config {
             observe_new_tabs: false,
             token_status: false,
             clear_hint: 60,
+            saving_mode: false,
             context_window: 200_000,
             claude_integration: true,
             engine: haetty_core::vt::EngineKind::default_kind(),
@@ -196,6 +199,11 @@ pub const SETTINGS: &[Setting] = &[
         "the context window of the workers' model, in tokens, for `clear-hint` (at least 1000)",
         "`200000`",
     ),
+    row(
+        &["saving-mode"],
+        "`true` / `false` — saving mode: Claude Code sessions haetty starts get `BASH_MAX_OUTPUT_LENGTH=12000` and `MAX_MCP_OUTPUT_TOKENS=12000`, the official limits on Bash output read back and on MCP tool output ([the values and sources](docs/tokens/README.md#saving-mode)); the status row shows a dim `◆ saving`",
+        "`false`",
+    ),
     Setting {
         keys: &["keybind"],
         values: "`CHORD=ACTION` or `CHORD=unbind` (file only, may repeat)",
@@ -273,6 +281,7 @@ pub const KEYS: &[&str] = &[
     "token-status",
     "clear-hint",
     "context-window",
+    "saving-mode",
     "claude-integration",
     "worker-command",
     "notifications",
@@ -307,6 +316,7 @@ impl Config {
             "observe-new-tabs" => self.observe_new_tabs = parse_bool(value).ok_or_else(bad)?,
             "token-status" => self.token_status = parse_bool(value).ok_or_else(bad)?,
             "clear-hint" => self.clear_hint = parse_percent(value).ok_or_else(bad)?,
+            "saving-mode" => self.saving_mode = parse_bool(value).ok_or_else(bad)?,
             "context-window" => {
                 self.context_window = value.trim().parse::<u64>().ok().filter(|n| *n >= 1000).ok_or_else(bad)?
             }
@@ -434,6 +444,20 @@ pub fn reread(settings: &[(String, String)]) -> (Config, Vec<String>) {
     (c, bad)
 }
 
+/// Saving mode's environment: the Bash output read back into a result, and the MCP tool output in tokens. The values
+/// are from the G1 measurement (docs/tokens/README.md, "Saving mode"); the meanings are the official ones.
+pub const SAVING_ENV: [(&str, &str); 2] = [("BASH_MAX_OUTPUT_LENGTH", "12000"), ("MAX_MCP_OUTPUT_TOKENS", "12000")];
+
+/// Sets saving mode's variables in a session's environment, replacing a value the environment already has.
+pub fn saving_env(env: &mut Vec<(String, String)>) {
+    for (key, value) in SAVING_ENV {
+        match env.iter_mut().find(|(k, _)| k == key) {
+            Some(entry) => entry.1 = value.to_string(),
+            None => env.push((key.to_string(), value.to_string())),
+        }
+    }
+}
+
 /// A percentage from 0 to 100 (0 is off).
 fn parse_percent(v: &str) -> Option<u8> {
     v.trim().parse::<u8>().ok().filter(|n| *n <= 100)
@@ -483,6 +507,7 @@ mod tests {
         assert_eq!(default_of("token-status"), format!("`{}`", d.token_status));
         assert_eq!(default_of("clear-hint"), format!("`{}`", d.clear_hint));
         assert_eq!(default_of("context-window"), format!("`{}`", d.context_window));
+        assert_eq!(default_of("saving-mode"), format!("`{}`", d.saving_mode));
         assert_eq!(default_of("notifications"), format!("`{}`", d.notifications));
         assert_eq!(default_of("claude-integration"), format!("`{}`", d.claude_integration));
     }
@@ -623,5 +648,17 @@ mod tests {
         assert_eq!(t, Theme::default());
         assert!(msgs[0].contains("No Such Theme"));
         haetty_testkit::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn saving_mode_sets_both_limits_and_replaces_a_value_it_finds() {
+        let mut env =
+            vec![("PATH".to_string(), "/bin".to_string()), ("MAX_MCP_OUTPUT_TOKENS".to_string(), "99".to_string())];
+        saving_env(&mut env);
+        let get = |k: &str| env.iter().find(|(key, _)| key == k).map(|(_, v)| v.clone());
+        assert_eq!(get("BASH_MAX_OUTPUT_LENGTH").as_deref(), Some("12000"));
+        assert_eq!(get("MAX_MCP_OUTPUT_TOKENS").as_deref(), Some("12000"));
+        assert_eq!(get("PATH").as_deref(), Some("/bin"));
+        assert_eq!(env.len(), 3);
     }
 }
