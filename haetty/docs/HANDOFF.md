@@ -141,7 +141,7 @@ Windows, WSL and the dev machine:
 
 - **kramers 2026-11-09 (0.2.0, `63822de`)**, [docs/checks/2026-11-09-kramers.md](checks/2026-11-09-kramers.md).
   Open failures: 7 (window size on Wayland at 125 %, still in 0.2.0; §6.1 item 32). Fixed in K1, re-check in K4:
-  12 (the red `?` stayed after the answer). Other observations, not counted as failures: a tab's own name is lost on detach and reattach (K3);
+  12 (the red `?` stayed after the answer). Other observations, not counted as failures: a tab's own name was lost on detach and reattach (fixed in K3b);
   a daemon killed with SIGKILL was a zombie of its window (fixed in K3a); test instances wrote their per-session settings into the shared `$XDG_RUNTIME_DIR/haetty/` (fixed in K3a; flagged for review); a tab started inside Claude Code inherited
   `CLAUDE_CODE_CHILD_SESSION` and the messaging socket and token, so transcript saving was off (fixed in K2 and K2b: the child
   markers are not passed on, docs/history/2026-11-09-k2-child-markers.md); the worker mark stayed `–` after a restart though its last report was stored (fixed in K3a); a `WARN` for the empty left button side (cosmetic).

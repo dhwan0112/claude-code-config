@@ -1,8 +1,7 @@
 //! Migration from the former name (DESIGN.md §3.9), with the real binary:
 //! the old config file and tab sets are copied when haetty has none (the
 //! originals stay, an existing haetty file is never overwritten); a daemon
-//! of the old name that is running is reported and left alone; the old
-//! `CCTERM_*` environment variables still work and are announced. Unix only.
+//! of the old name that is running is reported and left alone. Unix only.
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -50,7 +49,6 @@ fn old_settings_are_copied_and_an_old_daemon_is_left_alone() {
     // processes it starts inherit the same environment.
     for v in ["SOCKET", "STATE_DIR", "CONFIG_DIR", "INSTANCE", "LOG_FILE", "LOG"] {
         std::env::remove_var(format!("HAETTY_{v}"));
-        std::env::remove_var(format!("CCTERM_{v}"));
     }
     std::env::set_var("XDG_RUNTIME_DIR", &rt);
     std::env::set_var("XDG_STATE_HOME", tmp.join("state"));
@@ -122,18 +120,6 @@ fn old_settings_are_copied_and_an_old_daemon_is_left_alone() {
     let c = wait_for(&rt.join("haetty/daemon.sock"));
     assert_eq!(std::fs::read_to_string(&new_cfg).unwrap(), "restore-tabs = true\n", "not overwritten");
     drop(c);
-
-    // The old CCTERM_* names still work and are announced once.
-    let out = Command::new(BIN)
-        .args(["status", "--json"])
-        .env("CCTERM_SOCKET", &old_sock)
-        .env("CCTERM_LOG", "warn")
-        .output()
-        .unwrap();
-    let (stdout, stderr) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
-    assert!(stdout.contains(&old_session), "CCTERM_SOCKET read as HAETTY_SOCKET: {stdout} {stderr}");
-    assert!(stderr.contains("CCTERM_SOCKET is the old name of HAETTY_SOCKET"), "{stderr}");
-    assert_eq!(stderr.matches("CCTERM_SOCKET is the old name").count(), 1, "{stderr}");
 
     old_client.close(&old_session).unwrap();
     for p in [&mut old, &mut again] {

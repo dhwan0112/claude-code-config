@@ -640,13 +640,15 @@ impl Win {
 
     /// Shows a session of the daemon that no window shows, as a new tab.
     fn reattach(&mut self, s: &SessionInfo) -> Result<(), String> {
+        // Its own name, if the person gave it one (tabnames; kramers 2026-11-09).
+        let own = crate::tabnames::load().remove(&s.id);
         let spec = TabSpec {
             program: s.program.clone(),
             // A worker's task prompt is given once (DESIGN.md §8.1).
             args: s.args.iter().filter(|a| !tasks::is_prompt_arg(a)).cloned().collect(),
             cwd: Some(osc7_path(&s.cwd)),
-            name: None,
-            custom: false,
+            custom: own.is_some(),
+            name: own,
             once: vec![],
         };
         let integrated = self.is_integrated(&s.program);
@@ -1859,7 +1861,9 @@ impl Win {
                         let clean: String = name.chars().filter(|c| !c.is_control()).collect();
                         let clean: String = clean.trim().chars().take(64).collect();
                         let auto = clean.is_empty();
-                        self.tabs[self.active].custom_name = (!auto).then_some(clean);
+                        let own = (!auto).then_some(clean);
+                        crate::tabnames::set(&self.tabs[self.active].session.id, own.as_deref());
+                        self.tabs[self.active].custom_name = own;
                         log::info!(
                             "tab {} renamed ({})",
                             self.active + 1,

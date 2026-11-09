@@ -7,7 +7,7 @@
 #     --check     print and check everything, start nothing
 # Every run prints what the dev instance uses next to the stable one — socket, state, config and runtime
 # directories, app id, window title prefix — and refuses to start when anything would be shared: an override
-# (HAETTY_SOCKET / _STATE_DIR / _CONFIG_DIR / _LOG_FILE, or their old CCTERM_* names) or a path in the dev
+# (HAETTY_SOCKET / _STATE_DIR / _CONFIG_DIR / _LOG_FILE) or a path in the dev
 # config that points at the stable instance, or a binary that is the installed stable one.
 # The build runs in a heavy-job slot (tools/heavy.sh); the window is started detached, its log in the dev state
 # directory. Never touches the stable daemon.
@@ -27,8 +27,7 @@ while [ $# -gt 0 ]; do
 done
 die() { echo "dev-run: REFUSED: $*" >&2; exit 3; }
 # Parent markers out: a dev window started from a stable tab or a Claude Code session is not their child.
-for v in $(env | grep -oE '^(HAETTY_SESSION_ID|CCTERM_SESSION_ID|CLAUDE_CODE_[A-Z_]*|CLAUDECODE|CLAUDE_[A-Z_]*SESSION[A-Z_]*)='); do unset "${v%=}"; done
-unset CCTERM_INSTANCE
+for v in $(env | grep -oE '^(HAETTY_SESSION_ID|CLAUDE_CODE_[A-Z_]*|CLAUDECODE|CLAUDE_[A-Z_]*SESSION[A-Z_]*)='); do unset "${v%=}"; done
 export HAETTY_INSTANCE=dev
 
 uid=$(id -u)
@@ -41,15 +40,15 @@ for s in "$(rt_of haetty)" "$st_base/haetty" "$cf_base/haetty" "$(rt_of ccterm)"
 done
 inside() { local p=${1%/} s; for s in "${stable[@]}"; do case "$p" in "$s"|"$s"/*) return 0 ;; esac; done; return 1; }
 for n in SOCKET STATE_DIR CONFIG_DIR LOG_FILE; do
-  for pre in HAETTY_ CCTERM_; do
+  for pre in HAETTY_; do
     v=$(printenv "$pre$n") || continue
     [ -n "$v" ] || continue
     inside "$(realpath -m "$v")" && die "$pre$n=$v points at the stable instance"
   done
 done
-sock=${HAETTY_SOCKET:-${CCTERM_SOCKET:-$(rt_of haetty-dev)/daemon.sock}}
-state=${HAETTY_STATE_DIR:-${CCTERM_STATE_DIR:-$st_base/haetty-dev}}
-cfg=${HAETTY_CONFIG_DIR:-${CCTERM_CONFIG_DIR:-$cf_base/haetty-dev}}
+sock=${HAETTY_SOCKET:-$(rt_of haetty-dev)/daemon.sock}
+state=${HAETTY_STATE_DIR:-$st_base/haetty-dev}
+cfg=${HAETTY_CONFIG_DIR:-$cf_base/haetty-dev}
 if [ -f "$cfg/config" ]; then
   for s in "${stable[@]}"; do
     grep -nF -- "$s" "$cfg/config" | grep -vE '^[0-9]+:\s*#' | head -1 | grep -q . && die "$cfg/config names $s (the stable instance)"

@@ -190,14 +190,8 @@ mod embedded {
 
 fn sideload_candidates() -> Vec<PathBuf> {
     let mut v = Vec::new();
-    // HAETTY_CONPTY_DLL; the old name CCTERM_CONPTY_DLL is still read.
-    if let Some(p) = std::env::var_os("HAETTY_CONPTY_DLL").or_else(|| {
-        let v = std::env::var_os("CCTERM_CONPTY_DLL");
-        if v.is_some() {
-            log::warn!("CCTERM_CONPTY_DLL is the old name of HAETTY_CONPTY_DLL; please rename it");
-        }
-        v
-    }) {
+    // HAETTY_CONPTY_DLL (the former CCTERM_CONPTY_DLL is not read any more).
+    if let Some(p) = std::env::var_os("HAETTY_CONPTY_DLL") {
         v.push(PathBuf::from(p));
     }
     if let Ok(exe) = std::env::current_exe() {

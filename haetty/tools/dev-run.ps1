@@ -3,7 +3,7 @@
 #   pwsh -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\…\haetty\tools\dev-run.ps1 [-Debug] [-NoBuild] [-Check] [-- HAETTY-ARGS…]
 # Every run prints what the dev instance uses next to the stable one — pipe, state and config directories, app
 # id, window title prefix, binary — and refuses to start when anything would be shared: an override
-# (HAETTY_SOCKET / _STATE_DIR / _CONFIG_DIR / _LOG_FILE or the old CCTERM_* names) or a path in the dev config
+# (HAETTY_SOCKET / _STATE_DIR / _CONFIG_DIR / _LOG_FILE) or a path in the dev config
 # that points at the stable instance. The dev binary is copied to %LOCALAPPDATA%\haetty-dev\bin, never into the
 # stable install (%LOCALAPPDATA%\Programs\haetty). Never touches the stable daemon.
 $DebugBuild = $false; $NoBuild = $false; $CheckOnly = $false; $rest = @()
@@ -19,7 +19,7 @@ $p = (Resolve-Path -LiteralPath $PSScriptRoot).ProviderPath
 if ($p -notmatch '^\\\\wsl(?:\.localhost|\$)\\([^\\]+)(\\.*)\\tools$') { Die "run it from the WSL checkout (\\wsl.localhost\<distro>\…\haetty\tools)" }
 $distro = $Matches[1]; $proj = ($Matches[2] -replace '\\', '/'); $projUnc = Split-Path $p
 # Parent markers out (a dev window started from a stable tab or a Claude Code session is not their child).
-Get-ChildItem env: | Where-Object { $_.Name -match '^(HAETTY_SESSION_ID|CCTERM_SESSION_ID|CLAUDE_CODE_.*|CLAUDECODE|CLAUDE_.*SESSION.*|CCTERM_INSTANCE)$' } |
+Get-ChildItem env: | Where-Object { $_.Name -match '^(HAETTY_SESSION_ID|CLAUDE_CODE_.*|CLAUDECODE|CLAUDE_.*SESSION.*)$' } |
     ForEach-Object { Remove-Item "env:$($_.Name)" }
 $env:HAETTY_INSTANCE = "dev"
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -30,15 +30,15 @@ function Inside([string]$x) {
     $false
 }
 foreach ($n in "SOCKET", "STATE_DIR", "CONFIG_DIR", "LOG_FILE") {
-    foreach ($pre in "HAETTY_", "CCTERM_") {
+    foreach ($pre in "HAETTY_") {
         $v = [Environment]::GetEnvironmentVariable("$pre$n")
         if ($v) { $full = if ($v.StartsWith('\\.\')) { $v } else { [IO.Path]::GetFullPath($v) }; if (Inside $full) { Die "$pre$n=$v points at the stable instance" } }
     }
 }
-function Pick([string]$a, [string]$b, [string]$def) { foreach ($x in $a, $b) { $v = [Environment]::GetEnvironmentVariable($x); if ($v) { return $v } }; $def }
-$pipe = Pick "HAETTY_SOCKET" "CCTERM_SOCKET" "\\.\pipe\haetty-dev-$sid"
-$state = Pick "HAETTY_STATE_DIR" "CCTERM_STATE_DIR" "$env:LOCALAPPDATA\haetty-dev"
-$cfg = Pick "HAETTY_CONFIG_DIR" "CCTERM_CONFIG_DIR" "$env:APPDATA\haetty-dev"
+function Pick([string]$a, [string]$def) { $v = [Environment]::GetEnvironmentVariable($a); if ($v) { return $v }; $def }
+$pipe = Pick "HAETTY_SOCKET" "\\.\pipe\haetty-dev-$sid"
+$state = Pick "HAETTY_STATE_DIR" "$env:LOCALAPPDATA\haetty-dev"
+$cfg = Pick "HAETTY_CONFIG_DIR" "$env:APPDATA\haetty-dev"
 if (Test-Path "$cfg\config") {
     foreach ($s in $stable) {
         $hit = Select-String -LiteralPath "$cfg\config" -SimpleMatch $s | Where-Object { $_.Line -notmatch '^\s*#' } | Select-Object -First 1

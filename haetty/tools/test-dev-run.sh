@@ -8,7 +8,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 . "$here/../scripts/test-guard.sh"; haetty_guard_init HAETTY_TEST_TMP || exit 3
 F=$HAETTY_RUN/dev-run; haetty_guard "$F"
 mkdir -p "$F/home" "$F/rt"; chmod 700 "$F/rt"
-for v in $(env | grep -oE '^(HAETTY_[A-Z_]*|CCTERM_[A-Z_]*|XDG_[A-Z_]*)='); do unset "${v%=}"; done
+for v in $(env | grep -oE '^(HAETTY_[A-Z_]*|XDG_[A-Z_]*)='); do unset "${v%=}"; done
 export HOME=$F/home XDG_RUNTIME_DIR=$F/rt
 D=$here/dev-run.sh
 pass=0 fail=0
@@ -22,7 +22,6 @@ ok "$(echo "$out" | grep -q "state .*$F/home/.local/state/haetty-dev " && echo 1
 ok "$(echo "$out" | grep -q 'app id .*haetty.dev ' && echo "$out" | grep -q 'instance dev' && echo 1 || echo 0)" "app id .dev, the build reports instance dev"
 ok "$(refused HAETTY_STATE_DIR=$F/home/.local/state/haetty)" "refused: HAETTY_STATE_DIR = the stable state directory"
 ok "$(refused HAETTY_CONFIG_DIR=$F/home/.config/haetty/sub)" "refused: HAETTY_CONFIG_DIR inside the stable config directory"
-ok "$(refused CCTERM_SOCKET=$F/rt/haetty/daemon.sock)" "refused: the old CCTERM_SOCKET = the stable socket"
 ok "$(refused HAETTY_LOG_FILE=$F/home/.local/state/ccterm/gui.log)" "refused: HAETTY_LOG_FILE in the former name's state directory"
 mkdir -p "$F/home/.config/haetty-dev"
 echo "theme = $F/home/.config/haetty/themes/mine" > "$F/home/.config/haetty-dev/config"

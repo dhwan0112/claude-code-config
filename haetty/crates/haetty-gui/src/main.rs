@@ -48,6 +48,7 @@ mod migrate;
 mod reftest;
 mod render;
 mod run;
+mod tabnames;
 mod tabsets;
 mod tasks;
 mod titlebar;
@@ -455,7 +456,6 @@ fn init_log(default_file: Option<std::path::PathBuf>) {
     if log::set_logger(logger).is_ok() {
         log::set_max_level(level);
     }
-    haetty_proto::product::log_legacy_env();
 }
 
 /// Report an error the user must see and exit. On Windows the release build

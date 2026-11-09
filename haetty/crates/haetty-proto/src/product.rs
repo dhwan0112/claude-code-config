@@ -10,14 +10,11 @@
 //! without touching its daemon, sessions, tab sets or settings. Unset or
 //! empty = the stable instance.
 //!
-//! Environment variables are `HAETTY_*`; the old `CCTERM_*` names are still
-//! read when the new one is unset ([`env`]), and each one read is announced
-//! once in the log ([`log_legacy_env`]).
+//! Environment variables are `HAETTY_*`. The old `CCTERM_*` names were read as
+//! a fallback until K3b and are not any more; the file migration of the former
+//! name stays ([`legacy_dir`]).
 
-use std::collections::BTreeSet;
 use std::ffi::OsString;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 
 /// Executable name without extension; used when the running executable's
 /// own path is unknown.
@@ -35,8 +32,6 @@ pub const DIR: &str = "haetty";
 pub const LEGACY_DIR: &str = "ccterm";
 /// Prefix of every environment variable.
 pub const ENV_PREFIX: &str = "HAETTY_";
-/// The former prefix, still read as a fallback.
-pub const LEGACY_ENV_PREFIX: &str = "CCTERM_";
 /// Environment variable set in every session's child: the session id, so
 /// `haetty hook` / `haetty statusline` know which tab they belong to.
 pub const SESSION_ENV: &str = "HAETTY_SESSION_ID";
@@ -44,52 +39,14 @@ pub const SESSION_ENV: &str = "HAETTY_SESSION_ID";
 /// session's child, so hooks reach the daemon of their own instance.
 pub const INSTANCE_ENV: &str = "HAETTY_INSTANCE";
 
-static LEGACY_SEEN: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
-/// Set by [`log_legacy_env`]: from then on a legacy name is logged when it
-/// is first read.
-static LOG_READY: AtomicBool = AtomicBool::new(false);
-static LEGACY_LOGGED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
-
-fn warn_legacy(name: &str) {
-    if LEGACY_LOGGED.lock().is_ok_and(|mut l| l.insert(name.to_string())) {
-        log::warn!(
-            "{LEGACY_ENV_PREFIX}{name} is the old name of {ENV_PREFIX}{name}; it is still read for now — please rename it"
-        );
-    }
-}
-
-/// `HAETTY_<name>`, else the old `CCTERM_<name>` (remembered for
-/// [`log_legacy_env`]). Empty values count as set.
+/// `HAETTY_<name>` (an empty value counts as set).
 pub fn env_os(name: &str) -> Option<OsString> {
-    if let Some(v) = std::env::var_os(format!("{ENV_PREFIX}{name}")) {
-        return Some(v);
-    }
-    let v = std::env::var_os(format!("{LEGACY_ENV_PREFIX}{name}"))?;
-    if LOG_READY.load(Ordering::Relaxed) {
-        warn_legacy(name);
-    } else if let Ok(mut seen) = LEGACY_SEEN.lock() {
-        seen.insert(name.to_string());
-    }
-    Some(v)
+    std::env::var_os(format!("{ENV_PREFIX}{name}"))
 }
 
 /// [`env_os`] as a string (non-UTF-8 values count as unset).
 pub fn env(name: &str) -> Option<String> {
     env_os(name).and_then(|v| v.into_string().ok())
-}
-
-/// Logs once per variable that an old `CCTERM_*` name was used. Call after
-/// the logger is set up (variables read before, e.g. the log level itself,
-/// are reported here too).
-pub fn log_legacy_env() {
-    LOG_READY.store(true, Ordering::Relaxed);
-    let names: Vec<String> = match LEGACY_SEEN.lock() {
-        Ok(mut seen) => std::mem::take(&mut *seen).into_iter().collect(),
-        Err(_) => return,
-    };
-    for n in names {
-        warn_legacy(&n);
-    }
 }
 
 /// The instance name: `HAETTY_INSTANCE`, lower-cased, ASCII letters, digits
