@@ -37,7 +37,7 @@ enum {
 /* haetty's terminal setup (crates/haetty-vtdiff/src/main.rs, init()). */
 static const GhosttyColorRgb kFg = {0xcc, 0xcc, 0xcc};
 static const GhosttyColorRgb kBg = {0x14, 0x14, 0x14};
-static const char kXtversion[] = "haetty(0.2.0)";
+static const char kXtversion[] = "haetty(0.3.0)";
 
 static void die(const char *what) {
   fprintf(stderr, "ghostty-ref: %s\n", what);

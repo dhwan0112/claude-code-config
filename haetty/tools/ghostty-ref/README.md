@@ -63,7 +63,7 @@ Lines of `snap`:
   - `link`: hex of the hyperlink URI, `-` when none
 
 `init` gives the terminal what vtdiff's `init()` gives haetty's engine: colours fg `cccccc`, bg `141414`, the built-in
-palette, no cursor colour; the XTVERSION answer `haetty(0.2.0)`; the scrollback limit in bytes as given. The colours and
+palette, no cursor colour; the XTVERSION answer `haetty(0.3.0)` (the crate version; vtdiff derives its side from `CARGO_PKG_VERSION`); the scrollback limit in bytes as given. The colours and
 the XTVERSION answer are constants of `ghostty-ref.c`: change them there and in `init()` together.
 
 ## How it matches haetty

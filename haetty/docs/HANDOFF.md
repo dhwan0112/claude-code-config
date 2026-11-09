@@ -12,7 +12,7 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 ## 1. Current state
 
-- **Version** 0.2.0 (workspace). Tags: `haetty-v0.1.0` = `4d75fcd`,
+- **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
   `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
   check-range `haetty-v0.1.1..63822de` 0 failing; record in
@@ -22,8 +22,8 @@ New progress records go to the newest file in `docs/history/`, not here.
   line changes only when they say so.
 - **Everything after `63822de` is the v0.3.0 candidate** (V3's
   observe-only interface and protocol 8, V6's palette fix, E1–E5: the
-  native engine). The workspace version on `main` still reads 0.2.0; it
-  is not bumped yet.
+  native engine, F0-F4). The workspace version is 0.3.0 from the candidate
+  commit; the tag waits for its night run.
 - Last stages (records in [history](history/2026-11-06-07-stages-t-u-v.md)):
   T1–T7, U1–U6, V1–V7, E0–E5.
 

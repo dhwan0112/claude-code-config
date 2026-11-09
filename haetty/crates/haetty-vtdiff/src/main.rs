@@ -115,7 +115,7 @@ fn init(cols: u16, rows: u16) -> VtInit {
             cursor_color: None,
         },
         color_scheme: ColorSchemePref::Dark,
-        xtversion: "haetty(0.2.0)".into(),
+        xtversion: concat!("haetty(", env!("CARGO_PKG_VERSION"), ")").into(),
     }
 }
 
