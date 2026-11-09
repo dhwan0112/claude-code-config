@@ -655,6 +655,10 @@ right daemon and tab.
   and diff view with a real Claude Code account, notifications, and the
   PowerShell status-line case above; also the Microsoft IME, a real mouse
   wheel and HiDPI monitors.
+- `haetty wait` on Windows opens the process at each check, so a process ID reused in the meantime makes the wait run
+  to its timeout (600 seconds by default).
+- An event wait (`haetty wait event`) counts the events written after its subscription, which takes a few
+  milliseconds after the command starts; an event in that gap is missed, and the wait then runs to its timeout.
 
 ## How it works
 
