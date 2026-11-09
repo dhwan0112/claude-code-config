@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage k0 (branch `haetty/k0`, worktree `~/projects/claude-code-config-wt/k0`). Remaining: K0: kramers 2026-11-09 results in docs/checks, the §6.1 tags, the open items (§6.0), the stable line. Then K1 (12, attention and input block; approved scope), K2 (inherited variables), K3 (observations), H1-H4, K4 (v0.3.1 candidate). v0.3.0 tag only after the night run of b1262d2 (2026-11-10 02:00) passes both platforms.
+> **In progress:** stage k2 (branch `haetty/k2`, worktree `~/projects/claude-code-config-wt/k2`). Remaining: K2: the Claude Code child markers are not passed on to new sessions (CHILD_MARKERS in the GUI session environment; interactive check: transcript saving on, --resume works). Then K3 (observations), K1 (the attention marks and the input block, approved scope), H1-H4, K4.
 
 ## 1. Current state
 
