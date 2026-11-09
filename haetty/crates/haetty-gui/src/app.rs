@@ -1035,7 +1035,7 @@ impl Win {
 
     /// Makes a task and opens its worker (DESIGN.md §8.1). `place` is
     /// "repository [base]" (no base: the repository's current branch).
-    fn start_task(&mut self, title: &str, description: &str, place: &str) {
+    fn start_task(&mut self, draft: &tasks::Draft, place: &str) {
         let place = place.trim();
         let (repo, base) = match place.rsplit_once(char::is_whitespace) {
             Some((r, b)) if !b.trim().is_empty() && !r.trim().is_empty() => {
@@ -1048,7 +1048,7 @@ impl Win {
                 (place.to_string(), b)
             }
         };
-        let t = match tasks::create(&tasks::dir(), title, description, &repo, &base) {
+        let t = match tasks::create(&tasks::dir(), draft, &repo, &base) {
             Ok(t) => t,
             Err(e) => {
                 self.show_hint(format!("task not made: {e}"));
@@ -1061,7 +1061,7 @@ impl Win {
         let Some((program, args)) = self.worker_command.split_first() else { return };
         let spec = TabSpec {
             program: program.clone(),
-            args: args.to_vec(),
+            args: tasks::worker_args(args, &t),
             cwd: Some(t.worktree.clone()),
             name: Some(t.title.clone()),
             custom: false,
@@ -1840,9 +1840,9 @@ impl Win {
                         self.show_hint(if auto { "automatic tab name".into() } else { "tab renamed".into() });
                         return;
                     }
-                    Some(Pick::NewTask(title, description, place)) => {
+                    Some(Pick::NewTask(draft, place)) => {
                         self.recompose();
-                        self.start_task(&title, &description, &place);
+                        self.start_task(&draft, &place);
                         return;
                     }
                     Some(Pick::Message(text)) => {

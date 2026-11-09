@@ -255,9 +255,9 @@ pub enum PaletteMode {
     Rename { now: String },
     /// Closed tabs: (name, details) each.
     Closed(Vec<(String, String)>),
-    /// New task, three questions: title, description, repository and base
-    /// (`prefill` is the third answer's start).
-    NewTask { step: u8, title: String, description: String, prefill: String },
+    /// New task, seven questions: title, description, scope, related files, model, effort (the optional ones may be
+    /// blank), then repository and base (`prefill` is the start of the last one; `answers` are the first six).
+    NewTask { step: u8, answers: Vec<String>, prefill: String },
     /// A message for the active worker.
     Message,
     /// Tasks whose worktree can be removed: (task, details) each.
@@ -271,11 +271,17 @@ pub enum Pick {
     /// Index into the closed list given to [`Palette::closed`].
     Closed(usize),
     Rename(String),
-    /// Title, description, "repository base".
-    NewTask(String, String, String),
+    /// The new task's answers, and "repository base".
+    NewTask(crate::tasks::Draft, String),
     Message(String),
     /// Index into the list given to [`Palette::tasks`].
     Task(usize),
+}
+
+/// The answers to the new-task questions, in order (a missing answer is blank).
+fn draft(a: &[String]) -> crate::tasks::Draft {
+    let g = |i: usize| a.get(i).cloned().unwrap_or_default();
+    crate::tasks::Draft { title: g(0), description: g(1), scope: g(2), related: g(3), model: g(4), effort: g(5) }
 }
 
 fn words_match(q: &str, text: &str) -> bool {
@@ -293,7 +299,7 @@ impl Palette {
     }
 
     pub fn new_task(prefill: String) -> Palette {
-        let mode = PaletteMode::NewTask { step: 0, title: String::new(), description: String::new(), prefill };
+        let mode = PaletteMode::NewTask { step: 0, answers: Vec::new(), prefill };
         Palette { query: String::new(), selected: 0, mode }
     }
 
@@ -305,21 +311,18 @@ impl Palette {
         Palette { query: String::new(), selected: 0, mode: PaletteMode::Tasks(items) }
     }
 
-    /// New task: Enter on the first two questions moves on (true); the
-    /// third is a pick. An empty title stays.
+    /// New task: Enter takes the answer and asks the next question (true); the title is required, the optional answers
+    /// may be blank, and the last question (repository and base) is the pick.
     pub fn task_step(&mut self) -> bool {
-        let PaletteMode::NewTask { step, title, description, prefill } = &mut self.mode else { return false };
+        let PaletteMode::NewTask { step, answers, prefill } = &mut self.mode else { return false };
         match *step {
-            0 if !self.query.trim().is_empty() => {
-                *title = std::mem::take(&mut self.query);
-                *step = 1;
-                true
-            }
-            0 => true,
-            1 => {
-                *description = std::mem::take(&mut self.query);
-                self.query = prefill.clone();
-                *step = 2;
+            0 if self.query.trim().is_empty() => true,
+            0..=5 => {
+                answers.push(std::mem::take(&mut self.query));
+                *step += 1;
+                if *step == 6 {
+                    self.query = prefill.clone();
+                }
                 true
             }
             _ => false,
@@ -346,9 +349,7 @@ impl Palette {
             PaletteMode::Rename { .. } => Some(Pick::Rename(self.query.clone())),
             PaletteMode::Closed(_) => self.closed_matches().get(self.selected).copied().map(Pick::Closed),
             PaletteMode::Tasks(_) => self.closed_matches().get(self.selected).copied().map(Pick::Task),
-            PaletteMode::NewTask { step: 2, title, description, .. } => {
-                Some(Pick::NewTask(title.clone(), description.clone(), self.query.clone()))
-            }
+            PaletteMode::NewTask { step: 6, answers, .. } => Some(Pick::NewTask(draft(answers), self.query.clone())),
             PaletteMode::NewTask { .. } => None,
             PaletteMode::Message => Some(Pick::Message(self.query.clone())),
         }
@@ -398,9 +399,13 @@ impl Palette {
             }
             PaletteMode::NewTask { step, .. } => vec![(
                 match step {
-                    0 => "1/3 Enter: next · Esc: cancel".to_string(),
-                    1 => "2/3 one line (more later with \"Message the worker\") · Enter: next".to_string(),
-                    _ => "3/3 folder and base branch · Enter: worktree on a new branch task/…, beside the repository"
+                    0 => "1/7 Enter: next · Esc: cancel".to_string(),
+                    1 => "2/7 one line (more later with \"Message the worker\") · Enter: next".to_string(),
+                    2 => "3/7 optional: the worker may touch only this · Enter skips".to_string(),
+                    3 => "4/7 optional: comma-separated files to start from · Enter skips".to_string(),
+                    4 => "5/7 optional: e.g. opus · Enter skips (Claude Code's default)".to_string(),
+                    5 => "6/7 optional: e.g. high · Enter skips (Claude Code's default)".to_string(),
+                    _ => "7/7 folder and base branch · Enter: worktree on a new branch task/…, beside the repository"
                         .to_string(),
                 },
                 String::new(),
@@ -417,6 +422,10 @@ impl Palette {
             PaletteMode::Tasks(_) => "Remove worktree: ",
             PaletteMode::NewTask { step: 0, .. } => "Task title: ",
             PaletteMode::NewTask { step: 1, .. } => "Description: ",
+            PaletteMode::NewTask { step: 2, .. } => "Scope (optional, blank: the whole repository): ",
+            PaletteMode::NewTask { step: 3, .. } => "Related files (optional, comma-separated): ",
+            PaletteMode::NewTask { step: 4, .. } => "Model (optional, blank: Claude Code's default): ",
+            PaletteMode::NewTask { step: 5, .. } => "Effort (optional, blank: Claude Code's default): ",
             PaletteMode::NewTask { .. } => "Repository and base: ",
             PaletteMode::Message => "To the worker: ",
         };

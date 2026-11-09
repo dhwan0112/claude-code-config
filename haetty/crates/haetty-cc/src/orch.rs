@@ -178,16 +178,16 @@ pub fn send(h: &RemoteHandle, info: Option<&ClaudeInfo>, text: &str) -> Result<(
     Ok(())
 }
 
-/// The task prompt given to the worker as its positional argument.
-pub fn prompt(id: &str, title: &str, description: &str, branch: &str, base: &str) -> String {
-    let mut p = format!("haetty task {id}: {title}\n");
-    if !description.trim().is_empty() {
-        p.push('\n');
-        p.push_str(description.trim());
-        p.push('\n');
-    }
+/// The task prompt given to the worker as its positional argument: the briefing it reads first, and the report its
+/// final message must end with. The report's STATUS is the only part of that message haetty keeps.
+pub fn prompt(id: &str, title: &str, briefing: &str, branch: &str, base: &str) -> String {
+    let mut p = format!("haetty task {id}: {title}\n\n");
     p.push_str(&format!(
-        "\nYou work in a git worktree on branch {branch} (from {base}); stay in it. \
+        "Read the briefing first: {briefing}\n\
+         It has the scope, the related files and when the task is done. If you cannot read it, report STATUS: blocked.\n\n"
+    ));
+    p.push_str(&format!(
+        "You work in a git worktree on branch {branch} (from {base}); stay in it. \
          End your final message with exactly this report and nothing after it:\n\n\
          STATUS: verified | blocked | needs_review\n\
          ARTIFACT: <changed files or commits, or the findings>\n\
@@ -374,8 +374,8 @@ mod tests {
 
     #[test]
     fn prompt_and_slug() {
-        let p = prompt("t3", "Fix parser", "Handle CRLF.", "task/t3-fix-parser", "main");
-        assert!(p.starts_with("haetty task t3: Fix parser\n\nHandle CRLF.\n"));
+        let p = prompt("t3", "Fix parser", "/state/tasks/t3.briefing.md", "task/t3-fix-parser", "main");
+        assert!(p.starts_with("haetty task t3: Fix parser\n\nRead the briefing first: /state/tasks/t3.briefing.md\n"));
         assert!(p.contains("STATUS: verified | blocked | needs_review\nARTIFACT:"));
         assert_eq!(slug("Fix the CRLF parser!! (urgent)"), "fix-the-crlf-parser-urgent");
         assert_eq!(slug("한글만"), "task");

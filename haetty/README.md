@@ -446,15 +446,19 @@ Code on your `PATH`); add arguments there if you always want them, e.g.
 what the worker may do without asking is what your own Claude Code
 settings say (`~/.claude/settings.json`, including bypass mode or not).
 
-**1. Make a task.** Ctrl+Shift+P, type `new task`, Enter. Three questions
-follow, each ended with Enter (Esc cancels):
+**1. Make a task.** Ctrl+Shift+P, type `new task`, Enter. Seven questions
+follow, each ended with Enter (Esc cancels; Enter alone skips an optional one):
 
 1. *Task title* — short; it names the tab and the branch, e.g.
    `Fix the CRLF parser`.
 2. *Description* — one line with what "done" means, e.g. `Handle \r\n in
    parser.rs; add a test; cargo test must pass.` More can be sent later
    (step 4).
-3. *Repository and base* — prefilled with the active tab's repository and
+3. *Scope* — optional: what the worker may touch, e.g. `parser.rs only`; blank: the whole repository.
+4. *Related files* — optional, comma-separated: where the worker starts, e.g. `src/parser.rs, tests/crlf.rs`.
+5. *Model* — optional: passed to Claude Code as `--model`, e.g. `opus`; blank: Claude Code's default.
+6. *Effort* — optional: passed as `--effort`, e.g. `high`; blank: Claude Code's default.
+7. *Repository and base* — prefilled with the active tab's repository and
    its current branch, e.g. `/home/you/src/proj main`. Change the branch at
    the end of the line if needed.
 
@@ -475,6 +479,8 @@ Claude Code may first ask whether you trust the new folder, and in bypass
 mode whether you accept it — **answer these yourself**; the task is
 submitted only after that, by Claude Code itself. haetty never types into
 these questions.
+
+The answers are written to a briefing file in haetty's own state folder, not in the repository: the title, the scope, the related files and when the task is done. The worker's first prompt points to that file, and removing the task deletes it. A task's model and effort are passed to Claude Code as launch arguments only; no settings file changes. Claude Code may ask whether it may read the briefing outside the worktree: answer that yourself, because the orchestrator never answers permission prompts.
 
 **2. Watch the state.** The worker's tab name starts with a mark:
 
