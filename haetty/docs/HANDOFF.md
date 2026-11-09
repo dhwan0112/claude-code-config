@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage g6 (branch `haetty/g6`, worktree `~/projects/claude-code-config-wt/g6`). Remaining: G6: the opt-in saving mode (off by default): Claude Code sessions haetty starts get BASH_MAX_OUTPUT_LENGTH and MAX_MCP_OUTPUT_TOKENS (values from the G1 measurement; official meaning and sources recorded), and the status row shows a dim saving mark. Then G7 (before and after on one task).
+
 ## 1. Current state
 
 - **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
