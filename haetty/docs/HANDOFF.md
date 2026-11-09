@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage f5 (branch `haetty/f5`, worktree `~/projects/claude-code-config-wt/f5`). Remaining: F5: the v0.3.0 candidate (version, CHANGELOG, candidate validation, night runs on both engines; the tag only after they pass), then F6 and G0-G7.
+> **In progress:** stage f6 (branch `haetty/f6`, worktree `~/projects/claude-code-config-wt/f6`). Remaining: F6: the upstream drafts 01-03 (01 and 02 fixed upstream at bed20eb and 82df0be, re-run on e035beb; 03 still present, re-run with 03-repro.c; none sent). F5 night run of b1262d2 at 2026-11-10 02:00 (both engines, -GuiE2E); tag haetty-v0.3.0 only after both nights PASS. Then G0-G7.
 
 ## 1. Current state
 
