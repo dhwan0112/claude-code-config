@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage g5 (branch `haetty/g5`, worktree `~/projects/claude-code-config-wt/g5`). Remaining: G5: orchestrator (model and effort as launch arguments, a briefing file per task, the worker report as the STATUS block only, the dim /clear mark when a worker context passes a share). Then G6 (saving mode, off by default) and G7 (before and after on one task).
+
 ## 1. Current state
 
 - **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
