@@ -448,7 +448,13 @@ pub fn spawn_daemon() -> io::Result<()> {
                 Ok(())
             });
         }
-        cmd.spawn()?;
+        // A thread reaps the daemon when it ends: a killed daemon used to stay a zombie of the window that started it
+        // until that window exited (kramers 2026-11-09).
+        let child = cmd.spawn()?;
+        std::thread::spawn(move || {
+            let mut child = child;
+            let _ = child.wait();
+        });
         Ok(())
     }
     #[cfg(windows)]

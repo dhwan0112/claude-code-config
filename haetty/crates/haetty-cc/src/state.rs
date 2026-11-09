@@ -86,6 +86,12 @@ impl Claude {
         match event {
             "SessionStart" => {
                 i.busy = false;
+                // A resumed session (after a restart) has its last report in its transcript, not in memory (K3a).
+                if i.report.is_none() {
+                    let path = text(j, &["transcript_path"]);
+                    i.report =
+                        crate::orch::transcript_text(&path, 0).and_then(|t| crate::orch::parse_report(&t, ts_ms, true));
+                }
                 if i.attention != Attention::Ask || later_than_ask {
                     i.attention = Attention::None;
                 }
@@ -517,6 +523,35 @@ mod tests {
         assert!(c.input_held());
         c.hook("SessionEnd", &j("{}"), 60, None);
         assert_eq!(c.info.attention, Attention::None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_resumed_session_shows_the_report_its_transcript_has() {
+        // After a restart the daemon has no report in memory; the transcript of the resumed session has it (kramers
+        // 2026-11-09: the worker mark stayed `–` until the next turn).
+        let d = haetty_testkit::run_dir("state-resume").join("projects").join("-p");
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("r.jsonl");
+        std::fs::write(
+            &f,
+            r#"{"type":"assistant","isSidechain":false,"timestamp":"2026-11-06T10:07:00.500Z","message":{"role":"assistant","content":[{"type":"text","text":"Done.\nSTATUS: verified\nEVIDENCE: ran it"}]}}"#,
+        )
+        .unwrap();
+        let mut c = Claude::default();
+        let start = format!(r#"{{"session_id":"r-1","source":"resume","transcript_path":"{}"}}"#, f.display());
+        c.hook("SessionStart", &j(&start), 1_000, None);
+        assert_eq!(c.info.report.as_ref().map(|r| r.status.as_str()), Some("verified"));
+        assert_eq!((c.info.turns, c.info.busy), (0, false), "a restart is not a turn");
+        // A new session has no transcript yet: no report, and no guess.
+        let mut fresh = Claude::default();
+        fresh.hook(
+            "SessionStart",
+            &j(r#"{"session_id":"n","source":"startup","transcript_path":"/nonexistent/projects/x/n.jsonl"}"#),
+            5,
+            None,
+        );
+        assert!(fresh.info.report.is_none());
     }
 
     #[test]

@@ -399,3 +399,13 @@ fn set_theme_recolours_running_sessions_control_only() {
     ctl2.close(&id).unwrap();
     haetty_testkit::remove_dir_all(&dir);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_socket_of_its_own_gives_its_own_run_dir() {
+    let shared = PathBuf::from("/shared/haetty");
+    let stable = Endpoint(PathBuf::from("/shared/haetty/daemon.sock"));
+    assert_eq!(haetty_daemon::instance_run_dir(&stable, shared.clone()), shared);
+    let dev = Endpoint(PathBuf::from("/shared/haetty-dev/daemon.sock"));
+    assert_eq!(haetty_daemon::instance_run_dir(&dev, shared), PathBuf::from("/shared/haetty-dev"));
+}

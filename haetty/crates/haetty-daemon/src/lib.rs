@@ -35,13 +35,30 @@ pub struct Config {
 
 impl Config {
     pub fn default_for_user() -> io::Result<Config> {
+        let endpoint = Endpoint::default_for_user()?;
+        let run_dir = instance_run_dir(&endpoint, haetty_proto::paths::private_dir()?);
         Ok(Config {
-            endpoint: Endpoint::default_for_user()?,
+            endpoint,
             state_dir: haetty_proto::paths::state_dir(),
-            run_dir: haetty_proto::paths::private_dir()?,
+            run_dir,
             idle_exit: Some(Duration::from_secs(10)),
         })
     }
+}
+
+/// The directory of a daemon's per-session files (the Claude Code settings it injects): the directory of its own
+/// socket. A test or dev instance with its own socket keeps its files apart; the stable socket's directory is the
+/// shared runtime directory, as before. Endpoints that are not socket paths (Windows pipes) keep `shared` (K3a: the
+/// instance's files were written into `$XDG_RUNTIME_DIR/haetty/` whatever its socket was, kramers 2026-11-09).
+pub fn instance_run_dir(endpoint: &Endpoint, shared: PathBuf) -> PathBuf {
+    #[cfg(unix)]
+    {
+        if let Some(dir) = endpoint.0.parent().filter(|d| !d.as_os_str().is_empty()) {
+            return dir.to_path_buf();
+        }
+    }
+    let _ = endpoint;
+    shared
 }
 
 type ClientId = u64;
