@@ -8,6 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage k4 (branch `haetty/k4`, worktree `~/projects/claude-code-config-wt/k4`). Remaining: K4: the v0.3.1 candidate (version 0.3.1, CHANGELOG, the kramers re-check list); the full gate on it; the night run of 2026-11-11 02:00 after its gate
 
 ## 1. Current state
 
