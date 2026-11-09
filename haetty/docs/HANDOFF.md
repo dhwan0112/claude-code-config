@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage g2 (branch `haetty/g2`, worktree `~/projects/claude-code-config-wt/g2`). Remaining: G2: haetty run (quiet runner: output to a run log, the summary to the terminal, the command exit code) and haetty log (--grep, --lines, --tail); log retention and the README note on secrets. Then G3-G7.
+> **In progress:** stage g3 (branch `haetty/g3`, worktree `~/projects/claude-code-config-wt/g3`). Remaining: G3: haetty wait (a process ends by PID, a file gets text or changes, an observable screen shows text, an observable session stops or waits for a permission answer; one line; exit 124 on timeout, 3 when not observable). Then G4-G7.
 
 ## 1. Current state
 
