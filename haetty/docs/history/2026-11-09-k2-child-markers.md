@@ -43,3 +43,12 @@ check list.
 `App::session_env` for every new session. The GUI passes its environment as `CreateSpec.env`, and the child gets exactly
 that, so the filter must sit there. `haetty-core` removes `TMUX` in the child's environment, but a value in
 `CreateSpec.env` wins over that removal ("the caller's own settings win"), so it cannot do this job.
+
+## K2b: the same list in Session::spawn
+
+The K2 filter sees only the GUI's own environment. A daemon started from a Claude Code shell (or a headless
+runner, or any other `CreateSpec` builder) passes the environment it has to the child, so the markers were
+still inherited. `haetty_core::CHILD_MARKERS` now removes them in `Session::spawn` (as `TMUX` is removed), before
+the caller's own settings are applied, so an explicit value still wins. The GUI's filter uses the same list.
+Tests: `child_markers_of_a_claude_code_parent_are_not_passed_on` (core); the headless runner with the markers in
+its own environment (run record in the K2b commit message).

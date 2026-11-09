@@ -449,16 +449,7 @@ pub fn reread(settings: &[(String, String)]) -> (Config, Vec<String>) {
 /// CLAUDE_CODE_CHILD_SESSION marker") and could not be resumed. The names were read from a Claude Code session's
 /// environment on 2026-11-09 (the values are never printed). CLAUDE_CODE_ENTRYPOINT, CLAUDE_CODE_EXECPATH and
 /// CLAUDE_EFFORT are not here: they are not child markers. docs/history/2026-11-09-k2-child-markers.md has the test.
-pub const CHILD_MARKERS: [&str; 8] = [
-    "CLAUDECODE",
-    "CLAUDE_CODE_CHILD_SESSION",
-    "CLAUDE_CODE_MESSAGING_SOCKET",
-    "CLAUDE_CODE_MESSAGING_TOKEN",
-    "CLAUDE_CODE_BRIDGE_SESSION_ID",
-    "CLAUDE_CODE_SESSION_ID",
-    "CLAUDE_CODE_SESSION_ATTENDED",
-    "CLAUDE_PID",
-];
+pub const CHILD_MARKERS: [&str; 8] = haetty_core::CHILD_MARKERS;
 
 /// The environment of a new session: the inherited variables without the child markers, then the saving mode's limits
 /// when `saving` is on (the caller decides that: a Claude Code program in saving mode).

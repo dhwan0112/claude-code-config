@@ -233,6 +233,26 @@ fn reports_exit_and_strips_tmux_env() {
 }
 
 #[test]
+fn child_markers_of_a_claude_code_parent_are_not_passed_on() {
+    // Inherited from the environment haetty runs in (a Claude Code shell): removed in the child...
+    std::env::set_var("CLAUDE_CODE_CHILD_SESSION", "1");
+    std::env::set_var("CLAUDE_PID", "1");
+    let s = spawn(&["sh", "-c", "echo M=${CLAUDE_CODE_CHILD_SESSION-unset}/${CLAUDE_PID-unset}; sleep 0.2"], 60, 4);
+    wait_text(&s, "M=unset/unset", Duration::from_secs(5));
+    std::env::remove_var("CLAUDE_CODE_CHILD_SESSION");
+    std::env::remove_var("CLAUDE_PID");
+    // ...and a value the caller sets itself wins, as TMUX does.
+    let mut cfg = SessionConfig::new(
+        CommandSpec::new("sh")
+            .args(["-c", "echo M=${CLAUDE_CODE_CHILD_SESSION-unset}; sleep 0.2"])
+            .env("CLAUDE_CODE_CHILD_SESSION", "explicit"),
+    );
+    cfg.size = GridSize::new(60, 4);
+    let s = Session::spawn(cfg).unwrap();
+    wait_text(&s, "M=explicit", Duration::from_secs(5));
+}
+
+#[test]
 fn exit_reported_even_if_pty_stays_open() {
     // A background job inherits the PTY and outlives the shell.
     let s = spawn(&["sh", "-c", "sleep 5 & echo started; exit 7"], 40, 4);

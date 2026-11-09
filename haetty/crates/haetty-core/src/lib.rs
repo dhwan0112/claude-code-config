@@ -103,7 +103,7 @@ pub struct SessionConfig {
     /// Longest time a redraw is held back while the application keeps
     /// synchronized output (mode 2026) set.
     pub sync_timeout: Duration,
-    /// Set TERM/COLORTERM/TERM_PROGRAM and drop TMUX/TMUX_PANE in the child.
+    /// Set TERM/COLORTERM/TERM_PROGRAM and drop TMUX/TMUX_PANE and the Claude Code child markers in the child.
     pub terminal_env: bool,
     /// Emit [`SessionEvent::Reply`] for every reply sent to a query.
     pub trace_replies: bool,
@@ -186,6 +186,21 @@ pub struct Session {
     engine: Option<thread::JoinHandle<()>>,
 }
 
+/// Variables a Claude Code session sets to mark it as a child of another one, or that belong to that parent. A session
+/// haetty starts does not get them: Claude Code turns transcript saving off in a child ("inherited
+/// CLAUDE_CODE_CHILD_SESSION marker") and a resume then fails. The names were read from a Claude Code session's
+/// environment on 2026-11-09 (values never printed); docs/history/2026-11-09-k2-child-markers.md.
+pub const CHILD_MARKERS: [&str; 8] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_BRIDGE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_PID",
+];
+
 impl Session {
     pub fn spawn(cfg: SessionConfig) -> std::io::Result<Session> {
         let mut command = cfg.command.clone();
@@ -199,6 +214,8 @@ impl Session {
                 ("TMUX".into(), None),
                 ("TMUX_PANE".into(), None),
             ];
+            // A Claude Code parent's markers: removed whatever environment haetty itself was started with (K2b).
+            env.extend(CHILD_MARKERS.iter().map(|m| (OsString::from(*m), None)));
             // The caller's own settings win.
             env.append(&mut command.env);
             command.env = env;
