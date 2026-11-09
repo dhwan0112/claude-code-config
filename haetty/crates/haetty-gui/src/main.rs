@@ -221,11 +221,11 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
                             .ok_or("--summary-lines needs a number")?;
                         i += 2;
                     }
-                    _ => return Err(run::RUN_USAGE.into()),
+                    _ => return Err(format!("error: {}", run::RUN_USAGE)),
                 }
             }
             if args.get(i).map(String::as_str) != Some("--") || i + 1 >= args.len() {
-                return Err(run::RUN_USAGE.into());
+                return Err(format!("error: {}", run::RUN_USAGE));
             }
             Ok(Command::Run { summary_lines: summary, argv: args[i + 1..].to_vec() })
         }
@@ -246,7 +246,7 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
                         tail = Some(it.next().and_then(|v| v.parse::<usize>().ok()).ok_or("--tail needs a number")?);
                     }
                     p if !p.starts_with('-') && file.is_none() => file = Some(std::path::PathBuf::from(p)),
-                    _ => return Err(run::LOG_USAGE.into()),
+                    _ => return Err(format!("error: {}", run::LOG_USAGE)),
                 }
             }
             Ok(Command::Log { file, grep, lines, tail })
@@ -694,6 +694,11 @@ mod tests {
     fn implemented_subcommands_come_first() {
         assert!(matches!(parse_command(vec!["daemon".into()]), Ok(Command::Daemon)));
         assert!(matches!(parse_command(vec!["status".into()]), Ok(Command::Status { json: false })));
+        // A bad `run` or `log` line is an error (exit 2), not usage text (exit 0).
+        assert!(parse_command(vec!["run".into(), "x".into()]).unwrap_err().starts_with("error: usage: haetty run"));
+        assert!(parse_command(vec!["log".into(), "--bogus".into()])
+            .unwrap_err()
+            .starts_with("error: usage: haetty log"));
         // --version: printed on stdout with exit 0 (the "haetty " prefix).
         let v = parse_command(vec!["--version".into()]).unwrap_err();
         assert!(
