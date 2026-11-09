@@ -47,6 +47,7 @@ mod migrate;
 #[cfg(test)]
 mod reftest;
 mod render;
+mod run;
 mod tabsets;
 mod tasks;
 mod titlebar;
@@ -100,12 +101,25 @@ pub const SUBCOMMANDS: &[&str] = &[
     "install-desktop",
     "status",
     "events",
+    "log",
     "screen",
     "tokens",
     "completions",
 ];
-pub const IMPLEMENTED: &[&str] =
-    &["gui", "daemon", "status", "install-desktop", "hook", "statusline", "events", "screen", "tokens", "completions"];
+pub const IMPLEMENTED: &[&str] = &[
+    "gui",
+    "daemon",
+    "status",
+    "install-desktop",
+    "hook",
+    "statusline",
+    "events",
+    "screen",
+    "tokens",
+    "run",
+    "log",
+    "completions",
+];
 
 /// What the command line asks for.
 #[derive(Debug)]
@@ -131,6 +145,18 @@ pub enum Command {
     Observe {
         id: String,
         json: bool,
+    },
+    /// `run [--summary-lines N] -- COMMAND [ARGS...]`: a command run quietly, its output in a run log (`run.rs`).
+    Run {
+        summary_lines: usize,
+        argv: Vec<String>,
+    },
+    /// `log [FILE] [--grep TEXT] [--lines A:B] [--tail N]`: a run log in parts, or the saved runs (`run.rs`).
+    Log {
+        file: Option<std::path::PathBuf>,
+        grep: Option<String>,
+        lines: Option<(usize, usize)>,
+        tail: Option<usize>,
     },
     /// `tokens [--top N] [PATH...]`: the token use of Claude Code transcripts (`haetty_cc::transcript`).
     Tokens {
@@ -183,6 +209,48 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
             }
             _ => Err("usage: haetty screen [--json] SESSION".into()),
         },
+        Some("run") => {
+            let mut summary = run::DEFAULT_SUMMARY_LINES;
+            let mut i = 1;
+            while i < args.len() && args[i] != "--" {
+                match args[i].as_str() {
+                    "--summary-lines" => {
+                        summary = args
+                            .get(i + 1)
+                            .and_then(|v| v.parse::<usize>().ok())
+                            .ok_or("--summary-lines needs a number")?;
+                        i += 2;
+                    }
+                    _ => return Err(run::RUN_USAGE.into()),
+                }
+            }
+            if args.get(i).map(String::as_str) != Some("--") || i + 1 >= args.len() {
+                return Err(run::RUN_USAGE.into());
+            }
+            Ok(Command::Run { summary_lines: summary, argv: args[i + 1..].to_vec() })
+        }
+        Some("log") => {
+            let (mut file, mut grep, mut lines, mut tail) = (None, None, None, None);
+            let mut it = args[1..].iter();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--grep" => grep = Some(it.next().ok_or("--grep needs text")?.clone()),
+                    "--lines" => {
+                        let v = it.next().ok_or("--lines needs A:B")?;
+                        let (x, y) = v.split_once(':').ok_or("--lines needs A:B")?;
+                        let x: usize = x.parse().map_err(|_| "--lines needs A:B")?;
+                        let y: usize = y.parse().map_err(|_| "--lines needs A:B")?;
+                        lines = Some((x, y));
+                    }
+                    "--tail" => {
+                        tail = Some(it.next().and_then(|v| v.parse::<usize>().ok()).ok_or("--tail needs a number")?);
+                    }
+                    p if !p.starts_with('-') && file.is_none() => file = Some(std::path::PathBuf::from(p)),
+                    _ => return Err(run::LOG_USAGE.into()),
+                }
+            }
+            Ok(Command::Log { file, grep, lines, tail })
+        }
         Some("tokens") => {
             let mut top = 10usize;
             let mut paths = Vec::new();
@@ -528,6 +596,16 @@ fn main() {
         Command::Screen { id } => {
             init_log(None);
             let (text, code) = cli::screen(&id);
+            exit_with(&text, code)
+        }
+        Command::Run { summary_lines, argv } => {
+            init_log(None);
+            let (text, code) = run::run(summary_lines, &argv);
+            exit_with(&text, code)
+        }
+        Command::Log { file, grep, lines, tail } => {
+            init_log(None);
+            let (text, code) = run::log(file.as_deref(), grep.as_deref(), lines, tail);
             exit_with(&text, code)
         }
         Command::Tokens { top, paths } => {

@@ -62,6 +62,22 @@ pub const SUBS: &[Sub] = &[
         options: &[("--json", "as JSON")],
     },
     Sub {
+        name: "run",
+        usage: "haetty run [--summary-lines N] -- COMMAND [ARGS...]",
+        about: "run a command quietly: its output goes to a run log; the terminal gets the exit code, the error lines and the last lines",
+        options: &[("--summary-lines N", "how many last lines to show (default 10)")],
+    },
+    Sub {
+        name: "log",
+        usage: "haetty log [FILE] [--grep TEXT] [--lines A:B] [--tail N]",
+        about: "read a run log in parts (no FILE: the saved runs, newest first; by default the last 50 lines)",
+        options: &[
+            ("--grep TEXT", "only the lines containing TEXT"),
+            ("--lines A:B", "only the lines A to B (1-based, inclusive)"),
+            ("--tail N", "only the last N of the selected lines"),
+        ],
+    },
+    Sub {
         name: "tokens",
         usage: "haetty tokens [--top N] [PATH...]",
         about: "token use of Claude Code sessions from their transcripts, read-only; PATH is a .jsonl file or a folder to search (default: the newest under ~/.claude/projects)",

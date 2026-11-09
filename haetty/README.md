@@ -542,6 +542,17 @@ restart the worker's conversation is resumed (`--resume`) without the task
 being submitted again. Tasks are files in the `tasks` folder of the state
 directory (`haetty status --json` lists them even when no window is open).
 
+### Quiet runs and run logs (`haetty run`, `haetty log`)
+
+`haetty run -- COMMAND [ARGS...]` runs a command with an empty standard input and keeps its output in a run log under
+the state folder (`runs/`). The terminal gets the command's own exit code, the time, the errors and warnings, and the
+last ten lines. `haetty log` reads a log in parts: `--grep TEXT`, `--lines A:B`, `--tail N` (the last 50 lines by
+default); without a file it lists the runs, newest first.
+
+The logs are kept for 14 days and at most 50 of them; each run removes the older ones. **A log holds everything the
+command printed and its command line:** a password or a token that a program prints, or takes as an argument, is in
+the log. Delete the `runs/` folder when you no longer need the logs.
+
 ### Observing a tab (read-only)
 
 Other programs — a script, later a remote adapter (DESIGN.md §6) — can
