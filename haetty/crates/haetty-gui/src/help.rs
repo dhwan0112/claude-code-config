@@ -62,6 +62,18 @@ pub const SUBS: &[Sub] = &[
         options: &[("--json", "as JSON")],
     },
     Sub {
+        name: "wait",
+        usage: "haetty wait pid PID | file PATH (--contains TEXT | --changed) | screen SESSION --contains TEXT | event SESSION (--stop | --permission) [--timeout SECONDS]",
+        about: "wait for one thing and print one line: a process ends, a file has text or changes, an observable tab shows text, or its turn ends or waits for a permission answer (exit 124 on timeout, 3 when not observable)",
+        options: &[
+            ("--contains TEXT", "the text to wait for (files and screens)"),
+            ("--changed", "the file appears or its size or time changes"),
+            ("--stop", "the tab's turn ends after the wait starts (Stop or StopFailure)"),
+            ("--permission", "the tab asks for a permission answer (at once when it is asking now)"),
+            ("--timeout SECONDS", "give up after this long (default 600)"),
+        ],
+    },
+    Sub {
         name: "run",
         usage: "haetty run [--summary-lines N] -- COMMAND [ARGS...]",
         about: "run a command quietly: its output goes to a run log; the terminal gets the exit code, the error lines and the last lines",

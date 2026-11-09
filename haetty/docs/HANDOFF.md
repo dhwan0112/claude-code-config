@@ -8,8 +8,6 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage g3 (branch `haetty/g3`, worktree `~/projects/claude-code-config-wt/g3`). Remaining: G3: haetty wait (a process ends by PID, a file gets text or changes, an observable screen shows text, an observable session stops or waits for a permission answer; one line; exit 124 on timeout, 3 when not observable). Then G4-G7.
-
 ## 1. Current state
 
 - **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
@@ -36,8 +34,10 @@ New progress records go to the newest file in `docs/history/`, not here.
 - G0 done (2026-11-09): DESIGN by topic in `docs/design/` (index `docs/DESIGN.md`, 65 lines); CLAUDE.md keeps its rules,
   commands and environment moved to `docs/dev-commands.md`; HANDOFF under 400 lines. Token estimates:
   `docs/history/2026-11-09-g0-handoff-trim.md`.
-- Next: G1 (`haetty tokens`), G2 (`haetty run`, `haetty log`), G3 (`haetty wait`), G4 (the guide for Claude Code), G5
-  (orchestrator: model and effort, briefing files), G6 (saving mode, off by default), G7 (before and after on one task).
+- G1 to G3 done (2026-11-09): `haetty tokens` and the token status line (G1, G1b; off by default), `haetty run` and
+  `haetty log` (G2), `haetty wait` (G3: exit 0 when met, 124 on timeout, 3 when the tab is not observable; the event
+  waits follow the daemon's stream). Next: G4 (the guide for Claude Code), G5 (orchestrator: model and effort,
+  briefing files), G6 (saving mode, off by default), G7 (before and after on one task).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)

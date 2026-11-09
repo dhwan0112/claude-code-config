@@ -46,6 +46,10 @@ copypasta = { version = "0.10.2", default-features = false, features = ["x11", "
 # a second copy of sctk and calloop, +89 KB stripped).
 smithay-clipboard = { version = "=0.7.2", default-features = false }
 
+[target.'cfg(windows)'.dependencies]
+# The process handle of `haetty wait pid` (already in the tree through haetty-pty, the same version).
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
 [dev-dependencies]
 haetty-testkit.workspace = true
 

@@ -553,6 +553,17 @@ The logs are kept for 14 days and at most 50 of them; each run removes the older
 command printed and its command line:** a password or a token that a program prints, or takes as an argument, is in
 the log. Delete the `runs/` folder when you no longer need the logs.
 
+### Waiting (`haetty wait`)
+
+`haetty wait` waits for one thing and prints one line: `pid PID` (a process ends); `file PATH --contains TEXT` (the file
+has the text, counting from its start); `file PATH --changed` (the file appears, or its size or time changes);
+`screen SESSION --contains TEXT`; and `event SESSION --stop` or `--permission` (an observable tab's turn ends, or it waits
+for a permission answer). It exits 0 when the condition holds, 124 when `--timeout` (600 seconds by default) passes first,
+and 3 when the tab is not observable: the same rule as `haetty screen` and `haetty events`. Waiting never answers a
+permission prompt.
+
+An event wait counts only what comes after it starts, so start it before the prompt is sent (`--permission` counts at once when the tab is asking now). `--stop` also counts a turn that ended with an error (`StopFailure`). A tab without Claude Code's integration is refused with exit 1, and a session that exits or is closed ends the wait with exit 1.
+
 ### Observing a tab (read-only)
 
 Other programs — a script, later a remote adapter (DESIGN.md §6) — can

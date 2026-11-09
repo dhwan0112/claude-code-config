@@ -93,7 +93,7 @@ pub fn screen(id: &str) -> (String, i32) {
 }
 
 /// An observer connection for `events` / `screen` (never starts a daemon).
-fn observer(cmd: &str) -> Result<ObserverClient, String> {
+pub(crate) fn observer(cmd: &str) -> Result<ObserverClient, String> {
     let ep = Endpoint::default_for_user().map_err(|e| format!("haetty {cmd}: {e}"))?;
     ObserverClient::connect(&ep, cmd).map_err(|e| match e {
         ConnectError::NotRunning => format!("haetty {cmd}: no daemon running"),

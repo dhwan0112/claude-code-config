@@ -53,6 +53,7 @@ mod tasks;
 mod titlebar;
 mod tokens;
 mod ui;
+mod wait;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -104,6 +105,7 @@ pub const SUBCOMMANDS: &[&str] = &[
     "log",
     "screen",
     "tokens",
+    "wait",
     "completions",
 ];
 pub const IMPLEMENTED: &[&str] = &[
@@ -118,6 +120,7 @@ pub const IMPLEMENTED: &[&str] = &[
     "tokens",
     "run",
     "log",
+    "wait",
     "completions",
 ];
 
@@ -145,6 +148,11 @@ pub enum Command {
     Observe {
         id: String,
         json: bool,
+    },
+    /// `wait pid|file|screen|event …`: waits for one thing and prints one line (`wait.rs`).
+    Wait {
+        cond: wait::Cond,
+        timeout: u64,
     },
     /// `run [--summary-lines N] -- COMMAND [ARGS...]`: a command run quietly, its output in a run log (`run.rs`).
     Run {
@@ -209,6 +217,22 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
             }
             _ => Err("usage: haetty screen [--json] SESSION".into()),
         },
+        Some("wait") => {
+            let mut timeout = 600u64;
+            let mut rest: Vec<String> = Vec::new();
+            let mut it = args[1..].iter();
+            while let Some(a) = it.next() {
+                if a.as_str() == "--timeout" {
+                    timeout = it
+                        .next()
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .ok_or("error: usage: --timeout needs a number of seconds")?;
+                } else {
+                    rest.push(a.clone());
+                }
+            }
+            Ok(Command::Wait { cond: wait::parse(&rest)?, timeout })
+        }
         Some("run") => {
             let mut summary = run::DEFAULT_SUMMARY_LINES;
             let mut i = 1;
@@ -598,6 +622,11 @@ fn main() {
             let (text, code) = cli::screen(&id);
             exit_with(&text, code)
         }
+        Command::Wait { cond, timeout } => {
+            init_log(None);
+            let (text, code) = wait::wait(&cond, std::time::Duration::from_secs(timeout));
+            exit_with(&text, code)
+        }
         Command::Run { summary_lines, argv } => {
             init_log(None);
             let (text, code) = run::run(summary_lines, &argv);
@@ -695,6 +724,12 @@ mod tests {
         assert!(matches!(parse_command(vec!["daemon".into()]), Ok(Command::Daemon)));
         assert!(matches!(parse_command(vec!["status".into()]), Ok(Command::Status { json: false })));
         // A bad `run` or `log` line is an error (exit 2), not usage text (exit 0).
+        // wait: a bad command line is a usage error (exit 2), and so is a bad --timeout
+        assert!(parse_command(vec!["wait".into(), "pid".into(), "7".into()]).is_ok());
+        let bad_timeout = vec!["wait".into(), "--timeout".into(), "x".into(), "pid".into(), "7".into()];
+        assert!(parse_command(bad_timeout).unwrap_err().starts_with("error: usage"));
+        let bad_line = vec!["wait".into(), "pid".into()];
+        assert!(parse_command(bad_line).unwrap_err().starts_with("error: usage: haetty wait"));
         assert!(parse_command(vec!["run".into(), "x".into()]).unwrap_err().starts_with("error: usage: haetty run"));
         assert!(parse_command(vec!["log".into(), "--bogus".into()])
             .unwrap_err()
