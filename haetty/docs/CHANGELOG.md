@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.3.1 (candidate, 2026-11-09)
+
+The tag `haetty-v0.3.1` is set on this release commit only after its night run passes on both platforms and both
+engines, and the kramers re-check list in `docs/HANDOFF.md` section 6.1 is done.
+
+### Fixed
+
+- **The permission mark (`?`) clears when the person answers.** The program-input hold opens at the end of the turn, or
+  at the person's next prompt after a rejection (Esc gives no event). Program input is refused while a permission dialog
+  is open or was answered and its turn has not ended. The hook order was recorded with Claude Code 2.1.319
+  (`docs/history/2026-11-09-k1-attention.md`).
+- **Child markers of a Claude Code session are not passed on.** A session haetty starts does not inherit `CLAUDECODE`
+  and the other child markers, also when the daemon was started from inside Claude Code: transcript saving stays on and
+  `--resume` works (K2, K2b).
+- **A killed daemon is reaped by its window**, not left as a zombie (K3a).
+- **A test or dev instance keeps its per-session settings beside its own socket**, not in the shared runtime directory
+  (K3a; the injected settings path, for review).
+- **A resumed session shows the report of its transcript** after a restart: the worker mark no longer waits for the next
+  turn (K3a).
+- **A tab keeps its own name** across a detach and an attach, also when another window takes the session (K3b).
+
+### Removed
+
+- The former environment names `CCTERM_*` are no longer read; `HAETTY_*` is the only prefix. The file migration of the
+  former name (config, tab sets, a running old daemon) stays for this version.
+
+### Changed
+
+- The stage scripts are in the repository (`tools/stage/`); `docs/OPERATING.md` describes one stage per session; the
+  project settings deny reads of the build folders (`.claude/settings.json`).
+
 ## 0.3.0 (candidate, 2026-11-09)
 
 The tag `haetty-v0.3.0` is set on this release commit only after its night run passes on both platforms and both

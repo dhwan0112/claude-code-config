@@ -8,7 +8,6 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage k4 (branch `haetty/k4`, worktree `~/projects/claude-code-config-wt/k4`). Remaining: K4: the v0.3.1 candidate (version 0.3.1, CHANGELOG, the kramers re-check list); the full gate on it; the night run of 2026-11-11 02:00 after its gate
 
 ## 1. Current state
 
@@ -47,7 +46,8 @@ New progress records go to the newest file in `docs/history/`, not here.
   K0–K3b done (2026-11-09): kramers results in §6.1 and §6.0 (`docs/checks/`); K1 fixes kramers 12
   (`docs/history/2026-11-09-k1-attention.md`); K2b, K3a and K3b fix the other K-items; H done (`docs/OPERATING.md`,
   `tools/stage/`, `docs/tokens/partial-reads.md`). Next: the v0.3.0 judgement and tag after the night run of
-  2026-11-10 (commit `b1262d2`, `haetty-overnight-f5`), then K4 (the v0.3.1 candidate).
+  2026-11-10 (commit `b1262d2`, `haetty-overnight-f5`). K4 is the v0.3.1 candidate: the newest commit on main, its night
+  run on 2026-11-11 02:00 after its gate.
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
@@ -177,6 +177,9 @@ Windows, WSL and the dev machine:
   stop their daemon in a guard that runs on panic too.
 
 ### 6.1 Manual checks (by a person; regrouped 2026-11-05 after the rename)
+
+Re-check on 0.3.1 (kramers 2026-11-09): 7, 12 and 25 (X11, 200 %); K2 (a dev GUI tab started from Claude Code, with
+the inherited markers); the K3 items (tab names, the zombie, the settings directory, a resumed report, the `CCTERM_*` names).
 
 **Results so far** (newest first; files in [`docs/checks/`](checks/)):
 
