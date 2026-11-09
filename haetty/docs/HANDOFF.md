@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** F5 night run pending (2026-11-10 02:00; the tag `haetty-v0.3.0` only after both PASS). G0 done 2026-11-09 (DESIGN by topic, CLAUDE.md shortened, HANDOFF under 400 lines).
+> **In progress:** stage g1 (branch `haetty/g1`, worktree `~/projects/claude-code-config-wt/g1`). Remaining: G1: haetty tokens (CLI over the Claude Code transcripts: per tool, largest results, cache hit ratio; reuses haetty-cc json, no new dependency); the measurement report in docs/tokens/; the status line and the workers totals (GUI, hidden by default) if they fit. Then G2-G7.
 
 ## 1. Current state
 
