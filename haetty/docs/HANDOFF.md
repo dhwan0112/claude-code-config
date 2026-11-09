@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage g0 (branch `haetty/g0`, worktree `~/projects/claude-code-config-wt/g0`). Remaining: G0: DESIGN.md split by topic into docs/design/ (index of at most 200 lines; every old line kept, checked by check-moved-lines.py); CLAUDE.md shortened to its rules; HANDOFF under 400 lines; session-start token estimates before and after. Then G1-G7 (token saving, the brief of 2026-11-09).
+> **In progress:** F5 night run pending (2026-11-10 02:00; the tag `haetty-v0.3.0` only after both PASS). G0 done 2026-11-09 (DESIGN by topic, CLAUDE.md shortened, HANDOFF under 400 lines).
 
 ## 1. Current state
 
@@ -29,19 +29,15 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 ## Next session
 
-- F0 done (section 10.11); the night run of 2026-11-09 passed on native (§6.1 item 30) at `bb61e92`.
-- F1 done (10.12): ghostty-main is the default reference; 0.2.2 side by side.
-- F2 done in part (10.13): ghostty-main FAIL 877 -> 744 (docs/vtdiff/2026-11-09-f2.md).
-- F3 done (10.14): SGR-heavy throughput 82 % of libghostty (session), from 56 %.
-- F4 done (10.15): native-only builds pass the e2e suite; the Windows build without WSL works; NOT MET: the 744
-  vtdiff FAILs, key-to-frame latency (0.13 ms over libghostty), the native-only installer path; SGR is at 80 %.
-- F5: the v0.3.0 candidate `b1262d2` is on main (version, CHANGELOG, XTVERSION). Its Linux and Windows checks pass
-  (e2e on both engines, native-only build and unit tests, installer self-tests on both platforms, daemon-crash).
-  The night run is registered for 2026-11-10 02:00 (native, then libghostty, both with -GuiE2E). The tag
-  `haetty-v0.3.0` on `b1262d2` only after both nights PASS; then the F5 record (DESIGN 10.16).
-- F6 done: drafts 01 and 02 are fixed upstream (`bed20eb`, `82df0be`; re-run on the pin); 03 is still present (re-run:
-  5 of 6 cases stale); `docs/upstream/repro/`; none sent.
-- Next: G0 (DESIGN split by topic, CLAUDE.md), then G1-G7 (token saving, the brief of 2026-11-09).
+- F0 to F4 done (DESIGN 10.11 to 10.15). F5: candidate `b1262d2` on main, night run registered for 2026-11-10 02:00;
+  the tag `haetty-v0.3.0` only after both nights PASS, then the F5 record (DESIGN 10.16).
+- F6 done: drafts 01 and 02 fixed upstream (`bed20eb`, `82df0be`); 03 still present (re-run: 5 of 6 cases stale);
+  none sent.
+- G0 done (2026-11-09): DESIGN by topic in `docs/design/` (index `docs/DESIGN.md`, 65 lines); CLAUDE.md keeps its rules,
+  commands and environment moved to `docs/dev-commands.md`; HANDOFF under 400 lines. Token estimates:
+  `docs/history/2026-11-09-g0-handoff-trim.md`.
+- Next: G1 (`haetty tokens`), G2 (`haetty run`, `haetty log`), G3 (`haetty wait`), G4 (the guide for Claude Code), G5
+  (orchestrator: model and effort, briefing files), G6 (saving mode, off by default), G7 (before and after on one task).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
@@ -134,21 +130,14 @@ Windows, WSL and the dev machine:
 
 ### 6.0 Open defects and tasks (2026-11-07)
 
-- E5 (DESIGN §10.10) done; the default engine stays libghostty. Open:
-  - vtdiff FAIL 79 runs (grammar 56, fuzz2 21, decor 2); classes in
-    §10.10. KNOWN candidates no-pending-wrap-without-autowrap and
-    ctc-2-clears wait for the user's decision; the trimmed-rows class
-    (libghostty re-exposes rows a shrink trimmed) has no candidate yet
-    (needs a switch). VPR past the bottom margin without origin mode
-    (`\e[;8r\e[20e`: libghostty to the screen bottom, haetty-vt to the
-    margin) is undecided: xterm's behaviour to confirm.
-  - Native soak rule: the 2-hour run FAILs (+7.4 MB after the burst tab
-    filled) on the slow tab still filling its scrollback (~3 h). The user
-    decides: a longer native soak, a smaller scrollback limit in the soak,
-    or an allowance for rows still being added.
-  - SGR-heavy throughput 58 % of libghostty (E4 bar 50 %).
-  - Next overnight (§6.1 item 30): `-Engine native -GuiE2E` (commit HEAD).
-  - libghostty-vt after 0.2.2: `docs/upstream/libghostty-update-2026-11.md`.
+- The default engine stays libghostty. Open for the person (DESIGN §10.15, the transition table): the 744 vtdiff
+  FAILs of ghostty-main (`docs/vtdiff/2026-11-09-f2.md`); the native engine's key-to-frame latency (+0.13 ms at the
+  median); SGR throughput at the 80 % threshold; no native-only installer option; no Windows soak with libghostty.
+- F5: the candidate `b1262d2` (v0.3.0) has its night run registered for 2026-11-10 02:00 (both engines, `-GuiE2E`,
+  as §6.1 item 30 with the commit). The tag `haetty-v0.3.0` waits for both PASS.
+- Upstream drafts: `docs/upstream/README.md` (01 and 02 fixed at the pin; 03 still present; none sent).
+- The open list of 2026-11-07 (E5, 79 vtdiff FAILs, the 2-hour soak, SGR 58 %) is kept in
+  `docs/history/2026-11-09-g0-handoff-trim.md`.
 - The Windows soak v2 (`scripts/e2e/windows/soak.ps1`) has never run end to
   end, and the Windows GUI e2e (item 29) ran once, 13/14: its first full
   runs are on an idle desktop.
@@ -401,13 +390,5 @@ closed-tabs list; OpenGL renderer if needed.
 
 ## 7. Where the old sections went (2026-11-07, V2)
 
-| Old HANDOFF section | Now |
-|---|---|
-| Title notes, §1 Goal, §2 What exists, §3 Verified (incl. sizes, not verified), §5 Decisions, §7 Long-term direction, §8 audit | [history/2026-11-04-05-milestone-1.md](history/2026-11-04-05-milestone-1.md) |
-| §4 Pitfalls (full text) | [history/pitfalls.md](history/pitfalls.md); one-line list in §4 here |
-| §6.1–6.3 | here, unchanged |
-| §6.4 entries of 2026-11-05 (P0–P6, reviews, rename), ccx comparison | [history/2026-11-05-milestones-2-3.md](history/2026-11-05-milestones-2-3.md) |
-| §6.4 entries of 2026-11-06 up to the 0.2.0 candidate (test isolation, themes, installers, v0.1.1, S0–S5, the thread leak) | [history/2026-11-06-themes-to-v0.2.0.md](history/2026-11-06-themes-to-v0.2.0.md) |
-| §6.4 entries from T1 on (T1–T7, U1–U6, V1 …) and new records | [history/2026-11-06-07-stages-t-u-v.md](history/2026-11-06-07-stages-t-u-v.md) |
-
-References like "HANDOFF §3" or "§6.4" in older text mean these places.
+The table of the old HANDOFF sections and where their text is now: [history/handoff-sections.md](history/handoff-sections.md)
+(moved in G0, 2026-11-09).
