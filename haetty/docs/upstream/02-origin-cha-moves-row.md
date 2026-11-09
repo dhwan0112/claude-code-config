@@ -1,12 +1,16 @@
 # Draft: CHA, HPA and HPR under origin mode move the cursor's row
 
-*Fixed on Ghostty `main` (`5813c94`): `setCursorCol` and `cursorColRelative`
-now take the row from `cursorPosForSet`, which subtracts the region's top
-under origin mode. Kept for the record; do not send. See README.md.*
+*Fixed on Ghostty `main` by `82df0be` ("terminal: keep CHA, VPA, HPR and VPR origin-relative"),
+an ancestor of the pin `e035beb` (checked 2026-11-09): `setCursorCol` and `cursorColRelative`
+now take the row from the new `cursorPosForSet`, which subtracts the region's top under origin
+mode; VPA and VPR do the same. Re-run on `e035beb`: the `B` is on the row of `A`, not four rows
+lower (`repro/show.c`). Kept for the record; do not send. See README.md.*
 
 ## Versions
 
 libghostty-vt 0.2.2, Ghostty `a887df42c56f6de86c0fe6da9c4eeca37931e083`.
+
+Re-run on the pin `e035beb9437118b803830a5864ea2f4dd7094354` (2026-11-09): fixed. See the header.
 
 ## Reproduction (80×24)
 

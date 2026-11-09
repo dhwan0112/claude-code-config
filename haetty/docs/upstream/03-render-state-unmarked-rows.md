@@ -21,11 +21,11 @@ changes it:
 - libghostty-vt (Rust crate) 0.2.2, built from Ghostty
   `a887df42c56f6de86c0fe6da9c4eeca37931e083`.
 - Linux x86_64, Zig 0.15.2.
-- On `main` (`5813c9461d5af78b6307a1254d00b1bc190eaccd`) the two code paths
-  still look the same. That was read in the source, not run:
+- On the pin `e035beb9437118b803830a5864ea2f4dd7094354` (2026-11-09) the two code paths
+  still look the same (read in the source, then run; see below):
   - Terminal.zig, the non-2027 zero-width path ends in
-    `appendGrapheme(prev, c)` without `cursorMarkDirty`. The mode 2027 path
-    has one.
+    `appendGrapheme(prev, c)` without `cursorMarkDirty` (line 2182 at the pin).
+    The mode 2027 path has one (line 2123).
   - Terminal.zig `printCell` sets `head_cell.wide = .narrow` on the row
     above without marking that row.
 
@@ -40,8 +40,9 @@ Terminal 20×4, one render state kept across updates:
 
 - **Expected:** row 0 is dirty (`GHOSTTY_RENDER_STATE_ROW_DATA_DIRTY`) and
   reads `café` (the last cell holds `e` + U+0301).
-- **Actual:** row 0 is not copied again and still reads `cafe`. A new render
-  state updated from the same terminal reads `café`.
+- **Actual:** row 0 is not dirty (`ROW_DATA_DIRTY` = 0), is not copied, and still reads
+  `cafe`. A new render state updated from the same terminal reads `café`. The same happens
+  for the VS16 cases and the split write; see the run below.
 
 The same happens with:
 
@@ -67,6 +68,24 @@ For case 2 (spacer head), at 80 columns:
   has `narrow`. This draws the same, but the cell differs.
 
 Both cases are inputs in haetty's `vtdiff --refresh` (`joiners`).
+
+## Run on the pin (2026-11-09)
+
+`repro/03-repro.c` on `e035beb` (linked against the install folder that `tools/ghostty-ref/build.sh` builds), output
+with trailing spaces trimmed:
+
+```
+control: cafe + U+0301 in one write            kept: dirty=1 "café"   fresh: "café"   same
+cafe, then U+0301 in a later read              kept: dirty=0 "cafe"   fresh: "café"   STALE
+U+2764, then U+FE0F in a later read            kept: dirty=0 "❤"      fresh: "❤️"     STALE
+U+263A, then U+FE0F in a later read            kept: dirty=0 "☺"      fresh: "☺️"     STALE
+U+2764, then U+FE0F split over two writes      kept: dirty=0 "❤"      fresh: "❤️"     STALE
+spacer head cleared by a write (row 1, col 80) kept: spacer_head      fresh: narrow   STALE
+```
+
+The kept state is marked consumed after each read (`ghostty_render_state_clean`), as a frame renderer does, so its
+dirty flag belongs to the update under test. The proposed fix (a) is absent on the pin: line 2182 still calls
+`appendGrapheme` without `cursorMarkDirty`. The spacer case shows the cause (b) still present.
 
 ## Effect
 

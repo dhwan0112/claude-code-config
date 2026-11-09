@@ -21,13 +21,13 @@ Versions:
   `a887df42c56f6de86c0fe6da9c4eeca37931e083` (version 1.3.2-dev).
 - The behaviours below were checked against that commit, and their source
   against Ghostty `main` at `5813c9461d5af78b6307a1254d00b1bc190eaccd`
-  (2026-11-07).
+  (2026-11-07). On 2026-11-09 the drafts were re-run on the pinned commit `e035beb` (see `repro/`).
 
-| Draft | Finding | On main 5813c94 | Send? |
+| Draft | Finding | On the pin e035beb (2026-11-09) | Send? |
 |---|---|---|---|
-| [`01-tbc-0-toggles.md`](01-tbc-0-toggles.md) | TBC 0 toggles the tab stop | fixed (`Tabstops.unset` now clears the bit) | no; kept for the record |
-| [`02-origin-cha-moves-row.md`](02-origin-cha-moves-row.md) | CHA/HPA/HPR under origin mode move the row | fixed (`cursorPosForSet`) | no; kept for the record |
-| [`03-render-state-unmarked-rows.md`](03-render-state-unmarked-rows.md) | the render state misses rows changed by a late grapheme join or a cleared spacer head | the source on that path is unchanged (not run there) | the user's decision |
+| [`01-tbc-0-toggles.md`](01-tbc-0-toggles.md) | TBC 0 toggles the tab stop | fixed by `bed20eb`; re-run on `e035beb`: fixed | no; kept for the record |
+| [`02-origin-cha-moves-row.md`](02-origin-cha-moves-row.md) | CHA/HPA/HPR under origin mode move the row | fixed by `82df0be`; re-run on `e035beb`: fixed | no; kept for the record |
+| [`03-render-state-unmarked-rows.md`](03-render-state-unmarked-rows.md) | the render state misses rows changed by a late grapheme join or a cleared spacer head | still present: re-run on `e035beb`, 5 of 6 cases stale (`repro/03-repro.c`) | the user's decision |
 
 Findings 1 and 2 also explain why haetty's known-differences list holds them
 (`docs/vtdiff/known.md`). With a libghostty-vt release built from a Ghostty

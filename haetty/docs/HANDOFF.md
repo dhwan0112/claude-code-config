@@ -8,7 +8,7 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage f6 (branch `haetty/f6`, worktree `~/projects/claude-code-config-wt/f6`). Remaining: F6: the upstream drafts 01-03 (01 and 02 fixed upstream at bed20eb and 82df0be, re-run on e035beb; 03 still present, re-run with 03-repro.c; none sent). F5 night run of b1262d2 at 2026-11-10 02:00 (both engines, -GuiE2E); tag haetty-v0.3.0 only after both nights PASS. Then G0-G7.
+> **In progress:** F5 candidate `b1262d2` is on `main`; its night run is registered for 2026-11-10 02:00 (both engines, -GuiE2E; task `haetty-overnight-f5`, transcript in `C:\Users\Public\haetty-overnight\f5-night-transcript.txt`); the tag `haetty-v0.3.0` only after both nights PASS. F6 done 2026-11-09 (upstream drafts; none sent).
 
 ## 1. Current state
 
@@ -35,9 +35,13 @@ New progress records go to the newest file in `docs/history/`, not here.
 - F3 done (10.14): SGR-heavy throughput 82 % of libghostty (session), from 56 %.
 - F4 done (10.15): native-only builds pass the e2e suite; the Windows build without WSL works; NOT MET: the 744
   vtdiff FAILs, key-to-frame latency (0.13 ms over libghostty), the native-only installer path; SGR is at 80 %.
-- Next: F5 (the v0.3.0 candidate and CHANGELOG; the candidate's validation; night runs on both engines on both
-  platforms; the tag only after they pass and check-range shows 0 failing), F6 (issue drafts 01-03), then G0-G7
-  (token saving, the brief of 2026-11-09).
+- F5: the v0.3.0 candidate `b1262d2` is on main (version, CHANGELOG, XTVERSION). Its Linux and Windows checks pass
+  (e2e on both engines, native-only build and unit tests, installer self-tests on both platforms, daemon-crash).
+  The night run is registered for 2026-11-10 02:00 (native, then libghostty, both with -GuiE2E). The tag
+  `haetty-v0.3.0` on `b1262d2` only after both nights PASS; then the F5 record (DESIGN 10.16).
+- F6 done: drafts 01 and 02 are fixed upstream (`bed20eb`, `82df0be`; re-run on the pin); 03 is still present (re-run:
+  5 of 6 cases stale); `docs/upstream/repro/`; none sent.
+- Next: G0 (DESIGN split by topic, CLAUDE.md), then G1-G7 (token saving, the brief of 2026-11-09).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)

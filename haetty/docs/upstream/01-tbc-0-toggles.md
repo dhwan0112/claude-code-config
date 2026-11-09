@@ -1,11 +1,15 @@
 # Draft: TBC 0 toggles the tab stop instead of clearing it
 
-*Fixed on Ghostty `main` (`5813c94`: `Tabstops.unset` uses `&= ~mask`). Kept
-for the record; do not send. See README.md.*
+*Fixed on Ghostty `main` by `bed20eb` ("terminal: clear tabstop bit on unset instead of
+toggling"), an ancestor of the pin `e035beb` (checked 2026-11-09). Re-run on `e035beb`: the `X`
+lands at the default stop, not in column 5 as before (`repro/show.c`). Kept for the record;
+do not send. See README.md.*
 
 ## Versions
 
 libghostty-vt 0.2.2, Ghostty `a887df42c56f6de86c0fe6da9c4eeca37931e083`.
+
+Re-run on the pin `e035beb9437118b803830a5864ea2f4dd7094354` (2026-11-09): fixed. See the header.
 
 ## Reproduction (80×24)
 
