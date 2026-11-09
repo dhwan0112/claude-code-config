@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage k0 (branch `haetty/k0`, worktree `~/projects/claude-code-config-wt/k0`). Remaining: K0: kramers 2026-11-09 results in docs/checks, the §6.1 tags, the open items (§6.0), the stable line. Then K1 (12, attention and input block; approved scope), K2 (inherited variables), K3 (observations), H1-H4, K4 (v0.3.1 candidate). v0.3.0 tag only after the night run of b1262d2 (2026-11-10 02:00) passes both platforms.
+
 ## 1. Current state
 
 - **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
