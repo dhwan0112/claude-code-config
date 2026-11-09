@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./target/**)",
+      "Read(./target-*/**)",
+      "Read(//home/denny/archive/ccterm-2026-11-09/**)"
+    ]
+  }
+}

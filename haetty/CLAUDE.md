@@ -10,6 +10,8 @@ the start of a session.
 - `docs/HANDOFF.md`: the state, the rules in short, the open items and the person's checks.
 - `docs/DESIGN.md`: the index of the design (one line per section, with its file). Open only the file of the
   section you need, in `docs/design/`.
+- `docs/OPERATING.md`: how a stage runs (one stage per session, the scripts in `tools/stage/`, the limits); read it
+  at the start of each stage.
 - Read `docs/SELF-HOSTING.md` (the day, dev → stable, rollback), and `docs/dev-commands.md` (commands, environment,
   tools) when you need them.
 
@@ -100,6 +102,8 @@ the start of a session.
 - Waiting for a background job or a tab: `haetty wait …` (one line; exit 124 on timeout), not a `sleep` loop.
 - A tab's screen: read it as text (`haetty screen`) before taking an image.
 - Where a session's tokens went: `haetty tokens --top 10 PATH`.
+- Big files: read them in parts (`Read` with `offset` and `limit`, or `grep -n` first); the list and the rules are in
+  `docs/tokens/partial-reads.md`.
 - The guide for Claude Code is `docs/tokens/claude-guide.md`; haetty adds it to no session.
 
 ## Commands, environment and tools

@@ -8,7 +8,6 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
-> **In progress:** stage h (branch `haetty/h`, worktree `~/projects/claude-code-config-wt/h`). Remaining: H: the old ccterm copy is archived outside the projects tree; project read rules for the target folders and the archive; partial-read rules; per-stage operating doc; token method
 
 ## 1. Current state
 
@@ -44,9 +43,10 @@ New progress records go to the newest file in `docs/history/`, not here.
   share (G5c: `clear-hint`, `context-window`; display only, nothing is sent), and the saving mode (G6: `saving-mode`,
   off by default; BASH_MAX_OUTPUT_LENGTH and MAX_MCP_OUTPUT_TOKENS of 12000 for Claude Code sessions, a dim `◆ saving`
   mark; sources in `docs/tokens/README.md`), and the G7 measurement (`docs/tokens/g7-measurement.md`, one run each).
-  K0 and K1 done (2026-11-09): kramers results in §6.1 and §6.0 (`docs/checks/`); K1 fixes kramers 12
-  (`docs/history/2026-11-09-k1-attention.md`). K2b done (the spawn drops the child markers too). Next: K3, H1–H4 and
-  K4 (the v0.3.1 candidate); the v0.3.0 tag waits for the night run of 2026-11-10.
+  K0–K3b done (2026-11-09): kramers results in §6.1 and §6.0 (`docs/checks/`); K1 fixes kramers 12
+  (`docs/history/2026-11-09-k1-attention.md`); K2b, K3a and K3b fix the other K-items; H done (`docs/OPERATING.md`,
+  `tools/stage/`, `docs/tokens/partial-reads.md`). Next: the v0.3.0 judgement and tag after the night run of
+  2026-11-10 (commit `b1262d2`, `haetty-overnight-f5`), then K4 (the v0.3.1 candidate).
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
