@@ -132,6 +132,11 @@ impl Tab {
         self.claude.as_ref().map_or(Attention::None, |c| c.attention)
     }
 
+    /// Program input is refused: a permission dialog is open or was answered and its turn has not ended (K1).
+    fn asking(&self) -> bool {
+        self.claude.as_ref().is_some_and(|c| c.asking)
+    }
+
     /// A worker's state (DESIGN.md §8.2).
     fn worker_state(&self) -> WorkerState {
         let c = self.claude.as_deref();
@@ -1224,9 +1229,9 @@ impl Win {
             Action::Paste => {
                 if let Some(text) = self.clipboard.get() {
                     if self.tab().exited.is_some() {
-                    } else if origin == Origin::Program && self.tab().attention() == Attention::Ask {
+                    } else if origin == Origin::Program && self.tab().asking() {
                         // The daemon would refuse it anyway (§3.7); say why.
-                        self.show_hint("not sent: Claude Code waits for your answer — type it".into());
+                        self.show_hint("not sent: a permission dialog is open or was just answered — type it".into());
                     } else {
                         self.handle().paste(origin, text);
                     }

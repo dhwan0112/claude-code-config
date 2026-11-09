@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use haetty_daemon::Config;
 use haetty_proto::paths::Endpoint;
-use haetty_proto::wire::{Attention, CreateSpec, Grid, SessionInfo};
+use haetty_proto::wire::{Attention, ClientMsg, CreateSpec, Grid, Origin, Secret, SessionInfo};
 use haetty_proto::{Client, Role};
 
 const BIN: &str = env!("CARGO_BIN_EXE_haetty");
@@ -90,9 +90,14 @@ fn permission_request_is_in_the_daemon_before_the_hook_exits() {
     // question) does not clear it.
     hook(&ep, &id, "PreToolUseAll", r#"{"session_id":"s","tool_name":"Read"}"#);
     assert_eq!(info(&gui, &id).attention, Attention::Ask);
-    // The answer: the tool runs, PostToolUse (started later) clears it.
-    hook(&ep, &id, "PostToolUse", r#"{"session_id":"s","tool_name":"Bash","tool_use_id":"t1"}"#);
+    // The answer: a person's key clears the mark at once (the GUI's own input); the tool's end does not end the turn,
+    // the turn's end does.
+    gui.send(&ClientMsg::Write { session: id.clone(), origin: Origin::Human, bytes: Secret(b"1".to_vec()) }).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
     assert_eq!(info(&gui, &id).attention, Attention::None);
+    hook(&ep, &id, "PostToolUse", r#"{"session_id":"s","tool_name":"Bash","tool_use_id":"t1"}"#);
+    hook(&ep, &id, "Stop", r#"{"session_id":"s"}"#);
+    assert_eq!(info(&gui, &id).attention, Attention::Wait);
     // Edit tool: the synchronous PreToolUse with its file copy.
     let f = dir.join("a.txt");
     std::fs::write(&f, "x\n").unwrap();

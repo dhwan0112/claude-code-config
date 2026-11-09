@@ -4,10 +4,12 @@
 //! logged.
 //!
 //! Attention (after ccx): `Wait` when Claude Code stops or idles at its
-//! prompt, `Ask` when it needs a permission answer or input. Hooks run as
-//! separate processes, partly asynchronously, so events can arrive out of
-//! order; each carries the time its hook started, and `Ask` is cleared only
-//! by an event that started later (so the permission state fails closed).
+//! prompt, `Ask` when a permission question waits for a person's answer.
+//! Hooks run as separate processes, partly asynchronously, so events can
+//! arrive out of order; each carries the time its hook started. The mark
+//! goes at a person's answer or at a prompt or turn end that started later;
+//! the program-input hold (`ClaudeInfo::asking`) opens only at the evidence
+//! in [`Claude::hook`] (docs/history/2026-11-09-k1-attention.md).
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 
@@ -34,6 +36,10 @@ struct EditRec {
 pub struct Claude {
     pub info: ClaudeInfo,
     ask_ts: u64,
+    /// When a person's input last reached the session while the hold was on (the answer), Unix ms.
+    answer_ts: Option<u64>,
+    /// The latest prompt or turn end, Unix ms: a question that started before it is over.
+    resolved_ts: u64,
     /// When the running turn started (UserPromptSubmit), Unix ms.
     turn_ts: u64,
     pending: HashMap<String, PreSnapshot>,
@@ -46,8 +52,24 @@ fn text(j: &Json, path: &[&str]) -> String {
 }
 
 impl Claude {
-    pub fn awaiting_permission(&self) -> bool {
-        self.info.attention == Attention::Ask
+    /// Program input to the session is refused: a permission dialog is open, or a person answered one and its turn has
+    /// not ended since (docs/history/2026-11-09-k1-attention.md).
+    pub fn input_held(&self) -> bool {
+        self.info.asking
+    }
+
+    /// A key or text a person sent to the session. While the hold is on it answers the dialog: the mark goes at once,
+    /// and the hold opens only at the evidence `hook` takes. Returns whether the mark changed.
+    pub fn human_input(&mut self, ts_ms: u64) -> bool {
+        if !self.info.asking {
+            return false;
+        }
+        self.answer_ts = Some(self.answer_ts.map_or(ts_ms, |a| a.max(ts_ms)));
+        if self.info.attention == Attention::Ask {
+            self.info.attention = Attention::None;
+            return true;
+        }
+        false
     }
 
     /// A hook event. Returns whether `info` changed.
@@ -57,6 +79,8 @@ impl Claude {
         if !sid.is_empty() {
             self.info.claude_session = sid;
         }
+        // A question that started before the newest prompt, turn end or answer is over: it changes nothing.
+        let fence = self.resolved_ts.max(self.answer_ts.unwrap_or(0));
         let i = &mut self.info;
         let later_than_ask = ts_ms >= self.ask_ts;
         match event {
@@ -71,8 +95,14 @@ impl Claude {
                 // A new turn: the last report is no longer the latest.
                 i.report = None;
                 self.turn_ts = ts_ms;
+                // A prompt is sent only when no dialog waits, so it ends the question before it: mark and hold.
+                self.resolved_ts = self.resolved_ts.max(ts_ms);
                 if i.attention != Attention::Ask || later_than_ask {
                     i.attention = Attention::None;
+                }
+                if later_than_ask {
+                    i.asking = false;
+                    self.answer_ts = None;
                 }
             }
             crate::settings::PRE_ALL if edit::is_edit_tool(&text(j, &["tool_name"])) => {
@@ -94,31 +124,44 @@ impl Claude {
                 }
             }
             "PermissionRequest" => {
-                i.attention = Attention::Ask;
-                // A late, older request must not move the mark back in time.
-                self.ask_ts = self.ask_ts.max(ts_ms);
+                if ts_ms >= fence {
+                    // A new dialog: a person's answer to an older one does not apply to it.
+                    if self.answer_ts.is_some_and(|a| ts_ms > a) {
+                        self.answer_ts = None;
+                    }
+                    i.attention = Attention::Ask;
+                    i.asking = true;
+                    // A late, older request must not move the mark back in time.
+                    self.ask_ts = self.ask_ts.max(ts_ms);
+                }
             }
             "Notification" => {
                 let kind = text(j, &["notification_type"]);
                 if ASK.contains(&kind.as_str()) {
-                    i.attention = Attention::Ask;
-                    self.ask_ts = self.ask_ts.max(ts_ms);
-                } else if kind == "idle_prompt" && i.attention != Attention::Ask {
+                    // A question. Its reminder (about 6 s after the request, while the dialog is open) comes before
+                    // the person's answer. A question after an answer changes nothing: the hold of that answer covers
+                    // it until the turn ends.
+                    if ts_ms >= fence && self.answer_ts.is_none() {
+                        i.attention = Attention::Ask;
+                        i.asking = true;
+                        self.ask_ts = self.ask_ts.max(ts_ms);
+                    }
+                } else if kind == "idle_prompt" && i.attention != Attention::Ask && !i.asking {
                     i.attention = Attention::Wait;
                     i.busy = false;
                 }
             }
-            "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => {
-                if i.attention == Attention::Ask && later_than_ask {
-                    i.attention = Attention::None;
-                }
-                if event == "PostToolUse" {
-                    self.edited(j, ts_ms);
-                }
+            "PostToolUse" => {
+                // Not evidence about a dialog: a subagent's tool or a parallel call can finish while one is open.
+                self.edited(j, ts_ms);
+            }
+            "PostToolUseFailure" | "PermissionDenied" => {
+                // Not evidence about a dialog either (see PostToolUse).
             }
             "Stop" | "StopFailure" => {
                 i.busy = false;
                 i.turns = i.turns.saturating_add(1);
+                self.resolved_ts = self.resolved_ts.max(ts_ms);
                 // The final message (DESIGN.md §8.2): the hook's own copy,
                 // else this turn's text in the transcript.
                 let last = j.get("last_assistant_message").and_then(Json::str).map(str::to_string);
@@ -132,6 +175,12 @@ impl Claude {
                 };
                 if i.attention != Attention::Ask || later_than_ask {
                     i.attention = Attention::Wait;
+                }
+                // The turn has ended, so no dialog of this turn is open. The hold opens only when a person's input came
+                // after the question (the brief's rule): a question nobody answered keeps it.
+                if later_than_ask && self.answer_ts.is_some() {
+                    i.asking = false;
+                    self.answer_ts = None;
                 }
             }
             "SubagentStart" => {
@@ -301,24 +350,26 @@ mod tests {
         assert!(c.info.busy);
         assert_eq!(c.info.claude_session, "s-1");
         c.hook("PermissionRequest", &j(r#"{"tool_name":"Bash"}"#), 20, None);
-        assert!(c.awaiting_permission());
-        // An older event (its hook started before the request) must not clear it.
-        c.hook("PostToolUse", &j(r#"{"tool_name":"Read"}"#), 15, None);
-        assert!(c.awaiting_permission());
+        assert!(c.input_held());
+        // An older event (its hook started before the request) must not release it.
+        c.hook("Stop", &j("{}"), 15, None);
+        assert!(c.input_held());
         c.hook("PreToolUse", &j(r#"{"tool_name":"Bash"}"#), 25, None);
-        assert!(c.awaiting_permission(), "PreToolUse does not answer a question");
+        assert!(c.input_held(), "PreToolUse does not answer a question");
         c.hook("PostToolUse", &j(r#"{"tool_name":"Bash"}"#), 30, None);
-        assert_eq!(c.info.attention, Attention::None);
+        assert_eq!(c.info.attention, Attention::Ask, "a tool event does not answer a question");
+        assert!(c.human_input(35), "a person's key clears the mark at once");
+        assert_eq!((c.info.attention, c.input_held()), (Attention::None, true));
         c.hook("Stop", &j("{}"), 40, None);
-        assert_eq!((c.info.attention, c.info.busy), (Attention::Wait, false));
+        assert_eq!((c.info.attention, c.info.busy, c.input_held()), (Attention::Wait, false, false));
         assert!(c.clear_wait() && !c.clear_wait());
         c.hook("Notification", &j(r#"{"notification_type":"permission_prompt"}"#), 50, None);
-        assert!(c.awaiting_permission());
+        assert_eq!((c.info.attention, c.input_held()), (Attention::Ask, true));
         assert!(!c.clear_wait(), "selecting the tab does not clear a question");
         c.hook("Notification", &j(r#"{"notification_type":"idle_prompt"}"#), 60, None);
-        assert!(c.awaiting_permission(), "idle does not replace a question");
+        assert_eq!(c.info.attention, Attention::Ask, "idle does not replace a question");
         c.hook("UserPromptSubmit", &j("{}"), 70, None);
-        assert_eq!(c.info.attention, Attention::None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::None, false));
         c.hook("Stop", &j("{}"), 75, None);
         c.hook("PreToolUseAll", &j(r#"{"tool_name":"Edit"}"#), 76, None);
         assert_eq!(c.info.attention, Attention::Wait, "edit tools are reported by the synchronous entry");
@@ -330,24 +381,140 @@ mod tests {
     }
 
     #[test]
+    fn yes_hold_opens_at_the_turn_end_after_the_answer() {
+        // Recorded with Claude Code 2.1.319 (runs A, D, H): PreToolUse, PermissionRequest, the reminder about 6 s
+        // later while the dialog is open, the answer, PostToolUse, Stop.
+        let mut c = Claude::default();
+        c.hook("UserPromptSubmit", &j("{}"), 100, None);
+        c.hook("PreToolUse", &j(r#"{"tool_name":"Write"}"#), 150, None);
+        c.hook("PermissionRequest", &j(r#"{"tool_name":"Write"}"#), 200, None);
+        c.hook("Notification", &j(r#"{"notification_type":"permission_prompt"}"#), 6200, None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::Ask, true));
+        assert!(c.human_input(25_700), "the answer (1)");
+        assert_eq!((c.info.attention, c.input_held()), (Attention::None, true));
+        c.hook("PostToolUse", &j(r#"{"tool_name":"Write"}"#), 25_800, None);
+        assert!(c.input_held(), "a tool's end is not the end of the turn");
+        c.hook("Stop", &j("{}"), 28_900, None);
+        assert_eq!((c.info.attention, c.info.busy, c.input_held()), (Attention::Wait, false, false));
+    }
+
+    #[test]
+    fn rejection_holds_the_input_until_the_persons_next_prompt() {
+        // Recorded (runs C, G, I): Esc gives no event, nothing comes for 90 s (no idle signal either), and the next
+        // prompt the person types does.
+        let mut c = Claude::default();
+        c.hook("UserPromptSubmit", &j("{}"), 100, None);
+        c.hook("PermissionRequest", &j(r#"{"tool_name":"Write"}"#), 200, None);
+        assert!(c.human_input(300), "Esc: the mark goes");
+        c.hook("Notification", &j(r#"{"notification_type":"idle_prompt"}"#), 90_000, None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::None, true), "an idle signal does not release it");
+        assert!(!c.human_input(90_500), "typing the next prompt: no mark left to clear");
+        c.hook("UserPromptSubmit", &j("{}"), 91_000, None);
+        assert!(!c.input_held(), "the person's prompt releases it");
+        c.hook("Stop", &j("{}"), 95_000, None);
+        assert_eq!(c.info.attention, Attention::Wait);
+    }
+
+    #[test]
+    fn option_three_releases_at_the_prompt_the_person_typed() {
+        // Recorded (run E): the digit and the typed text are the person's input; the text came in as a prompt.
+        let mut c = Claude::default();
+        c.hook("UserPromptSubmit", &j("{}"), 100, None);
+        c.hook("PermissionRequest", &j(r#"{"tool_name":"Write"}"#), 200, None);
+        assert!(c.human_input(300), "3");
+        assert!(!c.human_input(400), "the text: no mark left to clear");
+        assert!(c.input_held());
+        c.hook("UserPromptSubmit", &j("{}"), 500, None);
+        assert!(!c.input_held());
+        c.hook("Stop", &j("{}"), 600, None);
+        assert_eq!(c.info.attention, Attention::Wait);
+    }
+
+    #[test]
+    fn tool_and_subagent_events_never_release_the_input_or_the_mark() {
+        // A subagent's tool events carry agent_id, and a parallel call's tool can finish while a dialog waits (the hooks
+        // page): none of them is evidence about the dialog.
+        let mut c = Claude::default();
+        c.hook("PermissionRequest", &j("{}"), 20, None);
+        assert!(c.human_input(25));
+        c.hook("PostToolUse", &j(r#"{"tool_name":"Read","agent_id":"a1","agent_type":"Explore"}"#), 30, None);
+        c.hook("PostToolUseFailure", &j(r#"{"tool_name":"Bash"}"#), 31, None);
+        c.hook("PermissionDenied", &j(r#"{"tool_name":"Bash"}"#), 32, None);
+        c.hook("PreToolUse", &j(r#"{"tool_name":"Read"}"#), 33, None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::None, true));
+        c.hook("Stop", &j("{}"), 40, None);
+        assert!(!c.input_held());
+    }
+
+    #[test]
+    fn stale_questions_and_reminders_after_an_answer_change_nothing() {
+        let mut c = Claude::default();
+        c.hook("PermissionRequest", &j("{}"), 20, None);
+        assert!(c.human_input(30));
+        // The reminder of the same dialog, started after the answer (hook latency): no new mark, the hold stays.
+        c.hook("Notification", &j(r#"{"notification_type":"permission_prompt"}"#), 31, None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::None, true));
+        // A question that started before the answer, arriving late: nothing.
+        c.hook("PermissionRequest", &j("{}"), 25, None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::None, true));
+        c.hook("Stop", &j("{}"), 40, None);
+        assert!(!c.input_held(), "the reminder did not block the release");
+        // A question older than the turn's end: nothing.
+        c.hook("PermissionRequest", &j("{}"), 35, None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::Wait, false));
+    }
+
+    #[test]
+    fn a_new_dialog_after_an_answer_is_a_new_question() {
+        let mut c = Claude::default();
+        c.hook("PermissionRequest", &j("{}"), 20, None);
+        assert!(c.human_input(25));
+        c.hook("PermissionRequest", &j(r#"{"tool_name":"Bash"}"#), 30, None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::Ask, true));
+        assert!(c.human_input(35));
+        c.hook("Stop", &j("{}"), 40, None);
+        assert!(!c.input_held());
+    }
+
+    #[test]
+    fn a_person_key_without_a_question_changes_nothing() {
+        let mut c = Claude::default();
+        assert!(!c.human_input(5));
+        assert_eq!(c.info, ClaudeInfo::default());
+        // A key before a question does not answer it.
+        c.hook("PermissionRequest", &j("{}"), 10, None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::Ask, true));
+    }
+
+    #[test]
+    fn a_turn_end_without_a_person_keeps_the_input_held() {
+        // By the brief's rule the hold opens with a person's input and a later turn end, or with a prompt. A turn end
+        // alone is not that evidence (auto-mode denials are not reproduced yet; see the record).
+        let mut c = Claude::default();
+        c.hook("PermissionRequest", &j("{}"), 20, None);
+        c.hook("Stop", &j("{}"), 30, None);
+        assert_eq!((c.info.attention, c.input_held()), (Attention::Wait, true));
+    }
+
+    #[test]
     fn out_of_order_events_never_clear_a_newer_question() {
         let mut c = Claude::default();
         // Two questions; the older one's report arrives last.
         c.hook("PermissionRequest", &j("{}"), 30, None);
         c.hook("PermissionRequest", &j("{}"), 20, None);
         c.hook("PostToolUse", &j(r#"{"tool_name":"Bash"}"#), 25, None);
-        assert!(c.awaiting_permission(), "25 is older than the newest question (30)");
+        assert!(c.input_held(), "25 is older than the newest question (30)");
         // A SessionStart / SessionEnd that started before the question.
         c.hook("SessionStart", &j(r#"{"source":"clear"}"#), 10, None);
         c.hook("SessionEnd", &j("{}"), 12, None);
-        assert!(c.awaiting_permission(), "older session events do not clear it");
+        assert!(c.input_held(), "older session events do not clear it");
         c.hook("SessionStart", &j(r#"{"source":"resume"}"#), 40, None);
-        assert_eq!(c.info.attention, Attention::None, "a later SessionStart does");
+        assert_eq!(c.info.attention, Attention::None, "a later SessionStart clears the mark");
         // Notification ask with an older time keeps the newest time.
         c.hook("PermissionRequest", &j("{}"), 50, None);
         c.hook("Notification", &j(r#"{"notification_type":"permission_prompt"}"#), 45, None);
         c.hook("Stop", &j("{}"), 48, None);
-        assert!(c.awaiting_permission());
+        assert!(c.input_held());
         c.hook("SessionEnd", &j("{}"), 60, None);
         assert_eq!(c.info.attention, Attention::None);
     }

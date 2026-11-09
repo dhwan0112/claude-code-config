@@ -44,8 +44,9 @@ New progress records go to the newest file in `docs/history/`, not here.
   share (G5c: `clear-hint`, `context-window`; display only, nothing is sent), and the saving mode (G6: `saving-mode`,
   off by default; BASH_MAX_OUTPUT_LENGTH and MAX_MCP_OUTPUT_TOKENS of 12000 for Claude Code sessions, a dim `◆ saving`
   mark; sources in `docs/tokens/README.md`), and the G7 measurement (`docs/tokens/g7-measurement.md`, one run each).
-  K0 done (2026-11-09): the kramers results are in §6.1 and §6.0 (`docs/checks/`). Next: K1–K4 and H1–H4 (the v0.3.1
-  candidate); the v0.3.0 tag waits for the night run of 2026-11-10.
+  K0 and K1 done (2026-11-09): kramers results in §6.1 and §6.0 (`docs/checks/`); K1 fixes kramers 12
+  (`docs/history/2026-11-09-k1-attention.md`). Next: K2b (the spawn drops the child markers too), K3, H1–H4 and
+  K4 (the v0.3.1 candidate); the v0.3.0 tag waits for the night run of 2026-11-10.
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
@@ -139,8 +140,8 @@ Windows, WSL and the dev machine:
 ### 6.0 Open defects and tasks (2026-11-07)
 
 - **kramers 2026-11-09 (0.2.0, `63822de`)**, [docs/checks/2026-11-09-kramers.md](checks/2026-11-09-kramers.md).
-  Open failures: 7 (window size on Wayland at 125 %, still in 0.2.0; §6.1 item 32) and 12 (the red `?` comes late
-  and stays; K1). Other observations, not counted as failures: a tab's own name is lost on detach and reattach (K3);
+  Open failures: 7 (window size on Wayland at 125 %, still in 0.2.0; §6.1 item 32). Fixed in K1, re-check in K4:
+  12 (the red `?` stayed after the answer). Other observations, not counted as failures: a tab's own name is lost on detach and reattach (K3);
   a daemon killed with SIGKILL stays a zombie of its window until the window exits (K3); test instances write their
   per-session settings into the shared `$XDG_RUNTIME_DIR/haetty/` (K3); a tab started inside Claude Code inherited
   `CLAUDE_CODE_CHILD_SESSION` and the messaging socket and token, so transcript saving was off (fixed in K2: the child
@@ -323,7 +324,7 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 
 11. [kramers 2026-11-09: pass] **Ctrl+C twice** right after Claude Code starts, a few times (rare
     misses were seen only within the first seconds, §3).
-12. [kramers 2026-11-09: FAIL (open, §6.0; K1)] **Attention marks**: in a background tab, a permission prompt shows the
+12. [kramers 2026-11-09: FAIL; fixed in K1, re-check in K4] **Attention marks**: in a background tab, a permission prompt shows the
     red `?` *already when the dialog appears* (the hook is synchronous; no
     noticeable delay before the dialog); Stop shows the amber dot;
     selecting the tab clears amber; answering clears `?`.

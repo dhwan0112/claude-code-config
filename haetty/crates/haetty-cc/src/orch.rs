@@ -6,7 +6,7 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use haetty_proto::wire::{Attention, ClaudeInfo, Origin, Secret, WorkerReport};
+use haetty_proto::wire::{ClaudeInfo, Origin, Secret, WorkerReport};
 use haetty_proto::RemoteHandle;
 
 use crate::json::Json;
@@ -137,7 +137,7 @@ pub enum Hold {
     NoTurnYet,
     /// A turn is running: a tool call may be about to ask.
     Busy,
-    /// A permission question or dialog waits for the person.
+    /// A permission dialog is open, or a person answered one and the turn has not ended since.
     Asking,
 }
 
@@ -147,7 +147,7 @@ impl Hold {
             Hold::Unknown => "the worker has not reported to haetty yet",
             Hold::NoTurnYet => "the worker has not finished a turn yet (a start-up dialog may be open)",
             Hold::Busy => "the worker is busy; send when it stops",
-            Hold::Asking => "the worker waits for your answer — the orchestrator never answers",
+            Hold::Asking => "the worker is in a permission dialog or has answered one; send after its turn ends, or after the person's next prompt in its tab (Esc gives no event)",
         }
     }
 }
@@ -155,7 +155,7 @@ impl Hold {
 /// The readiness rule (DESIGN.md §8.4).
 pub fn ready(info: Option<&ClaudeInfo>) -> Result<(), Hold> {
     let i = info.ok_or(Hold::Unknown)?;
-    if i.attention == Attention::Ask {
+    if i.asking {
         return Err(Hold::Asking);
     }
     if i.busy {
@@ -291,6 +291,7 @@ pub fn slug(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use haetty_proto::wire::Attention;
 
     #[test]
     fn report_grammar_like_ccx() {
@@ -340,7 +341,9 @@ mod tests {
         i.busy = true;
         assert_eq!(ready(Some(&i)), Err(Hold::Busy));
         i.attention = Attention::Ask;
-        assert_eq!(ready(Some(&i)), Err(Hold::Asking), "a question outranks busy");
+        assert_eq!(ready(Some(&i)), Err(Hold::Busy), "the mark alone does not hold");
+        i.asking = true;
+        assert_eq!(ready(Some(&i)), Err(Hold::Asking), "a held input outranks busy");
     }
 
     #[test]

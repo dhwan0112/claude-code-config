@@ -265,11 +265,24 @@ fn claude_reports_reach_the_client_and_gate_program_input() {
     .unwrap();
     assert!(matches!(obs.next_reply(Duration::from_secs(5)), Some(DaemonMsg::Denied { .. })));
     assert!(gui.sync(Duration::from_secs(5)));
-    assert_eq!(s.handle.claude().unwrap().attention, Attention::Ask, "denied reports changed nothing");
+    // The person's answer cleared the mark at once; the hold stays until the turn ends. The session's update arrives as
+    // an event, so wait for it instead of reading the cache.
+    wait_info("answered", &|i| i.attention == Attention::None && i.asking);
+    assert!(s.handle.claude().unwrap().asking, "denied reports changed nothing");
 
+    // A tool's end is not the end of the turn: program input stays refused.
     hook("PostToolUse", r#"{"tool_name":"Bash"}"#, 20);
+    s.handle.write(Origin::Program, "robot-held\n");
+    match gui.next_reply(Duration::from_secs(5)) {
+        Some(DaemonMsg::Denied { what: w }) => assert!(w.starts_with("Write"), "{w}"),
+        other => panic!("expected Denied while the turn runs, got {other:?}"),
+    }
+    assert!(!has(&s.handle.snapshot().unwrap(), "robot-held"));
+    // The turn's end releases it: program input passes again.
     hook("Stop", "{}", 30);
-    wait_info("wait", &|i| i.attention == Attention::Wait);
+    wait_info("released", &|i| i.attention == Attention::Wait && !i.asking);
+    s.handle.write(Origin::Program, "robot-after\n");
+    wait_screen(&s, "program input after the turn", |sn| has(sn, "robot-after"));
     gui.clear_attention(&id).unwrap();
     wait_info("cleared", &|i| i.attention == Attention::None);
 

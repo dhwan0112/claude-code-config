@@ -392,7 +392,9 @@ pub enum SnapStatus {
 }
 
 /// What a tab marks (DESIGN.md §3.13): `Wait` — Claude Code finished or
-/// idles at its prompt; `Ask` — it waits for a permission answer or input.
+/// idles at its prompt; `Ask` — a permission question waits for a person's
+/// answer. The mark goes at the answer; the program-input hold is
+/// `ClaudeInfo::asking`.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Attention {
     #[default]
@@ -439,6 +441,10 @@ pub struct ClaudeInfo {
     pub name: String,
     pub model: String,
     pub attention: Attention,
+    /// Program input is refused: a permission dialog is open, or a person answered one and its turn has not ended
+    /// (docs/history/2026-11-09-k1-attention.md). Unlike the mark, it does not clear at the answer.
+    #[serde(default)]
+    pub asking: bool,
     /// Between UserPromptSubmit and Stop.
     pub busy: bool,
     pub context_pct: Option<f32>,

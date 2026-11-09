@@ -122,9 +122,41 @@ impl Latency {
     }
 }
 
+/// A key a person types or answers with (a press or a repeat of a key that is not a modifier on its own), a paste, or a
+/// raw write: input that can answer a permission dialog. The wheel, focus and resize are not input.
+fn answers(m: &ClientMsg) -> bool {
+    use haetty_core::{Key, KeyAction};
+    match m {
+        ClientMsg::Key { key, .. } => key.to_key_input().is_some_and(|k| {
+            k.action != KeyAction::Release
+                && !matches!(
+                    k.key,
+                    Key::ShiftLeft
+                        | Key::ShiftRight
+                        | Key::ControlLeft
+                        | Key::ControlRight
+                        | Key::AltLeft
+                        | Key::AltRight
+                        | Key::MetaLeft
+                        | Key::MetaRight
+                        | Key::CapsLock
+                        | Key::NumLock
+                )
+        }),
+        ClientMsg::Paste { .. } | ClientMsg::Write { .. } => true,
+        _ => false,
+    }
+}
+
 impl Sess {
-    fn awaiting_permission(&self) -> bool {
-        self.claude.as_ref().is_some_and(Claude::awaiting_permission)
+    /// Program input is refused while a permission dialog is open or was answered and its turn has not ended.
+    fn input_held(&self) -> bool {
+        self.claude.as_ref().is_some_and(Claude::input_held)
+    }
+
+    /// A person's input reached the session: it may answer the dialog. True when the mark went (`Claude::human_input`).
+    fn human_input(&mut self) -> bool {
+        self.claude.as_mut().is_some_and(|c| c.human_input(now_ms()))
     }
 
     fn drop_settings_file(&mut self) {
@@ -664,6 +696,14 @@ impl Daemon {
             | ClientMsg::SetTheme { session, .. } => (session.clone(), None),
             _ => return,
         };
+        // A person's typing may answer a permission dialog: the mark goes at once, and the subscribers hear of it (K1).
+        if origin == Some(Origin::Human)
+            && answers(&m)
+            && self.sessions.get_mut(&session).is_some_and(|s| s.human_input())
+        {
+            self.event("attention", &session, &[("event", "person_input"), ("attention", "None")]);
+            self.push_claude(&session);
+        }
         let Some(s) = self.sessions.get_mut(&session) else {
             self.reply(c, DaemonMsg::NoSession { session });
             return;
@@ -671,8 +711,11 @@ impl Daemon {
         if matches!(m, ClientMsg::Key { .. } | ClientMsg::Paste { .. }) && s.lat.key_at.is_none() {
             s.lat.key_at = Some(Instant::now());
         }
-        if s.awaiting_permission() && origin.is_some_and(|o| o != Origin::Human) {
-            let what = format!("{} from a program while the session waits for a permission answer", msg_name(&m));
+        if s.input_held() && origin.is_some_and(|o| o != Origin::Human) {
+            let what = format!(
+                "{} from a program while a permission dialog is open or was answered and its turn has not ended",
+                msg_name(&m)
+            );
             self.denied(c, &what);
             return;
         }
