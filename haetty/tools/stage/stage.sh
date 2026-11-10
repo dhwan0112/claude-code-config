@@ -9,7 +9,7 @@ start)
   NAME=$2; REM=$3
   [ -z "$(git -C $M status --porcelain -- haetty | grep -v -e " haetty/docs/HANDOFF.md$" -e " haetty/.gitignore$")" ] || { echo "main checkout not clean (haetty/)"; exit 1; }
   rm -f $W/current-wt
-  python3 -I - "$M/haetty/docs/HANDOFF.md" "$NAME" "$REM" "$WTROOT" <<'PY'
+  python3 -I - "$M/haetty/docs/HANDOFF.md" "$NAME" "$REM" "${WTROOT/#$HOME/\~}" <<'PY'
 import sys, pathlib, re
 p = pathlib.Path(sys.argv[1]); s = p.read_text(encoding="utf-8")
 s = re.sub(r"\n> \*\*In progress:\*\*.*?\n(?=\n)", "\n", s, flags=re.S)

@@ -49,7 +49,28 @@ script (now only for Windows paths), `/tmp/haetty-overnight` for the night build
   have passed as clean (not seen, but possible on any machine). Both now read a here-string
   (`bash -c 'set -o pipefail; x=$(seq 1 200000); echo "$x" | grep -q "^1$"; echo $?'` prints 141; the here-string
   form prints 0). `tools/check-range.sh` has no pipefail and is not affected.
-- The passing gate, check-range and the stage scripts on kramers: see the end of this file.
 
 The earlier "Next session" lines of HANDOFF (F6 to K4) are in `2026-11-10-windows-handover.md` §8, moved there by
 the Windows PC's last session; that commit (`36ee748`) arrived while this stage ran, and this stage was replayed on it.
+
+## The passing gate, check-range and the stage scripts on kramers
+
+- Full rebuild with Rust 1.99.1 and mingw-w64 (everything, both targets, the native-only build, clippy on both, the
+  tests): **619 s**; the job's process tree peaked at **4511 MB**, the system at +2822 MB (6116 → 8938 MB of 29 GB).
+  Two heavy jobs at a time fit this machine with room.
+- `GATE fail=0` (commit `a77772e`, replayed as `0a23bf0` on the Windows PC's handover commit `36ee748`). Stripped
+  sizes: `haetty` 9 922 528 bytes, `haetty-headless` 3 017 984, `haetty.exe` 10 147 840, `haetty-headless.exe`
+  4 795 904. The Windows cross-build links here (mingw-w64 13.0.0, gcc 13.2); its DLL list is system DLLs only.
+- `tools/check-range.sh origin/main..HEAD`: "1 commit(s) changing haetty/, 0 failing, 0 known" (twice: `0a23bf0`,
+  and the in-progress commit `da0ae09`).
+- The stage scripts, end to end, with this docs change as the stage `kramers-check`: `stage.sh start` (the
+  in-progress line, its gate, check-range, the push, the worktree), `c.sh` (the gate, the commit), `stage.sh finish`
+  (fast-forward, check-range, push, the worktree and branch removed). The first stage (`kramers-env`) had its
+  worktree made by hand, because the gate could not pass before mingw-w64 was installed.
+- The Dropbox mirror did **not** run: the main checkout has an uncommitted change outside `haetty/`
+  (`agents/worker-readonly.md`, not this stage's), and the mirror copies the working tree. It runs with the next
+  push once that file is committed or reverted.
+- `tools/ghostty-ref/build.sh` on kramers (Zig 0.17.0, the pin): built, exit 0 after 443 s in its slot (libghostty-vt 436.1 s);
+  the helper is 2 360 368 bytes stripped and needs libc only. `haetty-vtdiff --ref ghostty-main` itself was not run.
+- Not run on kramers yet: `scripts/e2e/run-all.sh` (Xvfb and xdotool are installed now), the night mode, the VT
+  corpus (`$HAETTY_WORK/vtcorpus` is on the Windows PC only; `scripts/e2e/record-claude.sh` makes a new one).
