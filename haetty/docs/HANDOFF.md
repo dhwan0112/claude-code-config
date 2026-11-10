@@ -42,12 +42,13 @@ Stages on kramers, in this order (1 done 2026-11-10):
    motion, not the wheel) counts as the person's input and clears the mark. Add both cases to the existing
    integration tests (`crates/haetty-gui/tests/permission.rs`; K1's record: `history/2026-11-09-k1-attention.md`).
    The deny path of auto mode is not examined: keep it as an open item in §6.0.
-3. Windows results by themselves: `tools/overnight-soak.ps1` pushes a summary of its result to
-   `checks/windows-<date>` when it ends (code changed here, the PC only pulls); the steps for judging that branch
-   and tagging from kramers go into this file.
+3. Windows results by themselves: `tools/overnight-soak.ps1` pushes a summary of its result to `checks/windows-<date>` when it ends (code changed here, the PC only pulls); the steps for judging that branch and tagging from kramers go
+   into this file. Added by the person (2026-11-10): the Windows night run first checks that the haetty window really came to the foreground; if not, the result is `NOT-RUN (foreground)`, not FAIL, and keeps the foreground window's
+   program name, the time without input and the way of starting (Task Scheduler or by hand). And a document with a procedure for each of the three untested hypotheses in the record on `checks/windows-2026-11-10` (0.3.0's window
+   activation, the Task Scheduler session, another window taking the foreground after the Linux part), to decide whether the unattended scheduler start is why the window does not come forward.
 4. The v0.3.2 candidate (2 and 3 in it) and its checks; the Linux night run on kramers (`overnight-soak-linux.sh
    night`, first run), the Windows night run on the PC. Tag conditions as before (both PASS, check-range 0
-   failing); the tag is approved in advance when they hold.
+   failing; `NOT-RUN (foreground)` never stands in for WINDOWS PASS); the tag is approved in advance when they hold.
 5. After the person installs the new stable: self-hosting inside haetty; a coordinating session hands stages to
    orchestrator workers and reads only their STATUS reports — tried with two small stages and compared with the
    one-session way by `haetty tokens` (the parts H3 and H4 left open).
