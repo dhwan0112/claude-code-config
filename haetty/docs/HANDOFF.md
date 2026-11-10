@@ -11,7 +11,7 @@ New progress records go to the newest file in `docs/history/`, not here.
 
 ## 1. Current state
 
-- **Version** 0.3.0 (workspace; the candidate commit of stage F5, tag `haetty-v0.3.0` only after its night run). Tags: `haetty-v0.1.0` = `4d75fcd`,
+- **Version** 0.3.0 (workspace; the candidate commit of stage F5, no tag: its night run failed on Windows, 2026-11-10). Tags: `haetty-v0.1.0` = `4d75fcd`,
   `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
   check-range `haetty-v0.1.1..63822de` 0 failing; record in
@@ -22,32 +22,26 @@ New progress records go to the newest file in `docs/history/`, not here.
 - **Everything after `63822de` is the v0.3.0 candidate** (V3's
   observe-only interface and protocol 8, V6's palette fix, E1–E5: the
   native engine, F0-F4). The workspace version is 0.3.0 from the candidate
-  commit; the tag waits for its night run.
+  commit; no tag: its night run failed on Windows (2026-11-10).
 - Last stages (records in [history](history/2026-11-06-07-stages-t-u-v.md)):
   T1–T7, U1–U6, V1–V7, E0–E5.
 
 ## Next session
 
-- F0 to F4 done (DESIGN 10.11 to 10.15). F5: candidate `b1262d2` on main; its night run is registered for 2026-11-10 02:00
-  and had not run at 2026-11-09 21:31. The tag `haetty-v0.3.0` waits for both platforms to PASS, then the F5 record (DESIGN 10.16).
-- F6 done: drafts 01 and 02 fixed upstream (`bed20eb`, `82df0be`); 03 still present (re-run: 5 of 6 cases stale);
-  none sent.
-- G0 done (2026-11-09): DESIGN by topic in `docs/design/` (index `docs/DESIGN.md`, 65 lines); CLAUDE.md keeps its rules,
-  commands and environment moved to `docs/dev-commands.md`; HANDOFF under 400 lines. Token estimates:
-  `docs/history/2026-11-09-g0-handoff-trim.md`.
-- G1 to G7 done (2026-11-09): `haetty tokens` and the token status line (G1, G1b; off by default), `haetty run` and
-  `haetty log` (G2), `haetty wait` (G3: exit 0 when met, 124 on timeout, 3 when the tab is not observable; the event
-  waits follow the daemon's stream), the guide `docs/tokens/claude-guide.md` and the CLAUDE.md section (G4; haetty
-  adds the guide to no session), the orchestrator (G5: a task's model and effort are launch arguments, a briefing
-  file per task, the report keeps its STATUS block only), the dim `/clear` mark on a worker tab past its context
-  share (G5c: `clear-hint`, `context-window`; display only, nothing is sent), and the saving mode (G6: `saving-mode`,
-  off by default; BASH_MAX_OUTPUT_LENGTH and MAX_MCP_OUTPUT_TOKENS of 12000 for Claude Code sessions, a dim `◆ saving`
-  mark; sources in `docs/tokens/README.md`), and the G7 measurement (`docs/tokens/g7-measurement.md`, one run each).
-  K0–K3b done (2026-11-09): kramers results in §6.1 and §6.0 (`docs/checks/`); K1 fixes kramers 12
-  (`docs/history/2026-11-09-k1-attention.md`); K2b, K3a and K3b fix the other K-items; H done (`docs/OPERATING.md`,
-  `tools/stage/`, `docs/tokens/partial-reads.md`). Next: the v0.3.0 judgement and tag after the night run of
-  2026-11-10 (commit `b1262d2`, `haetty-overnight-f5`). K4 is the v0.3.1 candidate: the newest commit on main, its night
-  run on 2026-11-11 02:00 after its gate.
+- F0 to F4 done (DESIGN 10.11 to 10.15). F5 (`b1262d2`, v0.3.0 candidate): the night run of 2026-11-10 gave LINUX PASS and
+  WINDOWS FAIL in both engines (focus check; cause not established). No `haetty-v0.3.0` tag. Record: branch
+  `checks/windows-2026-11-10`, file `haetty/docs/checks/2026-11-10-windows.md`.
+- F6, G0–G7, K0–K3b and H are done (2026-11-09 and 11-10). Their records are in `docs/history/2026-11-10-windows-handover.md` §8.
+- PC handover (2026-11-10): development moves to kramers; this PC is the Windows verification machine. What exists only here,
+  with paths: `docs/history/2026-11-10-windows-handover.md`. Keep `haetty-overnight-f6`; `haetty-overnight-f5` is spent.
+  No worktree or unpushed commit remains.
+- Next: the night run of 2026-11-11 02:00 (`haetty-overnight-f6`, commit `1163a0a` = K4, the v0.3.1 candidate; native engine
+  only). On the user's "야간 결과 올려":
+  1. read `C:\Users\Public\haetty-overnight\result-20261111-0200.txt`;
+  2. write `haetty/docs/checks/2026-11-11-windows.md` on branch `checks/windows-2026-11-11` (docs only), and push that branch only;
+  3. tag `haetty-v0.3.1` on `1163a0a` (by hash, not main's HEAD) only if LINUX and WINDOWS PASS and
+     `tools/check-range.sh haetty-v0.2.0..1163a0a` reports 0 failing (heavy: start it early, as recorded for v0.2.0).
+     The user approved this tag on 2026-11-10; push only the tag.
 - Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
@@ -135,6 +129,7 @@ Windows, WSL and the dev machine:
 - Git Bash turns a `\\wsl.localhost\…` argument into `\wsl.localhost\…`: put such paths inside a PowerShell script file (E5).
 - PowerShell resolves aliases before functions: a function `R` is shadowed by `r` (Invoke-History) (E5).
 - Claude Code may stop idle background shells when memory runs low (seen on Windows too, against its docs, U3): keep long runs outside Claude Code.
+- A Task Scheduler night run (2026-11-10) stopped at its first focus check; cause open. Unattended trial 2026-11-07 passed (`docs/history/2026-11-10-windows-handover.md` §2).
 
 ## 6. Next tasks
 
@@ -151,8 +146,8 @@ Windows, WSL and the dev machine:
 - The default engine stays libghostty. Open for the person (DESIGN §10.15, the transition table): the 744 vtdiff
   FAILs of ghostty-main (`docs/vtdiff/2026-11-09-f2.md`); the native engine's key-to-frame latency (+0.13 ms at the
   median); SGR throughput at the 80 % threshold; no native-only installer option; no Windows soak with libghostty.
-- F5: the candidate `b1262d2` (v0.3.0) has its night run registered for 2026-11-10 02:00 (both engines, `-GuiE2E`,
-  as §6.1 item 30 with the commit). The tag `haetty-v0.3.0` waits for both PASS.
+- F5: `b1262d2` (v0.3.0) night run 2026-11-10: WINDOWS FAIL in both engines (focus check; cause not established;
+  `checks/windows-2026-11-10`). No v0.3.0 tag. The next night run is 2026-11-11 for `1163a0a` (v0.3.1 candidate).
 - Upstream drafts: `docs/upstream/README.md` (01 and 02 fixed at the pin; 03 still present; none sent).
 - The open list of 2026-11-07 (E5, 79 vtdiff FAILs, the 2-hour soak, SGR 58 %) is kept in
   `docs/history/2026-11-09-g0-handoff-trim.md`.
