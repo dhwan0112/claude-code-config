@@ -2,7 +2,7 @@
 # usage: scripts/mem-peak.sh LABEL CMD [ARGS] — runs CMD (in a heavy-job slot) and reports its memory peaks:
 #   tree    the summed RSS of CMD and all its descendants (the job itself; shared pages counted per process,
 #           so an upper bound)
-#   system  WSL's MemTotal - MemAvailable (what cannot be given back: page cache does not count), its value
+#   system  MemTotal - MemAvailable (what cannot be given back: page cache does not count), its value
 #           before the job and its peak during it
 # sampled every second; one line "MEMPEAK LABEL: …" at the end, and the samples in $HAETTY_MEMPEAK_LOG if set.
 [ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/../tools/heavy.sh" --label "mem-peak.sh $1" -- bash "$0" "$@"   # at most two heavy jobs

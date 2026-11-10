@@ -14,8 +14,8 @@ and the newest one both declare the link name `ghostty-vt`: they cannot be linke
 | | |
 |---|---|
 | Ghostty | `e035beb9437118b803830a5864ea2f4dd7094354` (main, 2026-11-08: "Add NSColorTests for NSColor+Extension (#15139)") |
-| Zig | 0.17.0 (ziglang.org), `sha256 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026` for `zig-x86_64-linux-0.17.0.tar.xz`; installed at `~/.local/zig-0.17.0/zig` |
-| Checkout | `$GHOSTTY_SRC`, default `~/m4/ghostty-ref/ghostty`: a clean checkout at the pin, outside the repository and outside /tmp |
+| Zig | 0.17.0 (ziglang.org), `sha256 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026` for `zig-x86_64-linux-0.17.0.tar.xz`; installed at `~/.local/zig-0.17.0/zig` (`$HAETTY_ZIG_REF`, `tools/machine.sh`) |
+| Checkout | `$GHOSTTY_SRC`, default `$HAETTY_WORK/ghostty-ref/ghostty` (`~/m4/ghostty-ref/ghostty`): a clean checkout at the pin, outside the repository and outside /tmp |
 
 Zig 0.15.2 (the one haetty's own builds use, `~/.local/bin/zig`) is not used for this. `build.sh` refuses any other Zig.
 

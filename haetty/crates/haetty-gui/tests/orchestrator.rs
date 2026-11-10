@@ -56,12 +56,23 @@ fn settled(p: &Path, settle: Duration) -> String {
     read(p)
 }
 
-/// Linux: raw terminal, `cat` appends every byte.
+/// Linux: raw terminal, every byte read is appended. python3, not `stty raw; cat`: the `cat` of uutils coreutils
+/// 0.8.0 (Ubuntu 26.04) forwards the first read from a raw terminal and then nothing more.
 #[cfg(unix)]
 fn fake_claude(dir: &Path, got: &Path) -> (std::path::PathBuf, Vec<String>) {
     let fake = dir.join("bin/claude");
-    std::fs::write(&fake, format!("#!/bin/sh\nstty raw -echo\necho ready > {0}.up\nexec cat >> {0}\n", got.display()))
-        .unwrap();
+    let py = "import os, sys, tty\n\
+              tty.setraw(0)\n\
+              out = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)\n\
+              open(sys.argv[1] + '.up', 'w').write('ready')\n\
+              while True:\n\
+              \x20   b = os.read(0, 4096)\n\
+              \x20   if not b:\n\
+              \x20       break\n\
+              \x20   os.write(out, b)\n";
+    let script = dir.join("fake.py");
+    std::fs::write(&script, py).unwrap();
+    std::fs::write(&fake, format!("#!/bin/sh\nexec python3 -I '{}' '{}'\n", script.display(), got.display())).unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     (fake, vec![])

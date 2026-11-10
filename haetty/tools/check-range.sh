@@ -19,7 +19,7 @@
 # Options: --no-windows (skip the Windows clippy), --no-test (fmt and clippy only), --keep (keep worktrees).
 # Builds use $HAETTY_CHECK_TARGET, else $CARGO_TARGET_DIR, else <repo>/haetty/target — the usual one, so the
 # dependencies (libghostty-vt: Zig, a Ghostty checkout) are not built again; per commit only what changed is.
-# Zig must be on PATH (CLAUDE.md, Environment); ~/.local/bin is tried when it is not. Writes only in the test run directory and that target
+# Zig comes from tools/machine.sh ($HAETTY_ZIG_BIN). Writes only in the test run directory and that target
 # directory; never changes a branch, the index or history.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -39,7 +39,7 @@ done
 [ -n "$range" ] || { echo "usage: check-range.sh [--no-windows] [--no-test] [--keep] RANGE" >&2; exit 2; }
 top=$(git -C "$here" rev-parse --show-toplevel) || exit 2
 export CARGO_TARGET_DIR=${HAETTY_CHECK_TARGET:-${CARGO_TARGET_DIR:-$top/haetty/target}}
-command -v zig > /dev/null || PATH=$HOME/.local/bin:$PATH
+. "$here/machine.sh"
 command -v zig > /dev/null || { echo "check-range.sh: zig is not on PATH (libghostty-vt-sys needs it)" >&2; exit 2; }
 command -v cargo > /dev/null || { echo "check-range.sh: cargo is not on PATH" >&2; exit 2; }
 [ $windows = 1 ] && ! rustup target list --installed 2>/dev/null | grep -qx x86_64-pc-windows-gnu && {

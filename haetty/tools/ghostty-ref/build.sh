@@ -7,9 +7,10 @@
 set -euo pipefail
 
 PIN=e035beb9437118b803830a5864ea2f4dd7094354
-ZIG=${ZIG:-$HOME/.local/zig-0.17.0/zig}
-SRC=${GHOSTTY_SRC:-$HOME/m4/ghostty-ref/ghostty}   # the pinned checkout; outside the repo and outside /tmp
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$HERE/../machine.sh"   # HAETTY_ZIG_REF, HAETTY_WORK
+ZIG=${ZIG:-$HAETTY_ZIG_REF}
+SRC=${GHOSTTY_SRC:-$HAETTY_WORK/ghostty-ref/ghostty}   # the pinned checkout; outside the repo and outside /tmp
 # Build output. Set GHOSTTY_REF_TARGET to keep it outside the stage worktree (a finished stage removes the
 # worktree and everything in it). The default is git-ignored (/target-*/ in haetty/.gitignore).
 TARGET=${GHOSTTY_REF_TARGET:-$HERE/../../target-ghostty-ref}

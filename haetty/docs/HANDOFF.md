@@ -23,26 +23,48 @@ New progress records go to the newest file in `docs/history/`, not here.
   observe-only interface and protocol 8, V6's palette fix, E1–E5: the
   native engine, F0-F4). The workspace version is 0.3.0 from the candidate
   commit; no tag: its night run failed on Windows (2026-11-10).
-- Last stages (records in [history](history/2026-11-06-07-stages-t-u-v.md)):
-  T1–T7, U1–U6, V1–V7, E0–E5.
+- Last stages (records in [history](history/)): T1–T7, U1–U6, V1–V7, E0–E5, F0–F6, G0–G7, K0–K4, H.
+- **Development machine: kramers** (ThinkPad T480, Ubuntu 26.04, 8 threads, 29 GB; from 2026-11-10). Per-machine
+  values: `tools/machine.sh`. The stable haetty installed here is the person's: no command goes to it.
 
 ## Next session
 
-- F0 to F4 done (DESIGN 10.11 to 10.15). F5 (`b1262d2`, v0.3.0 candidate): the night run of 2026-11-10 gave LINUX PASS and
-  WINDOWS FAIL in both engines (focus check; cause not established). No `haetty-v0.3.0` tag. Record: branch
-  `checks/windows-2026-11-10`, file `haetty/docs/checks/2026-11-10-windows.md`.
-- F6, G0–G7, K0–K3b and H are done (2026-11-09 and 11-10). Their records are in `docs/history/2026-11-10-windows-handover.md` §8.
-- PC handover (2026-11-10): development moves to kramers; this PC is the Windows verification machine. What exists only here,
-  with paths: `docs/history/2026-11-10-windows-handover.md`. Keep `haetty-overnight-f6`; `haetty-overnight-f5` is spent.
-  No worktree or unpushed commit remains.
-- Next: the night run of 2026-11-11 02:00 (`haetty-overnight-f6`, commit `1163a0a` = K4, the v0.3.1 candidate; native engine
-  only). On the user's "야간 결과 올려":
+Roles from 2026-11-10: **kramers (Linux) is the development machine; the Windows PC only checks** (it pulls, runs,
+and pushes results as documents on `checks/windows-<date>`; `docs/dev-commands.md`, "Windows-only checks"). One
+stage per session (`docs/OPERATING.md`); the person says "next stage" after `/clear`. Tools and paths:
+`docs/dev-commands.md`, "Environment". Records: the takeover on kramers
+[history/2026-11-10-kramers-dev-machine.md](history/2026-11-10-kramers-dev-machine.md); what exists only on the PC
+and the earlier progress lines (F6, G0–G7, K0–K3b, H) [history/2026-11-10-windows-handover.md](history/2026-11-10-windows-handover.md).
+
+Stages on kramers, in this order (1 done 2026-11-10):
+1. Done: the development environment on kramers (`tools/machine.sh`; gate, check-range, stage scripts, cross-build).
+2. **Next: K1 follow-up** (protected area; approved by the person for exactly this): a Stop or StopFailure that
+   started after the question releases the input hold without the person's input; a mouse button press (not
+   motion, not the wheel) counts as the person's input and clears the mark. Add both cases to the existing
+   integration tests (`crates/haetty-gui/tests/permission.rs`; K1's record: `history/2026-11-09-k1-attention.md`).
+   The deny path of auto mode is not examined: keep it as an open item in §6.0.
+3. Windows results by themselves: `tools/overnight-soak.ps1` pushes a summary of its result to
+   `checks/windows-<date>` when it ends (code changed here, the PC only pulls); the steps for judging that branch
+   and tagging from kramers go into this file.
+4. The v0.3.2 candidate (2 and 3 in it) and its checks; the Linux night run on kramers (`overnight-soak-linux.sh
+   night`, first run), the Windows night run on the PC. Tag conditions as before (both PASS, check-range 0
+   failing); the tag is approved in advance when they hold.
+5. After the person installs the new stable: self-hosting inside haetty; a coordinating session hands stages to
+   orchestrator workers and reads only their STATUS reports — tried with two small stages and compared with the
+   one-session way by `haetty tokens` (the parts H3 and H4 left open).
+6. Then: splitting the big files (H2), the differences left to the newest Ghostty (F2), the default-engine table.
+
+Candidates and night runs:
+- F5 (`b1262d2`, v0.3.0 candidate): the night run of 2026-11-10 gave LINUX PASS and WINDOWS FAIL in both engines
+  (focus check; cause not established). **No `haetty-v0.3.0` tag.** Record: branch `checks/windows-2026-11-10`,
+  file `haetty/docs/checks/2026-11-10-windows.md`. The cause is open (§6.0).
+- K4 (`1163a0a`, the v0.3.1 candidate): its night run is registered on the PC for 2026-11-11 02:00
+  (`haetty-overnight-f6`, native engine only). **On the Windows PC**, on the user's "야간 결과 올려":
   1. read `C:\Users\Public\haetty-overnight\result-20261111-0200.txt`;
   2. write `haetty/docs/checks/2026-11-11-windows.md` on branch `checks/windows-2026-11-11` (docs only), and push that branch only;
   3. tag `haetty-v0.3.1` on `1163a0a` (by hash, not main's HEAD) only if LINUX and WINDOWS PASS and
      `tools/check-range.sh haetty-v0.2.0..1163a0a` reports 0 failing (heavy: start it early, as recorded for v0.2.0).
      The user approved this tag on 2026-11-10; push only the tag.
-- Leave "Stable" in §1 until the user says the new version is installed.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
 
@@ -108,6 +130,7 @@ Testing and Claude Code:
 - Claude Code's double Ctrl+C window is 700–1500 ms; right after start a second press may be missed: wait a few seconds.
 - Two private Xvfb on the same display number share the abstract X socket across `unshare -rm` (T4): `xvfb.sh` picks a free one.
 - Unix socket paths are limited to 108 bytes: keep `HAETTY_TEST_TMP` short (the gate refuses > 32 characters).
+- Ubuntu 26.04 has uutils coreutils: its `cat` stops after the first read from a raw terminal (use python3 in fixtures); kramers' `/tmp` is a tmpfs (RAM). `echo "$out" | grep -q` under `pipefail` fails when grep matches early (SIGPIPE): read a here-string (the gate did this until 2026-11-10).
 
 Windows, WSL and the dev machine:
 - WSLg windows get focus only when the Windows desktop allows it: check the cursor in a frame dump first.
@@ -146,8 +169,7 @@ Windows, WSL and the dev machine:
 - The default engine stays libghostty. Open for the person (DESIGN §10.15, the transition table): the 744 vtdiff
   FAILs of ghostty-main (`docs/vtdiff/2026-11-09-f2.md`); the native engine's key-to-frame latency (+0.13 ms at the
   median); SGR throughput at the 80 % threshold; no native-only installer option; no Windows soak with libghostty.
-- F5: `b1262d2` (v0.3.0) night run 2026-11-10: WINDOWS FAIL in both engines (focus check; cause not established;
-  `checks/windows-2026-11-10`). No v0.3.0 tag. The next night run is 2026-11-11 for `1163a0a` (v0.3.1 candidate).
+- F5 (`b1262d2`): the cause of the Windows FAIL of 2026-11-10 (focus check) is open; see "Next session".
 - Upstream drafts: `docs/upstream/README.md` (01 and 02 fixed at the pin; 03 still present; none sent).
 - The open list of 2026-11-07 (E5, 79 vtdiff FAILs, the 2-hour soak, SGR 58 %) is kept in
   `docs/history/2026-11-09-g0-handoff-trim.md`.
@@ -280,26 +302,9 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     GUI-TABS FAIL for `63822de` (the Hangul rename fix is `6a67b22`);
     `main` passed 14/14 and 17/17 (V6).
 
-30. **Overnight soak v2, native engine (F0; the night run of 2026-11-09 passed, §10.11).** The command, run
-    **from a PowerShell window — not from Claude Code**, with the main checkout at the commit to test (`HEAD`, the
-    default; the result header prints its hash):
-    ```powershell
-    pwsh -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\Ubuntu\home\denny\projects\claude-code-config\haetty\tools\overnight-soak.ps1 -Engine native -GuiE2E
-    ```
-    `-Engine native` passes `--engine native` to every GUI (Linux through `scripts/e2e/engine-gui.sh`, Windows
-    through `scripts/e2e/windows/lib.ps1`); `-Engine ghostty` (default) is the libghostty run. `-ExecutionPolicy
-    Bypass` is needed: the script on `\\wsl.localhost` is unsigned, and this machine's policy (RemoteSigned,
-    LocalMachine) refuses it in a new window (checked 2026-11-07).
-    - Before bed, close what you do not need: nothing else heavy may run. Any input of yours stops a Windows part
-      (counted as not passed); the screen stays on. About **2 h 10 min** (Linux soak 60 min, Windows soak 60 min,
-      GUI e2e).
-    - The soaks judge daemon memory with the rule of DESIGN.md section 10.11 (per session: full when its rows stop
-      growing; then at least 30 min, and +4 MB at most). They run with the test-only scrollback limit of 800 kB, so
-      both engines fill within the first 15 min. The Windows soak and `windows/soak-verdict.ps1` have their first
-      real run in this night run.
-    - Result: `C:\Users\Public\haetty-overnight\latest.txt`, first lines `RESULT LINUX|WINDOWS|GUI-TABS|
-      GUI-ORCHESTRATOR …`, then `engine: native`; `progress.log` beside it.
-    - Options: `-Minutes` (default 60), `-IdleWaitMinutes`, `-Commit` (default HEAD), `-Engine`, `-OutDir`, `-GuiE2E`.
+30. **Night runs.** Windows PC: `tools/overnight-soak.ps1` from a PowerShell window (the command, the rules and
+    the result file: `docs/dev-commands.md`, "Windows night run"). kramers: `tools/overnight-soak-linux.sh night`
+    (`docs/dev-commands.md`, "Linux night run"; first run with the next candidate).
 
 31. [kramers 2026-11-09: not run] **Observing a tab** (V3): palette "Observing: allow or stop for this
     tab" — a dim `◦` appears after the tab's number (grey, also on the

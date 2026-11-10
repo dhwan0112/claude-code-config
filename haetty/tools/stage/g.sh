@@ -9,10 +9,11 @@ step "build windows release"; cargo build --release --target x86_64-pc-windows-g
 # One clippy run per target, judged on its own output (a second run could replay or not replay cached
 # warnings). Our crates' sources are touched first so every warning is reported, not only fresh ones.
 find crates -name '*.rs' -exec touch {} +
-step "clippy linux"; cout=$(cargo clippy --all-targets 2>&1); echo "$cout" | grep -E "^(warning|error)" | sort | uniq -c; echo "$cout" | grep -qE "^(warning|error)" && { fail=1; echo "GATE STEP FAILED: clippy linux"; }
-step "clippy windows"; cout=$(cargo clippy --all-targets --target x86_64-pc-windows-gnu 2>&1); echo "$cout" | grep -E "^(warning|error)" | sort | uniq -c; echo "$cout" | grep -qE "^(warning|error)" && { fail=1; echo "GATE STEP FAILED: clippy windows"; }
-# A failing test prints FAILED / panicked; a compile error "error[...]" or "error:".
-step "test"; tout=$(cargo test 2>&1); echo "$tout" | grep -E "^test result|FAILED|panicked|^error"; if echo "$tout" | grep -qE 'FAILED|panicked|^error(\[|:)' || ! echo "$tout" | grep -q "^test result"; then fail=1; echo "GATE STEP FAILED: test"; fi
+step "clippy linux"; cout=$(cargo clippy --all-targets 2>&1); echo "$cout" | grep -E "^(warning|error)" | sort | uniq -c; grep -qE "^(warning|error)" <<< "$cout" && { fail=1; echo "GATE STEP FAILED: clippy linux"; }
+step "clippy windows"; cout=$(cargo clippy --all-targets --target x86_64-pc-windows-gnu 2>&1); echo "$cout" | grep -E "^(warning|error)" | sort | uniq -c; grep -qE "^(warning|error)" <<< "$cout" && { fail=1; echo "GATE STEP FAILED: clippy windows"; }
+# A failing test prints FAILED / panicked; a compile error "error[...]" or "error:". (grep -q reads a
+# here-string, not a pipe: under pipefail an early match ends the pipe's echo with SIGPIPE and turns the result.)
+step "test"; tout=$(cargo test 2>&1); echo "$tout" | grep -E "^test result|FAILED|panicked|^error"; if grep -qE 'FAILED|panicked|^error(\[|:)' <<< "$tout" || ! grep -q "^test result" <<< "$tout"; then fail=1; echo "GATE STEP FAILED: test"; fi
 step "sizes (stripped copies)"
 mkdir -p /tmp/sizes
 T=$CARGO_TARGET_DIR; for b in $T/release/haetty-headless $T/release/haetty $T/x86_64-pc-windows-gnu/release/haetty-headless.exe $T/x86_64-pc-windows-gnu/release/haetty.exe; do
