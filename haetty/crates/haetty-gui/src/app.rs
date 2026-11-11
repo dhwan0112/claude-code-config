@@ -207,6 +207,10 @@ struct Win {
     /// Rows changed since the last frame was drawn.
     dirty: Vec<bool>,
     full: bool,
+    /// haetty asked for the next `RedrawRequested` itself. One that comes
+    /// without it is the system's (X11 `Expose`): the window lost its
+    /// contents, so the frame is drawn in full.
+    asked_redraw: bool,
     focused: bool,
     preedit: Option<Preedit>,
     mods: ModifiersState,
@@ -419,6 +423,7 @@ impl App {
             composed: None,
             dirty: vec![],
             full: true,
+            asked_redraw: false,
             focused: true,
             preedit: None,
             mods: ModifiersState::empty(),
@@ -477,7 +482,7 @@ impl App {
             // tabs when the scale is known, so no session starts at a guessed size.
             win.pending_start = Some(start);
             win.blank_frame();
-            win.window.request_redraw();
+            win.redraw();
         } else {
             win.start_tabs(start)?;
         }
@@ -564,7 +569,7 @@ impl Win {
             self.grid = self.layout.grid(size.width, size.height);
         }
         self.blank_frame();
-        self.window.request_redraw();
+        self.redraw();
     }
 
     /// The scale is known (or did not come): open the tabs now.
@@ -582,7 +587,7 @@ impl Win {
             self.quit = Some(1);
             return;
         }
-        self.window.request_redraw();
+        self.redraw();
     }
 
     /// Rows of haetty's own chrome above the terminal (the tab bar, shown
@@ -1647,7 +1652,7 @@ impl Win {
         self.chrome.update(&self.window, next.default_bg, next.default_fg);
         self.composed = Some(next);
         self.update_ime_area();
-        self.window.request_redraw();
+        self.redraw();
     }
 
     /// Keep the IME candidate window next to the terminal cursor.
@@ -1980,7 +1985,7 @@ impl Win {
             Ime::Disabled => self.preedit = None,
         }
         self.mark_cursor_row();
-        self.window.request_redraw();
+        self.redraw();
     }
 
     fn mark_cursor_row(&mut self) {
@@ -1991,7 +1996,16 @@ impl Win {
         }
     }
 
+    /// Asks for a frame (see `asked_redraw`).
+    fn redraw(&mut self) {
+        self.asked_redraw = true;
+        self.window.request_redraw();
+    }
+
     fn draw(&mut self) {
+        if !std::mem::take(&mut self.asked_redraw) {
+            self.full = true;
+        }
         let Some(snap) = self.composed.as_ref() else { return };
         if self.dirty.len() != snap.rows as usize {
             self.dirty = vec![true; snap.rows as usize];
@@ -2043,7 +2057,7 @@ impl Win {
             self.grid = grid;
             self.relayout();
         }
-        self.window.request_redraw();
+        self.redraw();
     }
 
     /// Expires hints and close requests; returns the next deadline.
@@ -2390,7 +2404,15 @@ impl ApplicationHandler<UserEvent> for App {
                     win.reload_config(false);
                 }
                 win.mark_cursor_row();
-                win.window.request_redraw();
+                // X11 sends this on every map (also after un-minimizing), and
+                // the window's contents are gone then; an unchanged screen
+                // would otherwise leave it unpainted.
+                win.full = true;
+                win.redraw();
+            }
+            WindowEvent::Occluded(false) => {
+                win.full = true;
+                win.redraw();
             }
             _ => {}
         }
