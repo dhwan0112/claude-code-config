@@ -114,8 +114,8 @@ haetty statusline        (run by Claude Code)
 On Wayland (GNOME's default session) haetty draws its own title bar
 (`decorations = auto` → integrated): the tab row, in the terminal's colours,
 which stays with one tab and then shows the window title. The window
-buttons follow your desktop's button layout (GNOME's `button-layout`; right
-side when it cannot be read). Drag empty title space to move the window,
+buttons follow your desktop's button layout (GNOME's `button-layout`, on
+Xfce xfwm4's `button_layout`; right side when it cannot be read). Drag empty title space to move the window,
 double-click it to maximize or restore, drag a window edge to resize. On
 Windows 11 and X11 the system title bar is used and coloured to match;
 `decorations = integrated` forces haetty's on X11 too, `native` the system's

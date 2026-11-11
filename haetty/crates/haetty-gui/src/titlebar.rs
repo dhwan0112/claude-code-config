@@ -76,16 +76,54 @@ impl ButtonLayout {
         };
         Some(ButtonLayout { left: side(l), right: side(r) })
     }
+
+    /// xfwm4's `/general/button_layout`, e.g. `O|HMC`: one letter per
+    /// button, `|` is the title (left of it the left side). `H` hide
+    /// (minimize), `M` maximize, `C` close; the others (`O` menu, `S` shade,
+    /// `T` stick) are ignored. `None` when there is no `|`.
+    #[cfg_attr(windows, allow(dead_code))]
+    pub fn parse_xfwm(s: &str) -> Option<ButtonLayout> {
+        let (l, r) = s.trim().split_once('|')?;
+        let side = |x: &str| -> Vec<Button> {
+            let mut v = vec![];
+            for b in x.chars().filter_map(|c| match c {
+                'H' => Some(Button::Minimize),
+                'M' => Some(Button::Maximize),
+                'C' => Some(Button::Close),
+                _ => None,
+            }) {
+                if !v.contains(&b) {
+                    v.push(b);
+                }
+            }
+            v
+        };
+        Some(ButtonLayout { left: side(l), right: side(r) })
+    }
+}
+
+/// Xfce: `XDG_CURRENT_DESKTOP` names it (a `:`-separated list, any case).
+#[cfg_attr(windows, allow(dead_code))]
+fn is_xfce(current_desktop: &str) -> bool {
+    current_desktop.split(':').any(|d| d.trim().eq_ignore_ascii_case("xfce"))
 }
 
 /// The button layout: `HAETTY_TITLE_BUTTONS` (GNOME's syntax, e.g.
-/// `close,minimize,maximize:`) when set, else the desktop's — the settings
-/// portal (`dbus-send`, as winit's own Adwaita frame does), else
-/// `gsettings`, each at most `timeout` — else the default (right).
+/// `close,minimize,maximize:`) when set, else the desktop's — on Xfce
+/// xfwm4's `button_layout` (`xfconf-query`; GNOME's key is unused there and
+/// keeps its default `appmenu:close`), then the settings portal
+/// (`dbus-send`, as winit's own Adwaita frame does), else `gsettings`, each
+/// at most `timeout` — else the default (right).
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn read_system(timeout: std::time::Duration) -> (ButtonLayout, &'static str) {
     if let Some(l) = haetty_proto::product::env("TITLE_BUTTONS").as_deref().and_then(ButtonLayout::parse) {
         return (l, "HAETTY_TITLE_BUTTONS");
+    }
+    if std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| is_xfce(&d)) {
+        let xf = ["xfconf-query", "-c", "xfwm4", "-p", "/general/button_layout"];
+        if let Some(l) = run(&xf, timeout).and_then(|o| ButtonLayout::parse_xfwm(&o)) {
+            return (l, "xfwm4");
+        }
     }
     let portal = [
         "dbus-send",
@@ -268,6 +306,20 @@ mod tests {
             "duplicates and others dropped"
         );
         assert_eq!(ButtonLayout::default().right, [Minimize, Maximize, Close]);
+    }
+
+    #[test]
+    fn button_layouts_parse_like_xfwm() {
+        use Button::*;
+        let l = ButtonLayout::parse_xfwm("O|HMC\n").unwrap();
+        assert_eq!((l.left, l.right), (vec![], vec![Minimize, Maximize, Close]));
+        let l = ButtonLayout::parse_xfwm("CMH|O").unwrap();
+        assert_eq!((l.left, l.right), (vec![Close, Maximize, Minimize], vec![]));
+        assert_eq!(ButtonLayout::parse_xfwm("O|SHMC").unwrap().right, [Minimize, Maximize, Close], "shade ignored");
+        assert_eq!(ButtonLayout::parse_xfwm("C|CC").unwrap().right, [Close], "duplicates dropped");
+        assert_eq!(ButtonLayout::parse_xfwm("|"), Some(ButtonLayout::none()));
+        assert_eq!(ButtonLayout::parse_xfwm("HMC"), None, "no title mark");
+        assert!(is_xfce("XFCE") && is_xfce("ubuntu:xfce") && !is_xfce("GNOME") && !is_xfce(""));
     }
 
     #[test]

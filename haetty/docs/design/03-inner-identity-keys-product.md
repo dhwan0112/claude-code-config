@@ -264,7 +264,10 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   same button; within 6 logical px (× scale) of a window edge or corner the
   cursor becomes a resize cursor and a press starts `drag_resize_window` —
   not while maximized; a right click does nothing (no window menu yet).
-  Button layout: `HAETTY_TITLE_BUTTONS` (GNOME syntax) if set, else the
+  Button layout: `HAETTY_TITLE_BUTTONS` (GNOME syntax) if set, else on
+  Xfce (`XDG_CURRENT_DESKTOP`) xfwm4's `/general/button_layout` via
+  `xfconf-query` (`H`, `M`, `C` around the title mark `|`; GNOME's key is
+  unused there and keeps `appmenu:close`), else the
   settings portal via `dbus-send` (as winit's Adwaita frame reads its own
   settings), else `gsettings`, each ≤ 150 ms at window creation, else
   right-side minimize/maximize/close. Taken from GNOME: `appmenu`, `menu`,
