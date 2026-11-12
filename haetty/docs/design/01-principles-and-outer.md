@@ -72,8 +72,9 @@ away. Functions stay; what changes is when they are visible.
   then showing the window title in the dim colour. Window buttons (minimize
   `–`, maximize `□` / restore `■`, close `×`) are single-colour glyphs on
   the cell grid, dim, the normal text colour under the pointer — close
-  included, no accent — on the sides GNOME's `button-layout` names (right
-  when it cannot be read). No shadow and no rounded corners are drawn: the
+  included, no accent — on the sides the desktop's window-button layout
+  setting names (GNOME: `button-layout`; Xfce: xfwm4's `button_layout`;
+  otherwise right). No shadow and no rounded corners are drawn: the
   window is a plain rectangle; what the compositor adds is its own.
 - Padding around the grid: at least 10 px left/right and 6 px top/bottom
   (logical px, times the display scale); leftover space spread evenly
