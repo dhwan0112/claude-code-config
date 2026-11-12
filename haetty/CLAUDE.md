@@ -7,6 +7,8 @@ the start of a session.
 
 ## Read at session start
 
+- `docs/NORTH-STAR.md`: what haetty is for — the four points every stage moves forward (name them in each
+  stage's report), the conditions that stay, and where each point stands. The person's stage text: `docs/STAGES.md`.
 - `docs/HANDOFF.md`: the state, the rules in short, the open items and the person's checks.
 - `docs/DESIGN.md`: the index of the design (one line per section, with its file). Open only the file of the
   section you need, in `docs/design/`.

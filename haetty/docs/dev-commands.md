@@ -49,6 +49,14 @@ Windows binary there, as before), runs the checks, and pushes the result as a do
 branch, judges it and records the verdict in HANDOFF; a tag needs both the Linux result here and the Windows
 result from that branch. (Automating the hand-over from `overnight-soak.ps1` is the next stage's work.)
 
+### Windows check list ("Windows unverified")
+
+Items a stage could not check because they need Windows; the PC works through them and records each on its
+`checks/windows-<date>` branch. Newest last; an item goes when a check record covers it.
+
+- `70f97a4` (#1): `Focused` and `Occluded(false)` now draw a full frame on every platform. On Windows: restore from
+  minimized and switch focus a few times — the window looks as before, idle CPU stays about 0 %.
+
 ## Linux night run on the development machine
 
 Prepared 2026-11-10, **not run yet** (the `night` mode of `tools/overnight-soak-linux.sh` has its first run with

@@ -253,6 +253,9 @@ Uses (`crates/haetty-gui/src/icon.rs`, `build.rs`):
   where winit draws an Adwaita frame with fixed colours (above). On Windows
   `integrated` is not implemented (snap layouts would need the caption hit
   test) and means `native`. The window system is winit's (`is_wayland`).
+  On Xfce (X11) `auto` picks `native` too, but the reason above does not hold there: xfwm4 4.18 does not read
+  `_GTK_THEME_VARIANT` (checked 2026-11-12, no reference in the binary), so its bar keeps xfwm4's theme colours.
+  Whether `auto` should pick `integrated` on Xfce is open for the person (HANDOFF §6.0).
 - Integrated, how it works: the window has no system decorations
   (`with_decorations(false)`); the title row is row 0 of the window grid
   (`top()` = 1 with any number of tabs, so a second tab no longer adds a

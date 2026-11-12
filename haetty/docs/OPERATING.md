@@ -41,6 +41,19 @@ a time. A commit message file lives outside the repository (the session folder o
    worktree removed.
 6. HANDOFF: the in-progress line goes; "Next session" says what is done and what is next; the file stays under 400 lines.
 
+## An issue
+
+A GitHub issue is handled as one stage of its own (`stage.sh start issue-N …`):
+
+1. Record the reproduction conditions (version or commit, machine, desktop, X11 or Wayland, steps) and the environment
+   the fix was checked in, in the commit message (and the issue, when it lacks them).
+2. A regression test where possible — a unit test, an integration test, or an Xvfb script in `scripts/e2e/` added to
+   `run-all.sh` — and check that it fails without the fix. Where no test is possible, the commit says why.
+3. The commit message ends with `Fixes #N`.
+4. One CHANGELOG line under the unreleased version, with `(#N)` and the commit.
+5. What only Windows can show is marked "Windows unverified" and added to the Windows check list in
+   `docs/dev-commands.md`; it does not hold the stage.
+
 ## Limits
 
 - Protected areas change only with the person's approval, and the commit and the report flag them: the attention state

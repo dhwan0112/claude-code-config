@@ -1,18 +1,16 @@
 # haetty handoff
 
-The current state, the rules in short, open defects and tasks, the
-person's checks and the pitfalls. History — dated progress records, past
-measurements, solved defects, milestone 1's record — is in
-[`docs/history/`](history/) (§7 maps the old sections). The code lives in
-`haetty/` of the `dhwan0112/claude-code-config` repository. Read
-`CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
-New progress records go to the newest file in `docs/history/`, not here.
+The current state, the rules in short, open defects and tasks, the person's checks and the pitfalls. History — dated
+progress records, past measurements, solved defects, milestone 1's record — is in [`docs/history/`](history/) (§7 maps
+the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-config` repository. Read `CLAUDE.md`,
+`docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file. New progress records go to the newest file in
+`docs/history/`, not here.
 
-> **In progress:** stage p0-north-star (branch `haetty/p0-north-star`, worktree `~/projects/claude-code-config-wt/p0-north-star`). Remaining: P0: NORTH-STAR.md and status table, HANDOFF stage list P0-P9, the Nov 11 fixes' tests and DESIGN §2 wording, OPERATING issue procedure
+**Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
 ## 1. Current state
 
-- **Version** 0.3.0 (workspace; the candidate commit of stage F5, no tag: its night run failed on Windows, 2026-11-10). Tags: `haetty-v0.1.0` = `4d75fcd`,
+- **Version** 0.3.1 (workspace; candidates F5 `b1262d2` = 0.3.0 and K4 `1163a0a` = 0.3.1, neither tagged: the Windows night run's focus check). Tags: `haetty-v0.1.0` = `4d75fcd`,
   `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
   check-range `haetty-v0.1.1..63822de` 0 failing; record in
@@ -20,53 +18,47 @@ New progress records go to the newest file in `docs/history/`, not here.
 - **Stable (installed by the user):** kramers has **v0.2.0 (`63822de`)**, installed 2026-11-07 with
   `tools/install-stable.sh 63822de` (checked 2026-11-09: [docs/checks/2026-11-09-kramers.md](checks/2026-11-09-kramers.md)).
   This line changes only when the user says so.
-- **Everything after `63822de` is the v0.3.0 candidate** (V3's
-  observe-only interface and protocol 8, V6's palette fix, E1–E5: the
-  native engine, F0-F4). The workspace version is 0.3.0 from the candidate
-  commit; no tag: its night run failed on Windows (2026-11-10).
+- **After `63822de`, untagged:** V3's observe-only interface (protocol 8), V6's palette fix, the native engine (E1–E5,
+  F0–F4), K1–K4, #1 and #2 (CHANGELOG).
 - Last stages (records in [history](history/)): T1–T7, U1–U6, V1–V7, E0–E5, F0–F6, G0–G7, K0–K4, H.
 - **Development machine: kramers** (ThinkPad T480, Ubuntu 26.04, 8 threads, 29 GB; from 2026-11-10). Per-machine
   values: `tools/machine.sh`. The stable haetty installed here is the person's: no command goes to it.
 
 ## Next session
 
-Roles from 2026-11-10: **kramers (Linux) is the development machine; the Windows PC only checks** (it pulls, runs,
-and pushes results as documents on `checks/windows-<date>`; `docs/dev-commands.md`, "Windows-only checks"). One
-stage per session (`docs/OPERATING.md`); the person says "next stage" after `/clear`. Tools and paths:
-`docs/dev-commands.md`, "Environment". Records: the takeover on kramers
-[history/2026-11-10-kramers-dev-machine.md](history/2026-11-10-kramers-dev-machine.md); what exists only on the PC
-and the earlier progress lines (F6, G0–G7, K0–K3b, H) [history/2026-11-10-windows-handover.md](history/2026-11-10-windows-handover.md).
+**Direction (2026-11-12): [NORTH-STAR.md](NORTH-STAR.md)** — the four points (OpenCode-like UI; SSH and Tailscale;
+Claude Code with many jobs; other tools such as Rakazo), the conditions, and where each point stands. Every stage
+report names the point(s) it moves. The person's full stage text: **[STAGES.md](STAGES.md)** (read the part of the
+stage at hand). Roles: kramers (Linux) develops; the Windows PC only checks (`checks/windows-<date>`;
+`docs/dev-commands.md`). One stage per session (`docs/OPERATING.md`); after `/clear` the person says "next stage".
+The text this list replaced: [history/2026-11-12-p0-north-star.md](history/2026-11-12-p0-north-star.md).
 
-Stages on kramers, in this order (1 done 2026-11-10):
-1. Done: the development environment on kramers (`tools/machine.sh`; gate, check-range, stage scripts, cross-build).
-2. **Next: K1 follow-up** (protected area; approved by the person for exactly this): a Stop or StopFailure that
-   started after the question releases the input hold without the person's input; a mouse button press (not
-   motion, not the wheel) counts as the person's input and clears the mark. Add both cases to the existing
-   integration tests (`crates/haetty-gui/tests/permission.rs`; K1's record: `history/2026-11-09-k1-attention.md`).
-   The deny path of auto mode is not examined: keep it as an open item in §6.0.
-3. Windows results by themselves: `tools/overnight-soak.ps1` pushes a summary of its result to `checks/windows-<date>` when it ends (code changed here, the PC only pulls); the steps for judging that branch and tagging from kramers go
-   into this file. Added by the person (2026-11-10): the Windows night run first checks that the haetty window really came to the foreground; if not, the result is `NOT-RUN (foreground)`, not FAIL, and keeps the foreground window's
-   program name, the time without input and the way of starting (Task Scheduler or by hand). And a document with a procedure for each of the three untested hypotheses in the record on `checks/windows-2026-11-10` (0.3.0's window
-   activation, the Task Scheduler session, another window taking the foreground after the Linux part), to decide whether the unattended scheduler start is why the window does not come forward.
-4. The v0.3.2 candidate (2 and 3 in it) and its checks; the Linux night run on kramers (`overnight-soak-linux.sh
-   night`, first run), the Windows night run on the PC. Tag conditions as before (both PASS, check-range 0
-   failing; `NOT-RUN (foreground)` never stands in for WINDOWS PASS); the tag is approved in advance when they hold.
-5. After the person installs the new stable: self-hosting inside haetty; a coordinating session hands stages to
-   orchestrator workers and reads only their STATUS reports — tried with two small stages and compared with the
-   one-session way by `haetty tokens` (the parts H3 and H4 left open).
-6. Then: splitting the big files (H2), the differences left to the newest Ghostty (F2), the default-engine table.
+Stages:
+- **P0 done (2026-11-12):** NORTH-STAR and STAGES; this list; #1's Xvfb regression test (`scripts/e2e/remap.sh`),
+  #2's parsing test (already in `cd2e0e7`); DESIGN §2 button wording (approved); OPERATING's issue procedure.
+- **P1 next: unblock releases.** New tag rule (Linux candidate checks + kramers' Linux night PASS + check-range 0
+  failing; the Windows night no longer blocks, CHANGELOG says "Windows: verified / unverified / known problems"); fix the
+  flaky `closed_sessions_leave_no_threads` (`tests/threads.rs`; failed 2 of 3 at `780b991`, a 30 s timeout) without
+  retries; K1 follow-up (protected, approved scope in STAGES.md); v0.3.2 candidate; prepare the first Linux night run
+  (scheduling, lid closed without sleep), scheduled when the person says "예약해"; tag `haetty-v0.3.2` (pre-approved)
+  when the rule holds; §6.1 re-check list after the person installs it.
+- P2: working inside haetty — coordinating session + workers, two small stages, `haetty tokens` comparison; a key to
+  the longest-waiting worker (after the person installs v0.3.2).
+- P3: sidebar and side-by-side diff overlay; IDE-integration research and prototype (off by default). DESIGN §2
+  change approved for STAGES.md's scope; frame dumps in `docs/look/`.
+- P4: session browser, fork, names, `haetty sessions --json`.
+- P5: connections screen, `haetty mcp` (stdio, Observe only), `haetty mcp install`.
+- P6: SSH and Tailscale through the system OpenSSH; isolated test sshd.
+- P7: remote daemon design (docs only). P8: delegation design (docs only, the person decides).
+- P9: tidy-up — token tools in dev scripts; Windows result hand-over and `NOT-RUN (foreground)`; the auto-mode deny path.
 
-Candidates and night runs:
-- F5 (`b1262d2`, v0.3.0 candidate): the night run of 2026-11-10 gave LINUX PASS and WINDOWS FAIL in both engines
-  (focus check; cause not established). **No `haetty-v0.3.0` tag.** Record: branch `checks/windows-2026-11-10`,
-  file `haetty/docs/checks/2026-11-10-windows.md`. The cause is open (§6.0).
-- K4 (`1163a0a`, the v0.3.1 candidate): its night run is registered on the PC for 2026-11-11 02:00
-  (`haetty-overnight-f6`, native engine only). **On the Windows PC**, on the user's "야간 결과 올려":
-  1. read `C:\Users\Public\haetty-overnight\result-20261111-0200.txt`;
-  2. write `haetty/docs/checks/2026-11-11-windows.md` on branch `checks/windows-2026-11-11` (docs only), and push that branch only;
-  3. tag `haetty-v0.3.1` on `1163a0a` (by hash, not main's HEAD) only if LINUX and WINDOWS PASS and
-     `tools/check-range.sh haetty-v0.2.0..1163a0a` reports 0 failing (heavy: start it early, as recorded for v0.2.0).
-     The user approved this tag on 2026-11-10; push only the tag.
+**On hold** (they do not move a point directly): the differences left to the newest Ghostty (F2), switching the
+default engine, splitting the big files (H2), checking the default engine's slow memory growth.
+
+Candidates: v0.3.0 (`b1262d2`) and v0.3.1 (`1163a0a`) are not tagged — each held by the Windows night run's focus
+check (`checks/windows-2026-11-10`, `checks/windows-2026-11-11`: one Windows PASS in three runs of `1163a0a`; Linux PASS
+in all). Under P1's rule they are superseded by v0.3.2. `main` after `1163a0a` adds #1 and #2 (CHANGELOG
+"Unreleased").
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
 
@@ -172,6 +164,10 @@ Windows, WSL and the dev machine:
   FAILs of ghostty-main (`docs/vtdiff/2026-11-09-f2.md`); the native engine's key-to-frame latency (+0.13 ms at the
   median); SGR throughput at the 80 % threshold; no native-only installer option; no Windows soak with libghostty.
 - F5 (`b1262d2`): the cause of the Windows FAIL of 2026-11-10 (focus check) is open; see "Next session".
+- **For the person: `decorations = auto` on Xfce.** `auto` picks `native` on every X11; DESIGN §3.12's reason (the
+  window manager colours the bar, mutter follows `_GTK_THEME_VARIANT=dark`) does not hold on Xfce: xfwm4 4.18 does
+  not read that property, so its bar keeps xfwm4's theme colours. `integrated` there would change the default look
+  on Xfce — the person's choice (P0 record, history/2026-11-12-p0-north-star.md).
 - Upstream drafts: `docs/upstream/README.md` (01 and 02 fixed at the pin; 03 still present; none sent).
 - The open list of 2026-11-07 (E5, 79 vtdiff FAILs, the 2-hour soak, SGR 58 %) is kept in
   `docs/history/2026-11-09-g0-handoff-trim.md`.
