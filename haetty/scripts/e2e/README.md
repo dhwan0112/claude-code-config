@@ -17,6 +17,7 @@ HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/xvfb.sh bash scripts/e2e/tabs.sh /t
 | `design-2-3.sh` | DESIGN.md §2.3: no accent colour when idle, layout unchanged by events (`E2E_ARGS`, `E2E_BANDS` for integrated decorations) |
 | `themes.sh` | theme change while running (palette reload, focus reload, reattached tabs) |
 | `titlebar.sh` | the integrated title row: buttons, hover, move/maximize/resize calls, close |
+| `remap.sh` | a window unmapped and mapped again (minimize/restore) is painted whole, read from the X server's pixels (issue #1) |
 | `tabs.sh` | rename, `repo:branch` names, closed tabs with `--resume`, diff views, detach/attach |
 | `orchestrator.sh` | tasks, worker tabs in worktrees, reports and states, message gating, worktree removal |
 | `daemon-crash.sh` | the GUI when its daemon is killed: window, hint, tab sets kept, no orphans, restore |

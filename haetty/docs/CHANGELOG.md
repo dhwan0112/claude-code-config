@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased (for 0.3.2)
+
+### Fixed
+
+- **An X11 window is painted whole after it is restored from minimized** (#1, `70f97a4`): a redraw the system asks for
+  (Expose) and a map draw a full frame. Regression test: `scripts/e2e/remap.sh` (Xvfb; fails without the fix).
+- **The integrated title row on Xfce shows the buttons xfwm4's `button_layout` names** (#2, `cd2e0e7`), not GNOME's
+  unused `button-layout`. Unit test: `titlebar::tests::button_layouts_parse_like_xfwm`.
+
 ## 0.3.1 (candidate, 2026-11-09)
 
 The tag `haetty-v0.3.1` is set on this release commit only after its night run passes on both platforms and both
