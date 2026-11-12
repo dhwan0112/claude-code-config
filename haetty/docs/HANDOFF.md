@@ -8,6 +8,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage p1c-release (branch `haetty/p1c-release`, worktree `~/projects/claude-code-config-wt/p1c-release`). Remaining: short soak in the candidate check (tag rule), optional 1 h soak criteria, daemon hourly health record + status --json, v0.3.2 candidate and tag
+
 ## 1. Current state
 
 - **Version** 0.3.1 (workspace; candidates F5 `b1262d2` = 0.3.0 and K4 `1163a0a` = 0.3.1, neither tagged: the Windows night run's focus check). Tags: `haetty-v0.1.0` = `4d75fcd`,
