@@ -15,9 +15,9 @@ with open(os.path.join(HERE, "expect.txt")) as f:
     for line in f:
         if not line.strip():
             continue
-        name, want = line.split()
+        name, want, dur = line.split()
         cols, rows = sv.load(os.path.join(HERE, "linux", name + ".csv"))
-        _, ok = sv.verdict(cols, rows, 3600, "yes")
+        _, ok = sv.verdict(cols, rows, int(dur), "yes")
         got = "PASS" if ok else "FAIL"
         bad += got != want
         print(f"{'ok' if got == want else 'MISMATCH':9} {name:16} want {want} got {got}")

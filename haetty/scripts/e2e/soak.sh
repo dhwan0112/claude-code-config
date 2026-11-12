@@ -5,14 +5,15 @@
 #    50 x detach a tab and attach it again (palette)
 #    20 x make a task (palette "New task"), let its worker end, close its tab, remove its worktree (palette)
 #    10 x change the theme (config file + palette "Reload config")
-# Every 300 s, between operations (no tab of an operation open): the GUI's and the daemon's threads, file
+# Every 300 s (SOAK_SAMPLE_S), between operations (no tab of an operation open): the GUI's and the daemon's threads, file
 # descriptors and anonymous memory, the daemon's descendant processes, the sessions, the task worktrees left.
 #   HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/xvfb.sh bash scripts/e2e/soak.sh OUT.csv [DUR]
 # Verdict: scripts/e2e/soak-verdict.py (its header has the rule; scripts/e2e/windows/soak-verdict.ps1 is the same
 # rule for Windows). In short: threads, fds, descendants and sessions unchanged from the first sample; task worktrees
 # 0; per session, the full time (its rows stop growing); from the last full time on, at least 30 min, and the GUI's
 # and the daemon's anonymous memory at most 4 MB above their values at that time; every operation done; alive.
-# The run's scrollback limit is the test's alone (SOAK_LIMIT, below): the product default is 12 MB.
+# The run's scrollback limit is the test's alone (SOAK_LIMIT, below): the product default is 12 MB. The short soak
+# (soak-short.sh: 600 s, a smaller limit) is part of the candidate check for a tag.
 . "$(dirname "$0")/lib.sh"
 OUT=$1; DUR=${2:-3600}
 # The test's scrollback limit (bytes), the same for both engines (DESIGN.md section 10.11). The product default is
@@ -20,7 +21,9 @@ OUT=$1; DUR=${2:-3600}
 # libghostty 686 at the end), the slow tab after about 15 min (native 3 703 rows at 907 s; libghostty's count goes
 # between about 380 and 730 rows, page-granular, so the rule judges the level it reaches). The rule needs the
 # baseline plus 30 min inside the run, so 800 000 bytes leaves more than 30 min of judged time in a 60 min run.
-SOAK_LIMIT=800000
+SOAK_LIMIT=${SOAK_LIMIT:-800000}
+# The sample interval (s): 300 for the hour; the short soak (soak-short.sh, 600 s) samples every 30 s.
+SOAK_SAMPLE_S=${SOAK_SAMPLE_S:-300}
 W=$HAETTY_RUN/soak; haetty_guard $W; mkdir -p $W/rt $W/state/tabs $W/cfg $W/bin $W/claude; chmod 700 $W/rt
 export HAETTY_INSTANCE=dev HAETTY_SOCKET=$W/rt/d.sock HAETTY_STATE_DIR=$W/state HAETTY_CONFIG_DIR=$W/cfg
 export HAETTY_LOG=info HAETTY_LOG_FILE=$W/gui.log CLAUDE_CONFIG_DIR=$W/claude
@@ -79,16 +82,16 @@ plan=$(python3 -Ic "import random; r=random.Random(7); f=min(1.0, $DUR/3600); n=
 nops=$(echo $plan | wc -w)
 gap=$(python3 -Ic "print(max(0.0, ($DUR - 120 - 910 * $nops / 280) / $nops))")
 t0=$(date +%s); next=0
-sample 0; next=300
+sample 0; next=$SOAK_SAMPLE_S
 for op in $plan; do
   now=$(( $(date +%s) - t0 ))
-  if [ $now -ge $next ]; then sample $now; next=$((next + 300)); fi
+  if [ $now -ge $next ]; then sample $now; next=$((next + SOAK_SAMPLE_S)); fi
   kill -0 $GP 2>/dev/null && kill -0 $DP 2>/dev/null || { echo "DIED at $now s" >&2; break; }
   op_$op
   sleep $gap
 done
 while [ $(( $(date +%s) - t0 )) -lt $DUR ]; do
-  now=$(( $(date +%s) - t0 )); if [ $now -ge $next ]; then sample $now; next=$((next + 300)); fi; sleep 5
+  now=$(( $(date +%s) - t0 )); if [ $now -ge $next ]; then sample $now; next=$((next + SOAK_SAMPLE_S)); fi; sleep 5
 done
 sleep 3; sample $(( $(date +%s) - t0 ))
 alive=$(kill -0 $GP 2>/dev/null && kill -0 $DP 2>/dev/null && echo yes || echo no)

@@ -192,6 +192,16 @@ impl Client {
         self.send(&ClientMsg::ClearAttention { session: id.to_owned() })
     }
 
+    /// The daemon's own resource counts, now and the largest since it started (protocol 12).
+    pub fn health(&self) -> io::Result<DaemonHealth> {
+        let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
+        self.send(&ClientMsg::GetHealth)?;
+        self.wait_reply(Duration::from_secs(5), |m| match m {
+            DaemonMsg::Health(h) => Some(h),
+            _ => None,
+        })
+    }
+
     pub fn list_sessions(&self) -> io::Result<Vec<SessionInfo>> {
         let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
         self.send(&ClientMsg::ListSessions)?;

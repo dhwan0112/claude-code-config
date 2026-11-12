@@ -46,7 +46,7 @@ run the result. Only the Windows PC can do these:
 Flow: code changes are made on kramers and pushed to `main`. The Windows PC only pulls (its WSL checkout builds the
 Windows binary there, as before), runs the checks, and pushes the result as a document on a branch
 `checks/windows-<date>` (`haetty/docs/checks/<date>-windows.md`; never to `main`, no code). kramers fetches that
-branch, judges it and records the verdict in HANDOFF; since P1 (2026-11-12) a tag needs the Linux results here only,
+branch, judges it and records the verdict in HANDOFF; since P1 (2026-11-12) a tag needs the Linux results here only (P1c: the candidate check with the short soak),
 and the Windows result goes into the release's CHANGELOG "Windows:" line (verified / unverified / known problems). (Automating the hand-over from `overnight-soak.ps1` is the next stage's work.)
 
 ### Windows check list ("Windows unverified")
@@ -57,35 +57,50 @@ Items a stage could not check because they need Windows; the PC works through th
 - `70f97a4` (#1): `Focused` and `Occluded(false)` now draw a full frame on every platform. On Windows: restore from
   minimized and switch focus a few times — the window looks as before, idle CPU stays about 0 %.
 
-## Linux night run on the development machine
+## Short soak (candidate check, P1c)
 
-Prepared 2026-11-10, **not run yet** (the `night` mode of `tools/overnight-soak-linux.sh` has its first run with
-the next candidate). One command, about 70 min for a 60 min soak:
+Part of the candidate check for a tag since P1c (2026-11-12; `docs/SELF-HOSTING.md`, "Dev → stable"): the soak's
+operations and verdict rule in 10 min, on the release build of the tree (`cargo build --release` first):
 
 ```sh
-systemd-run --user --unit haetty-night --on-calendar='2026-11-12 02:00' --timer-property=AccuracySec=1s \
-  systemd-inhibit --what=sleep:idle --who=haetty --why='haetty night run' \
-  bash ~/projects/claude-code-config/haetty/tools/overnight-soak-linux.sh night COMMIT 60 ghostty
+HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/soak-short.sh /tmp/haetty-test/short.csv
+```
+
+- The last line is `VERDICT PASS|FAIL` (exit code 0 on PASS). It takes one heavy slot and its own Xvfb, about 11 min.
+- 600 s; the hour's counts scaled by 600/3600 (33 tab open/close, 8 detach/attach, 3 tasks, 2 theme changes); the
+  scrollback limit 160 000 bytes, so every tab is full within about 3 min; samples every 30 s; the verdict needs
+  half the run (300 s) after the full time. The reasons and the measurements: the header of
+  `scripts/e2e/soak-short.sh` and `docs/history/2026-11-12-p1.md` ("P1c").
+- `E2E_ENGINE=native` with `HAETTY_BIN=scripts/e2e/engine-gui.sh` (as `run-all.sh` sets them) runs every session on
+  haetty's own engine.
+
+## One-hour soak (a stage's own check, P1c)
+
+Not a tag condition since P1c; a stage that changes the PTY layer, the daemon's session lifetime or the engine's
+memory structure runs it before its `finish` (the criteria: `docs/OPERATING.md`, "The one-hour soak"). Any time, no
+timer or night needed; about 70 min for a 60 min soak:
+
+```sh
+systemd-inhibit --what=sleep:idle --who=haetty --why='haetty one-hour soak' \
+  bash tools/overnight-soak-linux.sh night COMMIT 60 ghostty
 ```
 
 - Result: `$HAETTY_NIGHT_DIR/out/latest.txt` (first line `RESULT LINUX PASS|FAIL|NOT-RUN …`), `linux.csv`
-  beside it. `systemctl --user list-timers haetty-night`, `journalctl --user -u haetty-night` show the timer and
-  the run; `systemctl --user stop haetty-night.timer` cancels it.
-- It checks that nothing heavy runs (else NOT-RUN), then holds both heavy slots. The soak runs in its own Xvfb,
-  so typing does not disturb it the way it stops the Windows part; a busy machine changes the timing, so run it
-  when the laptop is not used (02:00–06:00).
+  beside it.
+- It waits for and then holds both heavy slots (nothing else heavy runs meanwhile; if other heavy work runs when it
+  starts it reports NOT-RUN — start it again). The soak runs in its own Xvfb, so typing does not disturb it; a busy
+  machine changes the timing, not the rule.
 - kramers, read 2026-11-10: on external power the lid switch is ignored (`HandleLidSwitchExternalPower=ignore`,
   `/etc/systemd/logind.conf.d/10-lid.conf`) and GNOME does not suspend on idle (`sleep-inactive-ac-type
   'nothing'`), so a closed lid on the charger keeps running. **On battery a closed lid suspends**
   (`HandleLidSwitch=suspend`): the run then stops and its verdict is FAIL or missing — keep the charger in.
   `systemd-inhibit --what=sleep:idle` blocks an idle or requested suspend, not the lid switch.
-- A user timer runs only while the user is logged in (`Linger=no`): stay logged in (a locked screen is fine).
 - Engine `native` instead of `ghostty` runs every session on haetty's own engine.
 
 ## Windows night run (moved from HANDOFF §6.1 item 30, 2026-11-10)
 
 30. **Overnight soak v2, native engine (F0; the night run of 2026-11-09 passed, §10.11).** On the Windows PC
-    (the Linux run on kramers: `docs/dev-commands.md`, "Linux night run"). The command, run
+    (the Linux one-hour run on kramers: "One-hour soak" above). The command, run
     **from a PowerShell window — not from Claude Code**, with the main checkout at the commit to test (`HEAD`, the
     default; the result header prints its hash):
     ```powershell

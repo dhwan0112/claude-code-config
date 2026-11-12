@@ -95,7 +95,13 @@ fn alive(ep: &Endpoint, s: &haetty_proto::RemoteSession, what: &str) {
 fn malformed_connections_drop_alone_and_the_daemon_keeps_serving() {
     let dir = haetty_testkit::run_dir("ipcfuzz");
     let ep = Endpoint(dir.join("rt").join("daemon.sock"));
-    let cfg = Config { endpoint: ep.clone(), state_dir: dir.join("state"), run_dir: dir.join("rt"), idle_exit: None };
+    let cfg = Config {
+        endpoint: ep.clone(),
+        state_dir: dir.join("state"),
+        run_dir: dir.join("rt"),
+        idle_exit: None,
+        health_every: haetty_daemon::HEALTH_EVERY,
+    };
     let _d = haetty_daemon::spawn(cfg);
     let end = Instant::now() + Duration::from_secs(5);
     let victim = loop {

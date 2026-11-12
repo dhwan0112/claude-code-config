@@ -118,10 +118,12 @@ Commands, environment (Rust, Zig), the vtdiff and end-to-end tools, the stable i
 - Code, comments, docs and commit messages in English.
 - Commits carry the user's git identity; no AI attribution or co-author lines.
 - Do not push, tag or publish without asking.
-- Tag rule (P1, 2026-11-12): a release tag needs the full Linux candidate check passed, a PASS of kramers' Linux night
-  run (`tools/overnight-soak-linux.sh night`) and `tools/check-range.sh haetty-v<previous>..<commit>` with 0 failing.
-  The Windows night run does not hold the tag; the release's CHANGELOG section says "Windows: verified / unverified /
-  known problems" (`docs/SELF-HOSTING.md`, "Dev → stable").
+- Tag rule (P1c, 2026-11-12): a release tag needs the full Linux candidate check passed — the short soak
+  (`scripts/e2e/soak-short.sh`, about 10 min) included — and `tools/check-range.sh haetty-v<previous>..<commit>` with
+  0 failing. The one-hour soak is not a tag condition: it is the own check of a stage that changes the PTY layer, the
+  daemon's session lifetime or the engine's memory structure (`docs/OPERATING.md`). The Windows night run does not
+  hold the tag; the release's CHANGELOG section says "Windows: verified / unverified / known problems"
+  (`docs/SELF-HOSTING.md`, "Dev → stable").
 - State what was verified and how (command and observed result); mark what
   was not verified, especially anything Windows-only, which cannot be run
   from Linux.

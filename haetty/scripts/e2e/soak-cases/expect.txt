@@ -1,10 +1,14 @@
-full-early PASS
-full-late FAIL
-never-full FAIL
-grow-after-full FAIL
-legacy FAIL
-closed-session PASS
-workers PASS
-sawtooth PASS
-ops-short FAIL
-no-growth PASS
+full-early PASS 3600
+full-late FAIL 3600
+never-full FAIL 3600
+grow-after-full FAIL 3600
+legacy FAIL 3600
+closed-session PASS 3600
+workers PASS 3600
+sawtooth PASS 3600
+ops-short FAIL 3600
+no-growth PASS 3600
+short-full-early PASS 600
+short-full-late FAIL 600
+short-grow-after-full FAIL 600
+short-ops-short FAIL 600

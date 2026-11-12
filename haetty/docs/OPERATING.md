@@ -67,6 +67,23 @@ A GitHub issue is handled as one stage of its own (`stage.sh start issue-N …`)
 - Real Claude Code runs are few and short (quota). A test that needs one says so in its record.
 - Build folders and the archived old copy are not read: `.claude/settings.json` denies `target/` and `target-*/`.
 
+## The one-hour soak (P1c)
+
+Not a tag condition (the tag needs the candidate check with the short soak: `docs/SELF-HOSTING.md`). It stays as the
+own check of a stage that changes one of these a lot, run before that stage's `finish`:
+
+- **the PTY layer** — `crates/haetty-pty` (spawn, the reader and writer, close and hangup, the Windows backend);
+- **the daemon's session lifetime** — creating, closing and reaping sessions, attach and detach, the per-session and
+  per-client threads, the forwarding of a session's events (`crates/haetty-daemon`);
+- **the engine's memory structure** — how rows, scrollback, pages and snapshots are kept or freed, the scrollback
+  limit, a new libghostty-vt pin (`crates/haetty-core`, `crates/haetty-vt`).
+
+"A lot" means the ownership or lifetime of threads, descriptors or buffers changes, not a fix inside one function.
+Also run it when a `health_warning` line shows up in a daemon's event log. Neither a night nor an idle desktop is
+needed: `tools/overnight-soak-linux.sh night COMMIT 60 [ENGINE]` any time; it waits for and holds both heavy slots
+(about 70 min). Use the engine the change touches (`native` for `crates/haetty-vt`, else the default `ghostty`).
+The verdict goes into the stage's history record; a FAIL holds the stage like a failing test.
+
 ## Not done yet
 
 - A second session that runs one stage from this file alone (the two-stage test in a dev instance).

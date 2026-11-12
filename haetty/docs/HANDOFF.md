@@ -42,9 +42,11 @@ Stages:
   `closed_sessions_leave_no_threads` was a real leak (a closed session's PTY writer blocked), fixed in `haetty-pty`
   ([history/2026-11-12-p1.md](history/2026-11-12-p1.md)). **P1b done (2026-11-12):** K1 follow-up (protected,
   approved) — a later `Stop`/`StopFailure` opens the input hold without a person's key; a mouse button press answers
-  (both in `tests/permission.rs`); auto-mode denial still open. **P1c next:** v0.3.2 candidate (CHANGELOG "Windows:" line, candidate checks,
-  check-range `haetty-v0.2.0..`), first Linux night run (`docs/dev-commands.md`) when the person says "예약해", tag
-  `haetty-v0.3.2` (pre-approved) when the rule holds; §6.1 re-check list after the person installs it.
+  (both in `tests/permission.rs`); auto-mode denial still open. **P1c (the person changed the rule again):** a tag
+  needs the Linux candidate check with the short soak (`scripts/e2e/soak-short.sh`, 10 min) and check-range 0 failing;
+  the one-hour soak is a stage's own check (OPERATING); the daemon's hourly `health` line and `status --json` "health"
+  (sidebar view: P3); v0.3.2 candidate and tag `haetty-v0.3.2` (pre-approved, tag pushed alone), no night run;
+  §6.1 re-check list after the person installs it.
 - P2: working inside haetty — coordinating session + workers, two small stages, `haetty tokens` comparison; a key to
   the longest-waiting worker (after the person installs v0.3.2).
 - P3: sidebar and side-by-side diff overlay; IDE-integration research and prototype (off by default). DESIGN §2
@@ -305,8 +307,8 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     `main` passed 14/14 and 17/17 (V6).
 
 30. **Night runs.** Windows PC: `tools/overnight-soak.ps1` from a PowerShell window (the command, the rules and
-    the result file: `docs/dev-commands.md`, "Windows night run"). kramers: `tools/overnight-soak-linux.sh night`
-    (`docs/dev-commands.md`, "Linux night run"; first run with the next candidate).
+    the result file: `docs/dev-commands.md`, "Windows night run"). kramers: the short soak is in the candidate check;
+    the one-hour soak is a stage's own check (`docs/dev-commands.md`, "Short soak", "One-hour soak"; P1c).
 
 31. [kramers 2026-11-09: not run] **Observing a tab** (V3): palette "Observing: allow or stop for this
     tab" — a dim `◦` appears after the tab's number (grey, also on the

@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 11;
+pub const VERSION: u32 = 12;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -296,6 +296,9 @@ pub enum ClientMsg {
     GetScreen {
         session: SessionId,
     },
+    /// The daemon's own resource counts, now and the largest since it started (answer: `Health`; any role but
+    /// Report; version 12). No session content.
+    GetHealth,
 }
 
 /// One line of the daemon's event log (DESIGN.md §3.8): derived fields only
@@ -621,6 +624,32 @@ pub enum DaemonMsg {
     },
     /// Answer to `GetScreen`.
     Screen(Box<ScreenView>),
+    /// Answer to `GetHealth` (version 12).
+    Health(DaemonHealth),
+}
+
+/// One count of the daemon's own resources (the hourly `health` line of the event log; P1c). On Linux: threads in
+/// `/proc/self/task`, open descriptors, `RssAnon`; on Windows: threads, open handles, private bytes. `None` where the
+/// system did not answer.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HealthSample {
+    pub threads: Option<u32>,
+    pub fds: Option<u32>,
+    pub anon_kb: Option<u64>,
+    /// Sessions the daemon holds (running or exited, not yet closed).
+    pub sessions: u32,
+    /// Clients connected (each has a reader and a writer thread).
+    pub clients: u32,
+}
+
+/// `haetty status --json` "health": the current count and, field by field, the largest the daemon saw since it
+/// started (counted hourly, after each session start and at each `GetHealth`).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DaemonHealth {
+    pub now: HealthSample,
+    pub max: HealthSample,
+    /// Unix time in milliseconds.
+    pub started_ms: u64,
 }
 
 // ---------------------------------------------------------------- framing

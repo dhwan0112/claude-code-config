@@ -8,7 +8,7 @@
 #   more than max(100 rows, 1 %) over the sample it is at (samples where it is alive). A session that never grew
 #   by more than 100 rows does not count. Baseline = the latest full time over the sessions that grew. A session
 #   still growing at the last sample: no baseline (FAIL).
-# - From the baseline on, the window must be at least 1800 s, and the GUI's and the daemon's private working set at
+# - From the baseline on, the window must be at least half the run, at most 1800 s (P1c: 300 s for a 600 s run), and the GUI's and the daemon's private working set at
 #   the last sample at most 4 MB above their values at the baseline sample.
 # - Operations: the counts of the run are done (200/50/20/10 at 3600 s, scaled as soak.ps1 scales them); the window
 #   and the daemon are alive at the end.
@@ -16,7 +16,7 @@
 
 $script:SoakTolRows = 100
 $script:SoakTolFrac = 0.01
-$script:SoakWindowS = 1800
+$script:SoakWindowMaxS = 1800
 $script:SoakBarKb = 4096
 $script:SoakOps = @(@("tabs_done", 200), @("detach_done", 50), @("tasks_done", 20), @("themes_done", 10))
 
@@ -114,7 +114,8 @@ function Get-SoakVerdict($Series, [int]$Dur, [string]$Alive) {
         } else {
             $window = $last.t_s - $b.Tb
             $lines.Add("INFO baseline: " + $b.Note + "; baseline $($b.Tb) s")
-            Add-SoakCheck "window" ($window -ge $script:SoakWindowS) "$window s after the baseline (need $($script:SoakWindowS))"
+            $need = [Math]::Min($script:SoakWindowMaxS, [Math]::Floor($Dur / 2))
+            Add-SoakCheck "window" ($window -ge $need) "$window s after the baseline (need $need)"
             $base = @($rows | Where-Object { $_.t_s -eq $b.Tb })[0]
             Add-SoakCheck "gui_private_ws" ($last.gui_private_ws_kb -le $base.gui_private_ws_kb + $script:SoakBarKb) "$($base.gui_private_ws_kb) kB at $($b.Tb) s -> $($last.gui_private_ws_kb) kB"
             Add-SoakCheck "daemon_private_ws" ($last.daemon_private_ws_kb -le $base.daemon_private_ws_kb + $script:SoakBarKb) "$($base.daemon_private_ws_kb) kB at $($b.Tb) s -> $($last.daemon_private_ws_kb) kB"

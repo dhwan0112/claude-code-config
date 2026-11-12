@@ -32,6 +32,7 @@ fn main() {
         state_dir: dir.join("state"),
         run_dir: dir.join("run"),
         idle_exit: None,
+        health_every: haetty_daemon::HEALTH_EVERY,
     });
     let c = loop {
         match Client::connect(&ep, Role::Control, "latency") {

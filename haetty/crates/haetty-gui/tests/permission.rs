@@ -47,7 +47,13 @@ fn fake_claude(name: &str) -> (std::path::PathBuf, Endpoint, Client, String) {
     let dir = haetty_testkit::run_dir(name);
     std::fs::create_dir_all(dir.join("bin")).unwrap();
     let ep = Endpoint(dir.join("rt").join("daemon.sock"));
-    let cfg = Config { endpoint: ep.clone(), state_dir: dir.join("state"), run_dir: dir.join("rt"), idle_exit: None };
+    let cfg = Config {
+        endpoint: ep.clone(),
+        state_dir: dir.join("state"),
+        run_dir: dir.join("rt"),
+        idle_exit: None,
+        health_every: haetty_daemon::HEALTH_EVERY,
+    };
     drop(haetty_daemon::spawn(cfg));
     let end = Instant::now() + Duration::from_secs(5);
     let gui = loop {

@@ -88,6 +88,15 @@
   - `gui_slow_draw` (a GUI frame over 16 ms, at most every 10 s) and
     `gui_panic`, sent by the GUI as `Friction` messages (Control role only,
     through the existing role rules).
+  - `health` (P1c, 2026-11-12) — the daemon's own counts once an hour:
+    `threads`, `fds` (Windows: handles), `anon_kb` (Linux `RssAnon`,
+    Windows private bytes), `sessions`, `clients`; the daemon's only timer
+    besides the idle exit (it otherwise waits for events, no polling tick);
+  - `health_warning` — the same fields and `hours_rising` when threads or
+    descriptors grew three hourly lines in a row at the same sessions and
+    clients (once per run of growth; also a `warn` log line). `haetty status
+    --json` "health" has the counts now and the largest since the start
+    (`GetHealth`, protocol 12; any role but Report).
   Never typed or shown text (a test pastes a marker and checks it is not
   in the log).
 

@@ -567,6 +567,7 @@ dependencies = [
  "haetty-testkit",
  "log",
  "postcard",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

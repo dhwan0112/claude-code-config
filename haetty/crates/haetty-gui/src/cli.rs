@@ -2,7 +2,7 @@
 //! dispatched before any font or windowing code runs (DESIGN.md §3.1).
 
 use haetty_proto::paths::Endpoint;
-use haetty_proto::wire::{LogEvent, ScreenView};
+use haetty_proto::wire::{DaemonHealth, HealthSample, LogEvent, ScreenView};
 use haetty_proto::{Client, ConnectError, ObserverClient, Role, SessionInfo, SessionState};
 
 /// `haetty daemon`: serve until idle. Another daemon already listening is
@@ -41,7 +41,7 @@ pub fn status(json: bool) -> (String, i32) {
             let w = workers_json(&crate::tasks::load_all(&crate::tasks::dir()), &[]);
             return (
                 if json {
-                    format!(r#"{{"daemon_pid":null,"sessions":[],"workers":{w}}}"#)
+                    format!(r#"{{"daemon_pid":null,"sessions":[],"workers":{w},"health":null}}"#)
                 } else {
                     "no daemon running".into()
                 },
@@ -54,8 +54,9 @@ pub fn status(json: bool) -> (String, i32) {
         Ok(list) if json => {
             let mut s = status_json(client.daemon_pid, &list);
             let w = workers_json(&crate::tasks::load_all(&crate::tasks::dir()), &list);
+            let h = client.health().map_or_else(|_| "null".to_string(), |h| health_json(&h));
             s.truncate(s.len() - 1);
-            (format!("{s},\"workers\":{w}}}"), 0)
+            (format!("{s},\"workers\":{w},\"health\":{h}}}"), 0)
         }
         Ok(list) => (status_text(client.daemon_pid, &list), 0),
         Err(e) => (format!("haetty status: {e}"), 1),
@@ -237,6 +238,29 @@ fn status_text(pid: u32, list: &[SessionInfo]) -> String {
     out
 }
 
+/// `status --json` "health" (P1c): the daemon's own counts now and the largest since its start; `null` for a count
+/// the system did not give.
+pub fn health_json(h: &DaemonHealth) -> String {
+    let one = |s: &HealthSample| {
+        let o = |v: Option<u64>| v.map_or_else(|| "null".to_string(), |v| v.to_string());
+        format!(
+            r#"{{"threads":{},"fds":{},"anon_kb":{},"sessions":{},"clients":{}}}"#,
+            o(s.threads.map(u64::from)),
+            o(s.fds.map(u64::from)),
+            o(s.anon_kb),
+            s.sessions,
+            s.clients
+        )
+    };
+    format!(
+        r#"{{"now":{},"max":{},"started_ms":{},"started":{}}}"#,
+        one(&h.now),
+        one(&h.max),
+        h.started_ms,
+        json_str(&rfc3339(h.started_ms))
+    )
+}
+
 pub fn status_json(pid: u32, list: &[SessionInfo]) -> String {
     let sessions: Vec<String> = list
         .iter()
@@ -373,6 +397,12 @@ mod tests {
         let j = status_json(7, &[s]);
         assert!(j.starts_with(r#"{"daemon_pid":7,"sessions":[{"id":"x-1","title":"✳ Claude Code","cwd":"/tmp/p","state":"exited","exit_code":3,"#), "{j}");
         assert!(j.ends_with(r#""program":"claude","pid":42,"cols":120,"rows":36,"attached":0,"claude_session":"","attention":"None","observable":false,"scrollback":0}]}"#), "{j}");
+        let now = HealthSample { threads: Some(9), fds: Some(14), anon_kb: None, sessions: 1, clients: 2 };
+        let max = HealthSample { threads: Some(31), fds: Some(40), anon_kb: Some(5120), sessions: 4, clients: 3 };
+        assert_eq!(
+            health_json(&DaemonHealth { now, max, started_ms: 1_762_300_800_000 }),
+            r#"{"now":{"threads":9,"fds":14,"anon_kb":null,"sessions":1,"clients":2},"max":{"threads":31,"fds":40,"anon_kb":5120,"sessions":4,"clients":3},"started_ms":1762300800000,"started":"2025-11-05T00:00:00Z"}"#
+        );
     }
 
     #[test]

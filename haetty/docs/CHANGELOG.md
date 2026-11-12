@@ -2,6 +2,20 @@
 
 ## Unreleased (for 0.3.2)
 
+### Added
+
+- **The daemon records its own health** (P1c): once an hour an event-log line with its threads, descriptors
+  (Windows: handles), anonymous memory (Windows: private bytes), sessions and clients; a `health_warning` line when
+  threads or descriptors grew three hours in a row at the same sessions and clients. `haetty status --json` has
+  `"health"`: the counts now and the largest since the start (protocol 12). The daemon no longer wakes every 500 ms:
+  it waits for events, the hourly line and, when idle, its exit time.
+
+### Changed
+
+- **Release rule** (P1c): a tag needs the Linux candidate check with the short soak (`scripts/e2e/soak-short.sh`,
+  10 min, the soak's operations and rule) and check-range with 0 failing. The one-hour soak is a stage's own check
+  when it changes the PTY layer, the daemon's session lifetime or the engine's memory structure (`docs/OPERATING.md`).
+
 ### Fixed
 
 - **An X11 window is painted whole after it is restored from minimized** (#1, `70f97a4`): a redraw the system asks for

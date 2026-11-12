@@ -6,6 +6,7 @@
 //! writer thread, each session a thread forwarding its events. No lock is
 //! held across a socket write.
 
+mod health;
 mod log_file;
 
 use std::collections::HashMap;
@@ -31,7 +32,12 @@ pub struct Config {
     pub run_dir: PathBuf,
     /// Exit after this long without sessions and clients (`None`: never).
     pub idle_exit: Option<Duration>,
+    /// How often the `health` line is written ([`HEALTH_EVERY`]; tests use less).
+    pub health_every: Duration,
 }
+
+/// The daemon's `health` line comes every hour (P1c).
+pub const HEALTH_EVERY: Duration = health::EVERY;
 
 impl Config {
     pub fn default_for_user() -> io::Result<Config> {
@@ -42,6 +48,7 @@ impl Config {
             state_dir: haetty_proto::paths::state_dir(),
             run_dir,
             idle_exit: Some(Duration::from_secs(10)),
+            health_every: HEALTH_EVERY,
         })
     }
 }
@@ -254,6 +261,9 @@ pub fn run(cfg: Config) -> io::Result<()> {
         observed: HashMap::new(),
         counter: 0,
         run_dir: cfg.run_dir,
+        health: health::Health::new(now_ms()),
+        health_every: cfg.health_every,
+        next_health: Instant::now() + cfg.health_every,
     };
     d.event("daemon_start", "", &[("pid", &std::process::id().to_string())]);
     d.run(rx, cfg.idle_exit);
@@ -356,16 +366,36 @@ struct Daemon {
     observed: HashMap<SessionId, Vec<(u64, u64)>>,
     counter: u64,
     run_dir: PathBuf,
+    /// The daemon's own counts (P1c): the hourly `health` line, `GetHealth`.
+    health: health::Health,
+    health_every: Duration,
+    next_health: Instant,
 }
 
 impl Daemon {
+    /// Waits for events only: the thread wakes for the next hourly `health` line and, while no session or client is
+    /// left, for the idle exit (no polling tick; P1c).
     fn run(&mut self, rx: Receiver<Ev>, idle_exit: Option<Duration>) {
         let mut idle_since = Instant::now();
         loop {
-            match rx.recv_timeout(Duration::from_millis(500)) {
-                Ok(ev) => self.handle(ev),
+            let busy = !self.sessions.is_empty() || !self.clients.is_empty();
+            let mut wait = self.next_health.saturating_duration_since(Instant::now());
+            if let (false, Some(d)) = (busy, idle_exit) {
+                wait = wait.min(d.saturating_sub(idle_since.elapsed()));
+            }
+            match rx.recv_timeout(wait) {
+                Ok(ev) => {
+                    if busy {
+                        idle_since = Instant::now(); // busy until this event
+                    }
+                    self.handle(ev)
+                }
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
                 Err(_) => return,
+            }
+            if Instant::now() >= self.next_health {
+                self.health_line();
+                self.next_health = Instant::now() + self.health_every;
             }
             if !self.sessions.is_empty() || !self.clients.is_empty() {
                 idle_since = Instant::now();
@@ -373,6 +403,33 @@ impl Daemon {
                 log::info!("no sessions and no clients: exiting");
                 return;
             }
+        }
+    }
+
+    fn health_sample(&self) -> HealthSample {
+        health::sample(self.sessions.len() as u32, self.clients.len() as u32)
+    }
+
+    /// The hourly `health` line, and a `health_warning` line when threads or descriptors kept growing at the same
+    /// sessions and clients (health::RISES_TO_WARN hours in a row).
+    fn health_line(&mut self) {
+        let s = self.health_sample();
+        let opt = |v: Option<u64>| v.map_or_else(|| "?".to_string(), |v| v.to_string());
+        let fields = [
+            ("threads", opt(s.threads.map(u64::from))),
+            ("fds", opt(s.fds.map(u64::from))),
+            ("anon_kb", opt(s.anon_kb)),
+            ("sessions", s.sessions.to_string()),
+            ("clients", s.clients.to_string()),
+        ];
+        let refs: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        self.event("health", "", &refs);
+        if let Some(hours) = self.health.hourly(s) {
+            let h = hours.to_string();
+            let mut w = refs.clone();
+            w.push(("hours_rising", &h));
+            log::warn!("threads or descriptors grew {h} hours in a row at the same sessions and clients");
+            self.event("health_warning", "", &w);
         }
     }
 
@@ -587,6 +644,7 @@ impl Daemon {
             (ClientMsg::ReadEvents { .. } | ClientMsg::GetScreen { .. }, _) => false,
             (
                 ClientMsg::ListSessions
+                | ClientMsg::GetHealth
                 | ClientMsg::Attach { .. }
                 | ClientMsg::Detach { .. }
                 | ClientMsg::NextFrame { .. },
@@ -693,6 +751,11 @@ impl Daemon {
                 self.reply(c, DaemonMsg::Edit { session, edit });
             }
             ClientMsg::Sync => self.reply(c, DaemonMsg::Synced),
+            ClientMsg::GetHealth => {
+                let now = self.health_sample();
+                let h = self.health.report(now);
+                self.reply(c, DaemonMsg::Health(h));
+            }
             ClientMsg::SetObservable { session, on } => self.set_observable(session, on),
             ClientMsg::ReadEvents { cursor, follow } => self.read_events(c, cursor, follow),
             ClientMsg::GetScreen { session } => self.screen(c, session),
@@ -925,6 +988,9 @@ impl Daemon {
                     id.clone(),
                     Sess { session, info, latest: None, claude, settings_file, lat: Latency::default() },
                 );
+                // A session's threads and descriptors are there now: the largest counts follow them.
+                let now = self.health_sample();
+                self.health.seen(&now);
                 self.reply(c, DaemonMsg::Created { req, session: id });
             }
             Err(e) => {
@@ -966,6 +1032,7 @@ fn msg_name(m: &ClientMsg) -> &'static str {
         ClientMsg::SetObservable { .. } => "SetObservable",
         ClientMsg::ReadEvents { .. } => "ReadEvents",
         ClientMsg::GetScreen { .. } => "GetScreen",
+        ClientMsg::GetHealth => "GetHealth",
     }
 }
 

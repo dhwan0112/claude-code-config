@@ -10,7 +10,8 @@ Rule (F0, 2026-11-08):
   more than max(100 rows, 1 %) over the sample it is at (samples where it is alive). A session that never grew
   by more than 100 rows does not count. Baseline = the latest full time over the sessions that grew: from then
   on every session's scrollback has stopped growing. A session still growing at the last sample: no baseline.
-- From the baseline on, the window must be at least 1800 s, and the GUI's and the daemon's anonymous memory at
+- From the baseline on, the window must be at least half the run, at most 1800 s (1800 s for the hour, 300 s for
+  the short soak of 600 s, P1c), and the GUI's and the daemon's anonymous memory at
   the last sample at most 4 MB above their values at the baseline sample.
 - Operations: the counts of the run are done (200/50/20/10 at 3600 s, scaled as soak.sh scales them); the
   window and the daemon are alive at the end.
@@ -21,7 +22,7 @@ import sys
 
 TOL_ROWS = 100
 TOL_FRAC = 0.01
-WINDOW_S = 1800
+WINDOW_MAX_S = 1800
 BAR_KB = 4096
 OPS = [("tabs_done", 200), ("detach_done", 50), ("tasks_done", 20), ("themes_done", 10)]
 
@@ -101,9 +102,9 @@ def verdict(cols, rows, dur, alive):
         if tb is None:
             check("scrollback_full", False, note)
         else:
-            window = last["t_s"] - tb
+            window, need = last["t_s"] - tb, min(WINDOW_MAX_S, dur // 2)
             out.append("INFO baseline: " + note + f"; baseline {tb} s")
-            check("window", window >= WINDOW_S, f"{window} s after the baseline (need {WINDOW_S})")
+            check("window", window >= need, f"{window} s after the baseline (need {need})")
             base = next(r for r in rows if r["t_s"] == tb)
             check("gui_anon", last["gui_anon_kb"] <= base["gui_anon_kb"] + BAR_KB,
                   f"{base['gui_anon_kb']} kB at {tb} s -> {last['gui_anon_kb']} kB")

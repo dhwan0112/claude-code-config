@@ -17,9 +17,22 @@ fn tmp(name: &str) -> PathBuf {
 }
 
 fn start(dir: &std::path::Path, idle: Duration) -> (Endpoint, std::thread::JoinHandle<std::io::Result<()>>) {
+    start_with(dir, idle, haetty_daemon::HEALTH_EVERY)
+}
+
+fn start_with(
+    dir: &std::path::Path,
+    idle: Duration,
+    health_every: Duration,
+) -> (Endpoint, std::thread::JoinHandle<std::io::Result<()>>) {
     let ep = Endpoint(dir.join("rt").join("daemon.sock"));
-    let cfg =
-        Config { endpoint: ep.clone(), state_dir: dir.join("state"), run_dir: dir.join("rt"), idle_exit: Some(idle) };
+    let cfg = Config {
+        endpoint: ep.clone(),
+        state_dir: dir.join("state"),
+        run_dir: dir.join("rt"),
+        idle_exit: Some(idle),
+        health_every,
+    };
     let h = haetty_daemon::spawn(cfg);
     let end = Instant::now() + Duration::from_secs(5);
     while Client::connect(&ep, Role::Observe, "probe").is_err() {
@@ -408,4 +421,57 @@ fn a_socket_of_its_own_gives_its_own_run_dir() {
     assert_eq!(haetty_daemon::instance_run_dir(&stable, shared.clone()), shared);
     let dev = Endpoint(PathBuf::from("/shared/haetty-dev/daemon.sock"));
     assert_eq!(haetty_daemon::instance_run_dir(&dev, shared), PathBuf::from("/shared/haetty-dev"));
+}
+
+/// P1c: the daemon's own counts — `GetHealth` for observe and control clients (not report), the `health` line at its
+/// interval (shortened here), and the idle exit without the old polling tick: not before its time after the last
+/// client leaves.
+#[test]
+fn health_counts_the_hourly_line_and_the_idle_exit() {
+    let dir = tmp("health");
+    let (ep, daemon) = start_with(&dir, Duration::from_secs(2), Duration::from_millis(700));
+    let obs = Client::connect(&ep, Role::Observe, "status").unwrap();
+    let h0 = obs.health().unwrap();
+    assert_eq!((h0.now.sessions, h0.now.clients), (0, 1), "{h0:?}");
+    #[cfg(target_os = "linux")]
+    assert!(h0.now.threads.unwrap() >= 2 && h0.now.fds.unwrap() >= 1 && h0.now.anon_kb.unwrap() > 0, "{h0:?}");
+    let gui = Client::connect(&ep, Role::Control, "gui").unwrap();
+    let id = gui.create(spec("sleep 30")).unwrap();
+    let h1 = gui.health().unwrap();
+    assert_eq!((h1.now.sessions, h1.now.clients, h1.max.sessions), (1, 2, 1), "{h1:?}");
+    assert_eq!(h1.started_ms, h0.started_ms);
+    #[cfg(target_os = "linux")]
+    assert!(h1.max.threads >= h1.now.threads && h1.now.threads > h0.now.threads, "a session's threads: {h0:?} {h1:?}");
+    let rep = Client::connect(&ep, Role::Report, "hook").unwrap();
+    rep.send(&ClientMsg::GetHealth).unwrap();
+    assert!(matches!(rep.next_reply(Duration::from_secs(5)), Some(DaemonMsg::Denied { .. })));
+    drop(rep);
+    // The interval passes: health lines in the log, no session text in them.
+    std::thread::sleep(Duration::from_millis(1600));
+    let log = std::fs::read_to_string(dir.join("state/events.log")).unwrap();
+    let lines: Vec<&str> = log.lines().filter(|l| l.split('\t').nth(2) == Some("health")).collect();
+    assert!(!lines.is_empty(), "{log}");
+    assert!(
+        lines[0].contains("\tsessions=1") && lines[0].contains("\tthreads=") && lines[0].contains("\tanon_kb="),
+        "{}",
+        lines[0]
+    );
+    gui.close(&id).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    let h2 = obs.health().unwrap();
+    assert_eq!((h2.now.sessions, h2.max.sessions), (0, 1), "the largest stays: {h2:?}");
+    // The last client leaves: the daemon waits its idle time (2 s), then ends.
+    drop(gui);
+    drop(obs);
+    let gone = Instant::now();
+    std::thread::sleep(Duration::from_millis(1000));
+    assert!(!daemon.is_finished(), "ended {:?} after the last client left, before its idle time", gone.elapsed());
+    let end = Instant::now() + Duration::from_secs(10);
+    while !daemon.is_finished() {
+        assert!(Instant::now() < end, "the idle daemon did not end");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(gone.elapsed() >= Duration::from_millis(1900), "{:?}", gone.elapsed());
+    daemon.join().unwrap().unwrap();
+    haetty_testkit::remove_dir_all(&dir);
 }
