@@ -535,7 +535,7 @@ dependencies = [
 
 [[package]]
 name = "haetty-cc"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "haetty-proto",
  "haetty-testkit",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "haetty-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bitflags 2.13.2",
  "crossbeam-channel",
@@ -558,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "haetty-daemon"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "crossbeam-channel",
  "haetty-cc",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "haetty-gui"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "copypasta",
  "fontdb",
@@ -592,14 +592,14 @@ dependencies = [
 
 [[package]]
 name = "haetty-headless"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "haetty-core",
 ]
 
 [[package]]
 name = "haetty-proto"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "crossbeam-channel",
  "haetty-core",
@@ -613,7 +613,7 @@ dependencies = [
 
 [[package]]
 name = "haetty-pty"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "conpty-bin-vendored",
  "libc",
@@ -624,11 +624,11 @@ dependencies = [
 
 [[package]]
 name = "haetty-testkit"
-version = "0.3.1"
+version = "0.3.2"
 
 [[package]]
 name = "haetty-vt"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "miniz_oxide",
  "vte",
@@ -636,7 +636,7 @@ dependencies = [
 
 [[package]]
 name = "haetty-vtdiff"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "haetty-core",
  "haetty-vt",

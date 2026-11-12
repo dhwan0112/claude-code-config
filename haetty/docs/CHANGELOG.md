@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased (for 0.3.2)
+## 0.3.2 (2026-11-12)
+
+The first release after 0.2.0: it also carries the untagged candidates 0.3.0 and 0.3.1 (their sections below). Tagged
+`haetty-v0.3.2` under the release rule of P1c: the Linux candidate check with the short soak, and
+`tools/check-range.sh haetty-v0.2.0..` with 0 failing (results: `docs/history/2026-11-12-p1.md`, "v0.3.2").
+
+**Windows:** unverified for this commit. Its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Not run on
+Windows: the changes since 0.3.1 below (the K1 follow-up and the health counts are platform-independent code; the
+PTY fix of P1a is Linux-only code; #1's redraw on `Focused` / `Occluded(false)` is on the Windows check list).
+Known problems from the 0.3.1 candidate (`1163a0a`, `checks/windows-2026-11-11`): the Windows night run passed once
+in three runs, twice stopped at the desktop's focus check (cause open); the Windows orchestrator end-to-end run
+failed (no task worktree).
 
 ### Added
 

@@ -12,7 +12,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 ## 1. Current state
 
-- **Version** 0.3.1 (workspace; candidates F5 `b1262d2` = 0.3.0 and K4 `1163a0a` = 0.3.1, neither tagged: the Windows night run's focus check). Tags: `haetty-v0.1.0` = `4d75fcd`,
+- **Version** 0.3.2 (workspace; the release commit of P1c; 0.3.0 `b1262d2` and 0.3.1 `1163a0a` were never tagged and
+  are superseded by it). Tags: `haetty-v0.1.0` = `4d75fcd`,
   `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
   check-range `haetty-v0.1.1..63822de` 0 failing; record in
@@ -20,8 +21,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 - **Stable (installed by the user):** kramers has **v0.2.0 (`63822de`)**, installed 2026-11-07 with
   `tools/install-stable.sh 63822de` (checked 2026-11-09: [docs/checks/2026-11-09-kramers.md](checks/2026-11-09-kramers.md)).
   This line changes only when the user says so.
-- **After `63822de`, untagged:** V3's observe-only interface (protocol 8), V6's palette fix, the native engine (E1–E5,
-  F0–F4), K1–K4, #1 and #2 (CHANGELOG).
+- **After `63822de`, in 0.3.2:** V3's observe-only interface, V6's palette fix, the native engine (E1–E5, F0–F4),
+  K1–K4, #1, #2, P1a–P1c (CHANGELOG; protocol 12).
 - Last stages (records in [history](history/)): T1–T7, U1–U6, V1–V7, E0–E5, F0–F6, G0–G7, K0–K4, H.
 - **Development machine: kramers** (ThinkPad T480, Ubuntu 26.04, 8 threads, 29 GB; from 2026-11-10). Per-machine
   values: `tools/machine.sh`. The stable haetty installed here is the person's: no command goes to it.
@@ -59,11 +60,6 @@ Stages:
 
 **On hold** (they do not move a point directly): the differences left to the newest Ghostty (F2), switching the
 default engine, splitting the big files (H2), checking the default engine's slow memory growth.
-
-Candidates: v0.3.0 (`b1262d2`) and v0.3.1 (`1163a0a`) are not tagged — each held by the Windows night run's focus
-check (`checks/windows-2026-11-10`, `checks/windows-2026-11-11`: one Windows PASS in three runs of `1163a0a`; Linux PASS
-in all). Under P1's rule they are superseded by v0.3.2. `main` after `1163a0a` adds #1 and #2 (CHANGELOG
-"Unreleased").
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
 
