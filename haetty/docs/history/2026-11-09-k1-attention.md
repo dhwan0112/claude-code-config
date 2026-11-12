@@ -54,6 +54,8 @@ Findings:
 
 - **Stop alone** would also be safe (a turn cannot end while its dialog is open). The brief's rule asks for a human
   input as well; this is kept. If the person wants Stop alone, it is a one-line change in `Claude::hook`.
+  **Changed in P1b (2026-11-12, approved): Stop alone now opens the hold, and a mouse button press counts as human
+  input ([2026-11-12-p1.md](2026-11-12-p1.md)).**
 - **Auto-mode denial** (`PermissionDenied`) was not reproduced. If it comes with a `PermissionRequest` and no dialog, the
   hold stays until the person prompts, which stalls an unattended worker. This needs a probe that makes auto mode deny.
 - **K2 is reopened**: the child inherits the daemon's environment, which the GUI-side filter does not see (see the

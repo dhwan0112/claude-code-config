@@ -182,9 +182,11 @@ impl Claude {
                 if i.attention != Attention::Ask || later_than_ask {
                     i.attention = Attention::Wait;
                 }
-                // The turn has ended, so no dialog of this turn is open. The hold opens only when a person's input came
-                // after the question (the brief's rule): a question nobody answered keeps it.
-                if later_than_ask && self.answer_ts.is_some() {
+                // The turn has ended, so no dialog of this turn is open: a turn end that started after the question
+                // opens the hold, with or without a person's input (P1b; Claude Code cannot end the main agent's turn
+                // while its dialog waits, docs/history/2026-11-09-k1-attention.md). An Esc gives no Stop, so a
+                // rejected dialog still holds until the person's next prompt.
+                if later_than_ask {
                     i.asking = false;
                     self.answer_ts = None;
                 }
@@ -493,13 +495,22 @@ mod tests {
     }
 
     #[test]
-    fn a_turn_end_without_a_person_keeps_the_input_held() {
-        // By the brief's rule the hold opens with a person's input and a later turn end, or with a prompt. A turn end
-        // alone is not that evidence (auto-mode denials are not reproduced yet; see the record).
-        let mut c = Claude::default();
-        c.hook("PermissionRequest", &j("{}"), 20, None);
-        c.hook("Stop", &j("{}"), 30, None);
-        assert_eq!((c.info.attention, c.input_held()), (Attention::Wait, true));
+    fn a_turn_end_after_the_question_releases_the_input_without_a_person() {
+        // P1b: a Stop or StopFailure that started after the question is the turn's end, so no dialog of that turn is
+        // open; it opens the hold although no person's input came (an answer typed outside haetty, or none needed).
+        for end in ["Stop", "StopFailure"] {
+            let mut c = Claude::default();
+            c.hook("UserPromptSubmit", &j("{}"), 10, None);
+            c.hook("PermissionRequest", &j("{}"), 20, None);
+            c.hook("PostToolUse", &j(r#"{"tool_name":"Bash"}"#), 25, None);
+            assert!(c.input_held(), "{end}: a tool's end is not the turn's end");
+            c.hook(end, &j("{}"), 30, None);
+            assert_eq!((c.info.attention, c.input_held()), (Attention::Wait, false), "{end}");
+            // A turn end older than the question still changes nothing.
+            c.hook("PermissionRequest", &j("{}"), 40, None);
+            c.hook(end, &j("{}"), 35, None);
+            assert_eq!((c.info.attention, c.input_held()), (Attention::Ask, true), "{end}: older than the question");
+        }
     }
 
     #[test]

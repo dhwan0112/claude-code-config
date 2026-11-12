@@ -8,8 +8,6 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage p1b-k1-followup (branch `haetty/p1b-k1-followup`, worktree `~/projects/claude-code-config-wt/p1b-k1-followup`). Remaining: K1 follow-up: Stop/StopFailure after the question releases the hold; mouse button press is person input; permission.rs cases
-
 ## 1. Current state
 
 - **Version** 0.3.1 (workspace; candidates F5 `b1262d2` = 0.3.0 and K4 `1163a0a` = 0.3.1, neither tagged: the Windows night run's focus check). Tags: `haetty-v0.1.0` = `4d75fcd`,
@@ -40,8 +38,9 @@ Stages:
   #2's parsing test (already in `cd2e0e7`); DESIGN §2 button wording (approved); OPERATING's issue procedure.
 - **P1 split.** **P1a done (2026-11-12):** tag rule (CLAUDE.md, SELF-HOSTING "Dev → stable"); the flaky
   `closed_sessions_leave_no_threads` was a real leak (a closed session's PTY writer blocked), fixed in `haetty-pty`
-  ([history/2026-11-12-p1.md](history/2026-11-12-p1.md)). **P1b next:** K1 follow-up (protected, scope in STAGES.md
-  P1; both cases in `tests/permission.rs`). **P1c:** v0.3.2 candidate (CHANGELOG "Windows:" line, candidate checks,
+  ([history/2026-11-12-p1.md](history/2026-11-12-p1.md)). **P1b done (2026-11-12):** K1 follow-up (protected,
+  approved) — a later `Stop`/`StopFailure` opens the input hold without a person's key; a mouse button press answers
+  (both in `tests/permission.rs`); auto-mode denial still open. **P1c next:** v0.3.2 candidate (CHANGELOG "Windows:" line, candidate checks,
   check-range `haetty-v0.2.0..`), first Linux night run (`docs/dev-commands.md`) when the person says "예약해", tag
   `haetty-v0.3.2` (pre-approved) when the rule holds; §6.1 re-check list after the person installs it.
 - P2: working inside haetty — coordinating session + workers, two small stages, `haetty tokens` comparison; a key to

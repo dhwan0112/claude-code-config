@@ -140,10 +140,19 @@ impl Latency {
 }
 
 /// A key a person types or answers with (a press or a repeat of a key that is not a modifier on its own), a paste, or a
-/// raw write: input that can answer a permission dialog. The wheel, focus and resize are not input.
+/// raw write, a mouse button press: input that can answer a permission dialog. Mouse motion, the wheel, focus and
+/// resize are not input.
 fn answers(m: &ClientMsg) -> bool {
-    use haetty_core::{Key, KeyAction};
+    use haetty_core::{Key, KeyAction, MouseAction, MouseButton};
     match m {
+        // A button press can pick a dialog option (the GUI forwards it while the program tracks the mouse). Motion,
+        // releases and the wheel (its own message, or buttons 4 to 7) are not an answer (K1 follow-up, P1b).
+        ClientMsg::Mouse { mouse, .. } => mouse.to_mouse_input().is_some_and(|mi| {
+            mi.action == MouseAction::Press
+                && mi.button.is_some_and(|b| {
+                    !matches!(b, MouseButton::Four | MouseButton::Five | MouseButton::Six | MouseButton::Seven)
+                })
+        }),
         ClientMsg::Key { key, .. } => key.to_key_input().is_some_and(|k| {
             k.action != KeyAction::Release
                 && !matches!(

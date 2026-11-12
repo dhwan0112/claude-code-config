@@ -12,6 +12,12 @@
   and its drop waited forever on a full input queue (portable-pty's writer types `"\n"` + EOF on drop). The master
   is non-blocking now and a closed session's reader and writer return; the child gets the terminal's hangup. Fixes the
   flaky `closed_sessions_leave_no_threads`. Tests: `haetty-pty` `unix::tests` (fail without the fix).
+- **A turn's end releases the program-input hold without the person's key** (P1b, K1 follow-up; protected area,
+  approved): a `Stop` or `StopFailure` that started after the permission question opens it — an unattended worker
+  whose dialog was answered outside haetty no longer stays held until the next prompt. **A mouse button press answers
+  a dialog** like a key (the mark goes); motion, releases and the wheel do not. A rejection (Esc, no event) still holds
+  until the person's next prompt; the auto-mode denial path stays open. Tests: `tests/permission.rs`
+  `turn_end_releases_the_hold_and_a_mouse_press_answers` (fails without either half), `haetty-cc` `state::tests`.
 
 ## 0.3.1 (candidate, 2026-11-09)
 
