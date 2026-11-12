@@ -9,6 +9,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 F=$HAETTY_RUN/dev-run; haetty_guard "$F"
 mkdir -p "$F/home" "$F/rt"; chmod 700 "$F/rt"
 for v in $(env | grep -oE '^(HAETTY_[A-Z_]*|XDG_[A-Z_]*)='); do unset "${v%=}"; done
+# The fake runtime directory has no compositor: a desktop's WAYLAND_DISPLAY would send the GUI to Wayland and it
+# would not start (kramers, GNOME Wayland, 2026-11-12). The real start runs under Xvfb.
+unset WAYLAND_DISPLAY
 export HOME=$F/home XDG_RUNTIME_DIR=$F/rt
 D=$here/dev-run.sh
 pass=0 fail=0

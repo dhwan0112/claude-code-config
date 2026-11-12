@@ -45,6 +45,19 @@ command -v cargo > /dev/null || { echo "check-range.sh: cargo is not on PATH" >&
 [ $windows = 1 ] && ! rustup target list --installed 2>/dev/null | grep -qx x86_64-pc-windows-gnu && {
   echo "note: x86_64-pc-windows-gnu not installed: Windows clippy skipped"; windows=0; }
 commits=$(git -C "$top" rev-list --reverse "$range" -- haetty) || exit 2
+# The environment old commits were written for (P1c, kramers 2026-11-12). A session inside Claude Code or a haetty
+# tab passes its markers on; commits before K2 do not strip them in their tests. Ubuntu 26.04's uutils `cat` stops
+# after the first read from a raw terminal; fixtures before 0a23bf0 use `cat`: GNU coreutils first on PATH when the
+# system has them as gnu* (package gnu-coreutils).
+for _v in $(env | grep -oE '^(CLAUDE_CODE_[A-Z_]*|CLAUDECODE|CLAUDE_[A-Z_]*SESSION[A-Z_]*|CLAUDE_PID|HAETTY_SESSION_ID|HAETTY_INSTANCE)='); do
+  unset "${_v%=}"
+done
+if [ -x /usr/bin/gnucat ] && [ "$(readlink -f "$(command -v cat)")" != /usr/bin/gnucat ]; then
+  gnubin=$HAETTY_RUN/gnubin; mkdir -p "$gnubin"
+  for _f in /usr/bin/gnu*; do _n=${_f#/usr/bin/gnu}; [ -n "$_n" ] && ln -sf "$_f" "$gnubin/$_n"; done
+  export PATH=$gnubin:$PATH
+  echo "note: GNU coreutils first on PATH ($gnubin), session markers removed"
+fi
 known_file=$here/known-gate-failures
 # Every entry: a full hash, then steps from the four names — a malformed line is an error, never ignored.
 if [ -f "$known_file" ]; then
