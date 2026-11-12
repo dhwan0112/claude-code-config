@@ -8,6 +8,8 @@ measurements, solved defects, milestone 1's record — is in
 `CLAUDE.md`, `docs/DESIGN.md` and `docs/SELF-HOSTING.md` with this file.
 New progress records go to the newest file in `docs/history/`, not here.
 
+> **In progress:** stage p0-north-star (branch `haetty/p0-north-star`, worktree `~/projects/claude-code-config-wt/p0-north-star`). Remaining: P0: NORTH-STAR.md and status table, HANDOFF stage list P0-P9, the Nov 11 fixes' tests and DESIGN §2 wording, OPERATING issue procedure
+
 ## 1. Current state
 
 - **Version** 0.3.0 (workspace; the candidate commit of stage F5, no tag: its night run failed on Windows, 2026-11-10). Tags: `haetty-v0.1.0` = `4d75fcd`,
