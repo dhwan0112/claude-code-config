@@ -89,12 +89,16 @@ Only you replace the stable binary. The steps:
      (KNOWN entries of `tools/known-gate-failures` do not count; new entries
      need your approval);
    - `scripts/e2e/run-all.sh`;
-   - the installer self-tests on both platforms;
-   - Windows unit tests and smoke;
-   - the overnight soak (`tools/overnight-soak.ps1`, `HANDOFF.md` §6.1
-     item 30) with both verdicts PASS.
+   - the installer self-tests (Linux);
+   - kramers' Linux night run (`tools/overnight-soak-linux.sh night`,
+     `docs/dev-commands.md`) with verdict PASS.
 
-   The results go into `HANDOFF.md`.
+   The results go into `HANDOFF.md`. The Windows checks (unit tests, smoke,
+   installer self-test, `tools/overnight-soak.ps1`) do not hold the tag
+   (P1, 2026-11-12: the v0.3.1 candidate's Windows night passed once in three
+   runs of one build, stopped twice by the desktop's focus check). The
+   release's CHANGELOG section ends with a "Windows:" line: verified (with
+   the `checks/windows-<date>` record), unverified, or known problems.
 2. **Your approval** of that commit. A tag needs it, unless you approved a
    tag in advance on stated conditions.
 3. **Tag.** An annotated `haetty-vX.Y.Z` on that commit (crate version

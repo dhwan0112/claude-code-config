@@ -65,7 +65,11 @@ impl Out {
                     }
                     if let Err(e) = writer.write_all(chunk).and_then(|_| writer.flush()) {
                         failed = true; // the child is gone; drain the rest
-                        let _ = ev.send(SessionEvent::Error(format!("pty write: {e}")));
+                                       // After the session's end a failed write is expected
+                                       // (the terminal was closed under it): no error then.
+                        if !st.load(Ordering::Relaxed) {
+                            let _ = ev.send(SessionEvent::Error(format!("pty write: {e}")));
+                        }
                     }
                 }
                 q.fetch_sub(b.len(), Ordering::Relaxed);

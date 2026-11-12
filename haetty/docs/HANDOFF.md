@@ -8,8 +8,6 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage p1a-threads-tagrule (branch `haetty/p1a-threads-tagrule`, worktree `~/projects/claude-code-config-wt/p1a-threads-tagrule`). Remaining: P1 part a: fix the flaky closed_sessions_leave_no_threads (writer blocked after session end), the new tag rule; then P1b K1 follow-up, P1c v0.3.2 candidate and the Linux night prep
-
 ## 1. Current state
 
 - **Version** 0.3.1 (workspace; candidates F5 `b1262d2` = 0.3.0 and K4 `1163a0a` = 0.3.1, neither tagged: the Windows night run's focus check). Tags: `haetty-v0.1.0` = `4d75fcd`,
@@ -38,12 +36,12 @@ The text this list replaced: [history/2026-11-12-p0-north-star.md](history/2026-
 Stages:
 - **P0 done (2026-11-12):** NORTH-STAR and STAGES; this list; #1's Xvfb regression test (`scripts/e2e/remap.sh`),
   #2's parsing test (already in `cd2e0e7`); DESIGN §2 button wording (approved); OPERATING's issue procedure.
-- **P1 next: unblock releases.** New tag rule (Linux candidate checks + kramers' Linux night PASS + check-range 0
-  failing; the Windows night no longer blocks, CHANGELOG says "Windows: verified / unverified / known problems"); fix the
-  flaky `closed_sessions_leave_no_threads` (`tests/threads.rs`; failed 2 of 3 at `780b991`, a 30 s timeout) without
-  retries; K1 follow-up (protected, approved scope in STAGES.md); v0.3.2 candidate; prepare the first Linux night run
-  (scheduling, lid closed without sleep), scheduled when the person says "예약해"; tag `haetty-v0.3.2` (pre-approved)
-  when the rule holds; §6.1 re-check list after the person installs it.
+- **P1 split.** **P1a done (2026-11-12):** tag rule (CLAUDE.md, SELF-HOSTING "Dev → stable"); the flaky
+  `closed_sessions_leave_no_threads` was a real leak (a closed session's PTY writer blocked), fixed in `haetty-pty`
+  ([history/2026-11-12-p1.md](history/2026-11-12-p1.md)). **P1b next:** K1 follow-up (protected, scope in STAGES.md
+  P1; both cases in `tests/permission.rs`). **P1c:** v0.3.2 candidate (CHANGELOG "Windows:" line, candidate checks,
+  check-range `haetty-v0.2.0..`), first Linux night run (`docs/dev-commands.md`) when the person says "예약해", tag
+  `haetty-v0.3.2` (pre-approved) when the rule holds; §6.1 re-check list after the person installs it.
 - P2: working inside haetty — coordinating session + workers, two small stages, `haetty tokens` comparison; a key to
   the longest-waiting worker (after the person installs v0.3.2).
 - P3: sidebar and side-by-side diff overlay; IDE-integration research and prototype (off by default). DESIGN §2
@@ -100,6 +98,7 @@ Backend and ConPTY:
 - Claude Code caps colours at 256 when `TMUX` is set: `Session` removes `TMUX`/`TMUX_PANE`.
 - Claude Code's first byte takes seconds on a cold start: wait with `wait-text` / a large `wait-idle`.
 - A background grandchild can hold the PTY: `Exited` comes after 500 ms grace without EOF.
+- portable-pty's Unix writer types "\n"+EOF with a blocking write on drop: haetty uses its own non-blocking reader/writer (P1a).
 - The libghostty-vt crate is pinned `=0.2.2`; upgrade deliberately.
 
 GUI (winit, fonts, rendering):

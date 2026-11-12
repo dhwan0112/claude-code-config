@@ -29,6 +29,11 @@ Moved verbatim from `docs/HANDOFF.md` on 2026-11-07 (stage V2). Section numbers 
   idle first.
 - A background grandchild can keep the PTY open after the child exits:
   `Exited` is sent after a 500 ms grace period even without EOF.
+- portable-pty 0.9's Unix master writer writes `"\n"` + EOF with a blocking
+  `write_all` in `Drop`; on a child that is gone and left its input queue
+  full, the drop waits forever (Linux does not wake a master writer when the
+  child's side closes). haetty uses its own non-blocking reader and writer
+  with a close pipe (P1a, `docs/history/2026-11-12-p1.md`).
 - The libghostty-vt crate is pinned to `=0.2.2` (API pre-1.0; crate `main`
   already differs, e.g. `set_terminfo_name`). Upgrade deliberately.
 

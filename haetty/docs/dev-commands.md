@@ -46,8 +46,8 @@ run the result. Only the Windows PC can do these:
 Flow: code changes are made on kramers and pushed to `main`. The Windows PC only pulls (its WSL checkout builds the
 Windows binary there, as before), runs the checks, and pushes the result as a document on a branch
 `checks/windows-<date>` (`haetty/docs/checks/<date>-windows.md`; never to `main`, no code). kramers fetches that
-branch, judges it and records the verdict in HANDOFF; a tag needs both the Linux result here and the Windows
-result from that branch. (Automating the hand-over from `overnight-soak.ps1` is the next stage's work.)
+branch, judges it and records the verdict in HANDOFF; since P1 (2026-11-12) a tag needs the Linux results here only,
+and the Windows result goes into the release's CHANGELOG "Windows:" line (verified / unverified / known problems). (Automating the hand-over from `overnight-soak.ps1` is the next stage's work.)
 
 ### Windows check list ("Windows unverified")
 

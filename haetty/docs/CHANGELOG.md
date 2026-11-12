@@ -8,6 +8,10 @@
   (Expose) and a map draw a full frame. Regression test: `scripts/e2e/remap.sh` (Xvfb; fails without the fix).
 - **The integrated title row on Xfce shows the buttons xfwm4's `button_layout` names** (#2, `cd2e0e7`), not GNOME's
   unused `button-layout`. Unit test: `titlebar::tests::button_layouts_parse_like_xfwm`.
+- **A closed session no longer leaks its PTY writer on Linux** when its child never read its input (P1a): the writer
+  and its drop waited forever on a full input queue (portable-pty's writer types `"\n"` + EOF on drop). The master
+  is non-blocking now and a closed session's reader and writer return; the child gets the terminal's hangup. Fixes the
+  flaky `closed_sessions_leave_no_threads`. Tests: `haetty-pty` `unix::tests` (fail without the fix).
 
 ## 0.3.1 (candidate, 2026-11-09)
 
