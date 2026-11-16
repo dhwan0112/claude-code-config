@@ -1,12 +1,13 @@
 # Changelog
 
-## 0.3.2 (candidate, 2026-11-12)
+## 0.3.2 (2026-11-12, tagged 2026-11-16)
 
 The first release after 0.2.0: it also carries the untagged candidates 0.3.0 and 0.3.1 (their sections below). The
 tag `haetty-v0.3.2` goes on the release commit `622d629` under the release rule of P1c (the Linux candidate check
-with the short soak, `tools/check-range.sh haetty-v0.2.0..` with 0 failing). **Not tagged yet:** check-range reports 21
-old commits failing with the leak P1a fixed, and two end-to-end scripts fail on kramers with 0.3.1 alike; both wait
-for the person (`docs/history/2026-11-12-p1.md`, "v0.3.2").
+with the short soak, `tools/check-range.sh haetty-v0.2.0..` with 0 failing). Tagged 2026-11-16 after the person's decision: 26
+old commits that fail with the leak P1a fixed are listed in `tools/known-gate-failures`, and two end-to-end scripts
+that fail on kramers with 0.3.1 alike (`orchestrator.sh`, `ime`) do not hold the tag (`docs/history/2026-11-12-p1.md`,
+"v0.3.2").
 
 **Windows:** unverified for this commit. Its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Not run on
 Windows: the changes since 0.3.1 below (the K1 follow-up and the health counts are platform-independent code; the

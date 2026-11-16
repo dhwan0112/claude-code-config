@@ -8,13 +8,11 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage p1c-tag (branch `haetty/p1c-tag`, worktree `~/projects/claude-code-config-wt/p1c-tag`). Remaining: the 21 approved KNOWN lines, check-range haetty-v0.2.0..622d629, tag haetty-v0.3.2
-
 ## 1. Current state
 
-- **Version** 0.3.2 (workspace; the release commit of P1c; 0.3.0 `b1262d2` and 0.3.1 `1163a0a` were never tagged and
-  are superseded by it). Tags: `haetty-v0.1.0` = `4d75fcd`,
-  `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
+- **Version** 0.3.2 (0.3.0 `b1262d2` and 0.3.1 `1163a0a` were never tagged and are superseded by it). Tags:
+  **`haetty-v0.3.2` = `622d629`** (tagged 2026-11-16; record [history](history/2026-11-12-p1.md), "v0.3.2"),
+  `haetty-v0.1.0` = `4d75fcd`, `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
   check-range `haetty-v0.1.1..63822de` 0 failing; record in
   [history](history/2026-11-06-07-stages-t-u-v.md)).
@@ -43,12 +41,12 @@ Stages:
   `closed_sessions_leave_no_threads` was a real leak (a closed session's PTY writer blocked), fixed in `haetty-pty`
   ([history/2026-11-12-p1.md](history/2026-11-12-p1.md)). **P1b done (2026-11-12):** K1 follow-up (protected,
   approved) — a later `Stop`/`StopFailure` opens the input hold without a person's key; a mouse button press answers
-  (both in `tests/permission.rs`); auto-mode denial still open. **P1c done, not tagged (2026-11-12):** the new rule
+  (both in `tests/permission.rs`); auto-mode denial still open. **P1c done (2026-11-12), tagged 2026-11-16:** the new rule
   (short soak in the candidate check, one-hour soak as a stage check), the daemon's hourly `health` line and
   `status --json` "health", the release commit **`622d629` (0.3.2)**. Short soaks PASS on both engines; check-range
-  `haetty-v0.2.0..622d629` **21 failing** (all the P1a leak in old commits) and run-all's `orchestrator.sh` and `ime`
-  fail on kramers (0.3.1 alike). **Next: the person decides** on the 21 KNOWN lines (ready in the record, "v0.3.2")
-  and the two e2e failures; then tag `622d629`, push the tag alone. Open: P1a's one-hour soak; the two e2e causes.
+  `haetty-v0.2.0..622d629`: the P1a leak fails old commits under load (21, then 5 others); the person approved those
+  26 KNOWN lines and the two kramers e2e failures (`orchestrator.sh`, `ime`; 0.3.1 alike) not holding the tag.
+  **`haetty-v0.3.2` = `622d629`**, tag pushed. Open: P1a's one-hour soak; the two e2e causes.
 - P2: working inside haetty — coordinating session + workers, two small stages, `haetty tokens` comparison; a key to
   the longest-waiting worker (after the person installs v0.3.2).
 - P3: sidebar and side-by-side diff overlay; IDE-integration research and prototype (off by default). DESIGN §2
