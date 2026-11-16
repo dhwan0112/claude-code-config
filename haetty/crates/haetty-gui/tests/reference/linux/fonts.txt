@@ -1,1 +1,1 @@
-primary "DejaVu Sans Mono" (bold true, italic true), fallback [Noto Sans Mono CJK KR, Noto Sans CJK KR, DejaVu Sans]
+primary "DejaVu Sans Mono" (bold true, italic true), fallback [Noto Sans Mono CJK KR, Noto Sans CJK KR, Noto Sans Symbols2, Noto Sans Symbols, DejaVu Sans, Noto Sans Math, Noto Color Emoji]

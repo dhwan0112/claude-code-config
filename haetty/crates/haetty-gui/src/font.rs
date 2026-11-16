@@ -201,6 +201,29 @@ impl Fonts {
         )
     }
 
+    /// The system has the family `name` (`Fonts::load` falls back to the defaults when it does not).
+    pub fn has_family(&self, name: &str) -> bool {
+        self.query(name, Weight::NORMAL, FdStyle::Normal).is_some()
+    }
+
+    /// The monospaced families the system has, sorted, each once (the settings panel's font list).
+    pub fn monospace_families(&self) -> Vec<String> {
+        let mut v: Vec<String> = self
+            .db
+            .faces()
+            .filter(|f| f.monospaced)
+            .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
+            .collect();
+        v.sort_by_key(|n| n.to_lowercase());
+        v.dedup();
+        v
+    }
+
+    /// A face draws `c` as a single-colour text glyph (no face, or only a colour one: false).
+    pub fn text_glyph(&mut self, c: char) -> bool {
+        self.resolve(c, Style::default(), Presentation::Text).is_some_and(|r| !self.faces[r.face].color)
+    }
+
     fn query(&self, name: &str, weight: Weight, style: FdStyle) -> Option<fontdb::ID> {
         let id = self.db.query(&Query { families: &[Family::Name(name)], weight, stretch: Stretch::Normal, style })?;
         // fontdb matches family names case-insensitively; keep it that way.

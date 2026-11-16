@@ -112,6 +112,19 @@ impl Renderer for SoftRenderer {
         self.stale = true;
     }
 
+    fn set_fonts(&mut self, fonts: crate::font::Fonts) {
+        self.painter.set_fonts(fonts);
+        self.stale = true;
+    }
+
+    fn text_glyph(&mut self, c: char) -> bool {
+        self.painter.fonts_mut().text_glyph(c)
+    }
+
+    fn monospace_families(&mut self) -> Vec<String> {
+        self.painter.fonts_mut().monospace_families()
+    }
+
     fn set_padding(&mut self, style: PaddingStyle) {
         if style != self.padding {
             self.padding = style;

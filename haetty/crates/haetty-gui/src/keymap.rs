@@ -49,6 +49,8 @@ pub enum Action {
     /// Allow or stop observe-only readers (`haetty screen`, `haetty events`)
     /// for the active tab (DESIGN.md §6.1).
     ToggleObserve,
+    /// The settings panel (DESIGN.md §2.4): open or close.
+    Settings,
 }
 
 impl Action {
@@ -78,6 +80,7 @@ impl Action {
             Action::MessageWorker => "message_worker".into(),
             Action::RemoveTaskWorktree => "remove_task_worktree".into(),
             Action::ToggleObserve => "toggle_observe".into(),
+            Action::Settings => "settings".into(),
         }
     }
 
@@ -107,6 +110,7 @@ impl Action {
             Action::MessageWorker => "Message the worker".into(),
             Action::RemoveTaskWorktree => "Remove a task's worktree".into(),
             Action::ToggleObserve => "Observing: allow or stop for this tab (haetty screen, haetty events)".into(),
+            Action::Settings => "Settings".into(),
         }
     }
 
@@ -134,6 +138,7 @@ impl Action {
             "message_worker" => Action::MessageWorker,
             "remove_task_worktree" => Action::RemoveTaskWorktree,
             "toggle_observe" => Action::ToggleObserve,
+            "settings" => Action::Settings,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -166,6 +171,7 @@ impl Action {
             Action::NewTask,
             Action::MessageWorker,
             Action::RemoveTaskWorktree,
+            Action::Settings,
             Action::ReloadConfig,
             Action::SaveTabs,
             Action::OpenSavedTabs,
@@ -254,6 +260,9 @@ impl Default for Keymap {
             b(&format!("alt+{n}"), Action::GotoTab(n));
         }
         b("ctrl+shift+p", Action::CommandPalette);
+        // Ctrl+, opens the settings, as in many editors. Claude Code binds no Ctrl+comma; a program that wants it:
+        // `keybind = ctrl+,=unbind` (README, "Settings").
+        b("ctrl+,", Action::Settings);
         // Claude Code binds Ctrl+D (exit) and Ctrl+S (stash), not these.
         b("ctrl+shift+d", Action::DiffView);
         b("ctrl+shift+s", Action::StatusPanel);

@@ -134,8 +134,8 @@ else the program name. When a tab's program exits, the tab stays, dimmed
 and marked `[exited N]`, until you close it. With one tab, the window closes
 when its program exits and `haetty` returns the program's exit code.
 
-Application shortcuts use Ctrl+Shift (plus Ctrl+Tab and Alt+digit); plain
-Ctrl+letter keys go to the program.
+Application shortcuts use Ctrl+Shift (plus Ctrl+Tab, Alt+digit and Ctrl+, for the
+settings); plain Ctrl+letter keys go to the program.
 
 | Action | Default | `keybind` action |
 |---|---|---|
@@ -148,6 +148,7 @@ Ctrl+letter keys go to the program.
 | Paste | Ctrl+Shift+V, Shift+Insert, Paste key; Windows also Ctrl+V | `paste` |
 | Diff view (Claude Code tabs): last edit, `m` → vs HEAD → working tree | Ctrl+Shift+D | `diff_view` |
 | Rename tab | Ctrl+Shift+R | `rename_tab` |
+| Settings panel ([Settings](#settings)) | Ctrl+, | `settings` |
 | Reopen a closed tab (last 20) | — (palette) | `reopen_closed_tab` |
 | Detach tab (keeps running) | — (palette) | `detach_tab` |
 | Attach detached sessions | — (palette) | `attach_detached` |
@@ -181,6 +182,47 @@ Ctrl+letter keys go to the program.
   `shift`, `alt` (`opt`, `option`), `super` (`cmd`, `win`), then a character
   (`t`, `1`, `-`) or a key name (`tab`, `pagedown`, `pageup`, `insert`,
   `enter`, `paste`, `f5`); case does not matter.
+
+### Settings
+
+Three ways open the settings panel (DESIGN §2.4):
+
+- the dim `⚙` in the last column of a Claude Code tab's status row (in other tabs it appears over the bottom-right
+  cell while the pointer is near that corner, and goes when you type; never while the program reads the mouse);
+- **Ctrl+,** (`keybind` action `settings`);
+- the command palette's "Settings".
+
+The panel covers the screen area: groups on the left (Appearance, Font, Window, Terminal, Claude Code, Advanced),
+the settings on the right — one column below 64 columns. **↑/↓** move, **Tab** / **Shift+Tab** change the group,
+**Space** or **←/→** switch an on/off value or a choice, **←/→** step a number, typing a digit starts a number's
+input, **Enter** edits a value in its row (or opens the list of a choice, a theme or a font; type to filter), **/**
+searches every group, **r** puts the selected setting back to its default, **Esc** closes (or leaves the edit, the
+list or the search first). A click selects; a click on a value acts like Space or Enter; the wheel scrolls. The
+theme list shows each theme as you move over it; Esc goes back to the theme you had. A font family can be typed
+(Hangul with the IME too) or picked from the system's monospaced fonts. While the panel is open, nothing you type or
+click reaches the program.
+
+Each row shows the value, a dim `•` when it differs from the default, and a dim **next start** when it applies only
+from the next start: `decorations`, `engine`, `scrollback-limit`, `restore-tabs`, `claude-integration`,
+`observe-new-tabs`. Everything else in the panel applies at once — colours and theme, `minimum-contrast`, the font
+family and size, the padding, the settings button, notifications and the status panel's numbers. A change that cannot
+be made (a font the system does not have, a number out of range, a read-only file) keeps the old value and says why in
+its row. The bottom line shows the selected setting's description and its key in the config file. **Open config
+file** opens it in a new tab with `$EDITOR` (without `$EDITOR`, it shows the path); **Reload config** reads it again.
+A setting given on the command line is shown but not changed there.
+
+Saving changes only the line of that key in the config file: comments, blank lines, the order of lines, unknown keys
+and line ends (LF or CRLF) stay as they are. A key that is not in the file gets one line at the end; the default
+removes the key's lines (commented-out lines stay). The file is written through a temporary file and a rename; a
+symbolic link stays a link. Before the first change of a run the file is copied to `config.bak` (an existing backup is
+kept: the new one gets the date, `config.bak.2026-11-16`). If the file changed elsewhere while the panel was open, the
+other lines are kept as they are now.
+
+`settings-button = auto | always | never`: `always` also shows the button in other tabs whenever the pointer is in
+the window; `never` removes it (Ctrl+, and the palette stay). Ctrl+, used to reach the program (as `,`, or as a
+Ctrl+comma key report for programs using the kitty keyboard protocol); Claude Code binds nothing to it. A program
+that needs it: `keybind = ctrl+,=unbind`. Not in the panel, file only: `keybind`, `palette`, `saving-mode`,
+`worker-command` (what changes how Claude Code itself works is not offered in the panel).
 
 ### Config file
 

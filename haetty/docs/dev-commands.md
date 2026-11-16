@@ -56,6 +56,15 @@ Items a stage could not check because they need Windows; the PC works through th
 
 - `70f97a4` (#1): `Focused` and `Occluded(false)` now draw a full frame on every platform. On Windows: restore from
   minimized and switch focus a few times — the window looks as before, idle CPU stays about 0 %.
+- Stage PS (settings button and panel, DESIGN §2.4, §3.16):
+  - the reference frames: `claude-panel` and `workers` gained the ⚙, `settings` and `shell-gear` are new — run the
+    Windows test binary once with `HAETTY_UPDATE_REFERENCE=1` and `HAETTY_REFERENCE_DIR` (then a rerun: every frame
+    identical), and commit `tests/reference/windows/` with the reason;
+  - the ⚙ glyph is single-colour (Segoe UI Symbol expected, not the Segoe UI Emoji colour one; the log line
+    `settings button: ⚙` at start, `≡` would mean no single-colour face);
+  - at 150 % DPI a click on the ⚙ cell (bottom-right) opens the panel, a click next to it does not;
+  - a config file with CRLF line ends keeps them after a change in the panel (`config.bak` beside it);
+  - `scripts/e2e/windows/orchestrator.ps1` and `windows/soak.ps1` with the seven-question New task wizard (S7).
 
 ## Short soak (candidate check, P1c)
 

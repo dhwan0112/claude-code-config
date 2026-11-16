@@ -141,6 +141,18 @@ impl Painter {
         CellMetrics { width: self.m.cell_w as u32, height: self.m.cell_h as u32 }
     }
 
+    /// Other fonts (`font-family` changed while running): the caches go, the metrics are measured again.
+    pub fn set_fonts(&mut self, fonts: Fonts) {
+        self.fonts = fonts;
+        let px = self.m.px;
+        self.m.px = 0.0;
+        self.set_px(px);
+    }
+
+    pub fn fonts_mut(&mut self) -> &mut Fonts {
+        &mut self.fonts
+    }
+
     pub fn set_px(&mut self, px: f32) {
         let px = px.clamp(4.0, 200.0);
         if px == self.m.px {
@@ -867,12 +879,14 @@ mod tests {
             cols,
             rows,
             tab_bar: Some(ui::tab_bar(&tabs, 0, cols as usize, g)),
-            status: Some(ui::status_row(Some(&info), cols as usize, g, "")),
+            status: Some(ui::status_row_gear(Some(&info), cols as usize, g, "", false, true)),
             panel: None,
             diff: None,
             palette: None,
             hint: None,
             link: None,
+            settings: None,
+            gear: Some(ui::Gear { col: cols as usize - 1, row: rows as usize - 1, text: ui::GEAR, hover: false }),
         }
         .build();
         p.set_look(Look { min_contrast: 4.5, ..Look::of(&t) });
@@ -890,10 +904,22 @@ mod tests {
         // The status row keeps its dim labels; nothing white there either.
         assert!(count(&cv, row(3), is(g.dim)) > 0, "dim labels");
         assert_eq!(count(&cv, row(3), is(white)), 0);
+        // Stage PS (DESIGN.md §2.4): the settings button's cell is haetty's: dim, only greys, at 4.5 as at 1.
+        let gear = Rect::new((cols as i32 - 1) * m.cell_w, 3 * m.cell_h, m.cell_w, m.cell_h);
+        if p.fonts.text_glyph('\u{2699}') {
+            assert!(count(&cv, gear, is(g.dim)) > 0, "the button is drawn in the dim grey");
+        }
+        let not_grey = |px: u32| {
+            let c = crate::render::canvas::unpack(px);
+            c.r != c.g || c.g != c.b
+        };
+        assert_eq!(count(&cv, gear, not_grey), 0, "no colour in the button's cell");
+        assert_eq!(count(&cv, gear, is(white)), 0);
         // The same colours as a program's cells would change.
         p.set_look(Look { min_contrast: 1.0, ..Look::of(&t) });
         let cv1 = render(&mut p, &scene(&composed, &dirty, false, None));
         assert_eq!(count(&cv1, row(1), is(white)), 0, "off at 1");
+        assert_eq!(count(&cv1, gear, is(g.dim)), count(&cv, gear, is(g.dim)), "the button at 1 as at 4.5");
         assert_eq!(
             count(&cv1, row(0), is(t.palette[9])),
             count(&cv, row(0), is(t.palette[9])),

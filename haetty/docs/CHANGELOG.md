@@ -8,6 +8,23 @@
   `haetty --help` and README's table come from it. New keys `font-family` (the config file's `--font`), `font-size`
   and `settings-button`. Existing config files read as before (a test pins every older key, the `window-padding`
   family and the refused values). Stage PS, `docs/history/2026-11-16-ps-settings.md`.
+- The settings button and the settings panel (DESIGN §2.4, approved; README "Settings"): a dim ⚙ in a Claude Code
+  tab's status row (other tabs: over the bottom-right cell while the pointer is near, gone on a key; never under
+  mouse reports), Ctrl+, (`settings`) and the palette's "Settings". Groups (Appearance, Font, Window, Terminal, Claude
+  Code, Advanced), ↑/↓, Tab, Space, ←/→, Enter, `/` search, `r` default, Esc; mouse clicks and the wheel; a theme
+  list that previews and Esc that restores. Saving changes only the key's line (comments, order, unknown keys,
+  LF/CRLF kept; temporary file and rename; links kept; read-only refused; one `config.bak` per run; a file changed
+  elsewhere is read again). Applied at once: theme and colours, `minimum-contrast`, `font-family`, `font-size`, the
+  padding, `settings-button`, `notifications`, `token-status`, `clear-hint`, `context-window` (a font or padding
+  change resizes the sessions once, 150 ms after the last step); the rest shows "next start". No new dependency.
+  **Windows:** unverified (build and clippy pass; the Windows check list in `docs/dev-commands.md`).
+
+### Changed
+
+- Ctrl+, is now haetty's (the settings); before, it reached the program. `keybind = ctrl+,=unbind` gives it back.
+- "Reload config" (and a config file changed while the window was in the background) now applies every setting that
+  applies while running, not only the colours. The Linux reference frames are made with kramers' fonts (the old
+  ones were made with fewer fallback fonts and were skipped there).
 
 ### Fixed
 

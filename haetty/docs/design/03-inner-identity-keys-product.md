@@ -196,6 +196,8 @@ Alt+M/P/T/O/Y/B/F/D/V.
 | Paste | Ctrl+Shift+V, Shift+Insert, Paste key; Windows also Ctrl+V | Linux plain Ctrl+V stays with Claude Code (image paste) |
 | Diff pane / status panel (milestone 3) | Ctrl+Shift+D / Ctrl+Shift+S | free (Claude Code: Ctrl+D exit, Ctrl+S stash) |
 | Rename tab | Ctrl+Shift+R | free (Claude Code: Ctrl+R history search) |
+| Settings panel (§2.4, stage PS) | Ctrl+, | free in Claude Code; before, the program got `,` (legacy encoding) or a Ctrl+comma report (kitty keyboard protocol); `keybind = ctrl+,=unbind` gives it back. Punctuation, not a letter: the plain-Ctrl+letter rule holds |
+| In the settings panel | ↑/↓, Tab, Space, ←/→, Enter, /, r, Esc | the panel has the keyboard while open; nothing reaches the program |
 | Reopen a closed tab, detach tab, attach detached sessions | palette only | — (no chord: rarely used; detach is easy to mistake for close) |
 | New task, message the worker, remove a task's worktree (§8) | palette only | — (no chord: each makes or sends something; a chord pressed by mistake must not) |
 | In the diff view: next view / read again | m or Tab / r | the view has the keyboard while open; nothing reaches the program |

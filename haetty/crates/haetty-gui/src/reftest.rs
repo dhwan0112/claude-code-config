@@ -203,6 +203,34 @@ fn compose<'a>(screen: &'a Snapshot, accents: &'a [Rgb; 16]) -> Compose<'a> {
         palette: None,
         hint: None,
         link: None,
+        settings: None,
+        gear: None,
+    }
+}
+
+/// The settings button in the last cell of the window.
+fn gear(hover: bool) -> ui::Gear<'static> {
+    ui::Gear { col: COLS as usize - 1, row: ROWS as usize - 1, text: ui::GEAR, hover }
+}
+
+/// The settings panel's view of the default settings.
+struct Defaults(crate::config::Config);
+
+impl crate::settings::Source for Defaults {
+    fn value(&self, key: &str) -> String {
+        self.0.value(key).unwrap_or_default()
+    }
+    fn on_command_line(&self, _: &str) -> bool {
+        false
+    }
+    fn themes(&self) -> Vec<String> {
+        Theme::builtin_names().map(str::to_string).collect()
+    }
+    fn fonts(&mut self) -> Vec<String> {
+        vec![]
+    }
+    fn path(&self) -> String {
+        "~/.config/haetty/config".into()
     }
 }
 
@@ -347,9 +375,14 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         ],
         Some((2, 8)),
     );
-    let status = ui::status_row(Some(&info), COLS as usize, g, "ctrl+shift+d");
+    let status = ui::status_row_gear(Some(&info), COLS as usize, g, "ctrl+shift+d", false, true);
     let panel = ui::panel(Some(&info), &[], PANEL_COLS, area, g, NOW_MS, None);
-    out.push(("claude-panel", Compose { status: Some(status), panel: Some(panel), ..compose(&s) }.build(), None, None));
+    out.push((
+        "claude-panel",
+        Compose { status: Some(status), panel: Some(panel), gear: Some(gear(false)), ..compose(&s) }.build(),
+        None,
+        None,
+    ));
 
     // Orchestrator (DESIGN.md §8.3, stage S3): worker tabs with their state
     // glyphs and the panel's WORKERS section for the active worker.
@@ -391,14 +424,30 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
     let area = ROWS as usize - 2;
     let s = screen(COLS - PANEL_COLS as u16, area as u16, &["● Done.", "", "STATUS: verified", "", "> "], Some((2, 4)));
     let info = ClaudeInfo { turns: 1, updated_ms: NOW_MS - 2_000, ..Default::default() };
-    let status = ui::status_row(Some(&info), COLS as usize, g, "ctrl+shift+d");
+    let status = ui::status_row_gear(Some(&info), COLS as usize, g, "ctrl+shift+d", false, true);
     let panel = ui::panel(Some(&info), &lines, PANEL_COLS, area, g, NOW_MS, None);
     out.push((
         "workers",
-        Compose { tab_bar: Some(bar), status: Some(status), panel: Some(panel), ..compose(&s) }.build(),
+        Compose {
+            tab_bar: Some(bar),
+            status: Some(status),
+            panel: Some(panel),
+            gear: Some(gear(false)),
+            ..compose(&s)
+        }
+        .build(),
         None,
         None,
     ));
+
+    // Stage PS (DESIGN.md §2.4): the button over a shell tab's last cell, under the pointer.
+    let s = screen(COLS, ROWS, &["$ ls", "Cargo.toml  README.md  crates  docs", "$ "], Some((2, 2)));
+    out.push(("shell-gear", Compose { gear: Some(gear(true)), ..compose(&s) }.build(), None, None));
+    // The settings panel over the screen area (60 columns: the groups on one line), the Appearance group.
+    let mut panel = crate::settings::SettingsPanel::default();
+    let mut grid = vec![vec![Cell::default(); COLS as usize]; ROWS as usize];
+    let at = panel.draw(&mut grid, g, &mut Defaults(crate::config::Config::default()));
+    out.push(("settings", Compose { settings: Some((grid, at)), ..compose(&s) }.build(), None, None));
 
     // E5b (DESIGN.md §2.2): underline kinds and colours; hyperlinks plain,
     // then one under the pointer: underlined, its target on the bottom row.

@@ -159,7 +159,7 @@ pub fn put(row: &mut [Cell], x: usize, text: &str, fg: Rgb, bg: Rgb, bold: bool)
     x
 }
 
-fn blank(fg: Rgb, bg: Rgb) -> Cell {
+pub fn blank(fg: Rgb, bg: Rgb) -> Cell {
     Cell {
         text: String::new(),
         fg: Some(fg),
@@ -561,6 +561,43 @@ pub fn status_row_with(info: Option<&ClaudeInfo>, cols: usize, g: Greys, diff_ke
     row
 }
 
+/// The settings button's text: ⚙ asking for text presentation (VS15), or `≡` where the fonts have no single-colour ⚙
+/// (DESIGN.md §2.4; `Win::gear`).
+pub const GEAR: &str = "\u{2699}\u{fe0e}";
+pub const GEAR_FALLBACK: &str = "\u{2261}";
+
+/// [`status_row_with`] keeping its last two columns free for the settings button (`gear`): the items are cut
+/// first, the button never moves.
+pub fn status_row_gear(
+    info: Option<&ClaudeInfo>,
+    cols: usize,
+    g: Greys,
+    diff_key: &str,
+    saving: bool,
+    gear: bool,
+) -> Vec<Cell> {
+    if !gear || cols < 4 {
+        return status_row_with(info, cols, g, diff_key, saving);
+    }
+    let mut row = status_row_with(info, cols - 2, g, diff_key, saving);
+    let bg = row.last().and_then(|c| c.bg).unwrap_or(g.bg);
+    row.extend([blank(g.dim, bg), blank(g.dim, bg)]);
+    row
+}
+
+/// The settings panel's rows over the screen area, and its text cursor.
+pub type PanelGrid = (Vec<Vec<Cell>>, Option<(u16, u16)>);
+
+/// The settings button at the window cell `(col, row)`: dim, normal under the pointer; over a program's cell it
+/// keeps that cell's background.
+#[derive(Clone, Copy, Debug)]
+pub struct Gear<'a> {
+    pub col: usize,
+    pub row: usize,
+    pub text: &'a str,
+    pub hover: bool,
+}
+
 /// The status row without the saving mark (the tests and the reference frames; the window uses `status_row_with`).
 #[cfg(test)]
 pub fn status_row(info: Option<&ClaudeInfo>, cols: usize, g: Greys, diff_key: &str) -> Vec<Cell> {
@@ -808,6 +845,10 @@ pub struct Compose<'a> {
     /// The hyperlink under the pointer, the window row to show it on, and
     /// why a click did not open it.
     pub link: Option<(&'a str, usize, Option<&'a str>)>,
+    /// The settings panel drawn over the screen area (its rows, as wide as the area), and its text cursor.
+    pub settings: Option<PanelGrid>,
+    /// The settings button (DESIGN.md §2.4).
+    pub gear: Option<Gear<'a>>,
 }
 
 impl Compose<'_> {
@@ -858,6 +899,26 @@ impl Compose<'_> {
                 program[top + y][..cols - pw].fill(false);
             }
             cursor = None;
+        }
+        if let Some((rows_of, at)) = &self.settings {
+            for (y, r) in rows_of.iter().take(area).enumerate() {
+                let w = r.len().min(cols);
+                grid[top + y][..w].clone_from_slice(&r[..w]);
+                program[top + y][..w].fill(false);
+            }
+            cursor =
+                at.map(|(x, y)| Cursor { x, y: y + top as u16, shape: haetty_core::CursorShape::Bar, blinking: false });
+        }
+        if let Some(gr) = self.gear {
+            if let (Some(row), Some(prow)) = (grid.get_mut(gr.row), program.get_mut(gr.row)) {
+                if let (Some(c), Some(p)) = (row.get_mut(gr.col), prow.get_mut(gr.col)) {
+                    let bg = c.bg;
+                    let fg = if gr.hover { g.normal } else { g.dim };
+                    // Over a program's cell its background stays (the default one too: `None`).
+                    *c = Cell { text: gr.text.into(), bg, ..blank(fg, g.bg) };
+                    *p = false;
+                }
+            }
         }
         // The palette and hints draw over whatever is there: the cells they
         // changed are theirs.
@@ -1044,6 +1105,8 @@ mod tests {
             palette: None,
             hint: None,
             link: None,
+            settings: None,
+            gear: None,
         }
         .build();
         assert_eq!(out.rows, 3);
@@ -1061,6 +1124,8 @@ mod tests {
             palette: None,
             hint: Some("hi"),
             link: None,
+            settings: None,
+            gear: None,
         }
         .build();
         assert_eq!(plain.cursor.unwrap().y, 1);
@@ -1079,6 +1144,8 @@ mod tests {
             palette: None,
             hint: None,
             link: None,
+            settings: None,
+            gear: None,
         }
         .build();
         assert_eq!((with.cells[0].text.as_str(), with.cells[8].text.as_str()), ("x", "S"));

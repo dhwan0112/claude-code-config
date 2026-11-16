@@ -13,10 +13,6 @@
 //! The colour keys and theme files use Ghostty's theme file format; they are
 //! applied after the theme wherever they stand in the file.
 
-// TEMPORARY (stage PS, removed by the settings panel's commit): the panel reads `group`, `when`, `line`, `panel`
-// and `check_strict`.
-#![allow(dead_code)]
-
 use std::path::Path;
 
 use haetty_core::theme::{self, Theme};
@@ -74,7 +70,7 @@ impl Decorations {
     }
 }
 
-/// The settings button (`settings-button`, DESIGN.md §2.5).
+/// The settings button (`settings-button`, DESIGN.md §2.4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SettingsButton {
     /// Claude Code tabs: always, in the status row's last column; other tabs: drawn over the last cell only while the
@@ -158,7 +154,7 @@ impl Default for Config {
     }
 }
 
-/// The settings panel's groups, in their order (DESIGN.md §2.5).
+/// The settings panel's groups, in their order (DESIGN.md §2.4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Group {
     Appearance,

@@ -45,6 +45,9 @@ use crate::ui::{self, Compose, Palette, Pick, TabView};
 use crate::Options;
 use haetty_cc::orch::{self, WorkerState};
 
+#[path = "app_settings.rs"]
+mod app_settings;
+
 /// How long a close request waits for its confirming second press, and how
 /// long a hint stays.
 const CONFIRM: Duration = Duration::from_secs(3);
@@ -298,6 +301,24 @@ struct Win {
     /// The grid asked for (`--cols`, `--rows`, the title row), kept when
     /// the scale becomes known.
     requested_grid: GridSize,
+    /// The settings in effect: the config file with the command line's keys on top (stage PS).
+    cfg: crate::config::Config,
+    /// The settings panel (DESIGN.md §2.4), and the config file it writes.
+    settings_panel: Option<crate::settings::SettingsPanel>,
+    cfg_file: crate::config_edit::ConfigFile,
+    /// The system's monospaced families, read when the panel's font list first opens.
+    font_list: Option<Vec<String>>,
+    /// The settings button's text (`ui::GEAR`, or `ui::GEAR_FALLBACK` without a single-colour ⚙).
+    gear: &'static str,
+    /// The pointer is near the bottom-right corner (other tabs show the button), and on the button.
+    gear_near: bool,
+    gear_hover: bool,
+    /// A left press opened the panel from the button: its release is not sent either.
+    gear_press: bool,
+    /// The theme list shows a theme that is not in effect.
+    previewing: bool,
+    /// A font or padding change waits this long before the sessions get the new size.
+    pending_relayout: Option<Instant>,
     /// Set when the last tab is gone: the window closes.
     quit: Option<i32>,
     /// The window is closing: closing its tabs must not shrink `last`.
@@ -387,6 +408,9 @@ impl App {
         painter.set_px(self.font_px(scale));
         let mut renderer: Box<dyn Renderer> =
             Box::new(SoftRenderer::new(window.clone(), painter).map_err(|e| format!("renderer: {e}"))?);
+        // DESIGN.md §2.4: a single-colour ⚙, else ≡.
+        let gear = if renderer.text_glyph('\u{2699}') { ui::GEAR } else { ui::GEAR_FALLBACK };
+        log::info!("settings button: {}", if gear == ui::GEAR { "⚙" } else { "≡ (no single-colour ⚙ in the fonts)" });
         let pad = self.padding(scale);
         renderer.set_padding(pad);
         let layout = Layout { cell: renderer.cell_metrics(), padding: pad.min, balance: pad.balance };
@@ -466,6 +490,16 @@ impl App {
             panel_width: ui_state.1,
             diff: None,
             last_slow_draw: None,
+            cfg: self.opts.config.clone(),
+            settings_panel: None,
+            cfg_file: crate::config_edit::ConfigFile::new(crate::config::file_path()),
+            font_list: None,
+            gear,
+            gear_near: false,
+            gear_hover: false,
+            gear_press: false,
+            previewing: false,
+            pending_relayout: None,
             quit: None,
             shutting_down: false,
             pending_start: None,
@@ -672,9 +706,9 @@ impl Win {
     }
 
     /// Reads the config file again (`force`, or when it changed since the
-    /// last read) and applies a changed theme, colour keys or
-    /// `minimum-contrast` to haetty and to every open tab. Other settings
-    /// take effect at the next start.
+    /// last read) and applies what applies while running (`config::When::Live`:
+    /// colours, `minimum-contrast`, fonts, padding, the settings button, …) to
+    /// haetty and to every open tab. Other settings take effect at the next start.
     fn reload_config(&mut self, force: bool) -> bool {
         let mtime = crate::config::file_mtime();
         if !force && mtime == self.config_mtime {
@@ -685,26 +719,27 @@ impl Win {
         for b in bad {
             log::warn!("{}: {b} (ignored)", crate::config::file_path().display());
         }
-        let (theme, msgs) = cfg.resolve_theme(&haetty_proto::paths::config_dir());
-        for m in msgs {
-            log::warn!("{m} (ignored)");
-        }
-        let look = Look { min_contrast: cfg.minimum_contrast, ..Look::of(&theme) };
-        if theme == self.theme && look == self.look {
-            return false;
-        }
-        log::info!("theme: {} (reloaded; {} tab(s))", cfg.theme, self.tabs.len());
-        if theme != self.theme {
-            for t in &self.tabs {
-                t.session.handle.set_colors(TermColors::of(&theme));
+        let fonts = if cfg.font_family != self.cfg.font_family {
+            match crate::font::Fonts::load(cfg.font_family.as_deref()) {
+                Ok(f) if cfg.font_family.as_deref().is_none_or(|n| f.has_family(n)) => Some(f),
+                _ => {
+                    log::warn!("font-family: not on this system; the fonts stay");
+                    None
+                }
             }
+        } else {
+            None
+        };
+        let mut cfg = cfg;
+        if fonts.is_none() {
+            cfg.font_family = self.cfg.font_family.clone();
         }
-        self.theme = theme;
-        self.look = look;
-        self.renderer.set_look(look);
-        self.full = true;
-        self.recompose();
-        true
+        let theme = cfg.theme.clone();
+        let changed = self.apply_config(cfg, fonts);
+        if changed {
+            log::info!("config reloaded: theme {theme}; {} tab(s)", self.tabs.len());
+        }
+        changed
     }
 
     /// Attaches every detached running session that is not a tab yet.
@@ -931,6 +966,7 @@ impl Win {
         let grids: Vec<GridSize> = self.tabs.iter().map(|t| self.term_grid_for(t.integrated, n)).collect();
         for (t, g) in self.tabs.iter_mut().zip(grids) {
             if t.size != g && t.exited.is_none() {
+                log::debug!("resize session {} to {}x{}", t.session.id, g.cols, g.rows);
                 t.session.handle.resize(g);
                 t.size = g;
             }
@@ -1331,11 +1367,12 @@ impl Win {
             Action::ReloadConfig => {
                 let changed = self.reload_config(true);
                 self.show_hint(if changed {
-                    "config reloaded: theme and colours applied".into()
+                    "config reloaded: applied".into()
                 } else {
-                    "config reloaded: no colour change".into()
+                    "config reloaded: no change".into()
                 });
             }
+            Action::Settings => self.toggle_settings(),
             Action::AttachDetached => {
                 let n = self.attach_detached();
                 self.show_hint(if n == 0 { "no detached sessions".into() } else { format!("attached {n} session(s)") });
@@ -1591,6 +1628,16 @@ impl Win {
 
     /// Rebuilds the window grid from the active tab and haetty's cells.
     fn recompose(&mut self) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        let (fg0, bg0) = self
+            .tab()
+            .snap
+            .as_ref()
+            .map_or((self.theme.foreground, self.theme.background), |s| (s.default_fg, s.default_bg));
+        let settings = self.draw_settings(ui::Greys::new(fg0, bg0, &self.theme.palette));
+        let gear_at = self.gear_place();
         let (fg, bg) = (self.theme.foreground, self.theme.background);
         let empty = Snapshot { default_fg: fg, default_bg: bg, ..Default::default() };
         let screen = self.tab().snap.as_ref().unwrap_or(&empty);
@@ -1619,7 +1666,8 @@ impl Win {
         let tab = self.tab();
         let diff_key = self.keys.chord_for(Action::DiffView).map(|c| c.to_string()).unwrap_or_default();
         let status = tab.integrated.then(|| {
-            ui::status_row_with(tab.claude.as_deref(), self.grid.cols as usize, g, &diff_key, self.saving_mode)
+            let gear = gear_at.is_some();
+            ui::status_row_gear(tab.claude.as_deref(), self.grid.cols as usize, g, &diff_key, self.saving_mode, gear)
         });
         let pc = self.panel_cols() as usize;
         let area = (self.grid.rows as usize).saturating_sub(self.top() as usize + usize::from(status.is_some()));
@@ -1642,6 +1690,8 @@ impl Win {
             palette: self.palette.as_ref().map(|p| (p, &self.keys)),
             hint: self.hint.as_ref().map(|(h, _)| h.as_str()),
             link: self.link_hover.as_deref().map(|l| (l, self.link_row(), self.link_note.as_deref())),
+            settings,
+            gear: gear_at.map(|(row, col)| ui::Gear { row, col, text: self.gear, hover: self.gear_hover }),
         }
         .build();
         if self.composed.as_ref().is_some_and(|s| (s.cols, s.rows) != (next.cols, next.rows)) {
@@ -1670,7 +1720,7 @@ impl Win {
     /// The hyperlink of the screen cell under the pointer: none over haetty's
     /// own rows and columns, the palette or the diff view.
     fn hovered_link(&self) -> Option<Arc<str>> {
-        if self.palette.is_some() || self.diff.is_some() {
+        if self.palette.is_some() || self.diff.is_some() || self.settings_panel.is_some() {
             return None;
         }
         let snap = self.tab().snap.as_ref()?;
@@ -1733,7 +1783,9 @@ impl Win {
     }
 
     fn mouse_tracking(&self) -> bool {
-        self.tab().snap.as_ref().is_some_and(|s| s.modes.mouse_tracking) && self.palette.is_none()
+        self.tab().snap.as_ref().is_some_and(|s| s.modes.mouse_tracking)
+            && self.palette.is_none()
+            && self.settings_panel.is_none()
     }
 
     /// Mouse position in the active tab's pixels; `None` over the tab bar.
@@ -1763,11 +1815,22 @@ impl Win {
             PhysicalKey::Code(c) => Some(c),
             PhysicalKey::Unidentified(_) => None,
         };
+        if ev.state == ElementState::Pressed && !self.tab().integrated {
+            // A key hides the button over a program's cell (DESIGN.md §2.4).
+            self.gear_away(false);
+        }
         if ev.state == ElementState::Released {
-            if code.is_some_and(|c| self.swallowed.remove(&c)) {
+            if code.is_some_and(|c| self.swallowed.remove(&c)) || self.settings_panel.is_some() {
                 return;
             }
         } else if let Some(chord) = chord_of(ev, self.mods) {
+            if self.settings_panel.is_some() {
+                self.settings_key(ev, &chord);
+                if let Some(c) = code {
+                    self.swallowed.insert(c);
+                }
+                return;
+            }
             if self.palette.is_some() {
                 self.palette_key(ev, &chord);
                 if let Some(c) = code {
@@ -1782,6 +1845,12 @@ impl Win {
                 self.run(a, Origin::Human);
                 return;
             }
+        } else if self.settings_panel.is_some() {
+            // As for the palette below: never past the panel into the program.
+            if let Some(t) = input::palette_text(ev.text.as_deref()) {
+                self.settings_text(t);
+            }
+            return;
         } else if self.palette.is_some() {
             // A key with text but no key name (Windows VK_PACKET: SendInput
             // Unicode, on-screen keyboards, AutoHotkey) goes into the palette
@@ -1972,7 +2041,9 @@ impl Win {
             }
             Ime::Commit(text) => {
                 self.preedit = None;
-                if let Some(p) = self.palette.as_mut() {
+                if self.settings_panel.is_some() {
+                    self.settings_text(&text);
+                } else if let Some(p) = self.palette.as_mut() {
                     p.query.push_str(&text);
                     p.selected = 0;
                     self.recompose();
@@ -2077,7 +2148,12 @@ impl Win {
             self.hint = None;
             self.recompose();
         }
-        self.hint.as_ref().filter(|_| !self.daemon_lost).map(|(_, t)| *t + CONFIRM)
+        let relayout = self.settle_relayout(now);
+        let hint = self.hint.as_ref().filter(|_| !self.daemon_lost).map(|(_, t)| *t + CONFIRM);
+        match (hint, relayout) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 }
 
@@ -2292,13 +2368,14 @@ impl ApplicationHandler<UserEvent> for App {
                 if win.hover.take().is_some() {
                     win.recompose();
                 }
+                win.gear_away(true);
             }
             WindowEvent::RedrawRequested => win.draw(),
             WindowEvent::Resized(size) => win.resized(size),
             WindowEvent::ScaleFactorChanged { scale_factor, mut inner_size_writer } => {
-                let px = (self.opts.config.font_size * 96.0 / 72.0 * scale_factor) as f32;
+                let px = (win.cfg.font_size * 96.0 / 72.0 * scale_factor) as f32;
                 win.renderer.set_font_px(px);
-                let pad = padding_style(&self.opts.config, scale_factor);
+                let pad = padding_style(&win.cfg, scale_factor);
                 win.renderer.set_padding(pad);
                 win.layout = Layout { cell: win.renderer.cell_metrics(), padding: pad.min, balance: pad.balance };
                 // A7: the grid stays (the one asked for, while the tabs wait;
@@ -2329,6 +2406,7 @@ impl ApplicationHandler<UserEvent> for App {
                 win.mouse = position;
                 win.title_hover();
                 win.update_link_hover();
+                win.gear_pointer();
                 if win.mouse_tracking() {
                     win.mouse_event(MouseAction::Motion, win.held.first().copied());
                 }
@@ -2338,6 +2416,18 @@ impl ApplicationHandler<UserEvent> for App {
                 let action = match state {
                     ElementState::Pressed => {
                         if b == MouseButton::Left && win.title_press() {
+                            return;
+                        }
+                        // The settings button, then the panel: neither reaches the program.
+                        if b == MouseButton::Left && win.gear_click() {
+                            win.gear_press = true;
+                            return;
+                        }
+                        if win.settings_panel.is_some() {
+                            if b == MouseButton::Left {
+                                let (col, row) = win.layout.cell_at(win.origin(), win.mouse.x, win.mouse.y, win.grid);
+                                win.settings_click(col, row);
+                            }
                             return;
                         }
                         // Ctrl+click on a hyperlink (DESIGN.md §2.2); not
@@ -2356,6 +2446,13 @@ impl ApplicationHandler<UserEvent> for App {
                     }
                     ElementState::Released => {
                         if b == MouseButton::Left && std::mem::take(&mut win.link_press) {
+                            return;
+                        }
+                        if b == MouseButton::Left && std::mem::take(&mut win.gear_press) {
+                            return;
+                        }
+                        if win.settings_panel.is_some() {
+                            win.held.retain(|x| *x != b);
                             return;
                         }
                         if b == MouseButton::Left && win.pressed_button.is_some() {
@@ -2377,6 +2474,10 @@ impl ApplicationHandler<UserEvent> for App {
                 if n != 0 {
                     let (col, row) = win.layout.cell_at(win.origin(), win.mouse.x, win.mouse.y, win.grid);
                     let Some(row) = row.checked_sub(win.top()) else { return };
+                    if win.settings_panel.is_some() {
+                        win.settings_wheel(n);
+                        return;
+                    }
                     if win.diff.is_some() {
                         let page = win.grid.rows as usize;
                         let cols = (win.grid.cols - win.panel_cols()) as usize;

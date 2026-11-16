@@ -85,4 +85,10 @@ pub trait Renderer {
     fn set_look(&mut self, look: paint::Look);
     /// Heap memory held by the renderer, for the log.
     fn memory(&self) -> String;
+    /// Other fonts (`font-family` while running); the next frame repaints everything.
+    fn set_fonts(&mut self, fonts: crate::font::Fonts);
+    /// The fonts draw `c` as a single-colour text glyph (the settings button, DESIGN.md §2.4).
+    fn text_glyph(&mut self, c: char) -> bool;
+    /// The monospaced font families of the system (the settings panel's list).
+    fn monospace_families(&mut self) -> Vec<String>;
 }

@@ -248,3 +248,36 @@
   (`SOURCE_DATE_EPOCH` respected), instance.
 - With `HAETTY_TEST_TMP`/`HAETTY_RUN` set (their self-tests) the installers
   refuse every path outside the test run directory before building.
+
+### 3.16 Settings: one schema, the panel, saving
+(Stage PS, 2026-11-16; the survey: [history](../history/2026-11-16-ps-settings.md).)
+
+- **One schema.** `config::SETTINGS` (`crates/haetty-gui/src/config.rs`) is the one place a key is written: its
+  type and range (`Kind`), the default as the file writes it, README's text, the panel's line, its group and when it
+  applies (`When::Live` or `When::NextStart`). The parser checks every value with `Setting::check` (a file's
+  `minimum-contrast` outside 1–21 is clamped as in Ghostty; the panel's `check_strict` refuses it with the range);
+  `--KEY`, `haetty --help` and README's table come from the same table. A test reads files of every older shape to a
+  whole `Config` (the schema rewrite changed no reading).
+- **Applies while running** (the window, no new daemon message): theme and colour keys (the existing `SetTheme`
+  path), `minimum-contrast`, `font-family`, `font-size`, the padding keys, `settings-button`, `notifications`,
+  `token-status`, `clear-hint`, `context-window`. A font or padding change gives a new grid; the sessions get it once,
+  150 ms after the last change (holding ←/→ on the font size sends one resize). A family the system lacks is
+  refused before anything is written, and the old fonts stay. **Next start:** `decorations` (the window is made with
+  them), `engine`, `scrollback-limit` (each session gets them when it starts), `restore-tabs`, `claude-integration`,
+  `observe-new-tabs`, and the keys the panel does not show.
+- **Saving** (`config_edit.rs`). A change writes only the line of its key: comments, blank lines, the order of lines,
+  unknown keys and each line's end (LF or CRLF) stay. A key not in the file gets one line at the end; the default
+  removes the key's lines (commented-out lines are left). With duplicates, the last line — the one the parser uses —
+  changes; when another line still decides the value (`window-padding` after `window-padding-x`), a line at the end
+  sets it. The new text goes to a temporary file in the same folder, is synced and renamed over the file; a symbolic
+  link stays a link (its target is written); a read-only file is not written and the panel says why. Before the first
+  write of a run the file is copied to `config.bak` (an existing one is kept: `config.bak.<date>`). Each write reads
+  the file again: a change made elsewhere since the panel opened is kept, only the key is written, and the panel
+  shows the file as it is now. A key given on the command line is shown but not changed (the command line wins).
+- **Where.** Only `config::file_path()` is written: the instance's config folder (`haetty-dev/config` for
+  `HAETTY_INSTANCE=dev`); a test checks that the dev instance's path is not the stable one. Logs name the key, never
+  the value typed.
+- **The button's glyph.** `⚙` (U+2699) is text presentation by default (not `Emoji_Presentation`), and the cell asks
+  for it with VS15; the font lookup passes over colour faces for text. Linux: DejaVu Sans Mono (the first primary
+  default) has it. Windows: Segoe UI Symbol (single colour) comes before Segoe UI Emoji in the fallback list
+  (unverified on Windows). When the fonts give no face for U+2699, or only a colour one, the button is `≡` (U+2261).

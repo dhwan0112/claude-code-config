@@ -17,6 +17,7 @@ hook output rules, the IPC permission checks, and the path of Claude Code permis
 | 2.1 | Layout | The default view is the terminal and one status line; a tab bar only from two tabs | [01](design/01-principles-and-outer.md) |
 | 2.2 | Visual rules | Colours from one theme (default IBM 5153 CGA) and the other look rules | [01](design/01-principles-and-outer.md) |
 | 2.3 | Checks | Outer-design checks after implementation: layout changes without input, accents on an idle screen | [01](design/01-principles-and-outer.md) |
+| 2.4 | Settings button and panel | A dim ⚙ (Claude Code tabs: the status row's last column; others: near the corner only); the panel opens only from the person | [01](design/01-principles-and-outer.md) |
 | 3 | Inner design | Processes, crates, pipeline, socket, protocol, identity, keys, icon, Claude Code, themes, installs | [02](design/02-inner-processes-protocol.md) |
 | 3.1 | Processes | GUI, daemon and sessions, and what runs where | [02](design/02-inner-processes-protocol.md) |
 | 3.2 | Crates | The crates and each one's responsibility | [02](design/02-inner-processes-protocol.md) |
@@ -33,6 +34,7 @@ hook output rules, the IPC permission checks, and the path of Claude Code permis
 | 3.13 | Claude Code integration (milestone 3) | Which tabs are Claude Code tabs; hooks, settings, the status line (protected: permission prompts) | [04](design/04-inner-claude-themes-installs.md) |
 | 3.14 | Themes | Ghostty's theme files as the format; the bundled themes | [04](design/04-inner-claude-themes-installs.md) |
 | 3.15 | Stable installs | Installing a commit or tag from a worktree; rollback; self-tests | [04](design/04-inner-claude-themes-installs.md) |
+| 3.16 | Settings | One schema for every key; what applies while running; line-preserving saving | [04](design/04-inner-claude-themes-installs.md) |
 | 4 | VT engine decision | The 2026-11-04 decision, from a replay of a real Claude Code session | [05](design/05-vt-engine-decision.md) |
 | 5 | Milestones | The milestones, starting with one window and one session | [06](design/06-milestones-external-orchestrator.md) |
 | 6 | External integration | Integration through Rakazo's existing surfaces, no fork | [06](design/06-milestones-external-orchestrator.md) |

@@ -101,3 +101,31 @@ away. Functions stay; what changes is when they are visible.
 - Layout changes without user input: 0.
 - Accent colours on an idle screen: 0.
 - With one tab: no element besides the terminal and the status line.
+- Settings button (§2.4): it adds no layout change (a shell tab's button is drawn over a cell, the session's size
+  stays); on an idle screen it is grey (`scripts/e2e/design-2-3.sh`: its Claude Code tab shows the button).
+
+### 2.4 Settings button and settings panel
+(Stage PS, the person's DESIGN §2 change, approved 2026-11-16.)
+- **The button.** A single-colour `⚙` (U+2699 with VS15; `≡` when the fonts have no single-colour ⚙, §3.16) in the
+  dim colour, the normal text colour under the pointer; no accent, no blinking, no animation. Its cell is haetty's
+  own (`HAETTY_UI`: `minimum-contrast` does not change it).
+  - Claude Code tabs: always in the status row's last column, also while the row is still blank before Claude Code's
+    first report. The row's items end two columns earlier; a long row is cut, the button never moves.
+  - Other tabs: no row is reserved. The button is drawn over the last cell of the window only while the pointer is
+    near the bottom-right corner (the last 6 columns of the bottom 2 rows) and goes when the pointer leaves or a key
+    is typed. Never while the program has asked for mouse reports, nor over the palette, the diff view or the panel.
+    Drawing it changes nothing else: the session's size, the bytes the program gets and its screen stay as they are.
+  - `settings-button = auto | always | never`: `always` shows it in other tabs whenever the pointer is in the window;
+    `never` removes it (Ctrl+, and the palette's "Settings" stay).
+- **The panel** opens only from the person: a click on the button, Ctrl+, or the palette's "Settings" — never from
+  an event. It covers the screen area like the diff view (the tab bar, the status row and the status panel stay),
+  in the panel greys of §2.2: groups on the left (Appearance, Font, Window, Terminal, Claude Code, Advanced), the
+  settings on the right; below 64 columns the groups become one line above the list. The selected row has the
+  palette's selection grey. Each row: the setting, its value, a dim `•` when it differs from the default, a dim
+  "next start" when it applies only then, or the reason in one line when a change was refused. The bottom line
+  shows the selected setting's description and its key in the config file. The list scrolls; a window too small
+  for it shows no panel.
+- While the panel is open no key, text, paste or mouse event reaches the program. A tab waiting for a permission
+  answer keeps its Ask mark and its input hold (§3.7) unchanged while the panel opens and closes.
+- Not in the panel: what changes how Claude Code works (permission modes, models, hooks, `saving-mode`,
+  `worker-command`); `claude-integration` (haetty's observing hooks and status line) is the one Claude Code entry.

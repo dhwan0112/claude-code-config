@@ -94,8 +94,13 @@ fn stable_and_dev_instances_do_not_interfere() {
     let dev_state = haetty_proto::paths::state_dir();
     let dev_title = haetty_proto::product::title_prefix();
     let dev_app = haetty_proto::product::app_id();
+    // The settings panel writes only `config_dir()/config` (`config::file_path`, stage PS): the dev instance's
+    // folder is never the stable one.
+    let dev_cfg = haetty_proto::paths::config_dir();
     std::env::remove_var("HAETTY_INSTANCE");
     let stable_state = haetty_proto::paths::state_dir();
+    let stable_cfg = haetty_proto::paths::config_dir();
+    assert_eq!((stable_cfg, dev_cfg), (tmp.join("config/haetty"), tmp.join("config/haetty-dev")));
     assert_eq!(stable_ep.0, tmp.join("rt/haetty/daemon.sock"));
     assert_eq!(dev_ep.0, tmp.join("rt/haetty-dev/daemon.sock"));
     assert_eq!((stable_state.clone(), dev_state.clone()), (tmp.join("state/haetty"), tmp.join("state/haetty-dev")));
