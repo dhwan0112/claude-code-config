@@ -8,6 +8,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage ps-settings (branch `haetty/ps-settings`, worktree `~/projects/claude-code-config-wt/ps-settings`). Remaining: PS: settings schema, gear button, settings panel, line-preserving save, live apply, kramers e2e (orchestrator, ime)
+
 ## 1. Current state
 
 - **Version** 0.3.2 (0.3.0 `b1262d2` and 0.3.1 `1163a0a` were never tagged and are superseded by it). Tags:
