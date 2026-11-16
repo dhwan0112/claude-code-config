@@ -310,7 +310,7 @@ impl App {
     }
 
     fn font_px(&self, scale: f64) -> f32 {
-        (self.opts.font_size * 96.0 / 72.0 * scale) as f32
+        (self.opts.config.font_size * 96.0 / 72.0 * scale) as f32
     }
 
     fn padding(&self, scale: f64) -> PaddingStyle {
@@ -2296,7 +2296,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::RedrawRequested => win.draw(),
             WindowEvent::Resized(size) => win.resized(size),
             WindowEvent::ScaleFactorChanged { scale_factor, mut inner_size_writer } => {
-                let px = (self.opts.font_size * 96.0 / 72.0 * scale_factor) as f32;
+                let px = (self.opts.config.font_size * 96.0 / 72.0 * scale_factor) as f32;
                 win.renderer.set_font_px(px);
                 let pad = padding_style(&self.opts.config, scale_factor);
                 win.renderer.set_padding(pad);

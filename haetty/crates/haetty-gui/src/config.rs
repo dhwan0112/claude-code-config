@@ -4,12 +4,18 @@
 //! `#` comments; the command line wins. `keybind = CHORD=ACTION` (file only)
 //! changes shortcuts (`crate::keymap`). Bad lines are skipped and logged.
 //!
-//! The keys, their values and defaults are [`SETTINGS`] — the one place they
-//! are described: `haetty --help` and README.md's table are generated from it
-//! (a unit test fails when README.md differs).
+//! The keys, their types, ranges, defaults and texts are [`SETTINGS`] — the one
+//! place they are described: the parser checks values with [`Setting::check`],
+//! the settings panel (`settings.rs`) lists them, and `haetty --help` and
+//! README.md's table are generated from it (a unit test fails when README.md
+//! differs).
 //!
 //! The colour keys and theme files use Ghostty's theme file format; they are
 //! applied after the theme wherever they stand in the file.
+
+// TEMPORARY (stage PS, removed by the settings panel's commit): the panel reads `group`, `when`, `line`, `panel`
+// and `check_strict`.
+#![allow(dead_code)]
 
 use std::path::Path;
 
@@ -68,6 +74,18 @@ impl Decorations {
     }
 }
 
+/// The settings button (`settings-button`, DESIGN.md §2.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettingsButton {
+    /// Claude Code tabs: always, in the status row's last column; other tabs: drawn over the last cell only while the
+    /// pointer is near the bottom-right corner.
+    Auto,
+    /// As `Auto` in Claude Code tabs; other tabs draw it too whenever the pointer is in the window.
+    Always,
+    /// No button (the shortcut and the palette entry stay).
+    Never,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     /// Minimum padding left/right and top/bottom, logical pixels.
@@ -104,6 +122,11 @@ pub struct Config {
     pub minimum_contrast: f32,
     /// The terminal engine of new tabs (DESIGN.md §10.4).
     pub engine: haetty_core::vt::EngineKind,
+    /// `font-family` (`--font`): `None` is the platform's defaults (`font.rs`).
+    pub font_family: Option<String>,
+    /// `font-size`, points (4–96).
+    pub font_size: f64,
+    pub settings_button: SettingsButton,
 }
 
 impl Default for Config {
@@ -128,113 +151,568 @@ impl Default for Config {
             theme: theme::DEFAULT_THEME.to_string(),
             colors: vec![],
             minimum_contrast: 1.0,
+            font_family: None,
+            font_size: 11.0,
+            settings_button: SettingsButton::Auto,
         }
     }
 }
 
-/// One row of the settings table: keys that share a description, their
-/// values and the default.
-pub struct Setting {
-    pub keys: &'static [&'static str],
-    pub values: &'static str,
-    pub default: &'static str,
-    /// Only in the config file (not `--KEY` on the command line).
-    pub file_only: bool,
+/// The settings panel's groups, in their order (DESIGN.md §2.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Group {
+    Appearance,
+    Font,
+    Window,
+    Terminal,
+    Claude,
+    Advanced,
 }
 
-const fn row(keys: &'static [&'static str], values: &'static str, default: &'static str) -> Setting {
-    Setting { keys, values, default, file_only: false }
+impl Group {
+    pub const ALL: [Group; 6] =
+        [Group::Appearance, Group::Font, Group::Window, Group::Terminal, Group::Claude, Group::Advanced];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Group::Appearance => "Appearance",
+            Group::Font => "Font",
+            Group::Window => "Window",
+            Group::Terminal => "Terminal",
+            Group::Claude => "Claude Code",
+            Group::Advanced => "Advanced",
+        }
+    }
 }
 
-/// Every setting (README.md "Config file" and `haetty --help` come from here).
-pub const SETTINGS: &[Setting] = &[
-    row(&["window-padding"], "minimum padding around the grid on all sides, logical px (0–200)", "—"),
-    row(&["window-padding-x", "window-padding-y"], "the same, left/right or top/bottom only", "`10`, `6`"),
-    row(&["window-padding-balance"], "`true` / `false` — spread leftover space evenly on all sides", "`true`"),
-    row(&["window-padding-color"], "`background` / `extend` / `extend-always` (as in Ghostty)", "`extend`"),
-    row(
-        &["decorations"],
-        "`auto` / `native` / `integrated` / `none` — auto: the system's title bar where it takes the theme's colour (Windows 11, X11), haetty's own (integrated) on Wayland; integrated is Linux only (Windows: native)",
-        "`auto`",
-    ),
-    row(
-        &["scrollback-limit"],
-        "bytes of scrollback per session, as in Ghostty (plain bytes, `_` allowed; rows of 120 columns take ~1.1 KB, the default keeps ~11 000 of them)",
-        "`12000000`",
-    ),
-    row(&["restore-tabs"], "`true` / `false` — reopen the previous run's tabs at start", "`true`"),
-    row(
-        &["engine"],
-        "`ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native)",
-        "`ghostty`",
-    ),
-    row(&["claude-integration"], "`true` / `false` — hooks and status line in Claude Code tabs", "`true`"),
-    row(
-        &["worker-command"],
-        "the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1)",
-        "`claude`",
-    ),
-    row(
-        &["notifications"],
-        "`true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused",
-        "`true`",
-    ),
-    row(
-        &["observe-new-tabs"],
-        "`true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only))",
-        "`false`",
-    ),
-    row(
-        &["token-status"],
-        "`true` / `false` — the status panel shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md))",
-        "`false`",
-    ),
-    row(
-        &["clear-hint"],
-        "a percentage, 0 for off: a worker tab shows a dim `/clear` once its context has passed that share of `context-window`. A hint only: nothing is sent ([Orchestrator](#orchestrator-tasks-and-workers))",
-        "`60`",
-    ),
-    row(
-        &["context-window"],
-        "the context window of the workers' model, in tokens, for `clear-hint` (at least 1000)",
-        "`200000`",
-    ),
-    row(
-        &["saving-mode"],
-        "`true` / `false` — saving mode: Claude Code sessions haetty starts get `BASH_MAX_OUTPUT_LENGTH=12000` and `MAX_MCP_OUTPUT_TOKENS=12000`, the official limits on Bash output read back and on MCP tool output ([the values and sources](docs/tokens/README.md#saving-mode)); the status row shows a dim `◆ saving`",
-        "`false`",
-    ),
-    Setting {
-        keys: &["keybind"],
-        values: "`CHORD=ACTION` or `CHORD=unbind` (file only, may repeat)",
-        default: "see [Tabs and keys](#tabs-and-keys)",
-        file_only: true,
+/// A setting's value type, its range and how the panel edits it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Kind {
+    /// `true/yes/1`, `false/no/0`.
+    Bool,
+    Choice(&'static [&'static str]),
+    /// A number in `min..=max`; outside it the file's value is `clamp`ed (as Ghostty does) or rejected. `int`: whole
+    /// numbers only; `_` separators allowed (`scrollback-limit`). `step`: the panel's ←/→.
+    Number {
+        min: f64,
+        max: f64,
+        step: f64,
+        int: bool,
+        clamp: bool,
     },
-    row(
-        &["theme"],
-        "a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes))",
-        "`IBM 5153 CGA`",
-    ),
-    row(&["palette"], "`N=COLOR`, N 0–15 (may repeat) — on top of the theme", "the theme's"),
-    row(
-        &["minimum-contrast"],
-        "1–21, as in Ghostty: text whose WCAG contrast with its background is lower turns white (dark background) or black (light)",
-        "`1` (off)",
-    ),
-    row(
-        &["background", "foreground", "cursor-color", "cursor-text", "selection-background", "selection-foreground"],
-        "a colour (`#rrggbb`, `rrggbb`, an X11 name) — on top of the theme",
-        "the theme's",
-    ),
+    /// Free text (non-empty unless `empty_ok`).
+    Text {
+        empty_ok: bool,
+    },
+    /// A font family the system has (picked from its monospaced ones); empty = the platform's.
+    Font,
+    /// A theme name (built in or in the themes folder) or a path.
+    Theme,
+    /// A colour (`#rrggbb`, `rrggbb`, an X11 name); empty = the theme's.
+    Color,
+    /// May repeat (`palette`, `keybind`): file only, not in the panel.
+    Repeat,
+}
+
+/// When a changed value takes effect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum When {
+    /// At once, in every open tab.
+    Live,
+    /// Read when the window is made: the next start.
+    NextStart,
+}
+
+/// One setting: the one place its key, type, range, default and text are written. The parser checks values with
+/// [`Setting::check`], the settings panel lists them, `haetty --help` and README.md's table are generated from them.
+pub struct Setting {
+    pub key: &'static str,
+    pub kind: Kind,
+    /// The default as the file writes it; "" when it comes from elsewhere (the theme, the platform).
+    pub default: &'static str,
+    /// README's "Default" text when it is not just `default` in backticks.
+    pub default_note: Option<&'static str>,
+    /// README's and `--help`'s "Values" text (Markdown).
+    pub doc: &'static str,
+    /// The panel's one-line description.
+    pub line: &'static str,
+    pub group: Group,
+    pub when: When,
+    /// Shown in the settings panel. Not: keys that may repeat, the `window-padding` shorthand, and keys that change
+    /// what Claude Code does (`saving-mode`, `worker-command`).
+    pub panel: bool,
+    /// `--KEY` on the command line too.
+    pub cli: bool,
+}
+
+const BOOL: Kind = Kind::Bool;
+/// No upper limit (`u64`).
+const U64_MAX: f64 = u64::MAX as f64;
+const fn num(min: f64, max: f64, step: f64, int: bool, clamp: bool) -> Kind {
+    Kind::Number { min, max, step, int, clamp }
+}
+
+const PADDING_DOC: &str = "the same, left/right or top/bottom only";
+const COLOR_DOC: &str = "a colour (`#rrggbb`, `rrggbb`, an X11 name) — on top of the theme";
+
+/// Every setting, in the panel's order within each group.
+pub const SETTINGS: &[Setting] = &[
+    Setting {
+        key: "window-padding",
+        kind: num(0.0, 200.0, 1.0, false, false),
+        default: "",
+        default_note: Some("—"),
+        doc: "minimum padding around the grid on all sides, logical px (0–200)",
+        line: "Padding on all sides (sets both below).",
+        group: Group::Window,
+        when: When::Live,
+        panel: false,
+        cli: true,
+    },
+    Setting {
+        key: "window-padding-x",
+        kind: num(0.0, 200.0, 1.0, false, false),
+        default: "10",
+        default_note: None,
+        doc: PADDING_DOC,
+        line: "Minimum padding left and right of the grid, logical pixels (0–200).",
+        group: Group::Window,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "window-padding-y",
+        kind: num(0.0, 200.0, 1.0, false, false),
+        default: "6",
+        default_note: None,
+        doc: PADDING_DOC,
+        line: "Minimum padding above and below the grid, logical pixels (0–200).",
+        group: Group::Window,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "window-padding-balance",
+        kind: BOOL,
+        default: "true",
+        default_note: None,
+        doc: "`true` / `false` — spread leftover space evenly on all sides",
+        line: "Spread the space left over around the grid evenly on all sides.",
+        group: Group::Window,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "window-padding-color",
+        kind: Kind::Choice(&["background", "extend", "extend-always"]),
+        default: "extend",
+        default_note: None,
+        doc: "`background` / `extend` / `extend-always` (as in Ghostty)",
+        line: "Colour of the padding: the background, or the nearest cell's (extend).",
+        group: Group::Window,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "decorations",
+        kind: Kind::Choice(&["auto", "native", "integrated", "none"]),
+        default: "auto",
+        default_note: None,
+        doc: "`auto` / `native` / `integrated` / `none` — auto: the system's title bar where it takes the theme's colour (Windows 11, X11), haetty's own (integrated) on Wayland; integrated is Linux only (Windows: native)",
+        line: "Title bar: the system's, haetty's own row (integrated), or none.",
+        group: Group::Window,
+        when: When::NextStart,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "settings-button",
+        kind: Kind::Choice(&["auto", "always", "never"]),
+        default: "auto",
+        default_note: None,
+        doc: "`auto` / `always` / `never` — the dim ⚙ that opens the settings: auto: always in a Claude Code tab's status row, in other tabs only while the pointer is near the bottom-right corner; always: in other tabs whenever the pointer is in the window; never: no button (Ctrl+, and the palette's \"Settings\" stay)",
+        line: "The ⚙ button: auto (Claude Code tabs; others near the corner), always, never.",
+        group: Group::Window,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "scrollback-limit",
+        kind: num(0.0, U64_MAX, 1_000_000.0, true, false),
+        default: "12000000",
+        default_note: None,
+        doc: "bytes of scrollback per session, as in Ghostty (plain bytes, `_` allowed; rows of 120 columns take ~1.1 KB, the default keeps ~11 000 of them)",
+        line: "Bytes of scrollback per tab (12000000 keeps about 11 000 rows).",
+        group: Group::Terminal,
+        when: When::NextStart,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "restore-tabs",
+        kind: BOOL,
+        default: "true",
+        default_note: None,
+        doc: "`true` / `false` — reopen the previous run's tabs at start",
+        line: "Reopen the previous run's tabs at start.",
+        group: Group::Terminal,
+        when: When::NextStart,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "engine",
+        kind: Kind::Choice(&["ghostty", "native"]),
+        default: "ghostty",
+        default_note: None,
+        doc: "`ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native)",
+        line: "Terminal engine of new tabs: libghostty-vt or haetty's own (native).",
+        group: Group::Advanced,
+        when: When::NextStart,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "claude-integration",
+        kind: BOOL,
+        default: "true",
+        default_note: None,
+        doc: "`true` / `false` — hooks and status line in Claude Code tabs",
+        line: "haetty's observing hooks and status line in Claude Code tabs.",
+        group: Group::Claude,
+        when: When::NextStart,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "worker-command",
+        kind: Kind::Text { empty_ok: false },
+        default: "claude",
+        default_note: None,
+        doc: "the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1)",
+        line: "The orchestrator's worker program and arguments.",
+        group: Group::Claude,
+        when: When::NextStart,
+        panel: false,
+        cli: true,
+    },
+    Setting {
+        key: "notifications",
+        kind: BOOL,
+        default: "true",
+        default_note: None,
+        doc: "`true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused",
+        line: "A desktop notification when Claude Code waits and the window is not focused.",
+        group: Group::Terminal,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "observe-new-tabs",
+        kind: BOOL,
+        default: "false",
+        default_note: None,
+        doc: "`true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only))",
+        line: "New tabs start readable by haetty screen and haetty events.",
+        group: Group::Advanced,
+        when: When::NextStart,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "token-status",
+        kind: BOOL,
+        default: "false",
+        default_note: None,
+        doc: "`true` / `false` — the status panel shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md))",
+        line: "The status panel shows the tokens of the tab and of each worker.",
+        group: Group::Claude,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "clear-hint",
+        kind: num(0.0, 100.0, 5.0, true, false),
+        default: "60",
+        default_note: None,
+        doc: "a percentage, 0 for off: a worker tab shows a dim `/clear` once its context has passed that share of `context-window`. A hint only: nothing is sent ([Orchestrator](#orchestrator-tasks-and-workers))",
+        line: "A worker tab shows a dim /clear past this share of its context (0 = off).",
+        group: Group::Claude,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "context-window",
+        kind: num(1000.0, U64_MAX, 1000.0, true, false),
+        default: "200000",
+        default_note: None,
+        doc: "the context window of the workers' model, in tokens, for `clear-hint` (at least 1000)",
+        line: "The workers' context window in tokens, for the /clear hint.",
+        group: Group::Claude,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "saving-mode",
+        kind: BOOL,
+        default: "false",
+        default_note: None,
+        doc: "`true` / `false` — saving mode: Claude Code sessions haetty starts get `BASH_MAX_OUTPUT_LENGTH=12000` and `MAX_MCP_OUTPUT_TOKENS=12000`, the official limits on Bash output read back and on MCP tool output ([the values and sources](docs/tokens/README.md#saving-mode)); the status row shows a dim `◆ saving`",
+        line: "Output limits for the Claude Code sessions haetty starts.",
+        group: Group::Claude,
+        when: When::NextStart,
+        panel: false,
+        cli: true,
+    },
+    Setting {
+        key: "keybind",
+        kind: Kind::Repeat,
+        default: "",
+        default_note: Some("see [Tabs and keys](#tabs-and-keys)"),
+        doc: "`CHORD=ACTION` or `CHORD=unbind` (file only, may repeat)",
+        line: "A shortcut.",
+        group: Group::Advanced,
+        when: When::NextStart,
+        panel: false,
+        cli: false,
+    },
+    Setting {
+        key: "theme",
+        kind: Kind::Theme,
+        default: theme::DEFAULT_THEME,
+        default_note: None,
+        doc: "a built-in theme, a theme file's name in the themes folder, or a path (see [Themes](#themes))",
+        line: "The colour theme: built in, a file in the themes folder, or a path.",
+        group: Group::Appearance,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "palette",
+        kind: Kind::Repeat,
+        default: "",
+        default_note: Some("the theme's"),
+        doc: "`N=COLOR`, N 0–15 (may repeat) — on top of the theme",
+        line: "One of the 16 colours.",
+        group: Group::Appearance,
+        when: When::Live,
+        panel: false,
+        cli: true,
+    },
+    Setting {
+        key: "minimum-contrast",
+        kind: num(1.0, 21.0, 0.5, false, true),
+        default: "1",
+        default_note: Some("`1` (off)"),
+        doc: "1–21, as in Ghostty: text whose WCAG contrast with its background is lower turns white (dark background) or black (light)",
+        line: "Text below this contrast with its background turns white or black (1 = off).",
+        group: Group::Appearance,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    color("background", "The background colour (empty: the theme's)."),
+    color("foreground", "The text colour (empty: the theme's)."),
+    color("cursor-color", "The cursor's colour (empty: the theme's)."),
+    color("cursor-text", "The colour of text under the cursor (empty: the theme's)."),
+    color("selection-background", "The selection's background (empty: the theme's)."),
+    color("selection-foreground", "The selection's text colour (empty: the theme's)."),
+    Setting {
+        key: "font-family",
+        kind: Kind::Font,
+        default: "",
+        default_note: Some("a monospaced font of the system (Linux: DejaVu Sans Mono, Noto Sans Mono, …; Windows: Cascadia Mono, Consolas, …)"),
+        doc: "a font family installed on the system (`--font` on the command line); a missing one falls back to the default",
+        line: "The font family (empty: the platform's monospaced default).",
+        group: Group::Font,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "font-size",
+        kind: num(4.0, 96.0, 1.0, false, false),
+        default: "11",
+        default_note: None,
+        doc: "points, 4–96",
+        line: "Font size in points (4–96).",
+        group: Group::Font,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
 ];
 
-/// The settings as README.md's Markdown table (checked by a test).
+const fn color(key: &'static str, line: &'static str) -> Setting {
+    Setting {
+        key,
+        kind: Kind::Color,
+        default: "",
+        default_note: Some("the theme's"),
+        doc: COLOR_DOC,
+        line,
+        group: Group::Appearance,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    }
+}
+
+/// A value checked against its setting's kind.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Value {
+    Bool(bool),
+    Choice(&'static str),
+    Number(f64),
+    /// A whole number (`int` kinds), exact.
+    Int(u64),
+    Text(String),
+}
+
+impl Setting {
+    pub fn find(key: &str) -> Option<&'static Setting> {
+        SETTINGS.iter().find(|s| s.key == key)
+    }
+
+    /// The value checked against the kind and range: the one place they are applied. A clamping number outside its
+    /// range is clamped (the file's rule); [`Setting::check_strict`] rejects it (the panel's).
+    pub fn check(&self, value: &str) -> Result<Value, String> {
+        let bad = || format!("invalid value {value:?} for {}", self.key);
+        Ok(match self.kind {
+            Kind::Bool => Value::Bool(parse_bool(value).ok_or_else(bad)?),
+            Kind::Choice(list) => Value::Choice(list.iter().copied().find(|c| *c == value).ok_or_else(bad)?),
+            Kind::Number { min, max, int: true, .. } => {
+                let n: u64 = self.number_text(value).parse().map_err(|_| bad())?;
+                if (n as f64) < min || (n as f64) > max {
+                    return Err(bad());
+                }
+                Value::Int(n)
+            }
+            Kind::Number { min, max, clamp, .. } => {
+                let v: f64 = self.number_text(value).parse().map_err(|_| bad())?;
+                if !v.is_finite() || (!clamp && (v < min || v > max)) {
+                    return Err(bad());
+                }
+                Value::Number(v.clamp(min, max))
+            }
+            Kind::Text { empty_ok } => {
+                if !empty_ok && value.trim().is_empty() {
+                    return Err(bad());
+                }
+                Value::Text(value.trim().to_string())
+            }
+            Kind::Font => Value::Text(value.trim().to_string()),
+            Kind::Theme => {
+                if value.is_empty() {
+                    return Err(bad());
+                }
+                Value::Text(value.to_string())
+            }
+            Kind::Color | Kind::Repeat => Value::Text(value.to_string()),
+        })
+    }
+
+    /// A number's text as parsed: trimmed; `_` separators dropped where allowed (`scrollback-limit`, as Ghostty).
+    fn number_text(&self, value: &str) -> String {
+        let t = value.trim();
+        if self.key == "scrollback-limit" {
+            t.replace('_', "")
+        } else {
+            t.to_string()
+        }
+    }
+
+    /// [`Setting::check`] without clamping, and with the range in the message: the panel's input.
+    pub fn check_strict(&self, value: &str) -> Result<Value, String> {
+        if let Kind::Number { min, max, .. } = self.kind {
+            match self.number_text(value).parse::<f64>() {
+                Ok(raw) if raw.is_finite() && (min..=max).contains(&raw) => {}
+                _ => return Err(self.range_text()),
+            }
+            return self.check(value).map_err(|_| self.range_text());
+        }
+        if self.kind == Kind::Color && !value.is_empty() {
+            Theme::base().set(self.key, value)?;
+        }
+        self.check(value)
+    }
+
+    /// "between 0 and 200", "a whole number from 1000"…
+    pub fn range_text(&self) -> String {
+        match self.kind {
+            Kind::Number { min, max, int, .. } if max >= U64_MAX => {
+                format!("{} from {}", if int { "a whole number" } else { "a number" }, fmt_num(min))
+            }
+            Kind::Number { min, max, int, .. } => {
+                format!("{} from {} to {}", if int { "a whole number" } else { "a number" }, fmt_num(min), fmt_num(max))
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// README's "Default" cell.
+    pub fn shown_default(&self) -> String {
+        match self.default_note {
+            Some(n) => n.to_string(),
+            None => format!("`{}`", self.default),
+        }
+    }
+}
+
+/// A number as the config file writes it: no `.0` on whole numbers.
+pub fn fmt_num(v: f64) -> String {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+        format!("{}", v as i64)
+    } else {
+        format!("{v}")
+    }
+}
+
+fn fmt_f32(v: f32) -> String {
+    if v.fract() == 0.0 {
+        format!("{}", v as i64)
+    } else {
+        v.to_string()
+    }
+}
+
+/// The keys the parser knows, from [`SETTINGS`].
+#[cfg(test)]
+pub fn keys() -> impl Iterator<Item = &'static str> {
+    SETTINGS.iter().map(|s| s.key)
+}
+
+/// A key `--KEY` may set.
+pub fn is_cli_key(key: &str) -> bool {
+    Setting::find(key).is_some_and(|s| s.cli)
+}
+
+/// The settings as README.md's Markdown table (checked by a test): neighbours with the same text share a row.
 #[cfg(test)]
 pub fn markdown_table() -> String {
     let mut s = String::from("| Key | Values | Default |\n|---|---|---|\n");
-    for r in SETTINGS {
-        let keys: Vec<String> = r.keys.iter().map(|k| format!("`{k}`")).collect();
-        s.push_str(&format!("| {} | {} | {} |\n", keys.join(", "), r.values, r.default));
+    let mut i = 0;
+    while i < SETTINGS.len() {
+        let mut j = i + 1;
+        while j < SETTINGS.len() && SETTINGS[j].doc == SETTINGS[i].doc {
+            j += 1;
+        }
+        let rows = &SETTINGS[i..j];
+        let keys: Vec<String> = rows.iter().map(|r| format!("`{}`", r.key)).collect();
+        let mut defaults: Vec<String> = rows.iter().map(Setting::shown_default).collect();
+        defaults.dedup();
+        s.push_str(&format!("| {} | {} | {} |\n", keys.join(", "), rows[0].doc, defaults.join(", ")));
+        i = j;
     }
     s
 }
@@ -259,128 +737,155 @@ pub fn help_lines() -> String {
         o.replace('`', "")
     };
     let mut s = String::new();
-    for r in SETTINGS {
-        let keys: Vec<String> =
-            r.keys.iter().map(|k| if r.file_only { format!("{k} (file only)") } else { format!("--{k}") }).collect();
-        s.push_str(&format!("  {}\n      {} (default {})\n", keys.join(", "), plain(r.values), plain(r.default)));
+    let mut i = 0;
+    while i < SETTINGS.len() {
+        let mut j = i + 1;
+        while j < SETTINGS.len() && SETTINGS[j].doc == SETTINGS[i].doc {
+            j += 1;
+        }
+        let rows = &SETTINGS[i..j];
+        let keys: Vec<String> = rows
+            .iter()
+            .map(|r| if r.cli { format!("--{}", r.key) } else { format!("{} (file only)", r.key) })
+            .collect();
+        let mut defaults: Vec<String> = rows.iter().map(|r| plain(&r.shown_default())).collect();
+        defaults.dedup();
+        s.push_str(&format!("  {}\n      {} (default {})\n", keys.join(", "), plain(rows[0].doc), defaults.join(", ")));
+        i = j;
     }
     s
 }
 
-pub const KEYS: &[&str] = &[
-    "window-padding",
-    "window-padding-x",
-    "window-padding-y",
-    "window-padding-balance",
-    "window-padding-color",
-    "decorations",
-    "scrollback-limit",
-    "restore-tabs",
-    "engine",
-    "observe-new-tabs",
-    "token-status",
-    "clear-hint",
-    "context-window",
-    "saving-mode",
-    "claude-integration",
-    "worker-command",
-    "notifications",
-    "theme",
-    "palette",
-    "background",
-    "foreground",
-    "cursor-color",
-    "cursor-text",
-    "selection-background",
-    "selection-foreground",
-    "minimum-contrast",
-];
-
 impl Config {
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
-        let bad = || format!("invalid value {value:?} for {key}");
+        let Some(s) = Setting::find(key) else { return Err(format!("unknown setting {key:?}")) };
+        if s.kind == Kind::Repeat && key == "keybind" {
+            return Err(format!("unknown setting {key:?}"));
+        }
+        let v = s.check(value)?;
+        let num = || match v {
+            Value::Number(n) => n,
+            Value::Int(n) => n as f64,
+            _ => 0.0,
+        };
+        let int = || match v {
+            Value::Int(n) => n,
+            _ => 0,
+        };
+        let flag = || matches!(v, Value::Bool(true));
+        let text = || match &v {
+            Value::Text(t) => t.clone(),
+            Value::Choice(c) => c.to_string(),
+            _ => String::new(),
+        };
         match key {
-            "window-padding" | "window-padding-x" | "window-padding-y" => {
-                let v: f64 = value.parse().map_err(|_| bad())?;
-                if !(0.0..=200.0).contains(&v) {
-                    return Err(bad());
-                }
-                if key != "window-padding-y" {
-                    self.window_padding_x = v;
-                }
-                if key != "window-padding-x" {
-                    self.window_padding_y = v;
-                }
-            }
-            "restore-tabs" => self.restore_tabs = parse_bool(value).ok_or_else(bad)?,
-            "observe-new-tabs" => self.observe_new_tabs = parse_bool(value).ok_or_else(bad)?,
-            "token-status" => self.token_status = parse_bool(value).ok_or_else(bad)?,
-            "clear-hint" => self.clear_hint = parse_percent(value).ok_or_else(bad)?,
-            "saving-mode" => self.saving_mode = parse_bool(value).ok_or_else(bad)?,
-            "context-window" => {
-                self.context_window = value.trim().parse::<u64>().ok().filter(|n| *n >= 1000).ok_or_else(bad)?
-            }
-            "claude-integration" => self.claude_integration = parse_bool(value).ok_or_else(bad)?,
-            "worker-command" => {
-                if value.trim().is_empty() {
-                    return Err(bad());
-                }
-                self.worker_command = value.trim().to_string();
-            }
-            "notifications" => self.notifications = parse_bool(value).ok_or_else(bad)?,
-            "window-padding-balance" => {
-                self.padding_balance = match value {
-                    "true" | "yes" | "1" => true,
-                    "false" | "no" | "0" => false,
-                    _ => return Err(bad()),
-                }
-            }
+            "window-padding" => (self.window_padding_x, self.window_padding_y) = (num(), num()),
+            "window-padding-x" => self.window_padding_x = num(),
+            "window-padding-y" => self.window_padding_y = num(),
+            "restore-tabs" => self.restore_tabs = flag(),
+            "observe-new-tabs" => self.observe_new_tabs = flag(),
+            "token-status" => self.token_status = flag(),
+            "clear-hint" => self.clear_hint = int() as u8,
+            "saving-mode" => self.saving_mode = flag(),
+            "context-window" => self.context_window = int(),
+            "claude-integration" => self.claude_integration = flag(),
+            "worker-command" => self.worker_command = text(),
+            "notifications" => self.notifications = flag(),
+            "window-padding-balance" => self.padding_balance = flag(),
             "window-padding-color" => {
-                self.padding_color = match value {
+                self.padding_color = match text().as_str() {
                     "background" => PaddingColor::Background,
                     "extend" => PaddingColor::Extend,
-                    "extend-always" => PaddingColor::ExtendAlways,
-                    _ => return Err(bad()),
+                    _ => PaddingColor::ExtendAlways,
                 }
             }
             "decorations" => {
-                self.decorations = match value {
+                self.decorations = match text().as_str() {
                     "auto" => Decorations::Auto,
                     "native" => Decorations::Native,
                     "integrated" => Decorations::Integrated,
-                    "none" => Decorations::None,
-                    _ => return Err(bad()),
+                    _ => Decorations::None,
                 }
             }
-            "engine" => self.engine = haetty_core::vt::EngineKind::parse(value).ok_or_else(bad)?,
+            "settings-button" => {
+                self.settings_button = match text().as_str() {
+                    "auto" => SettingsButton::Auto,
+                    "always" => SettingsButton::Always,
+                    _ => SettingsButton::Never,
+                }
+            }
+            "engine" => {
+                self.engine = haetty_core::vt::EngineKind::parse(&text())
+                    .ok_or_else(|| format!("invalid value {value:?} for engine"))?
+            }
             "scrollback-limit" => {
-                // Plain bytes; `_` separators allowed (12_000_000).
-                let v: u64 = value.replace('_', "").parse().map_err(|_| bad())?;
-                self.scrollback_limit = usize::try_from(v).map_err(|_| bad())?;
+                self.scrollback_limit =
+                    usize::try_from(int()).map_err(|_| format!("invalid value {value:?} for scrollback-limit"))?
             }
-            "minimum-contrast" => {
-                // As Ghostty: clamped to 1–21.
-                let v: f32 = value.parse().map_err(|_| bad())?;
-                if !v.is_finite() {
-                    return Err(bad());
-                }
-                self.minimum_contrast = v.clamp(1.0, 21.0);
-            }
-            "theme" => {
-                if value.is_empty() {
-                    return Err(bad());
-                }
-                self.theme = value.to_string();
-            }
+            "minimum-contrast" => self.minimum_contrast = num() as f32,
+            "theme" => self.theme = text(),
+            "font-family" => self.font_family = Some(text()).filter(|t| !t.is_empty()),
+            "font-size" => self.font_size = num(),
             k if theme::KEYS.contains(&k) => {
                 // Checked now (bad lines are reported with their number),
                 // applied after the theme.
                 Theme::base().set(k, value)?;
                 self.colors.push((k.to_string(), value.to_string()));
             }
-            _ => return Err(format!("unknown setting {key:?}")),
+            _ => return Err(format!("setting {key:?} has no field (config.rs)")),
         }
         Ok(())
+    }
+
+    /// The value of `key` as the config file would write it; "" for one that comes from elsewhere (the theme's
+    /// colour, the platform's font). `None` for keys that may repeat.
+    pub fn value(&self, key: &str) -> Option<String> {
+        let b = |v: bool| v.to_string();
+        Some(match key {
+            "window-padding-x" => fmt_num(self.window_padding_x),
+            "window-padding-y" => fmt_num(self.window_padding_y),
+            "window-padding" if self.window_padding_x == self.window_padding_y => fmt_num(self.window_padding_x),
+            "window-padding" => String::new(),
+            "window-padding-balance" => b(self.padding_balance),
+            "window-padding-color" => match self.padding_color {
+                PaddingColor::Background => "background",
+                PaddingColor::Extend => "extend",
+                PaddingColor::ExtendAlways => "extend-always",
+            }
+            .into(),
+            "decorations" => match self.decorations {
+                Decorations::Auto => "auto",
+                Decorations::Native => "native",
+                Decorations::Integrated => "integrated",
+                Decorations::None => "none",
+            }
+            .into(),
+            "settings-button" => match self.settings_button {
+                SettingsButton::Auto => "auto",
+                SettingsButton::Always => "always",
+                SettingsButton::Never => "never",
+            }
+            .into(),
+            "scrollback-limit" => self.scrollback_limit.to_string(),
+            "restore-tabs" => b(self.restore_tabs),
+            "engine" => self.engine.name().into(),
+            "claude-integration" => b(self.claude_integration),
+            "worker-command" => self.worker_command.clone(),
+            "notifications" => b(self.notifications),
+            "observe-new-tabs" => b(self.observe_new_tabs),
+            "token-status" => b(self.token_status),
+            "clear-hint" => self.clear_hint.to_string(),
+            "context-window" => self.context_window.to_string(),
+            "saving-mode" => b(self.saving_mode),
+            "theme" => self.theme.clone(),
+            "minimum-contrast" => fmt_f32(self.minimum_contrast),
+            "font-family" => self.font_family.clone().unwrap_or_default(),
+            "font-size" => fmt_num(self.font_size),
+            k if theme::KEYS.contains(&k) && k != "palette" => {
+                self.colors.iter().rev().find(|(ck, _)| ck == k).map(|(_, v)| v.clone()).unwrap_or_default()
+            }
+            _ => return None,
+        })
     }
 
     /// The theme `theme` names (in `config_dir/themes` or built in), then the
@@ -476,11 +981,6 @@ pub fn saving_env(env: &mut Vec<(String, String)>) {
     }
 }
 
-/// A percentage from 0 to 100 (0 is off).
-fn parse_percent(v: &str) -> Option<u8> {
-    v.trim().parse::<u8>().ok().filter(|n| *n <= 100)
-}
-
 fn parse_bool(v: &str) -> Option<bool> {
     match v {
         "true" | "yes" | "1" => Some(true),
@@ -493,20 +993,70 @@ fn parse_bool(v: &str) -> Option<bool> {
 mod tests {
     use super::*;
 
-    /// SETTINGS and the parser know the same keys.
+    /// SETTINGS and the parser know the same keys; each default, set through the parser, gives `Config::default()`;
+    /// `Config::value` writes back what `set` read.
     #[test]
     fn settings_table_and_parser_agree() {
-        let table: Vec<&str> = SETTINGS.iter().filter(|r| !r.file_only).flat_map(|r| r.keys.iter().copied()).collect();
-        let mut a = table.clone();
-        let mut b = KEYS.to_vec();
-        a.sort_unstable();
-        b.sort_unstable();
-        assert_eq!(a, b, "SETTINGS (without file-only keys) and KEYS");
+        let mut seen = std::collections::HashSet::new();
         let mut c = Config::default();
-        for k in &table {
-            assert!(!matches!(c.set(k, "\u{1}"), Err(e) if e.starts_with("unknown setting")), "{k}: unknown to set()");
+        for s in SETTINGS {
+            assert!(seen.insert(s.key), "{} twice", s.key);
+            if s.key == "keybind" {
+                continue;
+            }
+            assert!(
+                !matches!(c.set(s.key, "\u{1}"), Err(e) if e.starts_with("unknown setting") || e.contains("no field")),
+                "{}: unknown to set()",
+                s.key
+            );
+            if s.kind == Kind::Repeat || !s.panel {
+                continue;
+            }
+            assert!(s.line.len() <= 90 && !s.line.contains('`'), "{}: the panel's line is one plain line", s.key);
+            let mut d = Config::default();
+            if !s.default.is_empty() {
+                let want = if s.key == "engine" { d.engine.name() } else { s.default };
+                d.set(s.key, want).unwrap();
+                assert_eq!(d, Config::default(), "{}: the default {:?} is not Config::default()", s.key, s.default);
+            }
+            assert_eq!(
+                Config::default().value(s.key).as_deref(),
+                Some(if s.key == "engine" { Config::default().engine.name() } else { s.default }),
+                "{}: value() of the default",
+                s.key
+            );
         }
+        // Each panel key round-trips through value() and set().
+        let mut c2 = Config::default();
+        for (k, v) in [
+            ("window-padding-x", "12.5"),
+            ("font-size", "13"),
+            ("minimum-contrast", "4.5"),
+            ("theme", "haetty classic"),
+            ("background", "#102030"),
+            ("font-family", "Noto Sans Mono"),
+            ("scrollback-limit", "4_000_000"),
+            ("settings-button", "never"),
+        ] {
+            c2.set(k, v).unwrap();
+            let back = c2.value(k).unwrap();
+            let mut c3 = c2.clone();
+            c3.set(k, &back).unwrap();
+            assert_eq!(c3.value(k), Some(back), "{k}");
+        }
+        assert_eq!(c2.value("scrollback-limit").as_deref(), Some("4000000"));
+        assert_eq!(c2.value("minimum-contrast").as_deref(), Some("4.5"));
         assert!(c.set("keybind", "x").unwrap_err().starts_with("unknown setting"), "keybind is the file's own");
+        // The panel's strict check: no clamping, the range in the message.
+        let mc = Setting::find("minimum-contrast").unwrap();
+        assert_eq!(mc.check("40"), Ok(Value::Number(21.0)), "the file clamps, as Ghostty");
+        assert_eq!(mc.check_strict("40").unwrap_err(), "a number from 1 to 21");
+        assert_eq!(Setting::find("context-window").unwrap().check_strict("5").unwrap_err(), "a whole number from 1000");
+        assert!(Setting::find("background").unwrap().check_strict("nope").is_err());
+        assert_eq!(
+            Setting::find("clear-hint").unwrap().check_strict("2.5").unwrap_err(),
+            "a whole number from 0 to 100"
+        );
         let h = help_lines();
         assert!(
             h.contains("--worker-command")
@@ -515,19 +1065,6 @@ mod tests {
                 && !h.contains("](#"),
             "{h}"
         );
-        let d = Config::default();
-        let default_of = |k: &str| SETTINGS.iter().find(|r| r.keys.contains(&k)).unwrap().default;
-        assert_eq!(default_of("theme"), format!("`{}`", theme::DEFAULT_THEME));
-        assert_eq!(default_of("scrollback-limit"), format!("`{}`", d.scrollback_limit));
-        assert_eq!(default_of("worker-command"), format!("`{}`", d.worker_command));
-        assert_eq!(default_of("restore-tabs"), format!("`{}`", d.restore_tabs));
-        assert_eq!(default_of("observe-new-tabs"), format!("`{}`", d.observe_new_tabs));
-        assert_eq!(default_of("token-status"), format!("`{}`", d.token_status));
-        assert_eq!(default_of("clear-hint"), format!("`{}`", d.clear_hint));
-        assert_eq!(default_of("context-window"), format!("`{}`", d.context_window));
-        assert_eq!(default_of("saving-mode"), format!("`{}`", d.saving_mode));
-        assert_eq!(default_of("notifications"), format!("`{}`", d.notifications));
-        assert_eq!(default_of("claude-integration"), format!("`{}`", d.claude_integration));
     }
 
     /// README.md's table is generated from SETTINGS; a difference fails here
@@ -557,6 +1094,118 @@ mod tests {
                 &readme[i..j]
             );
         }
+    }
+
+    /// S1 (stage PS): the schema rewrite reads every existing config file as before. The defaults are written out
+    /// here field by field, and files of the shapes people have are read to a whole `Config`.
+    #[test]
+    fn existing_config_files_read_as_before() {
+        let defaults = Config {
+            window_padding_x: 10.0,
+            window_padding_y: 6.0,
+            padding_balance: true,
+            padding_color: PaddingColor::Extend,
+            decorations: Decorations::Auto,
+            scrollback_limit: 12_000_000,
+            restore_tabs: true,
+            observe_new_tabs: false,
+            token_status: false,
+            clear_hint: 60,
+            saving_mode: false,
+            context_window: 200_000,
+            claude_integration: true,
+            worker_command: "claude".into(),
+            notifications: true,
+            theme: "IBM 5153 CGA".into(),
+            colors: vec![],
+            minimum_contrast: 1.0,
+            engine: haetty_core::vt::EngineKind::default_kind(),
+            font_family: None,
+            font_size: 11.0,
+            settings_button: SettingsButton::Auto,
+        };
+        assert_eq!(Config::default(), defaults);
+        let read = |text: &str| {
+            let mut c = Config::default();
+            let bad = c.apply_file(text, &mut crate::keymap::Keymap::default());
+            (c, bad)
+        };
+        // A file with every older key, quotes, comments, CRLF, `yes`/`0` booleans, `_` in bytes.
+        let (c, bad) = read(
+            "# mine\r\nwindow-padding = 8\r\nwindow-padding-y = 3\r\nwindow-padding-balance = no\r\n\
+             window-padding-color = background\r\ndecorations = \"integrated\"\r\nscrollback-limit = 4_000_000\r\n\
+             restore-tabs = 0\r\nobserve-new-tabs = yes\r\ntoken-status = 1\r\nclear-hint = 0\r\n\
+             context-window = 1000000\r\nsaving-mode = true\r\nclaude-integration = false\r\n\
+             worker-command =  claude --model opus \r\nnotifications = false\r\ntheme = haetty classic\r\n\
+             palette = 1=#ff0000\r\nbackground = 102030\r\nminimum-contrast = 40\r\nengine = native\r\n",
+        );
+        assert!(bad.is_empty(), "{bad:?}");
+        let want = Config {
+            window_padding_x: 8.0,
+            window_padding_y: 3.0,
+            padding_balance: false,
+            padding_color: PaddingColor::Background,
+            decorations: Decorations::Integrated,
+            scrollback_limit: 4_000_000,
+            restore_tabs: false,
+            observe_new_tabs: true,
+            token_status: true,
+            clear_hint: 0,
+            saving_mode: true,
+            context_window: 1_000_000,
+            claude_integration: false,
+            worker_command: "claude --model opus".into(),
+            notifications: false,
+            theme: "haetty classic".into(),
+            colors: vec![("palette".into(), "1=#ff0000".into()), ("background".into(), "102030".into())],
+            minimum_contrast: 21.0,
+            engine: haetty_core::vt::EngineKind::Native,
+            ..defaults.clone()
+        };
+        assert_eq!(c, want);
+        // The window-padding family: the last line wins, the shorthand sets both.
+        let pad = |t: &str| {
+            let c = read(t).0;
+            (c.window_padding_x, c.window_padding_y)
+        };
+        assert_eq!(pad("window-padding-x = 4\nwindow-padding = 9\n"), (9.0, 9.0));
+        assert_eq!(pad("window-padding = 9\nwindow-padding-x = 4\n"), (4.0, 9.0));
+        assert_eq!(pad("window-padding-y = 0\n"), (10.0, 0.0));
+        assert_eq!(read("window-padding = 201\n").1.len(), 1, "out of range: skipped, reported");
+        assert_eq!(pad("window-padding = 201\n"), (10.0, 6.0));
+        // Old values that were refused stay refused.
+        for line in [
+            "clear-hint = 101",
+            "context-window = 999",
+            "scrollback-limit = 10MB",
+            "minimum-contrast = NaN",
+            "restore-tabs = on",
+            "worker-command = ",
+            "theme = ",
+            "decorations = fancy",
+        ] {
+            assert_eq!(read(line).1.len(), 1, "{line}");
+        }
+        // The colour keys apply after the theme, the last of a key wins (theme test above for the files).
+        let (c, _) = read("background = #000001\ntheme = haetty classic\nbackground = #000002\n");
+        assert_eq!(c.value("background").as_deref(), Some("#000002"));
+        assert_eq!(c.colors.len(), 2);
+    }
+
+    /// The old `CCTERM_*` variables are not read (since K3b): `CCTERM_CONFIG_DIR` does not move the config file;
+    /// `HAETTY_CONFIG_DIR` does (`haetty_proto::paths::config_dir`, read by `file_path`).
+    #[test]
+    fn old_ccterm_variables_do_not_move_the_config_file() {
+        let dir = haetty_testkit::run_dir("config-ccterm");
+        // Nothing else reads CCTERM_*: setting it cannot disturb a test running beside this one.
+        std::env::set_var("CCTERM_CONFIG_DIR", &dir);
+        let path = file_path();
+        std::env::remove_var("CCTERM_CONFIG_DIR");
+        assert!(!path.starts_with(&dir), "{}", path.display());
+        if let Some(h) = haetty_proto::product::env_os("CONFIG_DIR") {
+            assert_eq!(path, std::path::Path::new(&h).join("config"));
+        }
+        haetty_testkit::remove_dir_all(&dir);
     }
 
     #[test]
@@ -618,7 +1267,7 @@ mod tests {
         assert!(c.set("worker-command", " ").is_err());
         c.set("worker-command", "/opt/claude --model x").unwrap();
         assert_eq!(c.worker_command, "/opt/claude --model x");
-        for k in KEYS.iter().filter(|k| !matches!(**k, "theme" | "worker-command")) {
+        for k in super::keys().filter(|k| !matches!(*k, "theme" | "worker-command" | "keybind" | "font-family")) {
             assert!(!c.clone().set(k, "?").unwrap_err().starts_with("unknown"));
         }
     }

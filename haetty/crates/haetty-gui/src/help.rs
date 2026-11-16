@@ -15,8 +15,7 @@ pub struct Sub {
 
 /// The window's own options (`haetty [gui] …`), besides the settings.
 pub const GUI_OPTIONS: &[(&str, &str)] = &[
-    ("--font FAMILY", "font family (default: a monospace font found on the system)"),
-    ("--font-size PT", "font size in points, 4–96 (default 11)"),
+    ("--font FAMILY", "short for --font-family"),
     ("--cols N", "columns of the first window (default 120)"),
     ("--rows N", "rows of the first window (default 36)"),
     ("--version, -V", "version, commit, build date and instance"),
@@ -180,7 +179,7 @@ fn words(opts: &[(&str, &str)]) -> Vec<String> {
 fn top_words() -> Vec<String> {
     let mut v: Vec<String> = SUBS.iter().map(|s| s.name.to_string()).collect();
     v.extend(words(GUI_OPTIONS));
-    v.extend(SETTINGS.iter().filter(|r| !r.file_only).flat_map(|r| r.keys.iter().map(|k| format!("--{k}"))));
+    v.extend(SETTINGS.iter().filter(|r| r.cli).map(|r| format!("--{}", r.key)));
     v
 }
 
@@ -296,9 +295,7 @@ mod tests {
             }
         }
         for r in SETTINGS {
-            for k in r.keys {
-                assert!(h.contains(k), "setting {k} missing from --help");
-            }
+            assert!(h.contains(r.key), "setting {} missing from --help", r.key);
         }
         assert!(sub_help("nope").is_none());
     }

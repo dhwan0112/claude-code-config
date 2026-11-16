@@ -210,6 +210,7 @@ keybind = ctrl+shift+n=new_tab
 | `window-padding-balance` | `true` / `false` — spread leftover space evenly on all sides | `true` |
 | `window-padding-color` | `background` / `extend` / `extend-always` (as in Ghostty) | `extend` |
 | `decorations` | `auto` / `native` / `integrated` / `none` — auto: the system's title bar where it takes the theme's colour (Windows 11, X11), haetty's own (integrated) on Wayland; integrated is Linux only (Windows: native) | `auto` |
+| `settings-button` | `auto` / `always` / `never` — the dim ⚙ that opens the settings: auto: always in a Claude Code tab's status row, in other tabs only while the pointer is near the bottom-right corner; always: in other tabs whenever the pointer is in the window; never: no button (Ctrl+, and the palette's "Settings" stay) | `auto` |
 | `scrollback-limit` | bytes of scrollback per session, as in Ghostty (plain bytes, `_` allowed; rows of 120 columns take ~1.1 KB, the default keeps ~11 000 of them) | `12000000` |
 | `restore-tabs` | `true` / `false` — reopen the previous run's tabs at start | `true` |
 | `engine` | `ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native) | `ghostty` |
@@ -226,6 +227,8 @@ keybind = ctrl+shift+n=new_tab
 | `palette` | `N=COLOR`, N 0–15 (may repeat) — on top of the theme | the theme's |
 | `minimum-contrast` | 1–21, as in Ghostty: text whose WCAG contrast with its background is lower turns white (dark background) or black (light) | `1` (off) |
 | `background`, `foreground`, `cursor-color`, `cursor-text`, `selection-background`, `selection-foreground` | a colour (`#rrggbb`, `rrggbb`, an X11 name) — on top of the theme | the theme's |
+| `font-family` | a font family installed on the system (`--font` on the command line); a missing one falls back to the default | a monospaced font of the system (Linux: DejaVu Sans Mono, Noto Sans Mono, …; Windows: Cascadia Mono, Consolas, …) |
+| `font-size` | points, 4–96 | `11` |
 <!-- config-table:end -->
 
 ### Themes

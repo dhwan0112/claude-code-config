@@ -64,8 +64,6 @@ use winit::event_loop::{ControlFlow, EventLoop};
 
 #[derive(Clone, Debug)]
 pub struct Options {
-    pub font: Option<String>,
-    pub font_size: f64,
     pub cols: u16,
     pub rows: u16,
     pub command: CommandSpec,
@@ -306,8 +304,6 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
     let mut o = Options {
-        font: None,
-        font_size: 11.0,
         cols: 120,
         rows: 36,
         command: default_shell(),
@@ -323,12 +319,11 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
     while let Some(a) = it.next() {
         let mut val = |name: &str| it.next().ok_or(format!("{name} needs a value"));
         match a.as_str() {
-            "--font" => o.font = Some(val("--font")?),
-            "--font-size" => {
-                o.font_size = val("--font-size")?.parse().map_err(|_| "bad --font-size")?;
-                if !(4.0..=96.0).contains(&o.font_size) {
-                    return Err("--font-size must be between 4 and 96".into());
-                }
+            // The short name of `--font-family`.
+            "--font" => {
+                let v = val("--font")?;
+                o.config.set("font-family", &v)?;
+                o.settings.push(("font-family".into(), v));
             }
             "--cols" => o.cols = val("--cols")?.parse().map_err(|_| "bad --cols")?,
             "--rows" => o.rows = val("--rows")?.parse().map_err(|_| "bad --rows")?,
@@ -343,7 +338,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
                     Some((k, v)) => (k, Some(v.to_owned())),
                     None => (&s[2..], None),
                 };
-                if !config::KEYS.contains(&key) {
+                if !config::is_cli_key(key) {
                     return Err(format!("unknown option {s} (haetty --help lists them)"));
                 }
                 let value = match inline {
@@ -677,7 +672,7 @@ fn main() {
             o
         }
     };
-    let fonts = font::Fonts::load(opts.font.as_deref()).unwrap_or_else(|e| fatal(&e));
+    let fonts = font::Fonts::load(opts.config.font_family.as_deref()).unwrap_or_else(|e| fatal(&e));
     let el =
         EventLoop::<app::UserEvent>::with_user_event().build().unwrap_or_else(|e| fatal(&format!("event loop: {e}")));
     el.set_control_flow(ControlFlow::Wait);
@@ -699,8 +694,9 @@ mod tests {
     #[test]
     fn parses_options_and_program() {
         let o = args(&["--font", "Iosevka", "--font-size", "13", "--cols", "100", "claude", "--resume"]).unwrap();
-        assert_eq!(o.font.as_deref(), Some("Iosevka"));
-        assert_eq!(o.font_size, 13.0);
+        assert_eq!(o.config.font_family.as_deref(), Some("Iosevka"));
+        assert_eq!(o.config.font_size, 13.0);
+        assert_eq!(o.settings, [("font-family".into(), "Iosevka".into()), ("font-size".into(), "13".into())]);
         assert_eq!(o.cols, 100);
         assert_eq!(o.command.program, "claude");
         assert_eq!(o.command.args, vec!["--resume"]);

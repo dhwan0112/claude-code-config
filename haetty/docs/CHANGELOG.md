@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Settings: one schema for every key (`config::SETTINGS`: type, range, default, group, when it applies); the parser,
+  `haetty --help` and README's table come from it. New keys `font-family` (the config file's `--font`), `font-size`
+  and `settings-button`. Existing config files read as before (a test pins every older key, the `window-padding`
+  family and the refused values). Stage PS, `docs/history/2026-11-16-ps-settings.md`.
+
 ## 0.3.2 (2026-11-12, tagged 2026-11-16)
 
 The first release after 0.2.0: it also carries the untagged candidates 0.3.0 and 0.3.1 (their sections below). The
