@@ -64,7 +64,7 @@ function Sample([int]$t) { "$t,$(M $script:Gui.Id),$(M $DP),$(Desc $DP),$((Runni
 function Op-Tab { Keys "^+t" 1300; Keys "^+w" 300; Keys "^+w" 800; $script:tabs++ }
 function Op-Detach { Keys "%4"; Palette "detach"; Start-Sleep 0.5; Palette "attach detached"; Start-Sleep 0.8; $script:dets++ }
 function Op-Task {
-    Keys "%1"; Palette "new task"; Keys "soak task $script:tasks" 200; Keys "{ENTER}"; Keys "d" 200; Keys "{ENTER}"; Keys "{ENTER}" 2500
+    Keys "%1"; Palette "new task"; Keys "soak task $script:tasks" 200; Keys "{ENTER}"; Keys "d" 200; Keys "{ENTER}"; 1..4 | ForEach-Object { Keys "{ENTER}" }; Keys "{ENTER}" 2500
     Start-Sleep 4
     Keys "^+w"; Start-Sleep 0.5; Palette "remove a task"; Keys "{ENTER}" 1800
     if ((Wts) -ne 0) { $script:fails++; Write-Host "task $($script:tasks): $(Wts) worktree(s) left" }

@@ -14,7 +14,7 @@ $fc = Fake-Claude $W
 function Worker { (Status).workers | Select-Object -First 1 }
 Start-Gui "cmd.exe" @("/k") $R
 # 1. New task through the palette: title, description, the prefilled repository and branch.
-Palette "new task"; Keys "Fix the parser" 300; Keys "{ENTER}"; Keys "Handle CRLF" 300; Keys "{ENTER}"; Keys "{ENTER}" 3000
+Palette "new task"; Keys "Fix the parser" 300; Keys "{ENTER}"; Keys "Handle CRLF" 300; Keys "{ENTER}"; 1..4 | ForEach-Object { Keys "{ENTER}" }; Keys "{ENTER}" 3000
 $WT = "$W\proj-tasks\t1-fix-the-parser"
 if ((Test-Path $WT) -and ((RepoGit $WT branch --show-current) -eq "task/t1-fix-the-parser")) { Ok "worktree beside the repository on task/t1-fix-the-parser" } else { Bad "worktree" (Get-ChildItem "$W\proj-tasks" -ErrorAction SilentlyContinue | Out-String) }
 if (Test-Path "$W\state\tasks\t1.task") { Ok "task file tasks\t1.task" } else { Bad "task file" "missing" }

@@ -36,7 +36,7 @@ cd $R
 setsid $BIN --cols 110 --rows 26 --restore-tabs false sh -c 'exec sleep 600' > /dev/null 2>&1 < /dev/null & GP=$!
 GW=$(timeout 10 xdotool search --sync --onlyvisible --pid $GP | head -1); sleep 2; xdotool windowfocus --sync $GW; sleep 0.3
 # 1. New task through the palette: title, description, the prefilled repository and branch.
-pal "new task"; typ "Fix the parser"; key Return; typ "Handle CRLF"; key Return; shot s3-1-new-task-place; key Return; sleep 1.5
+pal "new task"; typ "Fix the parser"; key Return; typ "Handle CRLF"; key Return; for _ in 1 2 3 4; do key Return; done; shot s3-1-new-task-place; key Return; sleep 1.5   # steps 3-6 (scope, related, model, effort) are optional: Enter skips
 WT=$W/proj-tasks/t1-fix-the-parser
 [ -d $WT ] && [ "$(git -C $WT branch --show-current)" = task/t1-fix-the-parser ] && ok "worktree beside the repository on task/t1-fix-the-parser" || bad "worktree" "$(ls $W/proj-tasks 2>&1)"
 [ -f $W/state/tasks/t1.task ] && ok "task file tasks/t1.task" || bad "task file" "$(ls $W/state/tasks 2>&1)"

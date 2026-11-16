@@ -66,15 +66,20 @@ sbmax() { J | python3 -Ic 'import json,sys; v=[s["scrollback"] for s in json.loa
 srows() { J | python3 -Ic 'import json,sys; print(";".join("%s:%d" % (s["id"], s["scrollback"]) for s in json.load(sys.stdin)["sessions"] if "scrollback" in s))'; }
 echo "t_s,gui_threads,gui_fds,gui_anon_kb,daemon_threads,daemon_fds,daemon_anon_kb,daemon_descendants,sessions,worktrees,tabs_done,detach_done,tasks_done,themes_done,scrollback_rows,sessions_rows" > $OUT
 sample() { echo "$1,$(m $GP),$(m $DP),$(desc $DP),$(nsess),$(wts),$tabs,$dets,$tasks,$themes,$(sbmax),$(srows)" >> $OUT; }
-tabs=0 dets=0 tasks=0 themes=0 fails=0
+tabs=0 dets=0 tasks=0 tried=0 themes=0 fails=0
 op_tab() { key ctrl+shift+t; sleep 0.8; KW=0.3 key ctrl+shift+w; KW=0.8 key ctrl+shift+w; tabs=$((tabs+1)); }
 op_detach() { key alt+4; pal "detach"; sleep 0.5; pal "attach detached"; sleep 0.8; dets=$((dets+1)); }
 op_task() {
-  key alt+1; pal "new task"; xdotool type --delay 15 "soak task $tasks"; key Return; xdotool type "d"; key Return; KW=2 key Return
+  key alt+1; pal "new task"; xdotool type --delay 15 "soak task $tried"; key Return; xdotool type "d"; key Return; for _ in 1 2 3 4; do key Return; done; KW=2 key Return
   sleep 4   # the worker ends; its tab stays, marked exited
+  # The task must exist before it is removed: a wizard that grew a step left every task unmade and this check
+  # passing (found in stage PS, 2026-11-16).
+  # Only a task made and removed counts as done (the verdict's tasks_done).
+  local made=1
+  [ "$(wts)" -ge 1 ] || { made=0; fails=$((fails+1)); echo "task $tried: not created" >&2; }
   key ctrl+shift+w; sleep 0.5; pal "remove a task"; key Return; sleep 1.5   # the list, then the task
-  [ "$(wts)" = 0 ] || { fails=$((fails+1)); echo "task $tasks: $(wts) worktree(s) left" >&2; }
-  tasks=$((tasks+1)); }
+  [ "$(wts)" = 0 ] || { made=0; fails=$((fails+1)); echo "task $tried: $(wts) worktree(s) left" >&2; }
+  tasks=$((tasks+made)); tried=$((tried+1)); }
 op_theme() { if [ $((themes % 2)) = 0 ]; then theme "haetty classic"; else theme "IBM 5153 CGA"; fi; pal "reload config"; themes=$((themes+1)); }
 # 280 operations in a fixed interleaving, evenly over the run, a sample every 300 s.
 # A shorter DUR (a trial) scales the counts down. The operations take ~910 s of the hour themselves.
@@ -96,5 +101,5 @@ done
 sleep 3; sample $(( $(date +%s) - t0 ))
 alive=$(kill -0 $GP 2>/dev/null && kill -0 $DP 2>/dev/null && echo yes || echo no)
 kill $GP 2>/dev/null; wait $GP 2>/dev/null; haetty_stop_daemon "$BIN"
-echo "operations: tabs $tabs/200, detach $dets/50, tasks $tasks/20, themes $themes/10; task cleanup failures $fails; alive at the end: $alive"
+echo "operations: tabs $tabs/200, detach $dets/50, tasks $tasks/20, themes $themes/10; task failures (not created or not cleaned up) $fails; alive at the end: $alive"
 python3 -I "$E2E/soak-verdict.py" "$OUT" "$DUR" "$alive"

@@ -69,3 +69,33 @@ K3b (only the old `ccterm` folder is migrated once, `migrate.rs`). Bad lines are
 - Rule (implemented, `Win::gear`): the cell text is `⚙` + VS15 (U+FE0E, text presentation asked for explicitly). When
   the fonts give no face for U+2699, or only a colour face, the button is `≡` (U+2261, in every primary default of
   both platforms) instead. The choice is logged once at start and after a font change.
+
+## S7. The two end-to-end failures on kramers (`orchestrator.sh`, regression `ime`)
+
+Investigated before the settings code, since `settings.sh` uses the same input path. Both were stale or fragile test
+scripts, not the machine's Xvfb and not a product defect.
+
+- **`orchestrator.sh` (4 of 21).** The keys did reach the window: the palette takes them before the GUI's `key <text>`
+  debug line, so typed palette text never shows in `gui.log` (the log had `action command_palette` and
+  `action new_task`). The New task wizard has seven questions since G5 (`ac6c4a7`, 2026-11-09; three before) (title, description, scope, related files,
+  model, effort, repository and base); the script answered three, so the palette stayed on "3/7 Scope (optional…)" and
+  no task, worktree or worker followed (a screenshot of the run shows that prompt). Ruled out: the environment
+  (`XMODIFIERS`, `QT_IM_MODULE`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS` unset: same 4/17) and the focus method
+  (one `windowfocus` or one before every key: same). Fix: four more Enter keys (steps 3–6 are optional). Result
+  **21 passed, 0 failed** (`scripts/e2e/xvfb.sh env bash scripts/e2e/orchestrator.sh`, 2026-11-16 16:11).
+- **The soak had the same stale sequence.** `soak.sh`'s task operation answered three questions too, and it counted a
+  task as done whether or not one was made: since G5 the soaks (the P1c short soaks included) made no task, and their
+  "tasks 3 of 3" was the number of attempts. Fixed the same way; a task now counts only when its worktree existed
+  and was removed again, and "task failures (not created or not cleaned up)" are printed. The Windows twins
+  (`windows/orchestrator.ps1`, `windows/soak.ps1`) got the same four Enter keys — **not run** (Windows).
+- **regression `ime` (preedit=0 commit=0).** The test starts its own D-Bus and `ibus-daemon` (not the desktop's), XIM
+  registers (`xprop -root XIM_SERVERS` = `@server=ibus`) and the GUI logs `ime Enabled`. But ibus-hangul 1.5.5 starts
+  in Latin mode here (`gsettings … org.freedesktop.ibus.engine.hangul initial-input-mode 'latin'`), so g/k/s pass
+  through without a composition. Fix: `ibus-daemon` and the `ibus` command run with a private keyfile GSettings
+  backend (`GSETTINGS_BACKEND=keyfile`, `XDG_CONFIG_HOME=$HAETTY_RUN/ibuscfg`, `initial-input-mode='hangul'`); that
+  also keeps ibus from writing its address file into the real `~/.config/ibus/bus`, which the old script did. Result:
+  `PASS ime preedit 7, commit 1, 한 sent`, regression **30 passed, 0 failed**. Ruled out: the locale (C.UTF-8 and
+  ko_KR.UTF-8 alike), an explicit Hangul toggle key.
+- **The short soak with real tasks** (`soak-short.sh`, libghostty, build `e25d545` + these scripts, 16:15–16:25):
+  `operations: tabs 33/200, detach 8/50, tasks 3/20, themes 2/10; task failures (not created or not cleaned up) 0`,
+  `PASS tasks_done: 3 of 3`, **VERDICT PASS** — now with three tasks made (worktree, worker tab) and removed.

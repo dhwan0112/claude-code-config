@@ -71,10 +71,16 @@ case "$(cat $W/ctrlc.n)" in 3) ok "ctrl+c twice exits claude (3/3)";; SKIP) echo
 
 # 5. IME: ibus-hangul over XIM, composing shown, commit reaches the program.
 export XMODIFIERS=@im=ibus GTK_IM_MODULE=ibus
-eval "$(dbus-launch --sh-syntax)"; ibus-daemon -rx > /dev/null 2>&1 & IBP=$!; sleep 3; ibus engine hangul 2>/dev/null
+# ibus-hangul >= 1.5.5 starts in Latin mode (gsettings initial-input-mode='latin'): keys pass through without preedit.
+# A private keyfile GSettings backend (and XDG_CONFIG_HOME: ibus keeps its address file there) makes the engine start in
+# Hangul mode, whatever the real user's dconf says, and keeps ibus from writing into the real ~/.config/ibus.
+mkdir -p $HAETTY_RUN/ibuscfg/glib-2.0/settings
+printf "[org/freedesktop/ibus/engine/hangul]\ninitial-input-mode='hangul'\n" > $HAETTY_RUN/ibuscfg/glib-2.0/settings/keyfile
+ibusenv() { env GSETTINGS_BACKEND=keyfile XDG_CONFIG_HOME=$HAETTY_RUN/ibuscfg "$@"; }
+eval "$(dbus-launch --sh-syntax)"; ibusenv ibus-daemon -rx > /dev/null 2>&1 & IBP=$!; sleep 3; ibusenv ibus engine hangul 2>/dev/null
 gui ime python3 $PROBE echo-input
 if wait_screen READY; then
-  focus $GW; sleep 0.3; ibus engine hangul 2>/dev/null
+  focus $GW; sleep 0.3; ibusenv ibus engine hangul 2>/dev/null
   xdotool key --delay 120 g k s; sleep 0.5; xdotool key space; sleep 0.8
   pre=$(grep -c 'ime preedit' $OUT/ime.log); com=$(grep -c 'ime commit' $OUT/ime.log)
   sc=$(screen)

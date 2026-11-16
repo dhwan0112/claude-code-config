@@ -9,6 +9,15 @@
   and `settings-button`. Existing config files read as before (a test pins every older key, the `window-padding`
   family and the refused values). Stage PS, `docs/history/2026-11-16-ps-settings.md`.
 
+### Fixed
+
+- End-to-end checks on kramers (stage PS, S7): `orchestrator.sh` answered three of the New task wizard's seven
+  questions since G5 (4 of 21 → 21 of 21); `soak.sh` had the same sequence and counted attempts as done, so the
+  soaks made no task since G5 — a task now counts only when it was made and removed; regression `ime`: ibus-hangul
+  1.5.5 starts in Latin mode, the test's own ibus now gets a private GSettings keyfile with Hangul mode (and no
+  longer writes into the real `~/.config/ibus`) (29 of 30 → 30 of 30). The Windows twins got the same wizard keys
+  (not run).
+
 ## 0.3.2 (2026-11-12, tagged 2026-11-16)
 
 The first release after 0.2.0: it also carries the untagged candidates 0.3.0 and 0.3.1 (their sections below). The
