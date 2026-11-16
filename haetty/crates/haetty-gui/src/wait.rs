@@ -94,7 +94,7 @@ fn met(what: &str, t0: Instant) -> (String, i32) {
 
 /// Whether the process has ended (or is a zombie waiting to be reaped).
 #[cfg(target_os = "linux")]
-fn pid_ended(pid: u32) -> Result<bool, String> {
+pub(crate) fn pid_ended(pid: u32) -> Result<bool, String> {
     match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
         Err(_) => Ok(true),
         Ok(s) => {
@@ -106,7 +106,7 @@ fn pid_ended(pid: u32) -> Result<bool, String> {
 
 /// Whether the process has ended: its handle is signalled, or there is no such process.
 #[cfg(windows)]
-fn pid_ended(pid: u32) -> Result<bool, String> {
+pub(crate) fn pid_ended(pid: u32) -> Result<bool, String> {
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED, WAIT_OBJECT_0};
     use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
     // SAFETY: the handle is closed before returning; the arguments are plain values.
@@ -124,7 +124,7 @@ fn pid_ended(pid: u32) -> Result<bool, String> {
 
 /// Other systems have no `/proc` here, so the wait is not supported there.
 #[cfg(all(not(windows), not(target_os = "linux")))]
-fn pid_ended(_pid: u32) -> Result<bool, String> {
+pub(crate) fn pid_ended(_pid: u32) -> Result<bool, String> {
     Err("haetty wait pid is supported on Linux and Windows only".into())
 }
 

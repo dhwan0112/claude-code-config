@@ -727,3 +727,42 @@ fn png_wh(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
     chunk(b"IEND", &[]);
     out
 }
+
+/// Stage PU, U5: the two ways a window with shell tabs only (no settings button in view) could show that a newer
+/// version is out, for the person to choose — (a) the palette's "Updates" (built), (b) a dim `↑` at the right end of
+/// the tab bar (a mock, not built). `HAETTY_LOOK_DIR=docs/look cargo test -p haetty-gui update_mark_dumps -- --ignored`
+#[test]
+#[ignore]
+fn update_mark_dumps() {
+    let Some(dir) = std::env::var_os("HAETTY_LOOK_DIR").map(PathBuf::from) else { return };
+    let Ok(fonts) = Fonts::load(None) else { return };
+    let mut painter = Painter::new(fonts, PX);
+    let t = theme();
+    painter.set_look(Look::of(&t));
+    let acc = t.palette;
+    let g = Greys::new(t.foreground, t.background, &acc);
+    let s = screen(COLS, ROWS - 1, &["$ cargo build", "   Compiling haetty v0.4.0", "$ "], Some((2, 2)));
+    let tabs = [
+        TabView { name: "build", exited: false, attention: Attention::None, observed: false, clear: false },
+        TabView { name: "logs", exited: false, attention: Attention::None, observed: false, clear: false },
+    ];
+    // (a) The palette, "upd" typed: the Updates entry.
+    let keys = crate::keymap::Keymap::default();
+    let pal = ui::Palette { query: "upd".into(), ..Default::default() };
+    let a = Compose {
+        tab_bar: Some(ui::tab_bar(&tabs, 0, COLS as usize, g)),
+        palette: Some((&pal, &keys)),
+        ..compose(&s, &acc)
+    }
+    .build();
+    // (b) The mock: a dim ↑ in the tab bar's last cell.
+    let mut bar = ui::tab_bar(&tabs, 0, COLS as usize, g);
+    if let Some(c) = bar.last_mut() {
+        *c = Cell { text: "\u{2191}".into(), ..ui::blank(g.dim, t.background) };
+    }
+    let b = Compose { tab_bar: Some(bar), ..compose(&s, &acc) }.build();
+    for (name, snap) in [("pu-update-mark-a-palette", a), ("pu-update-mark-b-tabbar-arrow", b)] {
+        let cv = render(&mut painter, &snap, None, None);
+        std::fs::write(dir.join(format!("{name}.png")), png_wh(cv.width, cv.height, &rgba(&cv.pixels))).unwrap();
+    }
+}

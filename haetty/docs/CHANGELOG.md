@@ -19,6 +19,15 @@
   change resizes the sessions once, 150 ms after the last step); the rest shows "next start". No new dependency.
   **Windows:** unverified (build and clippy pass; the Windows check list in `docs/dev-commands.md`).
 
+- Releases and the in-app update (stage PU; README "Updates", SELF-HOSTING "Releases", DESIGN §2.4, §3.17):
+  `tools/release.sh` builds a tag's assets reproducibly, writes `manifest.json` and leaves signing (minisign, your
+  key) and the draft upload to you; haetty checks once a day (one GET; User-Agent `haetty/<version>` only), verifies
+  the signature, version, size and SHA-256, installs a new version folder (or replaces a single executable) from the
+  settings panel's Updates group, restarts with the tabs back, rolls back by itself when the new version does not
+  stay up, and on request. `haetty update --check`. New dependencies: ureq 3 (rustls/ring with the system trust store
+  on Linux, Schannel on Windows) and minisign-verify. `install-stable.sh` uses the same layout code
+  (`haetty install-layout`). **Windows:** unverified (build, clippy and tests pass; Windows check list).
+
 ### Changed
 
 - Ctrl+, is now haetty's (the settings); before, it reached the program. `keybind = ctrl+,=unbind` gives it back.

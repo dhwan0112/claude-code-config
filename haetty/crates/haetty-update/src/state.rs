@@ -117,6 +117,20 @@ pub fn confirm(dir: &Path) {
     let _ = std::fs::remove_file(pending_path(dir));
 }
 
+/// The window of version `name` is up (written once the window exists): the restart's watch then knows a quick end
+/// was the window closing (its last tab ended), not a version that cannot start.
+pub fn mark_up(dir: &Path, name: &str) {
+    let _ = write_kv(&dir.join("up"), &[("name", name.into())]);
+}
+
+/// Whether version `name` got as far as its window (`mark_up`), and forget the mark.
+pub fn take_up(dir: &Path, name: &str) -> bool {
+    let p = dir.join("up");
+    let up = read_kv(&p).into_iter().any(|(k, v)| k == "name" && v == name);
+    let _ = std::fs::remove_file(&p);
+    up
+}
+
 pub fn set_note(dir: &Path, note: &str) {
     let _ = write_kv(&dir.join("note"), &[("note", note.into())]);
 }
@@ -159,6 +173,11 @@ mod tests {
         assert_eq!(begin_start(&d, "single"), Start::Watch);
         confirm(&d);
         assert_eq!(begin_start(&d, "single"), Start::Normal);
+        mark_up(&d, "0.4.0-aaaaaaaaaaaa");
+        assert!(!take_up(&d, "other"), "another version's mark");
+        mark_up(&d, "0.4.0-aaaaaaaaaaaa");
+        assert!(take_up(&d, "0.4.0-aaaaaaaaaaaa"));
+        assert!(!take_up(&d, "0.4.0-aaaaaaaaaaaa"), "taken once");
         set_note(&d, "rolled back");
         assert_eq!(take_note(&d).as_deref(), Some("rolled back"));
         assert_eq!(take_note(&d), None);

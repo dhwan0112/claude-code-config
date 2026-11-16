@@ -65,6 +65,17 @@ Items a stage could not check because they need Windows; the PC works through th
   - at 150 % DPI a click on the ⚙ cell (bottom-right) opens the panel, a click next to it does not;
   - a config file with CRLF line ends keeps them after a change in the panel (`config.bak` beside it);
   - `scripts/e2e/windows/orchestrator.ps1` and `windows/soak.ps1` with the seven-question New task wizard (S7).
+- Stage PU (updates, DESIGN §2.4, §3.17):
+  - the build: `haetty.exe` imports only system DLLs (Schannel: `secur32`, `crypt32`), `--version` works;
+  - `scripts/e2e/windows/update.ps1` (written, **not run**): an update over HTTPS through Schannel with the test CA,
+    and form (b): the running `haetty.exe` renamed to `haetty.exe.old`, the new one in its place, the `.old` gone at
+    the next start;
+  - form (a) by hand: `install-stable.ps1` a version, then update from the panel: a new version folder (read-only
+    files), the junction `current` re-pointed (`haetty install-layout` makes it without a shell), the Start menu
+    shortcut and the taskbar pin (through `current\haetty.exe`) start the new version; Roll back re-points it;
+  - the reference frames `claude-gear-update` and `settings-updates` (new) with the Windows test binary and
+    `HAETTY_UPDATE_REFERENCE=1`, together with the PS frames;
+  - a system proxy set only in Windows' settings (not `HTTPS_PROXY`) is not used (ureq reads the environment).
 
 ## Short soak (candidate check, P1c)
 

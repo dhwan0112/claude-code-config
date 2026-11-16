@@ -729,14 +729,18 @@ fn main() {
     el.set_control_flow(ControlFlow::Wait);
     let mut app = app::App::new(opts, el.create_proxy(), fonts);
     let ran = el.run_app(&mut app);
-    // "Restart now" / "Roll back" (stage PU): the window is closed; wait for the daemon, start the new version.
-    if let Some((form, previous)) = app.restart.take() {
-        updater::restart_after_close(&form, previous);
+    // "Restart now" / "Roll back" (stage PU): the window is closed. Its daemon connection goes with the app (else the
+    // daemon never becomes idle), then the daemon's exit is awaited and the new version started.
+    let restart = app.restart.take();
+    let exit_code = app.exit_code;
+    drop(app);
+    if let Some((form, previous, daemon)) = restart {
+        updater::restart_after_close(&form, previous, daemon);
     }
     if let Err(e) = ran {
         fatal(&format!("event loop: {e}"));
     }
-    std::process::exit(app.exit_code);
+    std::process::exit(exit_code);
 }
 
 #[cfg(test)]

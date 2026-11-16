@@ -118,6 +118,40 @@ Only you replace the stable binary. The steps:
    daemon has exited; then start it again.
 5. **HANDOFF.** The "current stable" section is updated only when you say
    the new version is installed.
+6. **Or the in-app update** (from the first release with your key on): publish the release ("Releases"
+   below); your installed haetty offers it in the settings panel — the same install, done by you in the GUI.
+
+## Releases (stage PU)
+
+A release is a tag, its assets and a signed `manifest.json` on GitHub; the in-app update installs only what that
+signature covers (README, "Updates"; DESIGN §3.17). Everything here is yours to run, in your own terminal — never
+from a Claude Code session (`tools/release.sh` stops before signing there).
+
+**Once: the signing key.**
+
+1. Install minisign (`sudo apt install minisign`; Windows: `scoop install minisign`) or rsign2 (`cargo install rsign2`).
+2. `minisign -G -p haetty.pub -s ~/.minisign/haetty.key` — choose a strong password (the tool asks; it encrypts the
+   secret key). Keep the secret key **out of the repository** and out of Dropbox; back it up offline (a USB key in a
+   drawer, a password manager's file attachment). Losing it means users must install the next version by hand;
+   leaking it means someone else can sign updates — then make a new key and release by hand.
+3. Put the public key into the repository and commit it: `cp haetty.pub haetty/assets/update/haetty.pub`, then
+   `git add haetty/assets/update/haetty.pub && git commit -m "Release key"`. Builds from then on install signed
+   updates; builds before it find updates and show "install it by hand".
+4. Key rotation (later): the design is in DESIGN §3.17 (`next_keys`); for now add a second key as a second
+   `minisign.pub`-style block to `assets/update/haetty.pub` (every listed key is trusted).
+
+**Each release.** After the candidate check passed (below, "Dev → stable"):
+
+1. Tag: `git tag -a haetty-vX.Y.Z -m "haetty X.Y.Z" <commit>` and `git push origin haetty-vX.Y.Z`.
+2. `HAETTY_MINISIGN_KEY=~/.minisign/haetty.key tools/release.sh haetty-vX.Y.Z` — builds both targets in a clean
+   worktree (about 15 min), writes the assets and `manifest.json` into `release-X.Y.Z/`, runs minisign (it asks for
+   your password), and makes a **draft** release with `gh release create … --draft`. Add `--min-update-from V` when
+   versions older than V must not update in-app (a change of the install layout, say).
+3. Look at the draft on GitHub (the four assets, the notes); then publish it there. Installed haetty finds it within
+   a day (or at once with Check now).
+
+A dry run without a tag (`tools/release.sh <commit> --out DIR`) builds and packs only: no signature, no upload.
+The same commit gives the same archive bytes (`gzip -n`, fixed owners and times; checked in PU's record).
 
 ## Rollback
 

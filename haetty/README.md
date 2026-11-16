@@ -149,6 +149,7 @@ settings); plain Ctrl+letter keys go to the program.
 | Diff view (Claude Code tabs): last edit, `m` → vs HEAD → working tree | Ctrl+Shift+D | `diff_view` |
 | Rename tab | Ctrl+Shift+R | `rename_tab` |
 | Settings panel ([Settings](#settings)) | Ctrl+, | `settings` |
+| Updates ([Updates](#updates)) | — (palette) | `updates` |
 | Reopen a closed tab (last 20) | — (palette) | `reopen_closed_tab` |
 | Detach tab (keeps running) | — (palette) | `detach_tab` |
 | Attach detached sessions | — (palette) | `attach_detached` |
@@ -223,6 +224,41 @@ the window; `never` removes it (Ctrl+, and the palette stay). Ctrl+, used to rea
 Ctrl+comma key report for programs using the kitty keyboard protocol); Claude Code binds nothing to it. A program
 that needs it: `keybind = ctrl+,=unbind`. Not in the panel, file only: `keybind`, `palette`, `saving-mode`,
 `worker-command` (what changes how Claude Code itself works is not offered in the panel).
+
+### Updates
+
+haetty looks for a newer release by itself and installs one when you say so (DESIGN §2.4, §3.17).
+
+- **What it asks, and when.** 30 seconds after the window opens and then once a day (less often after failures), it
+  asks the release server for the latest release: one GET of GitHub's "latest release" for this repository, or of
+  `update-url` if you set one, then that release's `manifest.json` and its signature. **What is sent: one GET for
+  the latest release. The User-Agent is only "haetty/<version>". No device identifier, usage statistics or session
+  information is sent.**
+  No check in a dev instance (`HAETTY_INSTANCE`), a cargo build, or a test run. `update-check = false` turns it off;
+  `haetty update --check [--json]` asks once from a terminal (and installs nothing).
+- **What you see.** When a newer version is out, the settings button turns from dim to the text colour (no accent,
+  nothing pops up) and the settings panel opens on its **Updates** group: the new version, its date and notes,
+  **Download and install**, then **Restart now** or **Later**, **Roll back**, **Check now** and the last check. In a
+  window with shell tabs only, the palette's "Updates" opens the same group.
+- **How it is checked.** The manifest must carry a valid minisign signature (ed25519) by a key built into haetty;
+  its version must be newer than yours (an older release served again is refused) and your version at least the
+  release's lowest updatable one ("manual install needed" otherwise); the downloaded asset's size and SHA-256 must
+  match the manifest before it is opened; only the named files are taken out of it. HTTPS only, certificates always
+  checked (Linux: the system's CA bundle; Windows: the system's store), redirects only to GitHub's own hosts (or your
+  `update-url`'s host); `HTTPS_PROXY` is honoured. Anything wrong: nothing is installed and the panel says why in one
+  line. A build without a release key (until the first signed release) finds updates but does not install them.
+- **How it installs.** Installed with `tools/install-stable.sh` (`~/.local/opt/haetty/<version>/` and the
+  `~/.local/bin/haetty` link): a new read-only version folder beside the others, its `--version` checked, then the link
+  switched; older versions stay (`update-keep`, default 2) for **Roll back**. A single `haetty` executable you put
+  somewhere: replaced in place, the old file kept as `haetty.old` until the next start. A dev or cargo build, or a
+  folder you cannot write: not updated; the panel shows how to install by hand.
+- **Restart.** Installing changes nothing that runs. **Restart now** (pressed twice; with a permission question or a
+  working worker open, the first press selects Later) saves your tabs, ends this window and its sessions — programs
+  in shell tabs end; Claude Code tabs come back with `--resume` — waits for the daemon to exit, and starts the new
+  version. **Later**: the new version starts the next time haetty starts after its daemon has exited. A new version
+  that does not stay up for 20 seconds is rolled back by itself, and the panel says so.
+- **Manual installs** stay as they were: `tools/install-stable.sh` (Linux) and `install-stable.ps1` (Windows) use
+  the same layout code; releases and keys: `docs/SELF-HOSTING.md`, "Releases".
 
 ### Config file
 

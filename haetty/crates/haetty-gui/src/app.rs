@@ -68,7 +68,7 @@ pub struct App {
     win: Option<Win>,
     pub exit_code: i32,
     /// "Restart now" / "Roll back" closed the window: start the new version (`main`), watching for `previous`.
-    pub restart: Option<(haetty_update::layout::Form, Option<String>)>,
+    pub restart: Option<(haetty_update::layout::Form, Option<String>, u32)>,
 }
 
 /// What a tab runs: program, arguments, folder; a name to show until the
@@ -2559,8 +2559,9 @@ impl ApplicationHandler<UserEvent> for App {
         if let Some(win) = self.win.as_mut() {
             if let Some(previous) = win.restart_req.take() {
                 let form = win.updater.form.clone();
+                let daemon = win.client.daemon_pid;
                 close_window(win, el);
-                self.restart = Some((form, previous));
+                self.restart = Some((form, previous, daemon));
             }
         }
     }

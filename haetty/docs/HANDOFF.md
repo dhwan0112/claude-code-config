@@ -8,8 +8,6 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage pu-update (branch `haetty/pu-update`, worktree `~/projects/claude-code-config-wt/pu-update`). Remaining: PU: release.sh, update check/download/verify/install/restart/rollback, panel Updates group, tests, docs
-
 ## 1. Current state
 
 - **Version** 0.3.2 (0.3.0 `b1262d2` and 0.3.1 `1163a0a` were never tagged and are superseded by it). Tags:
@@ -37,21 +35,17 @@ stage at hand). Roles: kramers (Linux) develops; the Windows PC only checks (`ch
 The text this list replaced: [history/2026-11-12-p0-north-star.md](history/2026-11-12-p0-north-star.md).
 
 Stages:
-- **P0, P1a–P1c done (2026-11-12; records [p0](history/2026-11-12-p0-north-star.md), [p1](history/2026-11-12-p1.md)):**
-  NORTH-STAR, STAGES; the tag rule with the short soak; the PTY writer leak (P1a); K1 follow-up (P1b); the daemon's
-  health record; **`haetty-v0.3.2` = `622d629`** tagged 2026-11-16 (26 approved KNOWN lines). Open: P1a's one-hour soak.
-- **PS done (2026-11-16, [record](history/2026-11-16-ps-settings.md)):** one settings schema (`config::SETTINGS`); the
-  dim ⚙ button and the settings panel (DESIGN §2.4, approved), line-preserving saving and live apply (§3.16); the
-  kramers e2e failures were stale scripts (orchestrator, soak, ime; fixed, soaks make tasks again). Windows unverified
-  (Windows check list; its reference frames need `HAETTY_UPDATE_REFERENCE=1` on the PC).
+- **Done:** P0, P1a–P1c (2026-11-12, [p0](history/2026-11-12-p0-north-star.md), [p1](history/2026-11-12-p1.md); tag
+  **`haetty-v0.3.2` = `622d629`**; open: P1a's one-hour soak); PS settings panel (2026-11-16,
+  [record](history/2026-11-16-ps-settings.md)); **PU releases and in-app update** (2026-11-16,
+  [record](history/2026-11-16-pu-update.md)): `tools/release.sh`, signed manifests, the Updates group, restart and
+  rollback. **The person:** make the release key and run the first release (SELF-HOSTING "Releases"; §6.1 34).
+  Windows unverified for PS and PU (Windows check list; reference frames to make on the PC).
 - P2: working inside haetty — coordinating session + workers, two small stages, `haetty tokens` comparison; a key to
   the longest-waiting worker (after the person installs v0.3.2).
-- P3: sidebar and side-by-side diff overlay; IDE-integration research and prototype (off by default). DESIGN §2
-  change approved for STAGES.md's scope; frame dumps in `docs/look/`.
-- P4: session browser, fork, names, `haetty sessions --json`.
-- P5: connections screen, `haetty mcp` (stdio, Observe only), `haetty mcp install`.
-- P6: SSH and Tailscale through the system OpenSSH; isolated test sshd.
-- P7: remote daemon design (docs only). P8: delegation design (docs only, the person decides).
+- P3: sidebar, side-by-side diff overlay, IDE-integration research (DESIGN §2 change approved; dumps in `docs/look/`).
+- P4: session browser, fork, names, `haetty sessions --json`. P5: connections, `haetty mcp` (stdio, Observe) + install.
+- P6: SSH and Tailscale (system OpenSSH, test sshd). P7: remote daemon design; P8: delegation design (docs only).
 - P9: tidy-up — token tools in dev scripts; Windows result hand-over and `NOT-RUN (foreground)`; the auto-mode deny path.
 
 **On hold** (they do not move a point directly): the differences left to the newest Ghostty (F2), switching the
@@ -123,6 +117,7 @@ Testing and Claude Code:
 - Two private Xvfb on the same display number share the abstract X socket across `unshare -rm` (T4): `xvfb.sh` picks a free one.
 - check-range of commits before `0a23bf0` / K2 on kramers needs GNU `cat` and no session markers: `check-range.sh` sets both (P1c).
 - Unix socket paths are limited to 108 bytes: keep `HAETTY_TEST_TMP` short (the gate refuses > 32 characters).
+- Asking a daemon whether it still runs by connecting keeps it busy (no idle exit): watch its PID instead (PU).
 - A script typing blind into a palette breaks silently when it gains a step: check the result (soaks made no task G5→PS).
 - Ubuntu 26.04 has uutils coreutils: its `cat` stops after the first read from a raw terminal (use python3 in fixtures); kramers' `/tmp` is a tmpfs (RAM). `echo "$out" | grep -q` under `pipefail` fails when grep matches early (SIGPIPE): read a here-string (the gate did this until 2026-11-10).
 
@@ -323,6 +318,9 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     near the bottom-right corner and goes when you type; a Claude Code tab's ⚙ is in its status row; a click, Ctrl+,
     and the palette open the panel; at 150–200 % the click hits the ⚙ cell; a font family typed with the Hangul IME is
     applied or refused with a reason; your config keeps its comments (`config.bak` beside it). Windows: the same.
+34. [new, PU 2026-11-16] **Releases and updates** (SELF-HOSTING "Releases"): the minisign key and `haetty.pub` commit;
+    a tag, `tools/release.sh` in your terminal, the draft checked and published; an installed haetty updates from the
+    panel (Restart now brings the tabs back, Roll back returns). Windows: the Windows check list.
 
 #### B. Linux with a real account (Claude Code logged in)
 

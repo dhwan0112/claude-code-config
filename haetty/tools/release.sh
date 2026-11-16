@@ -56,7 +56,7 @@ for triple in x86_64-unknown-linux-gnu x86_64-pc-windows-gnu; do
   echo "building $triple"
   ( cd "$SRC" && HAETTY_BUILD_COMMIT=$COMMIT SOURCE_DATE_EPOCH=$EPOCH CARGO_TARGET_DIR=$TARGET_DIR \
       RUSTFLAGS="--remap-path-prefix=$WT/src=/src --remap-path-prefix=$HOME=/home" \
-      nice -n 5 cargo build --locked --profile dist --target "$triple" -p haetty-gui --bin haetty -p haetty-headless )
+      nice -n 5 cargo build --locked --profile dist --target "$triple" -p haetty-gui -p haetty-headless --bin haetty --bin haetty-headless )
 done
 LIN=$TARGET_DIR/x86_64-unknown-linux-gnu/dist WIN=$TARGET_DIR/x86_64-pc-windows-gnu/dist
 # A release never trusts the tests' key or CA (`update-test` / `test-support` builds only).

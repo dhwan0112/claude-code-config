@@ -86,6 +86,8 @@ pub struct Updater {
     pub confirm_at: Option<Instant>,
     /// After an automatic rollback.
     pub note: Option<String>,
+    /// A test build's shortened first check runs whatever the daily schedule says (`HAETTY_UPDATE_TEST_FIRST_MS`).
+    force_first: bool,
 }
 
 impl Updater {
@@ -102,6 +104,7 @@ impl Updater {
                     match cmd {
                         Cmd::Check { url } => {
                             let origin = Origin::of(&url);
+                            log::debug!("update check: asking {}", origin.hosts().join(" "));
                             let https = haetty_update::net::Https::new(origin.hosts(), haetty_update::net::TIMEOUT);
                             let r = flow::check(&https, &origin, &current(), &haetty_update::sign::trusted());
                             if let Ok(Found::Newer(rel)) = &r {
@@ -153,7 +156,17 @@ impl Updater {
             .expect("updater thread");
         let last = Check::load(&dir());
         let note = state::take_note(&dir());
-        let next_check = Some(Instant::now() + FIRST_CHECK);
+        // Called while the window is made (`Win` is built after it): this version got as far as its window.
+        if let Some(me) = my_name(&form) {
+            state::mark_up(&dir(), &me);
+        }
+        // A test build may shorten the first wait (scripts/e2e/update.sh).
+        let test_first: Option<u64> = std::env::var("HAETTY_UPDATE_TEST_FIRST_MS")
+            .ok()
+            .filter(|_| cfg!(feature = "update-test"))
+            .and_then(|v| v.parse().ok());
+        let first = test_first.map_or(FIRST_CHECK, Duration::from_millis);
+        let next_check = Some(Instant::now() + first);
         Updater {
             tx,
             form,
@@ -165,6 +178,7 @@ impl Updater {
             next_check,
             confirm_at: watch.then(|| Instant::now() + state::CONFIRM_AFTER),
             note,
+            force_first: test_first.is_some(),
         }
     }
 
@@ -241,7 +255,11 @@ impl Updater {
         if now < t {
             return Some(false);
         }
-        let wait_ms = self.last.next_due_ms().saturating_sub(haetty_update::now_ms());
+        let wait_ms = if std::mem::take(&mut self.force_first) {
+            0
+        } else {
+            self.last.next_due_ms().saturating_sub(haetty_update::now_ms())
+        };
         if !enabled || wait_ms > 0 {
             self.next_check = Some(now + Duration::from_millis(wait_ms.max(3_600_000)));
             return Some(false);
@@ -341,23 +359,22 @@ pub fn launcher(form: &Form) -> PathBuf {
 /// "Restart now", after the window closed: waits for this instance's daemon to end (its sessions are closed; it
 /// exits 10 s after the last window), starts the new version detached, and watches it for 20 s. If it ends that
 /// soon, the link goes back to `previous` and the version before starts instead (it shows why).
-pub fn restart_after_close(form: &Form, previous: Option<String>) {
-    let ep = haetty_proto::paths::Endpoint::default_for_user();
+pub fn restart_after_close(form: &Form, previous: Option<String>, daemon_pid: u32) {
+    // Watched by its PID: a connection to ask would keep it busy, and it would never become idle.
     let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline {
-        let gone = match &ep {
-            Ok(ep) => matches!(
-                haetty_proto::Client::connect(ep, haetty_proto::Role::Observe, "restart"),
-                Err(haetty_proto::client::ConnectError::NotRunning)
-            ),
-            Err(_) => true,
-        };
-        if gone {
-            break;
-        }
+    while Instant::now() < deadline && !crate::wait::pid_ended(daemon_pid).unwrap_or(true) {
         std::thread::sleep(Duration::from_millis(250));
     }
+    if !crate::wait::pid_ended(daemon_pid).unwrap_or(true) {
+        log::warn!("restart: the daemon {daemon_pid} still runs after 15 s (another window?); starting anyway");
+    }
     let exe = launcher(form);
+    // The version that starts now (the pending install's), to tell "could not start" from "its window closed".
+    let new_name = std::fs::read_to_string(state::pending_path(&dir()))
+        .ok()
+        .and_then(|t| t.lines().find_map(|l| l.strip_prefix("new=").map(str::to_string)))
+        .unwrap_or_default();
+    let _ = state::take_up(&dir(), "");
     let mut cmd = std::process::Command::new(&exe);
     cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     #[cfg(unix)]
@@ -373,22 +390,33 @@ pub fn restart_after_close(form: &Form, previous: Option<String>) {
             return;
         }
     };
-    log::info!("restart: {} started", exe.display());
+    log::info!("restart: {} started (pid {})", exe.display(), child.id());
     while started.elapsed() < state::CONFIRM_AFTER {
         if let Ok(Some(st)) = child.try_wait() {
+            if state::take_up(&dir(), &new_name) {
+                log::info!(
+                    "restart: the new window closed by itself after {:?} ({st}); it had started",
+                    started.elapsed()
+                );
+                return;
+            }
             log::warn!("restart: the new version ended after {:?} ({st})", started.elapsed());
             let d = dir();
             if let (Form::Versioned { opt, link, .. }, Some(prev)) = (form, previous.as_deref()) {
                 if layout::activate(opt, link, prev).is_ok() {
                     state::set_note(&d, &format!("the new version ended at its start: rolled back to {prev}"));
                     state::confirm(&d);
-                    let _ = std::process::Command::new(launcher(form)).spawn();
+                    if let Ok(c) = std::process::Command::new(launcher(form)).process_group_if_unix().spawn() {
+                        log::info!("restart: {prev} started (pid {})", c.id());
+                    }
                 }
             } else if let Form::Single { exe } = form {
                 if layout::rollback_single(exe).is_ok() {
                     state::set_note(&d, "the new version ended at its start: rolled back");
                     state::confirm(&d);
-                    let _ = std::process::Command::new(exe).spawn();
+                    if let Ok(c) = std::process::Command::new(exe).process_group_if_unix().spawn() {
+                        log::info!("restart: the version before started (pid {})", c.id());
+                    }
                 }
             }
             return;
@@ -411,4 +439,20 @@ pub fn old_daemon_note(form: &Form) -> Option<String> {
     Some(format!(
         "old daemon still running {n} session(s) ({prev}); they are not ended. It exits by itself 10 s after its last window closes; then start haetty again."
     ))
+}
+
+/// A started window is its own process group on Unix (it outlives the process that started it).
+trait Detach {
+    fn process_group_if_unix(&mut self) -> &mut Self;
+}
+
+impl Detach for std::process::Command {
+    fn process_group_if_unix(&mut self) -> &mut Self {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            self.process_group(0);
+        }
+        self
+    }
 }
