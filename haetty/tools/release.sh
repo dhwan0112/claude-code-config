@@ -93,7 +93,12 @@ PY
 awk -v v="$VERSION" 'index($0, "## " v " ") == 1 || $0 == "## " v {f=1; next} f && /^## / {exit} f' \
   "$SRC/docs/CHANGELOG.md" > "$WT/notes.md"
 PROTO=$(sed -n 's/^pub const VERSION: u32 = \([0-9]*\);.*/\1/p' "$SRC/crates/haetty-proto/src/wire.rs")
-"$LIN/haetty" release-manifest --version "$VERSION" --commit "$COMMIT" --built "$(date -u -d "@$EPOCH" +%Y-%m-%dT%H:%M:%SZ)" \
+# The built binary writes the manifest. It must have the subcommand (a commit before PU would take the word for a
+# program and open a window), and it runs with no display and an instance of its own, so it can never reach the
+# person's running haetty or its daemon.
+hb() { env -u DISPLAY -u WAYLAND_DISPLAY HAETTY_INSTANCE=release "$LIN/haetty" "$@"; }
+hb --help 2>&1 | grep -q "release-manifest" || die "$REF's haetty has no release-manifest (a commit before stage PU): no release from it"
+hb release-manifest --version "$VERSION" --commit "$COMMIT" --built "$(date -u -d "@$EPOCH" +%Y-%m-%dT%H:%M:%SZ)" \
   --protocol "$PROTO" --min-update-from "$MIN" --notes "$WT/notes.md" \
   --asset "x86_64-linux=$OUT/$LTAR:haetty,haetty-headless,LICENSE,THIRD-PARTY-NOTICES.md" \
   --asset "x86_64-windows=$OUT/$WZIP:haetty.exe,haetty-headless.exe,LICENSE,THIRD-PARTY-NOTICES.md" > "$OUT/manifest.json"

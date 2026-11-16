@@ -65,10 +65,14 @@ if [ "$MODE" != build ]; then guard "$OPT"; guard "$BIN"; fi
 # The layout's code is Rust (`haetty install-layout`, haetty_update::layout: the in-app update uses the same, stage
 # PU). A binary that has it: the newest installed one, else none (the shell fallbacks below serve installs made only
 # with versions before PU).
+# Whether a binary has `install-layout`: read from its --help text, which never opens a window. (Calling
+# `install-layout --help` on a build before PU would take the word for a program, open a window and reach the running
+# haetty's daemon.) No display and an instance of its own, to be safe either way.
+has_layout() { env -u DISPLAY -u WAYLAND_DISPLAY HAETTY_INSTANCE=probe "$1" --help 2>&1 | grep -q "install-layout"; }
 layout_bin() { # [PREFERRED]
   local b
   for b in "${1:-}" $(ls -1dt "$OPT"/*/haetty 2>/dev/null); do
-    [ -n "$b" ] && [ -x "$b" ] && "$b" install-layout --help > /dev/null 2>&1 && { echo "$b"; return 0; }
+    [ -n "$b" ] && [ -x "$b" ] && has_layout "$b" && { echo "$b"; return 0; }
   done
   return 1
 }
@@ -141,7 +145,7 @@ install_version() {
   local dest=$OPT/$VER stage=$OPT/.$VER.partial
   guard "$dest"; guard "$stage"
   mkdir -p "$OPT"
-  if "$BUILT" install-layout --help > /dev/null 2>&1; then
+  if has_layout "$BUILT"; then
     local docs=(); for f in LICENSE THIRD-PARTY-NOTICES.md README.md; do if [ -f "$WTSRC/$f" ]; then docs+=("$WTSRC/$f"); fi; done
     env -u HAETTY_INSTANCE "$BUILT" install-layout put --opt "$OPT" --name "$VER" --ref "$REF" --commit "$COMMIT" \
       --source "$REPO" -- "$BUILT" "${docs[@]}"

@@ -45,8 +45,8 @@ Stages:
   the longest-waiting worker (after the person installs v0.3.2).
 - P3: sidebar, side-by-side diff overlay, IDE-integration research (DESIGN §2 change approved; dumps in `docs/look/`).
 - P4: session browser, fork, names, `haetty sessions --json`. P5: connections, `haetty mcp` (stdio, Observe) + install.
-- P6: SSH and Tailscale (system OpenSSH, test sshd). P7: remote daemon design; P8: delegation design (docs only).
-- P9: tidy-up — token tools in dev scripts; Windows result hand-over and `NOT-RUN (foreground)`; the auto-mode deny path.
+- P6: SSH, Tailscale (system OpenSSH). P7/P8: remote daemon, delegation (docs). P9: tidy-up (token tools, Windows
+  hand-over, `NOT-RUN (foreground)`, the auto-mode deny path).
 
 **On hold** (they do not move a point directly): the differences left to the newest Ghostty (F2), switching the
 default engine, splitting the big files (H2), checking the default engine's slow memory growth.
@@ -117,6 +117,7 @@ Testing and Claude Code:
 - Two private Xvfb on the same display number share the abstract X socket across `unshare -rm` (T4): `xvfb.sh` picks a free one.
 - check-range of commits before `0a23bf0` / K2 on kramers needs GNU `cat` and no session markers: `check-range.sh` sets both (P1c).
 - Unix socket paths are limited to 108 bytes: keep `HAETTY_TEST_TMP` short (the gate refuses > 32 characters).
+- Never probe an older haetty with a new subcommand: it opens a window and reaches the running daemon; grep `--help` (PU).
 - Asking a daemon whether it still runs by connecting keeps it busy (no idle exit): watch its PID instead (PU).
 - A script typing blind into a palette breaks silently when it gains a step: check the result (soaks made no task G5→PS).
 - Ubuntu 26.04 has uutils coreutils: its `cat` stops after the first read from a raw terminal (use python3 in fixtures); kramers' `/tmp` is a tmpfs (RAM). `echo "$out" | grep -q` under `pipefail` fails when grep matches early (SIGPIPE): read a here-string (the gate did this until 2026-11-10).
