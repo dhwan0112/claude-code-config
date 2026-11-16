@@ -191,3 +191,13 @@ that stay refused; `CCTERM_CONFIG_DIR` does not move the config file.
 - **Width under 64 columns:** one column with a scrolling group line. Below 20 columns or 4 rows: no panel drawn.
 - **The keys hint in the title row** shortens with the width (three forms).
 - **Ctrl+, default chord.** Not plain Ctrl+letter, so §3.11's rule holds; Claude Code binds nothing to it.
+
+## Sizes (stripped, the gate's copies)
+
+| binary | before (`44b77c5`) | after (`4ff04b1`) | change |
+|---|---|---|---|
+| Linux `haetty` | 9 958 480 B | 10 140 512 B | +182 032 B (+178 KB) |
+| Windows `haetty.exe` | 10 166 272 B | 10 289 152 B | +122 880 B (+120 KB) |
+| `haetty-headless` (both) | 3 031 200 B / 4 795 904 B | the same | 0 |
+
+No new dependency; the linkage is unchanged (Linux NEEDED libgcc_s, libm, libc, ld-linux; the same Windows DLLs).
