@@ -35,6 +35,7 @@ hook output rules, the IPC permission checks, and the path of Claude Code permis
 | 3.14 | Themes | Ghostty's theme files as the format; the bundled themes | [04](design/04-inner-claude-themes-installs.md) |
 | 3.15 | Stable installs | Installing a commit or tag from a worktree; rollback; self-tests | [04](design/04-inner-claude-themes-installs.md) |
 | 3.16 | Settings | One schema for every key; what applies while running; line-preserving saving | [04](design/04-inner-claude-themes-installs.md) |
+| 3.17 | Updates and releases | Signed manifests, release assets, HTTPS, install forms, restart, start guard, rollback | [04](design/04-inner-claude-themes-installs.md) |
 | 4 | VT engine decision | The 2026-11-04 decision, from a replay of a real Claude Code session | [05](design/05-vt-engine-decision.md) |
 | 5 | Milestones | The milestones, starting with one window and one session | [06](design/06-milestones-external-orchestrator.md) |
 | 6 | External integration | Integration through Rakazo's existing surfaces, no fork | [06](design/06-milestones-external-orchestrator.md) |

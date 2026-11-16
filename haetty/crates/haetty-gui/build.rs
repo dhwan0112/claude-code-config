@@ -41,6 +41,14 @@ fn build_info(manifest: &Path) {
         .unwrap_or_else(|| "unknown".into());
     let commit: String = commit.chars().take(12).collect();
     println!("cargo:rustc-env=HAETTY_BUILD_COMMIT={commit}");
+    // The version the binary reports and the updater compares (stage PU): the crate's, unless a test build asks for
+    // another (`scripts/e2e/update.sh` makes a 0.x.0 and a 0.x.1 from one tree). Releases never set it.
+    println!("cargo:rerun-if-env-changed=HAETTY_BUILD_VERSION");
+    let version = std::env::var("HAETTY_BUILD_VERSION")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| std::env::var("CARGO_PKG_VERSION").unwrap_or_default());
+    println!("cargo:rustc-env=HAETTY_BUILD_VERSION={version}");
     let secs = std::env::var("SOURCE_DATE_EPOCH").ok().and_then(|s| s.parse().ok()).unwrap_or_else(|| {
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
     });

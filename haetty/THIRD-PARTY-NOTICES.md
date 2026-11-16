@@ -59,6 +59,13 @@ The copyright/license for each individual theme belongs to the author of that th
   unicode-width (MIT / Apache-2.0).
 - postcard, serde, crossbeam-channel, log, libc, windows-sys
   (MIT / Apache-2.0); similar (Apache-2.0).
+- Updates (stage PU): `ureq`, `ureq-proto`, `http`, `httparse`, `percent-encoding`, `utf8-zero`, `base64`
+  (MIT / Apache-2.0); `minisign-verify` (MIT); `bytes` (MIT). Linux: `rustls`, `rustls-native-certs` (Apache-2.0 OR
+  ISC OR MIT), `rustls-platform-verifier`, `rustls-pki-types`, `openssl-probe`, `once_cell`, `zeroize`
+  (MIT / Apache-2.0), `rustls-webpki`, `untrusted` (ISC), `subtle` (BSD-3-Clause), and `ring` (Apache-2.0 AND ISC;
+  its BoringSSL-derived parts under the ISC licence, the rest under Apache-2.0 — the licence texts are in the ring
+  repository's `LICENSE`, https://github.com/briansmith/ring). Windows: `native-tls` (MIT / Apache-2.0),
+  `schannel` (MIT), `der`, `pem-rfc7468` (Apache-2.0 / MIT); TLS itself is the system's Schannel.
 - Microsoft.Windows.Console.ConPTY `conpty.dll` / `OpenConsole.exe` (MIT,
   Microsoft) via `conpty-bin-vendored` (MIT) on Windows; Microsoft's licence
   is written next to them when they are unpacked.

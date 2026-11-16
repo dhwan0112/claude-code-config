@@ -14,7 +14,7 @@ use crate::geom::Layout;
 use crate::keymap::{Action, Chord};
 use crate::render::paint::Look;
 use crate::render::Renderer;
-use crate::settings::{Effect, SettingsPanel, Source};
+use crate::settings::{Effect, SettingsPanel, Source, UpdateCmd, UpdateView};
 use crate::ui;
 
 /// Changes that resize the grid (font, padding) reach the sessions once the person has stopped for this long.
@@ -97,7 +97,7 @@ impl Win {
         log::info!("settings: opened");
         self.palette = None;
         self.diff = None;
-        self.settings_panel = Some(SettingsPanel::default());
+        self.settings_panel = Some(SettingsPanel::new(self.update_pending()));
         self.full = true;
         self.recompose();
     }
@@ -115,7 +115,9 @@ impl Win {
     /// The panel's grid for `recompose` (the screen area), and its text cursor.
     pub(super) fn draw_settings(&mut self, g: ui::Greys) -> Option<ui::PanelGrid> {
         let (cols, rows) = self.settings_area();
+        let view = self.update_view();
         let panel = self.settings_panel.as_mut()?;
+        panel.set_update(view);
         let mut grid = vec![vec![Cell::default(); cols]; rows];
         let mut src = PanelSource {
             cfg: &self.cfg,
@@ -238,6 +240,7 @@ impl Win {
                     }
                 }
             }
+            Effect::Update(cmd) => self.update_effect(cmd),
             Effect::ReloadConfig => {
                 let changed = self.reload_config(true);
                 if let Some(p) = self.settings_panel.as_mut() {
@@ -447,5 +450,131 @@ impl Win {
             }
             t => t,
         }
+    }
+
+    // ---- Updates (stage PU, DESIGN.md §2.4, §3.17) ------------------------------------------------------------
+
+    /// A newer version is out or installed and waiting (the button in the text colour).
+    pub(super) fn update_pending(&self) -> bool {
+        self.updater.release.is_some() || self.updater.done.is_some()
+    }
+
+    /// The palette's "Updates": the panel at its Updates group.
+    pub(super) fn open_updates(&mut self) {
+        if self.settings_panel.is_none() {
+            self.toggle_settings();
+        }
+        if let Some(p) = self.settings_panel.as_mut() {
+            p.show_updates();
+        }
+        self.recompose();
+    }
+
+    /// What the Updates group shows now.
+    pub(super) fn update_view(&self) -> UpdateView {
+        let u = &self.updater;
+        let current = format!("{} ({})", env!("HAETTY_BUILD_VERSION"), env!("HAETTY_BUILD_COMMIT"));
+        let latest = u
+            .release
+            .as_ref()
+            .map(|r| format!("{} · {}", r.manifest.version, r.manifest.built.get(..10).unwrap_or("")));
+        let notes =
+            u.release.as_ref().map(|r| r.manifest.notes.lines().map(str::to_string).collect()).unwrap_or_default();
+        let blocked = u.release.as_ref().and_then(|r| u.blocked(r));
+        let last_check = if u.last.last_ms == 0 {
+            "never".into()
+        } else {
+            let at = haetty_update::rfc3339_s(u.last.last_ms / 1000);
+            format!("{} {} UTC: {}", &at[..10], &at[11..16], u.last.note)
+        };
+        let asking = self.tabs.iter().filter(|t| t.asking()).count();
+        let working =
+            self.tabs.iter().filter(|t| t.task.is_some() && t.claude.as_ref().is_some_and(|c| c.busy)).count();
+        let mut warn = vec![];
+        if asking > 0 {
+            warn.push(format!("{asking} tab(s) wait for a permission answer"));
+        }
+        if working > 0 {
+            warn.push(format!("{working} worker(s) are working"));
+        }
+        UpdateView {
+            current,
+            latest,
+            notes,
+            blocked,
+            progress: u.progress.clone(),
+            ready: u.done.as_ref().map(|d| d.new.clone()),
+            rollback: u.rollback_target(),
+            last_check,
+            warn: (!warn.is_empty()).then(|| warn.join(" · ")),
+            tabs: self.tabs.len(),
+            note: u.note.clone(),
+        }
+    }
+
+    /// The person chose an update action in the panel (the only way one runs: keys and clicks reach the panel only
+    /// through `settings_key` / `settings_click`; no IPC message, command line or program input does).
+    fn update_effect(&mut self, cmd: UpdateCmd) {
+        match cmd {
+            UpdateCmd::CheckNow => {
+                let url = self.cfg.update_url.clone();
+                self.updater.check(&url);
+            }
+            UpdateCmd::Download => {
+                log::info!("update: download and install chosen");
+                self.updater.install(self.cfg.update_keep as usize);
+            }
+            UpdateCmd::Later => {
+                if let Some(p) = self.settings_panel.as_mut() {
+                    p.note(
+                        "the new version starts with haetty's next start (all windows closed, the daemon ended)".into(),
+                    );
+                }
+            }
+            UpdateCmd::Restart => {
+                log::info!("update: restart chosen");
+                let previous = self.updater.done.as_ref().map(|d| d.previous.clone());
+                self.restart_req = Some(previous);
+            }
+            UpdateCmd::RollBack => {
+                let r = match &self.updater.form {
+                    haetty_update::layout::Form::Versioned { opt, link, .. } => match self.updater.rollback_target() {
+                        Some(t) => haetty_update::layout::activate(opt, link, &t).map(|_| ()),
+                        None => Err("no version to go back to".into()),
+                    },
+                    haetty_update::layout::Form::Single { exe } => haetty_update::layout::rollback_single(exe),
+                    f => Err(f.refusal().unwrap_or_default()),
+                };
+                match r {
+                    Ok(()) => {
+                        log::info!("update: rolled back by the person");
+                        haetty_update::state::confirm(&crate::updater::dir());
+                        self.restart_req = Some(None);
+                    }
+                    Err(e) => {
+                        if let Some(p) = self.settings_panel.as_mut() {
+                            p.note(format!("not rolled back: {e}"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The updater's timers (`tick`): a new version confirmed after 20 s up, the daily check. The next deadline.
+    pub(super) fn update_tick(&mut self, now: Instant) -> Option<Instant> {
+        if let Some(t) = self.updater.confirm_at {
+            if now >= t {
+                haetty_update::state::confirm(&crate::updater::dir());
+                log::info!("update: this version stayed up; kept");
+                self.updater.confirm_at = None;
+            }
+        }
+        let allowed = self.cfg.update_check && crate::updater::may_check(&self.updater.form);
+        if self.updater.due(now, allowed) == Some(true) {
+            let url = self.cfg.update_url.clone();
+            self.updater.check(&url);
+        }
+        [self.updater.confirm_at, self.updater.next_check].into_iter().flatten().min()
     }
 }

@@ -127,5 +127,15 @@ away. Functions stay; what changes is when they are visible.
   for it shows no panel.
 - While the panel is open no key, text, paste or mouse event reaches the program. A tab waiting for a permission
   answer keeps its Ask mark and its input hold (§3.7) unchanged while the panel opens and closes.
+- **Updates** (stage PU, the person's DESIGN §2 change, approved 2026-11-16): while a newer release is out (or one
+  is installed and waiting for a restart), the button is in the normal text colour instead of dim — not an accent, no
+  blinking, no layout change, no pop-up or sound. The panel then lists the group **Updates** first and opens on it
+  (otherwise it is last): the version and commit; the new version and its date; the release notes (Enter: a scrolled
+  list); Download and install; the progress; Restart now and Later; Roll back to the version before; `update-check`;
+  Check now; the last check's time and result; why it cannot be installed here, when so. Restart now and Roll back
+  take a second press, after the bottom line said how many tabs close and that programs in shell tabs end; with a
+  permission question or a working worker open, the first press selects Later. Only the person's keys and clicks in
+  the panel run these (never a program's input, an IPC message or a command line). The palette's "Updates" opens the
+  group (a shell-only window shows no button).
 - Not in the panel: what changes how Claude Code works (permission modes, models, hooks, `saving-mode`,
   `worker-command`); `claude-integration` (haetty's observing hooks and status line) is the one Claude Code entry.

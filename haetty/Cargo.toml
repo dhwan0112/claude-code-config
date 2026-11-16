@@ -11,6 +11,7 @@ members = [
   "crates/haetty-gui",
   "crates/haetty-vt",
   "crates/haetty-vtdiff",
+  "crates/haetty-update",
 ]
 
 [workspace.package]
@@ -29,6 +30,7 @@ haetty-proto = { path = "crates/haetty-proto", default-features = false }
 haetty-daemon = { path = "crates/haetty-daemon", default-features = false }
 haetty-cc = { path = "crates/haetty-cc", default-features = false }
 haetty-testkit = { path = "crates/haetty-testkit" }
+haetty-update = { path = "crates/haetty-update" }
 haetty-vt = { path = "crates/haetty-vt" }
 libghostty-vt = "=0.2.2"
 portable-pty = "0.9.0"

@@ -103,6 +103,24 @@ pub const SUBS: &[Sub] = &[
         options: &[],
     },
     Sub {
+        name: "update",
+        usage: "haetty update --check [--json]",
+        about: "ask the release server once whether a newer version is out (README \"Updates\"); installing is done in the settings panel only",
+        options: &[("--check", "ask, print what was found"), ("--json", "as JSON")],
+    },
+    Sub {
+        name: "install-layout",
+        usage: "haetty install-layout put|activate NAME|list|prune --opt DIR [--name V --ref R --commit C --source S -- FILE...] [--keep N]",
+        about: "the installed layout's operations for tools/install-stable.sh: put a read-only version folder, activate one, list, prune (it downloads nothing)",
+        options: &[("--opt DIR", "the versions folder (~/.local/opt/haetty)"), ("--keep N", "prune: older versions kept")],
+    },
+    Sub {
+        name: "release-manifest",
+        usage: "haetty release-manifest --version V --commit C --built DATE --protocol N [--min-update-from V] [--notes FILE] --asset TARGET=PATH:FILES ...",
+        about: "write a release's manifest.json, for tools/release.sh",
+        options: &[],
+    },
+    Sub {
         name: "completions",
         usage: "haetty completions bash|zsh|fish|powershell",
         about: "print a shell completion script",

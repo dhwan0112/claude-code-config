@@ -62,7 +62,19 @@ BIN=$PREFIX/.local/bin/haetty
 # In a test, refuse a real prefix before building anything.
 if [ "$MODE" != build ]; then guard "$OPT"; guard "$BIN"; fi
 
+# The layout's code is Rust (`haetty install-layout`, haetty_update::layout: the in-app update uses the same, stage
+# PU). A binary that has it: the newest installed one, else none (the shell fallbacks below serve installs made only
+# with versions before PU).
+layout_bin() { # [PREFERRED]
+  local b
+  for b in "${1:-}" $(ls -1dt "$OPT"/*/haetty 2>/dev/null); do
+    [ -n "$b" ] && [ -x "$b" ] && "$b" install-layout --help > /dev/null 2>&1 && { echo "$b"; return 0; }
+  done
+  return 1
+}
+
 list() {
+  local lb; if lb=$(layout_bin); then "$lb" install-layout list --opt "$OPT"; return; fi
   local cur; cur=$(readlink "$BIN" 2>/dev/null || true)
   [ -d "$OPT" ] || { echo "nothing installed in $OPT"; return 0; }
   for d in "$OPT"/*/; do
@@ -76,6 +88,10 @@ activate() { # VERSION
   local v=$1 target="$OPT/$1/haetty"
   [ -x "$target" ] || die "version $v is not installed (see --list)"
   guard "$BIN"
+  local lb; if lb=$(layout_bin "$target"); then
+    env -u HAETTY_INSTANCE "$lb" install-layout activate "$v" --opt "$OPT" || die "activation failed"
+    return 0
+  fi
   mkdir -p "$(dirname "$BIN")"
   if [ -e "$BIN" ] && [ ! -L "$BIN" ]; then
     die "$BIN exists and is not a link (another haetty?); move it away first"
@@ -125,6 +141,12 @@ install_version() {
   local dest=$OPT/$VER stage=$OPT/.$VER.partial
   guard "$dest"; guard "$stage"
   mkdir -p "$OPT"
+  if "$BUILT" install-layout --help > /dev/null 2>&1; then
+    local docs=(); for f in LICENSE THIRD-PARTY-NOTICES.md README.md; do if [ -f "$WTSRC/$f" ]; then docs+=("$WTSRC/$f"); fi; done
+    env -u HAETTY_INSTANCE "$BUILT" install-layout put --opt "$OPT" --name "$VER" --ref "$REF" --commit "$COMMIT" \
+      --source "$REPO" -- "$BUILT" "${docs[@]}"
+    return 0
+  fi
   if [ -e "$stage" ]; then chmod -R u+w "$stage"; rm -rf "$stage"; fi
   mkdir "$stage"
   cp "$BUILT" "$stage/haetty"

@@ -1,0 +1,44 @@
+[package]
+name = "haetty-update"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "haetty's updates: release manifests, signatures, downloads, the installed layout (DESIGN.md §3.17)"
+
+[features]
+# Tests only (never in a shipped build): archive writers, the test signing key and its trust, the test CA
+# (`HAETTY_UPDATE_TEST_ROOT`), the fake release server. `tests/update.rs` checks that a dist binary holds none of it.
+test-support = ["dep:ed25519-dalek", "dep:blake2", "dep:base64"]
+
+[dependencies]
+haetty-cc.workspace = true
+log.workspace = true
+# Already in the binary (the PNG encoder's inflate): gzip and zip without an archive crate.
+miniz_oxide = "0.9.1"
+# minisign signatures (ed25519, prehashed), pure Rust, verify only.
+minisign-verify = "0.2"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"], optional = true }
+blake2 = { version = "0.10", default-features = false, features = ["std"], optional = true }
+base64 = { version = "0.22", default-features = false, features = ["std"], optional = true }
+
+# U0 (docs/history/2026-11-16-pu-update.md): one HTTPS client, ureq 3, on each platform's smallest TLS that adds no
+# library: Linux rustls on ring with the system trust store; Windows the system's Schannel (native-tls).
+[target.'cfg(not(windows))'.dependencies]
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "platform-verifier"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
+[target.'cfg(windows)'.dependencies]
+ureq = { version = "3", default-features = false, features = ["native-tls"] }
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+] }
+
+[dev-dependencies]
+haetty-testkit.workspace = true
+# The tests always run with the test key and server (`cargo test` in the gate and check-range too).
+haetty-update = { path = ".", features = ["test-support"] }

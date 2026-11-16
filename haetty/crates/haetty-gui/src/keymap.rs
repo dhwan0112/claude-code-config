@@ -51,6 +51,8 @@ pub enum Action {
     ToggleObserve,
     /// The settings panel (DESIGN.md §2.4): open or close.
     Settings,
+    /// The settings panel at its Updates group (stage PU).
+    Updates,
 }
 
 impl Action {
@@ -81,6 +83,7 @@ impl Action {
             Action::RemoveTaskWorktree => "remove_task_worktree".into(),
             Action::ToggleObserve => "toggle_observe".into(),
             Action::Settings => "settings".into(),
+            Action::Updates => "updates".into(),
         }
     }
 
@@ -111,6 +114,7 @@ impl Action {
             Action::RemoveTaskWorktree => "Remove a task's worktree".into(),
             Action::ToggleObserve => "Observing: allow or stop for this tab (haetty screen, haetty events)".into(),
             Action::Settings => "Settings".into(),
+            Action::Updates => "Updates (haetty's version, a newer one)".into(),
         }
     }
 
@@ -139,6 +143,7 @@ impl Action {
             "remove_task_worktree" => Action::RemoveTaskWorktree,
             "toggle_observe" => Action::ToggleObserve,
             "settings" => Action::Settings,
+            "updates" => Action::Updates,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -172,6 +177,7 @@ impl Action {
             Action::MessageWorker,
             Action::RemoveTaskWorktree,
             Action::Settings,
+            Action::Updates,
             Action::ReloadConfig,
             Action::SaveTabs,
             Action::OpenSavedTabs,

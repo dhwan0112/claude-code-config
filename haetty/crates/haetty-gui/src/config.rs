@@ -123,6 +123,12 @@ pub struct Config {
     /// `font-size`, points (4–96).
     pub font_size: f64,
     pub settings_button: SettingsButton,
+    /// Stage PU (DESIGN.md §3.17): look for a newer release once a day.
+    pub update_check: bool,
+    /// Where releases are asked for; empty: the GitHub repository.
+    pub update_url: String,
+    /// Older versions kept beside the active one and the rollback target.
+    pub update_keep: u8,
 }
 
 impl Default for Config {
@@ -150,6 +156,9 @@ impl Default for Config {
             font_family: None,
             font_size: 11.0,
             settings_button: SettingsButton::Auto,
+            update_check: true,
+            update_url: String::new(),
+            update_keep: 2,
         }
     }
 }
@@ -163,11 +172,20 @@ pub enum Group {
     Terminal,
     Claude,
     Advanced,
+    /// Stage PU: first when a newer version is out, else last (`SettingsPanel::new`).
+    Updates,
 }
 
 impl Group {
-    pub const ALL: [Group; 6] =
-        [Group::Appearance, Group::Font, Group::Window, Group::Terminal, Group::Claude, Group::Advanced];
+    pub const ALL: [Group; 7] = [
+        Group::Appearance,
+        Group::Font,
+        Group::Window,
+        Group::Terminal,
+        Group::Claude,
+        Group::Advanced,
+        Group::Updates,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -177,6 +195,7 @@ impl Group {
             Group::Terminal => "Terminal",
             Group::Claude => "Claude Code",
             Group::Advanced => "Advanced",
+            Group::Updates => "Updates",
         }
     }
 }
@@ -547,6 +566,54 @@ pub const SETTINGS: &[Setting] = &[
         panel: true,
         cli: true,
     },
+    Setting {
+        key: "update-check",
+        kind: BOOL,
+        default: "true",
+        default_note: None,
+        doc: "`true` / `false` — ask the release server for a newer version 30 s after the window opens and then once a day; nothing else is sent ([Updates](#updates))",
+        line: "Look for a newer haetty once a day (one request, nothing about you sent).",
+        group: Group::Updates,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "update-channel",
+        kind: Kind::Choice(&["stable"]),
+        default: "stable",
+        default_note: None,
+        doc: "`stable` (the only channel for now)",
+        line: "The release channel.",
+        group: Group::Updates,
+        when: When::Live,
+        panel: false,
+        cli: true,
+    },
+    Setting {
+        key: "update-url",
+        kind: Kind::Text { empty_ok: true },
+        default: "",
+        default_note: Some("the GitHub repository's latest release"),
+        doc: "an `https://` folder holding `manifest.json`, its `.minisig` and the assets (your own server, a test); empty: the GitHub repository",
+        line: "Where releases are looked for.",
+        group: Group::Updates,
+        when: When::Live,
+        panel: false,
+        cli: true,
+    },
+    Setting {
+        key: "update-keep",
+        kind: num(1.0, 10.0, 1.0, true, false),
+        default: "2",
+        default_note: None,
+        doc: "how many older versions an update keeps besides the active one and the one to roll back to (1–10)",
+        line: "Older versions kept after an update (1–10).",
+        group: Group::Updates,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
 ];
 
 const fn color(key: &'static str, line: &'static str) -> Setting {
@@ -822,6 +889,16 @@ impl Config {
             "theme" => self.theme = text(),
             "font-family" => self.font_family = Some(text()).filter(|t| !t.is_empty()),
             "font-size" => self.font_size = num(),
+            "update-check" => self.update_check = flag(),
+            "update-channel" => {}
+            "update-url" => {
+                let t = text();
+                if !t.is_empty() && !t.starts_with("https://") {
+                    return Err(format!("invalid value {value:?} for update-url (https:// only)"));
+                }
+                self.update_url = t;
+            }
+            "update-keep" => self.update_keep = int() as u8,
             k if theme::KEYS.contains(&k) => {
                 // Checked now (bad lines are reported with their number),
                 // applied after the theme.
@@ -877,6 +954,10 @@ impl Config {
             "minimum-contrast" => fmt_f32(self.minimum_contrast),
             "font-family" => self.font_family.clone().unwrap_or_default(),
             "font-size" => fmt_num(self.font_size),
+            "update-check" => b(self.update_check),
+            "update-channel" => "stable".into(),
+            "update-url" => self.update_url.clone(),
+            "update-keep" => self.update_keep.to_string(),
             k if theme::KEYS.contains(&k) && k != "palette" => {
                 self.colors.iter().rev().find(|(ck, _)| ck == k).map(|(_, v)| v.clone()).unwrap_or_default()
             }
@@ -1119,6 +1200,9 @@ mod tests {
             font_family: None,
             font_size: 11.0,
             settings_button: SettingsButton::Auto,
+            update_check: true,
+            update_url: String::new(),
+            update_keep: 2,
         };
         assert_eq!(Config::default(), defaults);
         let read = |text: &str| {

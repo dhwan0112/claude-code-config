@@ -271,6 +271,10 @@ keybind = ctrl+shift+n=new_tab
 | `background`, `foreground`, `cursor-color`, `cursor-text`, `selection-background`, `selection-foreground` | a colour (`#rrggbb`, `rrggbb`, an X11 name) — on top of the theme | the theme's |
 | `font-family` | a font family installed on the system (`--font` on the command line); a missing one falls back to the default | a monospaced font of the system (Linux: DejaVu Sans Mono, Noto Sans Mono, …; Windows: Cascadia Mono, Consolas, …) |
 | `font-size` | points, 4–96 | `11` |
+| `update-check` | `true` / `false` — ask the release server for a newer version 30 s after the window opens and then once a day; nothing else is sent ([Updates](#updates)) | `true` |
+| `update-channel` | `stable` (the only channel for now) | `stable` |
+| `update-url` | an `https://` folder holding `manifest.json`, its `.minisig` and the assets (your own server, a test); empty: the GitHub repository | the GitHub repository's latest release |
+| `update-keep` | how many older versions an update keeps besides the active one and the one to roll back to (1–10) | `2` |
 <!-- config-table:end -->
 
 ### Themes

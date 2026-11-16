@@ -56,6 +56,8 @@ mod tasks;
 mod titlebar;
 mod tokens;
 mod ui;
+mod updatecli;
+mod updater;
 mod wait;
 
 use std::io::Write;
@@ -79,6 +81,8 @@ pub struct Options {
     /// Settings given on the command line, applied after the config file.
     pub settings: Vec<(String, String)>,
     pub keymap: keymap::Keymap,
+    /// This start is a freshly updated version's first: confirm it after 20 s (stage PU).
+    pub watch_start: bool,
 }
 
 fn default_shell() -> CommandSpec {
@@ -108,6 +112,9 @@ pub const SUBCOMMANDS: &[&str] = &[
     "tokens",
     "wait",
     "completions",
+    "update",
+    "install-layout",
+    "release-manifest",
 ];
 pub const IMPLEMENTED: &[&str] = &[
     "gui",
@@ -123,6 +130,9 @@ pub const IMPLEMENTED: &[&str] = &[
     "log",
     "wait",
     "completions",
+    "update",
+    "install-layout",
+    "release-manifest",
 ];
 
 /// What the command line asks for.
@@ -176,6 +186,13 @@ pub enum Command {
     Completions {
         shell: String,
     },
+    /// `update --check [--json]` (stage PU): asks once; applies nothing.
+    UpdateCheck {
+        json: bool,
+    },
+    /// `install-layout …` (tools/install-stable.sh) and `release-manifest …` (tools/release.sh).
+    InstallLayout(Vec<String>),
+    ReleaseManifest(Vec<String>),
 }
 
 fn parse_command(args: Vec<String>) -> Result<Command, String> {
@@ -295,6 +312,16 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
             [sh] if help::SHELLS.contains(&sh.as_str()) => Ok(Command::Completions { shell: sh.clone() }),
             _ => Err(format!("usage: haetty completions {}", help::SHELLS.join("|"))),
         },
+        Some("update") => match &args[1..] {
+            [c] if c == "--check" => Ok(Command::UpdateCheck { json: false }),
+            [c, j] if c == "--check" && j == "--json" => Ok(Command::UpdateCheck { json: true }),
+            _ => Err(
+                "update: only `haetty update --check [--json]`; an update is installed only from the settings panel"
+                    .into(),
+            ),
+        },
+        Some("install-layout") => Ok(Command::InstallLayout(args[1..].to_vec())),
+        Some("release-manifest") => Ok(Command::ReleaseManifest(args[1..].to_vec())),
         Some("install-desktop") => match args.len() {
             1 => Ok(Command::InstallDesktop),
             _ => Err("usage: haetty install-desktop".into()),
@@ -315,6 +342,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
         theme: haetty_core::theme::Theme::default(),
         settings: vec![],
         keymap: keymap::Keymap::default(),
+        watch_start: false,
     };
     let mut it = args.into_iter();
     let mut program: Vec<String> = vec![];
@@ -399,7 +427,7 @@ pub fn version_line() -> String {
     let inst = haetty_proto::product::instance();
     format!(
         "haetty {} (commit {}, built {}, instance {})",
-        env!("CARGO_PKG_VERSION"),
+        env!("HAETTY_BUILD_VERSION"),
         env!("HAETTY_BUILD_COMMIT"),
         env!("HAETTY_BUILD_DATE"),
         if inst.is_empty() { "stable" } else { inst.as_str() }
@@ -607,6 +635,24 @@ fn main() {
             let (text, code) = cli::status(json);
             exit_with(&text, code)
         }
+        Command::UpdateCheck { json } => {
+            init_log(None);
+            exit_with(&updatecli::check(json), 0)
+        }
+        Command::InstallLayout(a) => {
+            init_log(None);
+            match updatecli::install_layout(&a) {
+                Ok(m) => exit_with(&m, 0),
+                Err(e) => exit_with(&format!("haetty install-layout: {e}"), 1),
+            }
+        }
+        Command::ReleaseManifest(a) => {
+            init_log(None);
+            match updatecli::release_manifest(&a) {
+                Ok(m) => exit_with(&m, 0),
+                Err(e) => exit_with(&format!("haetty release-manifest: {e}"), 1),
+            }
+        }
         Command::InstallDesktop => {
             init_log(None);
             match install::install_desktop() {
@@ -663,6 +709,9 @@ fn main() {
             #[cfg(windows)]
             set_app_user_model_id();
             let mut o = *o;
+            // Stage PU: a freshly updated version's start guard (rolls back, and does not return, after a start that
+            // did not stay up).
+            o.watch_start = updater::start_guard();
             o.first_hint = migrate::run().hint();
             load_config_file(&mut o);
             let (theme, msgs) = o.config.resolve_theme(&haetty_proto::paths::config_dir());
@@ -679,7 +728,12 @@ fn main() {
         EventLoop::<app::UserEvent>::with_user_event().build().unwrap_or_else(|e| fatal(&format!("event loop: {e}")));
     el.set_control_flow(ControlFlow::Wait);
     let mut app = app::App::new(opts, el.create_proxy(), fonts);
-    if let Err(e) = el.run_app(&mut app) {
+    let ran = el.run_app(&mut app);
+    // "Restart now" / "Roll back" (stage PU): the window is closed; wait for the daemon, start the new version.
+    if let Some((form, previous)) = app.restart.take() {
+        updater::restart_after_close(&form, previous);
+    }
+    if let Err(e) = ran {
         fatal(&format!("event loop: {e}"));
     }
     std::process::exit(app.exit_code);

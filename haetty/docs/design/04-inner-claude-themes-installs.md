@@ -281,3 +281,48 @@
   for it with VS15; the font lookup passes over colour faces for text. Linux: DejaVu Sans Mono (the first primary
   default) has it. Windows: Segoe UI Symbol (single colour) comes before Segoe UI Emoji in the fallback list
   (unverified on Windows). When the fonts give no face for U+2699, or only a colour one, the button is `≡` (U+2261).
+
+### 3.17 Updates and releases
+(Stage PU, 2026-11-16; the measurements and choices: [history](../history/2026-11-16-pu-update.md).)
+
+- **Releases** (`tools/release.sh`, the person runs it): the tag's commit built in a clean worktree with the dist
+  profile for both targets; `haetty-<ver>-x86_64-linux.tar.gz` (ustar, owner 0, the commit's time, `gzip -n`) and
+  `haetty-<ver>-x86_64-windows.zip` (fixed times), each with `haetty[.exe]`, `haetty-headless[.exe]`, `LICENSE`,
+  `THIRD-PARTY-NOTICES.md`; `manifest.json` (format 1: version, commit, build date, protocol, `min_update_from`, each
+  asset's file, size, sha256 and file list, the CHANGELOG section, `next_keys`) written by `haetty release-manifest`;
+  `manifest.json.minisig` made by the person's minisign or rsign2 (ed25519, prehashed); `gh release create --draft`.
+  Inside a Claude Code session the script stops before signing.
+- **Trust.** The manifest's signature is checked first, against the public keys built in from
+  `assets/update/haetty.pub` (several allowed; empty until the person makes the key: such a build finds updates and
+  installs none). Then the version must be newer (a signed older manifest served again is "up to date"), and this
+  version at least `min_update_from` ("manual install needed" otherwise). The asset's size and sha256 must match the
+  manifest before it is opened; only the named plain files are taken out (no folders, `..`, absolute paths, links,
+  devices). Nothing unverified is run or put in the install folder.
+- **Key rotation (design only).** A release lists the next key in `next_keys` and is signed with the current key; a
+  build that trusts the current key and sees a verified manifest with `next_keys` may trust them for later releases.
+  Implemented now: the built-in key list (several keys); `next_keys` is read and not acted on.
+- **Network.** One HTTPS client, ureq 3: Linux rustls on ring with the system trust store, Windows Schannel. HTTPS
+  only; redirects followed by hand only to the origin's hosts (GitHub: `api.github.com`, `github.com`,
+  `release-assets.githubusercontent.com`, `objects.githubusercontent.com`; `update-url`: its own host); no setting
+  turns certificate checks off; `HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY` honoured. A check is one `GET` of GitHub's
+  "latest release" (60 unauthenticated requests per hour per address are allowed; one a day is used) plus the
+  manifest and its signature; the only header added is `User-Agent: haetty/<version>`. Logs never hold a URL's query.
+- **When.** 30 s after the window opens, then once a day (two, four, eight days after failures), on the updater's own
+  thread; never in a dev instance, a cargo build or a test run; off with `update-check = false`. A download starts
+  only from the panel.
+- **Install forms** (`haetty_update::layout`, shared with `install-stable.sh` through `haetty install-layout`):
+  (a) a version folder and the link — a new read-only folder, `--version` of the new executable must name the
+  release's commit, then the link switched atomically; older folders kept (`update-keep`, default 2, plus the
+  rollback target); (b) a single executable — the running file renamed to `<exe>.old`, the new one put in its place
+  (restored on failure; the `.old` removed at the next start); (c) a dev instance or cargo build and (d) no write
+  permission — nothing applied, the reason and the manual way shown.
+- **Restart.** Installing changes nothing running: the window and the daemon keep their version. Restart now saves
+  the tabs, closes the window like its close button (the sessions end; Claude Code tabs resume from the saved set),
+  waits up to 15 s for the daemon's idle exit (it exits 10 s after its last session and window — no new daemon
+  message), and starts the new version detached. Not restarted: the new version starts with the next start after the
+  daemon's idle exit. A new window that meets an older daemon (protocol mismatch) says
+  "old daemon still running N session(s)" (asked through the version before's own `status --json`) and ends nothing.
+- **Start guard.** An install writes `update/pending` in the state folder. The new version's first start is
+  confirmed after 20 s up; a second start with the first unconfirmed rolls the link back and starts the version
+  before, which shows why in the panel. Restart now also watches the started process for 20 s and rolls back if it
+  ends. Roll back in the panel points the link at the version before and restarts the same way.

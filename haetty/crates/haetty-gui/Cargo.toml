@@ -15,6 +15,7 @@ haetty-core.workspace = true
 haetty-proto.workspace = true
 haetty-daemon.workspace = true
 haetty-cc.workspace = true
+haetty-update.workspace = true
 log.workspace = true
 # X11 and Wayland client libraries are loaded at run time (dlopen), so the
 # binary links no windowing library. Wayland window decorations: see
@@ -56,3 +57,6 @@ haetty-testkit.workspace = true
 [features]
 default = ["ghostty"]
 ghostty = ["haetty-core/ghostty", "haetty-proto/ghostty", "haetty-daemon/ghostty", "haetty-cc/ghostty"]
+# Test builds only (scripts/e2e/update.sh): trust the test key and test CA, check under HAETTY_TEST_TMP when
+# HAETTY_UPDATE_TEST=1. Never in a release (tools/release.sh builds without it; tests/update.rs checks the binary).
+update-test = ["haetty-update/test-support"]

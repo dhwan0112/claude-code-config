@@ -44,6 +44,62 @@ pub enum Effect {
     EndPreview,
     OpenConfigFile,
     ReloadConfig,
+    /// Stage PU: an update action the person chose (only from keys and clicks: `Win::settings_key` / `_click`).
+    Update(UpdateCmd),
+}
+
+/// The update actions of the Updates group (DESIGN.md §2.4, §3.17).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateCmd {
+    CheckNow,
+    Download,
+    Restart,
+    Later,
+    RollBack,
+}
+
+/// What the Updates group shows (the window fills it in before each frame: `SettingsPanel::set_update`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UpdateView {
+    /// "0.4.0 (622d629bb224)".
+    pub current: String,
+    /// The newer version and its date ("0.4.1 · 2026-11-20").
+    pub latest: Option<String>,
+    /// Its CHANGELOG section, line by line.
+    pub notes: Vec<String>,
+    /// Why it cannot be installed here (a dev build, no write permission, too old, no key).
+    pub blocked: Option<String>,
+    /// "downloading 3.1 of 9.8 MB", "verifying", or why the last try failed.
+    pub progress: Option<String>,
+    /// Installed and waiting for a restart: that version.
+    pub ready: Option<String>,
+    /// The version a rollback goes back to.
+    pub rollback: Option<String>,
+    /// "2026-11-16 17:30: no newer version" and the like.
+    pub last_check: String,
+    /// What a restart would cut short ("2 tabs wait for a permission answer · 1 worker works").
+    pub warn: Option<String>,
+    /// Tabs that close and reopen on a restart.
+    pub tabs: usize,
+    /// After an automatic rollback: what happened.
+    pub note: Option<String>,
+}
+
+/// A row of the Updates group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Up {
+    Current,
+    Latest,
+    Blocked,
+    Notes,
+    Download,
+    Progress,
+    Restart,
+    Later,
+    RollBack,
+    CheckNow,
+    LastCheck,
+    Note,
 }
 
 /// A row of the panel's list.
@@ -52,6 +108,7 @@ pub enum Item {
     Setting(&'static Setting),
     OpenFile,
     Reload,
+    Update(Up),
 }
 
 impl PartialEq for Item {
@@ -59,6 +116,7 @@ impl PartialEq for Item {
         match (self, other) {
             (Item::Setting(a), Item::Setting(b)) => a.key == b.key,
             (Item::OpenFile, Item::OpenFile) | (Item::Reload, Item::Reload) => true,
+            (Item::Update(a), Item::Update(b)) => a == b,
             _ => false,
         }
     }
@@ -70,6 +128,7 @@ impl std::fmt::Debug for Item {
             Item::Setting(s) => write!(f, "Setting({})", s.key),
             Item::OpenFile => f.write_str("OpenFile"),
             Item::Reload => f.write_str("Reload"),
+            Item::Update(u) => write!(f, "Update({u:?})"),
         }
     }
 }
@@ -101,6 +160,11 @@ pub struct SettingsPanel {
     errors: Vec<(&'static str, String)>,
     /// The bottom line's message (saved, re-read, …) until the selection moves.
     note: Option<String>,
+    /// The groups in their order: Updates first while a newer version is out (stage PU).
+    order: [Group; 7],
+    update: UpdateView,
+    /// Restart or Roll back pressed once: the next press does it (the bottom line says what it ends).
+    confirm: Option<Up>,
 }
 
 /// The panel's place in the screen area: two columns when wide enough.
@@ -161,13 +225,77 @@ impl Default for SettingsPanel {
             search: String::new(),
             errors: vec![],
             note: None,
+            order: Group::ALL,
+            update: UpdateView::default(),
+            confirm: None,
         }
     }
 }
 
 impl SettingsPanel {
+    /// A panel opened on the Updates group (first in the order) when `update_first`.
+    pub fn new(update_first: bool) -> SettingsPanel {
+        let mut p = SettingsPanel::default();
+        if update_first {
+            p.order = [
+                Group::Updates,
+                Group::Appearance,
+                Group::Font,
+                Group::Window,
+                Group::Terminal,
+                Group::Claude,
+                Group::Advanced,
+            ];
+        }
+        p
+    }
+
+    /// Opens the panel's Updates group (the palette's "Updates").
+    pub fn show_updates(&mut self) {
+        let i = self.order.iter().position(|g| *g == Group::Updates).unwrap_or(0);
+        self.set_group(i);
+    }
+
+    pub fn set_update(&mut self, v: UpdateView) {
+        self.update = v;
+    }
+
     pub fn group(&self) -> Group {
-        Group::ALL[self.group]
+        self.order[self.group]
+    }
+
+    /// The Updates group's rows, by what there is to show.
+    fn update_rows(&self) -> Vec<Item> {
+        let u = &self.update;
+        let mut v = vec![Up::Current];
+        if u.note.is_some() {
+            v.push(Up::Note);
+        }
+        if u.latest.is_some() {
+            v.push(Up::Latest);
+            if u.blocked.is_some() {
+                v.push(Up::Blocked);
+            }
+            if !u.notes.is_empty() {
+                v.push(Up::Notes);
+            }
+            if u.blocked.is_none() && u.ready.is_none() {
+                v.push(Up::Download);
+            }
+        }
+        if u.progress.is_some() {
+            v.push(Up::Progress);
+        }
+        if u.ready.is_some() {
+            v.extend([Up::Restart, Up::Later]);
+        }
+        if u.rollback.is_some() {
+            v.push(Up::RollBack);
+        }
+        let mut items: Vec<Item> = v.into_iter().map(Item::Update).collect();
+        items.extend(SETTINGS.iter().filter(|s| s.panel && s.group == Group::Updates).map(Item::Setting));
+        items.extend([Item::Update(Up::CheckNow), Item::Update(Up::LastCheck)]);
+        items
     }
 
     /// The rows the list shows: the group's settings and the two actions, or the search's matches.
@@ -180,6 +308,9 @@ impl SettingsPanel {
                 .collect();
         }
         let g = self.group();
+        if g == Group::Updates {
+            return self.update_rows();
+        }
         let mut v: Vec<Item> = shown.filter(|s| s.group == g).map(Item::Setting).collect();
         v.extend([Item::OpenFile, Item::Reload]);
         v
@@ -229,7 +360,8 @@ impl SettingsPanel {
     }
 
     fn set_group(&mut self, i: usize) {
-        self.group = i % Group::ALL.len();
+        self.group = i % self.order.len();
+        self.confirm = None;
         self.sel = 0;
         self.scroll = 0;
         self.search.clear();
@@ -277,12 +409,58 @@ impl SettingsPanel {
         }
     }
 
+    /// Enter (or a click) on a row of the Updates group. Restart and Roll back take a second press; with a
+    /// permission question or a working worker open, the first press moves the selection to Later instead.
+    fn update_action(&mut self, u: Up) -> Effect {
+        let cmd = match u {
+            Up::CheckNow => return Effect::Update(UpdateCmd::CheckNow),
+            Up::Download => return Effect::Update(UpdateCmd::Download),
+            Up::Later => {
+                self.confirm = None;
+                return Effect::Update(UpdateCmd::Later);
+            }
+            Up::Notes => {
+                let entries = self.update.notes.clone();
+                self.mode = Mode::List { entries, filter: String::new(), sel: 0 };
+                return Effect::None;
+            }
+            Up::Restart => UpdateCmd::Restart,
+            Up::RollBack => UpdateCmd::RollBack,
+            _ => return Effect::None,
+        };
+        if self.confirm == Some(u) {
+            self.confirm = None;
+            return Effect::Update(cmd);
+        }
+        self.confirm = Some(u);
+        let what = if u == Up::Restart { "Restart" } else { "Roll back" };
+        let mut text = format!(
+            "{what}: {} tab(s) close and open again (Claude Code tabs resume); programs in shell tabs end. Enter again to go on.",
+            self.update.tabs
+        );
+        if let Some(w) = &self.update.warn {
+            text = format!("{w} — {text}");
+            // The safe choice first: the selection goes to Later (or away from Roll back).
+            let items = self.items();
+            if let Some(i) = items
+                .iter()
+                .position(|i| *i == Item::Update(Up::Later))
+                .or_else(|| items.iter().position(|i| *i == Item::Update(Up::Current)))
+            {
+                self.sel = i;
+            }
+        }
+        self.note = Some(text);
+        Effect::None
+    }
+
     /// Enter on an item, or a click on its value.
     fn activate(&mut self, src: &mut dyn Source) -> Effect {
         let Some(item) = self.selected() else { return Effect::None };
         let s = match item {
             Item::OpenFile => return Effect::OpenConfigFile,
             Item::Reload => return Effect::ReloadConfig,
+            Item::Update(u) => return self.update_action(u),
             Item::Setting(s) => s,
         };
         if src.on_command_line(s.key) {
@@ -350,6 +528,19 @@ impl SettingsPanel {
                     }
                 }
                 self.mode = Mode::Edit { buf };
+                Effect::None
+            }
+            Mode::List { entries, filter, sel } if setting.is_none() => {
+                // The release notes (read-only): arrows scroll, anything else leaves.
+                let n = entries.len().max(1);
+                let sel = match key {
+                    "up" => sel.saturating_sub(1),
+                    "down" => (sel + 1).min(n - 1),
+                    "pageup" => sel.saturating_sub(10),
+                    "pagedown" => (sel + 10).min(n - 1),
+                    _ => return Effect::None,
+                };
+                self.mode = Mode::List { entries, filter, sel };
                 Effect::None
             }
             Mode::List { entries, mut filter, mut sel } => {
@@ -434,7 +625,7 @@ impl SettingsPanel {
                     Effect::None
                 }
                 "tab" => {
-                    let n = Group::ALL.len();
+                    let n = self.order.len();
                     self.set_group(if shift { self.group + n - 1 } else { self.group + 1 });
                     Effect::None
                 }
@@ -524,14 +715,14 @@ impl SettingsPanel {
         }
         // The group column (two columns), or the group line (one column).
         if l.two && col < l.gw {
-            if row >= 2 && row - 2 < Group::ALL.len() {
+            if row >= 2 && row - 2 < self.order.len() {
                 self.set_group(row - 2);
             }
             return Effect::None;
         }
         if !l.two && row == 1 {
-            let (first, mut x) = group_line(self.group, cols);
-            for (i, g) in Group::ALL.iter().enumerate().skip(first) {
+            let (first, mut x) = group_line(&self.order, self.group, cols);
+            for (i, g) in self.order.iter().enumerate().skip(first) {
                 let w = width(g.label());
                 if col >= x && col < x + w {
                     self.set_group(i);
@@ -614,7 +805,7 @@ impl SettingsPanel {
         // Groups.
         let searching = !self.search.trim().is_empty();
         if l.two {
-            for (i, gr) in Group::ALL.iter().enumerate() {
+            for (i, gr) in self.order.iter().enumerate() {
                 let y = 2 + i;
                 if y >= rows - 1 {
                     break;
@@ -638,12 +829,12 @@ impl SettingsPanel {
                 r[l.gw] = Cell { text: "│".into(), ..blank(g.dim, bg) };
             }
         } else {
-            let (first, _) = group_line(self.group, cols);
+            let (first, _) = group_line(&self.order, self.group, cols);
             let mut x = 1;
             if first > 0 {
                 x = put(&mut grid[1], x, "‹ ", g.dim, bg, false);
             }
-            for (i, gr) in Group::ALL.iter().enumerate().skip(first) {
+            for (i, gr) in self.order.iter().enumerate().skip(first) {
                 let on = i == self.group && !searching;
                 if x + width(gr.label()) + 2 >= cols {
                     put(&mut grid[1], cols - 2, "›", g.dim, bg, false);
@@ -680,6 +871,47 @@ impl SettingsPanel {
                 }
                 Item::Reload => {
                     put(&mut grid[y], l.x0, "Reload config", fg, rbg, on);
+                }
+                Item::Update(u) => {
+                    let v = &self.update;
+                    let (label, value): (String, String) = match u {
+                        Up::Current => ("Version".into(), v.current.clone()),
+                        Up::Note => ("Rolled back".into(), v.note.clone().unwrap_or_default()),
+                        Up::Latest => ("New version".into(), v.latest.clone().unwrap_or_default()),
+                        Up::Blocked => ("Can't install here".into(), v.blocked.clone().unwrap_or_default()),
+                        Up::Notes => (
+                            "What's new".into(),
+                            v.notes
+                                .iter()
+                                .find(|l| !l.trim().is_empty() && !l.starts_with('#'))
+                                .cloned()
+                                .unwrap_or_default(),
+                        ),
+                        Up::Download => ("Download and install".into(), String::new()),
+                        Up::Progress => ("Progress".into(), v.progress.clone().unwrap_or_default()),
+                        Up::Restart => ("Restart now".into(), format!("into {}", v.ready.clone().unwrap_or_default())),
+                        Up::Later => ("Later".into(), "the new version starts with haetty's next start".into()),
+                        Up::RollBack => {
+                            (format!("Roll back to {}", v.rollback.clone().unwrap_or_default()), String::new())
+                        }
+                        Up::CheckNow => ("Check now".into(), String::new()),
+                        Up::LastCheck => ("Last check".into(), v.last_check.clone()),
+                    };
+                    let x = put(&mut grid[y], l.x0, &fit(&label, right.saturating_sub(l.x0 + 1)), fg, rbg, on);
+                    let vx = (l.x0 + l.lw).max(x + 2);
+                    let dim_value = matches!(u, Up::Blocked | Up::Notes | Up::Later | Up::Note | Up::LastCheck);
+                    let mut end = put(
+                        &mut grid[y],
+                        vx,
+                        &fit(&value, right.saturating_sub(vx + 1)),
+                        if dim_value { g.dim } else { fg },
+                        rbg,
+                        false,
+                    );
+                    if self.confirm == Some(*u) && end + 2 < right {
+                        end = put(&mut grid[y], end + 2, &fit("press again", right - end - 2), g.dim, rbg, false);
+                    }
+                    let _ = end;
                 }
                 Item::Setting(s) => {
                     put(&mut grid[y], l.x0, &fit(&label(s.key), l.lw - 1), fg, rbg, on);
@@ -725,6 +957,18 @@ impl SettingsPanel {
                         }
                         x = put(&mut grid[y], x + 2, &fit(&m, right - x - 2), g.dim, rbg, false);
                     }
+                }
+            }
+        }
+        // The release notes: their lines over the list area, the arrows scroll.
+        if let (Mode::List { entries, sel, .. }, Some(Item::Update(Up::Notes))) = (&self.mode, self.selected()) {
+            let lbg = mix(bg, g.strong, 20);
+            for (k, y) in (l.y0..l.y1).enumerate() {
+                for c in &mut grid[y][l.x0 - 1..right] {
+                    *c = blank(g.normal, lbg);
+                }
+                if let Some(line) = entries.get(sel + k) {
+                    put(&mut grid[y], l.x0, &fit(line, right.saturating_sub(l.x0 + 1)), g.normal, lbg, false);
                 }
             }
         }
@@ -789,6 +1033,16 @@ impl SettingsPanel {
             (None, Some(Item::Setting(s))) => s.line.to_string(),
             (None, Some(Item::OpenFile)) => "Opens the file in a new tab with $EDITOR (none: only the path).".into(),
             (None, Some(Item::Reload)) => "Reads the config file again.".into(),
+            (None, Some(Item::Update(u))) => match u {
+                Up::Download => {
+                    "Downloads the release, checks its signature and sha256, installs it beside this one.".into()
+                }
+                Up::Notes => "Enter shows the release notes; ↑/↓ scroll, Esc goes back.".into(),
+                Up::Restart => "Saves the tabs, ends this window and its sessions, starts the new version.".into(),
+                Up::RollBack => "Points haetty at the version before; then the same restart as Restart now.".into(),
+                Up::CheckNow => "Asks the release server once (only haetty's version is sent).".into(),
+                _ => "Updates: one request a day, signed releases only (README, \"Updates\").".into(),
+            },
             (None, None) => "No setting matches.".into(),
         };
         put(&mut grid[y], 1, &fit(&text, room), g.dim, bg, false);
@@ -798,8 +1052,8 @@ impl SettingsPanel {
 
 /// The one-line group list of a narrow panel: the first group shown (so the current one is in view) and the column
 /// of its label.
-fn group_line(current: usize, cols: usize) -> (usize, usize) {
-    let w = |i: usize| width(Group::ALL[i].label()) + 2;
+fn group_line(order: &[Group], current: usize, cols: usize) -> (usize, usize) {
+    let w = |i: usize| width(order[i].label()) + 2;
     let mut first = 0;
     while first < current && 1 + 2 + (first..=current).map(w).sum::<usize>() + 2 > cols {
         first += 1;
@@ -879,8 +1133,13 @@ mod tests {
         for i in 0..Group::ALL.len() {
             p.set_group(i);
             let items = p.items();
-            assert_eq!(&items[items.len() - 2..], &[Item::OpenFile, Item::Reload]);
-            n += items.len() - 2;
+            let end = if p.group() == Group::Updates {
+                [Item::Update(Up::CheckNow), Item::Update(Up::LastCheck)]
+            } else {
+                [Item::OpenFile, Item::Reload]
+            };
+            assert_eq!(&items[items.len() - 2..], &end);
+            n += items.iter().filter(|i| matches!(i, Item::Setting(_))).count();
         }
         assert_eq!(n, SETTINGS.iter().filter(|s| s.panel).count());
         for k in ["saving-mode", "worker-command", "palette", "keybind", "window-padding"] {
@@ -996,5 +1255,57 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn update_panel(warn: Option<&str>) -> SettingsPanel {
+        let mut p = SettingsPanel::new(true);
+        p.set_update(UpdateView {
+            current: "0.4.0 (aaaaaaaaaaaa)".into(),
+            latest: Some("0.4.1 · 2026-11-20".into()),
+            notes: vec!["### Fixed".into(), "- a thing".into()],
+            ready: Some("0.4.1-bbbbbbbbbbbb".into()),
+            rollback: Some("0.4.0-aaaaaaaaaaaa".into()),
+            warn: warn.map(str::to_string),
+            tabs: 3,
+            ..Default::default()
+        });
+        p
+    }
+
+    fn select_up(p: &mut SettingsPanel, u: Up) {
+        p.sel = p.items().iter().position(|i| *i == Item::Update(u)).unwrap();
+    }
+
+    #[test]
+    fn updates_come_first_and_restart_takes_two_presses() {
+        let mut src = fake();
+        let mut p = update_panel(None);
+        assert_eq!(p.group(), Group::Updates, "first while a newer version is out");
+        assert_eq!(SettingsPanel::new(false).group(), Group::Appearance);
+        select_up(&mut p, Up::Restart);
+        assert_eq!(p.key("enter", false, None, &mut src), Effect::None, "the first press only asks");
+        assert!(p.note.as_deref().unwrap().contains("3 tab(s) close"), "{:?}", p.note);
+        assert_eq!(p.key("enter", false, None, &mut src), Effect::Update(UpdateCmd::Restart));
+        select_up(&mut p, Up::RollBack);
+        p.key("enter", false, None, &mut src);
+        assert_eq!(p.key("enter", false, None, &mut src), Effect::Update(UpdateCmd::RollBack));
+        select_up(&mut p, Up::CheckNow);
+        assert_eq!(p.key("enter", false, None, &mut src), Effect::Update(UpdateCmd::CheckNow));
+        // The notes open as a list; Esc goes back.
+        select_up(&mut p, Up::Notes);
+        p.key("enter", false, None, &mut src);
+        assert!(p.typing());
+        p.key("escape", false, None, &mut src);
+        assert!(!p.typing());
+    }
+
+    #[test]
+    fn with_a_permission_wait_open_the_first_press_moves_to_later() {
+        let mut src = fake();
+        let mut p = update_panel(Some("1 tab(s) wait for a permission answer"));
+        select_up(&mut p, Up::Restart);
+        assert_eq!(p.key("enter", false, None, &mut src), Effect::None);
+        assert_eq!(p.selected(), Some(Item::Update(Up::Later)), "the safe choice is selected");
+        assert_eq!(p.key("enter", false, None, &mut src), Effect::Update(UpdateCmd::Later), "Enter now means Later");
     }
 }

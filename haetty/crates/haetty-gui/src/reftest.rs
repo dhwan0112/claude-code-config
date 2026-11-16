@@ -449,6 +449,31 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
     let at = panel.draw(&mut grid, g, &mut Defaults(crate::config::Config::default()));
     out.push(("settings", Compose { settings: Some((grid, at)), ..compose(&s) }.build(), None, None));
 
+    // Stage PU (DESIGN.md §2.4): a newer version out — the Claude Code tab's button in the text colour, and the
+    // panel's Updates group first.
+    let s = screen(COLS, ROWS - 1, &["> fix the parser", ""], Some((2, 0)));
+    let info = ClaudeInfo { context_pct: Some(12.0), ..Default::default() };
+    let status = ui::status_row_gear(Some(&info), COLS as usize, g, "ctrl+shift+d", false, true);
+    out.push((
+        "claude-gear-update",
+        Compose { status: Some(status), gear: Some(gear(true)), ..compose(&s) }.build(),
+        None,
+        None,
+    ));
+    let mut panel = crate::settings::SettingsPanel::new(true);
+    panel.set_update(crate::settings::UpdateView {
+        current: "0.4.0 (aaaaaaaaaaaa)".into(),
+        latest: Some("0.4.1 · 2026-11-20".into()),
+        notes: vec!["### Fixed".into(), "- the parser stops at the end".into()],
+        rollback: Some("0.3.2-622d629bb224".into()),
+        last_check: "2026-11-20 08:00 UTC: 0.4.1 available".into(),
+        tabs: 2,
+        ..Default::default()
+    });
+    let mut grid = vec![vec![Cell::default(); COLS as usize]; ROWS as usize];
+    let at = panel.draw(&mut grid, g, &mut Defaults(crate::config::Config::default()));
+    out.push(("settings-updates", Compose { settings: Some((grid, at)), ..compose(&s) }.build(), None, None));
+
     // E5b (DESIGN.md §2.2): underline kinds and colours; hyperlinks plain,
     // then one under the pointer: underlined, its target on the bottom row.
     let s = decorated(COLS, ROWS);

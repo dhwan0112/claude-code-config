@@ -57,6 +57,8 @@ const CONFIRM: Duration = Duration::from_secs(3);
 pub enum UserEvent {
     /// An event of the session with this id.
     Session(String, SessionEvent),
+    /// The updater thread's report (stage PU).
+    Update(crate::updater::Event),
 }
 
 pub struct App {
@@ -65,6 +67,8 @@ pub struct App {
     fonts: Option<Fonts>,
     win: Option<Win>,
     pub exit_code: i32,
+    /// "Restart now" / "Roll back" closed the window: start the new version (`main`), watching for `previous`.
+    pub restart: Option<(haetty_update::layout::Form, Option<String>)>,
 }
 
 /// What a tab runs: program, arguments, folder; a name to show until the
@@ -319,6 +323,11 @@ struct Win {
     previewing: bool,
     /// A font or padding change waits this long before the sessions get the new size.
     pending_relayout: Option<Instant>,
+    /// Stage PU: the updater thread's handle and what it found.
+    updater: crate::updater::Updater,
+    /// "Restart now" or "Roll back" was confirmed: the window closes after this event (`App::window_event`); the
+    /// version to go back to if the new one ends at its start.
+    restart_req: Option<Option<String>>,
     /// Set when the last tab is gone: the window closes.
     quit: Option<i32>,
     /// The window is closing: closing its tabs must not shrink `last`.
@@ -327,7 +336,7 @@ struct Win {
 
 impl App {
     pub fn new(opts: Options, proxy: EventLoopProxy<UserEvent>, fonts: Fonts) -> Self {
-        App { opts, proxy, fonts: Some(fonts), win: None, exit_code: 0 }
+        App { opts, proxy, fonts: Some(fonts), win: None, exit_code: 0, restart: None }
     }
 
     fn font_px(&self, scale: f64) -> f32 {
@@ -420,7 +429,13 @@ impl App {
         renderer.resize(size.width, size.height);
 
         let ep = Endpoint::default_for_user().map_err(|e| format!("daemon socket: {e}"))?;
-        let client = Client::connect_or_spawn(&ep, Role::Control, "gui").map_err(|e| e.to_string())?;
+        let client = Client::connect_or_spawn(&ep, Role::Control, "gui").map_err(|e| match &e {
+            // Stage PU: an update installed beside a running older daemon; it is not ended, only named.
+            haetty_proto::client::ConnectError::Refused(r) if r.starts_with("protocol version") => {
+                crate::updater::old_daemon_note(&crate::updater::form()).unwrap_or_else(|| e.to_string())
+            }
+            _ => e.to_string(),
+        })?;
         install_panic_report(client.reporter());
         let cmd = &self.opts.command;
         let command = (
@@ -500,6 +515,16 @@ impl App {
             gear_press: false,
             previewing: false,
             pending_relayout: None,
+            updater: {
+                let proxy = self.proxy.clone();
+                crate::updater::Updater::start(
+                    move |ev| {
+                        let _ = proxy.send_event(UserEvent::Update(ev));
+                    },
+                    self.opts.watch_start,
+                )
+            },
+            restart_req: None,
             quit: None,
             shutting_down: false,
             pending_start: None,
@@ -1373,6 +1398,7 @@ impl Win {
                 });
             }
             Action::Settings => self.toggle_settings(),
+            Action::Updates => self.open_updates(),
             Action::AttachDetached => {
                 let n = self.attach_detached();
                 self.show_hint(if n == 0 { "no detached sessions".into() } else { format!("attached {n} session(s)") });
@@ -1691,7 +1717,13 @@ impl Win {
             hint: self.hint.as_ref().map(|(h, _)| h.as_str()),
             link: self.link_hover.as_deref().map(|l| (l, self.link_row(), self.link_note.as_deref())),
             settings,
-            gear: gear_at.map(|(row, col)| ui::Gear { row, col, text: self.gear, hover: self.gear_hover }),
+            // A newer version is out: the button in the text colour instead of dim (DESIGN.md §2.4; no accent).
+            gear: gear_at.map(|(row, col)| ui::Gear {
+                row,
+                col,
+                text: self.gear,
+                hover: self.gear_hover || self.update_pending(),
+            }),
         }
         .build();
         if self.composed.as_ref().is_some_and(|s| (s.cols, s.rows) != (next.cols, next.rows)) {
@@ -2149,11 +2181,9 @@ impl Win {
             self.recompose();
         }
         let relayout = self.settle_relayout(now);
+        let update = self.update_tick(now);
         let hint = self.hint.as_ref().filter(|_| !self.daemon_lost).map(|(_, t)| *t + CONFIRM);
-        match (hint, relayout) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        [hint, relayout, update].into_iter().flatten().min()
     }
 }
 
@@ -2289,7 +2319,14 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn user_event(&mut self, _el: &ActiveEventLoop, ev: UserEvent) {
         let Some(win) = self.win.as_mut() else { return };
-        let UserEvent::Session(sid, ev) = ev;
+        let (sid, ev) = match ev {
+            UserEvent::Session(sid, ev) => (sid, ev),
+            UserEvent::Update(u) => {
+                win.updater.handle(u);
+                win.recompose();
+                return;
+            }
+        };
         let Some(i) = win.tabs.iter().position(|t| t.session.id == sid) else { return };
         match ev {
             SessionEvent::Wakeup => win.refresh(&sid),
@@ -2516,6 +2553,15 @@ impl ApplicationHandler<UserEvent> for App {
                 win.redraw();
             }
             _ => {}
+        }
+        // Stage PU: a confirmed "Restart now" or "Roll back" (only ever from the person's key or click in the
+        // panel) closes the window like its close button; `main` then starts the new version.
+        if let Some(win) = self.win.as_mut() {
+            if let Some(previous) = win.restart_req.take() {
+                let form = win.updater.form.clone();
+                close_window(win, el);
+                self.restart = Some((form, previous));
+            }
         }
     }
 }
