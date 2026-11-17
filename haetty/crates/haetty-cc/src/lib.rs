@@ -3,6 +3,7 @@
 //! state the daemon keeps from them, edit snapshots and diffs, resume.
 //! No GUI code; used by the daemon and the GUI.
 
+pub mod agents;
 pub mod edit;
 pub mod json;
 pub mod orch;

@@ -1293,6 +1293,7 @@ mod tests {
             kind: "Explore".into(),
             started_ms: 1000,
             ended_ms: None,
+            ..Default::default()
         });
         i.updated_ms = 5000;
         let p = panel(Some(&i), &[], 40, 12, g, 66_000, None);

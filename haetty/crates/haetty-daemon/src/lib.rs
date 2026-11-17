@@ -89,6 +89,8 @@ struct Sess {
     /// A shell tab with the `claude` proxy folder first on its `PATH` (stage PH, H1): a Claude Code started in it
     /// reports here and makes the tab a Claude Code tab until its `SessionEnd`.
     proxy: bool,
+    /// The session's latest event-log lines (`GetSessionLog`).
+    recent: std::collections::VecDeque<LogEvent>,
     /// Key → screen latency (DESIGN.md §3.8, friction log).
     lat: Latency,
 }
@@ -457,6 +459,13 @@ impl Daemon {
     /// they may see it.
     fn event(&mut self, kind: &str, session: &str, fields: &[(&str, &str)]) {
         let e = self.log.write(kind, session, fields);
+        // The sidebar's Log section reads a session's latest lines (stage PH, H2): kept in memory, the log is the store.
+        if let Some(s) = self.sessions.get_mut(session) {
+            if s.recent.len() >= RECENT {
+                s.recent.pop_front();
+            }
+            s.recent.push_back(e.clone());
+        }
         if !self.visible(&e) {
             return;
         }
@@ -660,6 +669,9 @@ impl Daemon {
             (
                 ClientMsg::ListSessions
                 | ClientMsg::GetHealth
+                // Read-only, on ListSessions' line (stage PH, approved); an observe-only client: observable sessions.
+                | ClientMsg::GetClaude { .. }
+                | ClientMsg::GetSessionLog { .. }
                 | ClientMsg::Attach { .. }
                 | ClientMsg::Detach { .. }
                 | ClientMsg::NextFrame { .. },
@@ -770,6 +782,23 @@ impl Daemon {
                 let now = self.health_sample();
                 let h = self.health.report(now);
                 self.reply(c, DaemonMsg::Health(h));
+            }
+            ClientMsg::GetClaude { session } | ClientMsg::GetSessionLog { session }
+                if role == Role::Observe && !self.sessions.get(&session).is_some_and(|s| s.info.observable) =>
+            {
+                self.denied(c, "not observable")
+            }
+            ClientMsg::GetClaude { session } => {
+                let info = self.sessions.get(&session).and_then(|s| s.claude.as_ref()).map(|cl| cl.info.clone());
+                match info {
+                    Some(i) => self.reply(c, DaemonMsg::ClaudeState { session, info: Box::new(i) }),
+                    None => self.denied(c, "no Claude Code in that session"),
+                }
+            }
+            ClientMsg::GetSessionLog { session } => {
+                let events =
+                    self.sessions.get(&session).map(|s| s.recent.iter().cloned().collect()).unwrap_or_default();
+                self.reply(c, DaemonMsg::SessionLog { session, events });
             }
             ClientMsg::SetObservable { session, on } => self.set_observable(session, on),
             ClientMsg::ReadEvents { cursor, follow } => self.read_events(c, cursor, follow),
@@ -888,6 +917,7 @@ impl Daemon {
             }
         };
         let attention = cl.info.attention;
+        let line = log_line(what, &j, &cl.info);
         let changed = apply(cl, &j);
         // The proxied Claude Code ended: the tab is a shell tab again (its subscribers get `ended` once).
         let ended = what == "SessionEnd" && cl.info.via_proxy;
@@ -897,6 +927,10 @@ impl Daemon {
             return;
         }
         let now = cl.info.attention;
+        if let Some((kind, f)) = line {
+            let refs: Vec<(&str, &str)> = f.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            self.event(kind, &sid, &refs);
+        }
         if now != attention {
             self.event("attention", &sid, &[("event", what), ("attention", &format!("{now:?}"))]);
         }
@@ -1061,6 +1095,7 @@ impl Daemon {
                         claude,
                         settings_file,
                         proxy: is_proxy,
+                        recent: Default::default(),
                         lat: Latency::default(),
                     },
                 );
@@ -1109,11 +1144,50 @@ fn msg_name(m: &ClientMsg) -> &'static str {
         ClientMsg::ReadEvents { .. } => "ReadEvents",
         ClientMsg::GetScreen { .. } => "GetScreen",
         ClientMsg::GetHealth => "GetHealth",
+        ClientMsg::GetClaude { .. } => "GetClaude",
+        ClientMsg::GetSessionLog { .. } => "GetSessionLog",
     }
 }
 
 /// Writes a file only this user can read (Unix mode 0600; on Windows the
 /// directory is in the user's profile).
+/// Lines kept per session for `GetSessionLog`.
+const RECENT: usize = 64;
+
+type Line = (&'static str, Vec<(&'static str, String)>);
+
+/// The event-log line a hook report adds (stage PH, H2: the sidebar's Log section): agents starting and ending, a
+/// file edited (its name only), a permission question, a turn's end, a compaction. Derived fields only: never a
+/// prompt, a command or file contents.
+fn log_line(what: &str, j: &Json, info: &haetty_proto::wire::ClaudeInfo) -> Option<Line> {
+    let s = |path: &[&str]| j.at(path).and_then(Json::str).unwrap_or_default().to_string();
+    let agent = || {
+        let t = s(&["agent_type"]);
+        if t.is_empty() {
+            "main".to_string()
+        } else {
+            t
+        }
+    };
+    let id8 = || s(&["agent_id"]).chars().take(8).collect::<String>();
+    match what {
+        "SubagentStart" if !s(&["agent_type"]).is_empty() => {
+            Some(("agent_start", vec![("agent", agent()), ("id", id8())]))
+        }
+        "SubagentStop" if info.workers.iter().any(|w| w.id == s(&["agent_id"])) => {
+            Some(("agent_end", vec![("agent", agent()), ("id", id8())]))
+        }
+        "PostToolUse" if haetty_cc::edit::is_edit_tool(&s(&["tool_name"])) => {
+            Some(("edit", vec![("agent", agent()), ("file", haetty_cc::agents::target(j.get("tool_input")))]))
+        }
+        "PermissionRequest" => Some(("ask", vec![("agent", agent()), ("tool", s(&["tool_name"]))])),
+        "Stop" => Some(("turn_end", vec![])),
+        "StopFailure" => Some(("turn_failed", vec![])),
+        "SessionStart" if s(&["source"]) == "compact" => Some(("compact", vec![])),
+        _ => None,
+    }
+}
+
 /// `<run dir>/bin` holding `claude`: on Unix a link to this executable, on Windows `claude.cmd` calling
 /// `haetty claude-proxy` (stage PH, H1). Remade at each daemon start (the executable may have moved).
 fn proxy_folder(run_dir: &std::path::Path) -> Option<PathBuf> {

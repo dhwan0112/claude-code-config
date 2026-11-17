@@ -202,6 +202,26 @@ impl Client {
         })
     }
 
+    /// A session's Claude Code state with its agent table (stage PH; an observe-only client: observable sessions).
+    pub fn claude_state(&self, session: &str) -> io::Result<ClaudeInfo> {
+        let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
+        self.send(&ClientMsg::GetClaude { session: session.to_string() })?;
+        self.wait_reply(Duration::from_secs(5), |m| match m {
+            DaemonMsg::ClaudeState { session: s, info } if s == session => Some(*info),
+            _ => None,
+        })
+    }
+
+    /// A session's recent event-log lines, oldest first (stage PH, the sidebar's Log section).
+    pub fn session_log(&self, session: &str) -> io::Result<Vec<LogEvent>> {
+        let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
+        self.send(&ClientMsg::GetSessionLog { session: session.to_string() })?;
+        self.wait_reply(Duration::from_secs(5), |m| match m {
+            DaemonMsg::SessionLog { session: s, events } if s == session => Some(events),
+            _ => None,
+        })
+    }
+
     pub fn list_sessions(&self) -> io::Result<Vec<SessionInfo>> {
         let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
         self.send(&ClientMsg::ListSessions)?;

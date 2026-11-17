@@ -260,6 +260,7 @@ fn claude_info() -> ClaudeInfo {
             kind: "Explore".into(),
             started_ms: NOW_MS - 95_000,
             ended_ms: Some(NOW_MS - 50_000),
+            ..Default::default()
         }],
         updated_ms: NOW_MS - 2_000,
         ..Default::default()

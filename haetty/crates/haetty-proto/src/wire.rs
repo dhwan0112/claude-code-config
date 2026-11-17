@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 13;
+pub const VERSION: u32 = 14;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -299,6 +299,16 @@ pub enum ClientMsg {
     /// The daemon's own resource counts, now and the largest since it started (answer: `Health`; any role but
     /// Report; version 12). No session content.
     GetHealth,
+    /// A session's Claude Code state, the agent table included (answer: `ClaudeState`; read-only, as `ListSessions`; an
+    /// observe-only client gets it only for an observable session; version 14).
+    GetClaude {
+        session: SessionId,
+    },
+    /// A session's recent event-log lines (agents, edits, questions, turns; answer: `SessionLog`; read-only, as
+    /// `GetClaude`; version 14). Derived fields only.
+    GetSessionLog {
+        session: SessionId,
+    },
 }
 
 /// One line of the daemon's event log (DESIGN.md §3.8): derived fields only
@@ -427,12 +437,55 @@ pub struct EditMeta {
     pub diffable: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Worker {
     pub id: String,
     pub kind: String,
     pub started_ms: u64,
     pub ended_ms: Option<u64>,
+    /// The agent that started it (`""`: the main agent), from the parent's Agent tool call (version 14).
+    #[serde(default)]
+    pub parent: String,
+    /// 1 for an agent the main agent started, 2 for one of its agents, …
+    #[serde(default)]
+    pub depth: u8,
+    /// The model it started on (`resolvedModel` of the Agent tool), e.g. `claude-haiku-5-5`.
+    #[serde(default)]
+    pub model: String,
+    /// Launched in the background (`async_launched`).
+    #[serde(default)]
+    pub background: bool,
+    /// A fork of the conversation (`/subtask`).
+    #[serde(default)]
+    pub fork: bool,
+    /// Runs in its own git worktree (`isolation: worktree`).
+    #[serde(default)]
+    pub worktree: bool,
+    /// The tool it runs now (`""`: none).
+    #[serde(default)]
+    pub tool: String,
+    /// The current tool's target: a file name or pattern (shown, never logged).
+    #[serde(default)]
+    pub target: String,
+    /// Tool calls finished.
+    #[serde(default)]
+    pub calls: u32,
+    /// Its Agent tool call failed.
+    #[serde(default)]
+    pub failed: bool,
+    /// A permission question of this agent is open.
+    #[serde(default)]
+    pub asking: bool,
+}
+
+/// One file Claude Code changed in this conversation: the sums of its edits' line counts (version 14).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct FileStat {
+    pub path: String,
+    pub added: u64,
+    pub removed: u64,
+    pub edits: u32,
+    pub at_ms: u64,
 }
 
 /// What haetty knows about the Claude Code session in a tab, from hooks and
@@ -476,6 +529,15 @@ pub struct ClaudeInfo {
     /// The proxied Claude Code ended (its `SessionEnd`): the tab is a shell tab again. Sent once (version 13).
     #[serde(default)]
     pub ended: bool,
+    /// The session's effort level (`effort.level` of the status line or a hook), e.g. `medium` (version 14).
+    #[serde(default)]
+    pub effort: String,
+    /// The conversation's transcript path (the agents' transcripts are beside it, `<id>/subagents/`).
+    #[serde(default)]
+    pub transcript: String,
+    /// The files changed in this conversation, the most recent first (version 14).
+    #[serde(default)]
+    pub files: Vec<FileStat>,
 }
 
 /// A worker's report (`STATUS:` … `NEXT_ACTION:` at the end of its final
@@ -630,6 +692,16 @@ pub enum DaemonMsg {
     },
     /// Answer to `GetScreen`.
     Screen(Box<ScreenView>),
+    /// Answer to `GetClaude` (version 14).
+    ClaudeState {
+        session: SessionId,
+        info: Box<ClaudeInfo>,
+    },
+    /// Answer to `GetSessionLog`: the session's recent event-log lines, oldest first (version 14).
+    SessionLog {
+        session: SessionId,
+        events: Vec<LogEvent>,
+    },
     /// Answer to `GetHealth` (version 12).
     Health(DaemonHealth),
 }

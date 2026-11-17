@@ -300,3 +300,65 @@ fn a_claude_started_through_the_proxy_gets_the_same_mark_and_hold() {
     assert!(!Path::new(lines[2]).exists(), "the settings file goes with the session");
     haetty_testkit::remove_dir_all(&dir);
 }
+
+#[test]
+fn agent_table_and_session_log_are_read_only_queries() {
+    // Stage PH, H2: GetClaude (the agent table) and GetSessionLog (derived event-log lines), on ListSessions' line;
+    // an observe-only client gets them only for an observable session.
+    let (dir, ep, gui, id) = fake_claude("permission-agents");
+    hook(&ep, &id, "UserPromptSubmit", r#"{"session_id":"s"}"#);
+    hook(
+        &ep,
+        &id,
+        "PreToolUse",
+        r#"{"session_id":"s","tool_name":"Agent","tool_use_id":"t1","tool_input":{"subagent_type":"Explore","isolation":"worktree"}}"#,
+    );
+    hook(&ep, &id, "SubagentStart", r#"{"session_id":"s","agent_id":"a1","agent_type":"Explore"}"#);
+    hook(
+        &ep,
+        &id,
+        "PostToolUse",
+        r#"{"session_id":"s","tool_name":"Agent","tool_use_id":"t1","tool_response":{"status":"async_launched","agentId":"a1","resolvedModel":"claude-haiku-5-5"}}"#,
+    );
+    hook(
+        &ep,
+        &id,
+        "PreToolUse",
+        r#"{"session_id":"s","agent_id":"a1","agent_type":"Explore","tool_name":"Read","tool_input":{"file_path":"/p/src/main.rs"}}"#,
+    );
+    let st = gui.claude_state(&id).unwrap();
+    assert_eq!(st.workers.len(), 1);
+    let a = &st.workers[0];
+    assert_eq!(
+        (a.kind.as_str(), a.model.as_str(), a.tool.as_str(), a.target.as_str()),
+        ("Explore", "claude-haiku-5-5", "Read", "main.rs")
+    );
+    assert!(a.background && a.worktree && a.ended_ms.is_none());
+    hook(
+        &ep,
+        &id,
+        "PostToolUse",
+        r#"{"session_id":"s","agent_id":"a1","agent_type":"Explore","tool_name":"Edit","tool_input":{"file_path":"/p/src/lib.rs","old_string":"a","new_string":"b"}}"#,
+    );
+    hook(&ep, &id, "SubagentStop", r#"{"session_id":"s","agent_id":"a1","agent_type":"Explore"}"#);
+    hook(&ep, &id, "Stop", r#"{"session_id":"s"}"#);
+    let log = gui.session_log(&id).unwrap();
+    let kinds: Vec<&str> = log.iter().map(|e| e.kind.as_str()).collect();
+    for k in ["agent_start", "edit", "agent_end", "turn_end"] {
+        assert!(kinds.contains(&k), "{k} in {kinds:?}");
+    }
+    let edit = log.iter().find(|e| e.kind == "edit").unwrap();
+    assert!(edit.fields.contains(&("file".to_string(), "lib.rs".to_string())), "the file's name only: {edit:?}");
+    assert!(log.iter().all(|e| e.fields.iter().all(|(_, v)| !v.contains("/p/"))), "no paths");
+    // Observe: denied until the person allows observing the session.
+    let o = Client::connect(&ep, Role::Observe, "observer").unwrap();
+    assert!(o.claude_state(&id).is_err());
+    assert!(o.session_log(&id).is_err());
+    gui.send(&ClientMsg::SetObservable { session: id.clone(), on: true }).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    assert_eq!(o.claude_state(&id).unwrap().workers.len(), 1);
+    assert!(!o.session_log(&id).unwrap().is_empty());
+    gui.close(&id).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    haetty_testkit::remove_dir_all(&dir);
+}

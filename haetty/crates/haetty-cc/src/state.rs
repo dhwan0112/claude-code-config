@@ -13,14 +13,16 @@
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 
-use haetty_proto::wire::{Attention, ClaudeInfo, EditMeta, EditView, Limit, PreSnapshot, Secret, SnapStatus, Worker};
+use haetty_proto::wire::FileStat;
+use haetty_proto::wire::{Attention, ClaudeInfo, EditMeta, EditView, Limit, PreSnapshot, Secret, SnapStatus};
 
 use crate::edit;
 use crate::json::Json;
 
 const KEEP_EDITS: usize = 20;
-const KEEP_DONE_WORKERS: usize = 6;
 const MAX_PENDING: usize = 64;
+/// Files kept in `ClaudeInfo::files`.
+const MAX_FILES: usize = 200;
 
 /// Notification types that mean "Claude Code asks you something".
 const ASK: &[&str] = &["permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input"];
@@ -45,6 +47,8 @@ pub struct Claude {
     pending: HashMap<String, PreSnapshot>,
     edits: VecDeque<EditRec>,
     files: BTreeSet<String>,
+    /// The agent table's pending Agent tool calls (stage PH, H2).
+    agents: crate::agents::Agents,
 }
 
 fn text(j: &Json, path: &[&str]) -> String {
@@ -81,6 +85,15 @@ impl Claude {
         }
         // A question that started before the newest prompt, turn end or answer is over: it changes nothing.
         let fence = self.resolved_ts.max(self.answer_ts.unwrap_or(0));
+        let effort = text(j, &["effort", "level"]);
+        if !effort.is_empty() {
+            self.info.effort = effort;
+        }
+        let tp = text(j, &["transcript_path"]);
+        if !tp.is_empty() {
+            self.info.transcript = tp;
+        }
+        self.agents.hook(&mut self.info.workers, event, j, ts_ms);
         let i = &mut self.info;
         let later_than_ask = ts_ms >= self.ask_ts;
         match event {
@@ -191,23 +204,6 @@ impl Claude {
                     self.answer_ts = None;
                 }
             }
-            "SubagentStart" => {
-                let id = text(j, &["agent_id"]);
-                if !id.is_empty() && !i.workers.iter().any(|w| w.id == id) {
-                    i.workers.push(Worker { id, kind: text(j, &["agent_type"]), started_ms: ts_ms, ended_ms: None });
-                }
-            }
-            "SubagentStop" => {
-                let id = text(j, &["agent_id"]);
-                if let Some(w) = i.workers.iter_mut().find(|w| w.id == id && w.ended_ms.is_none()) {
-                    w.ended_ms = Some(ts_ms);
-                }
-                // Running first, then the newest finished ones.
-                i.workers
-                    .sort_by_key(|w| (w.ended_ms.is_some(), std::cmp::Reverse(w.ended_ms.unwrap_or(w.started_ms))));
-                let running = i.workers.iter().filter(|w| w.ended_ms.is_none()).count();
-                i.workers.truncate(running + KEEP_DONE_WORKERS);
-            }
             "SessionEnd" => {
                 i.busy = false;
                 if i.attention != Attention::Ask || later_than_ask {
@@ -215,6 +211,12 @@ impl Claude {
                 }
             }
             _ => {}
+        }
+        // An agent's question is shown only while the session's own question is (the same mark and hold).
+        if !self.info.asking {
+            for a in self.info.workers.iter_mut() {
+                a.asking = false;
+            }
         }
         self.info != before
     }
@@ -239,8 +241,24 @@ impl Claude {
         };
         let agent = j.get("agent_type").and_then(Json::str).filter(|s| !s.is_empty()).unwrap_or("main").to_string();
         let meta = EditMeta { path: path.clone(), agent, at_ms: ts_ms, added, removed, diffable };
-        self.files.insert(path);
+        self.files.insert(path.clone());
         self.info.files_changed = self.files.len() as u32;
+        // The sidebar's file list (stage PH, H2): sums per file, the most recent first, at most MAX_FILES.
+        let f = match self.info.files.iter().position(|f| f.path == path) {
+            Some(n) => self.info.files.remove(n),
+            None => FileStat { path, ..Default::default() },
+        };
+        self.info.files.insert(
+            0,
+            FileStat {
+                added: f.added + added as u64,
+                removed: f.removed + removed as u64,
+                edits: f.edits + 1,
+                at_ms: ts_ms,
+                ..f
+            },
+        );
+        self.info.files.truncate(MAX_FILES);
         self.info.edits += 1;
         self.info.last_edit = Some(meta.clone());
         let (before, after) =
@@ -262,6 +280,10 @@ impl Claude {
         }
         i.name = text(j, &["session_name"]);
         i.model = text(j, &["model", "display_name"]);
+        let effort = text(j, &["effort", "level"]);
+        if !effort.is_empty() {
+            i.effort = effort;
+        }
         i.context_pct = j.at(&["context_window", "used_percentage"]).and_then(Json::num).map(|v| v as f32);
         i.context_size = j.at(&["context_window", "context_window_size"]).and_then(Json::num).map(|v| v as u64);
         i.limits = match j.get("rate_limits") {
