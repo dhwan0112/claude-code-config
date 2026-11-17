@@ -210,3 +210,93 @@ fn turn_end_releases_the_hold_and_a_mouse_press_answers() {
     assert!(gui.sync(Duration::from_secs(5)));
     haetty_testkit::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_claude_started_through_the_proxy_gets_the_same_mark_and_hold() {
+    // Stage PH, H1: a shell tab with the integration gets the proxy folder first on PATH and the session's settings
+    // file; a Claude Code started in it reports like a Claude Code tab's, and the permission mark and input hold work
+    // the same; its SessionEnd makes the tab a shell tab again.
+    let dir = haetty_testkit::run_dir("permission-proxy");
+    let ep = Endpoint(dir.join("rt").join("daemon.sock"));
+    let cfg = Config {
+        endpoint: ep.clone(),
+        state_dir: dir.join("state"),
+        run_dir: dir.join("rt"),
+        idle_exit: None,
+        health_every: haetty_daemon::HEALTH_EVERY,
+    };
+    drop(haetty_daemon::spawn(cfg));
+    let end = Instant::now() + Duration::from_secs(5);
+    let gui = loop {
+        match Client::connect(&ep, Role::Control, "gui") {
+            Ok(c) => break c,
+            Err(_) if Instant::now() < end => std::thread::sleep(Duration::from_millis(20)),
+            Err(e) => panic!("daemon: {e}"),
+        }
+    };
+    let out = dir.join("env.txt");
+    let script = format!(
+        "printf '%s\\n' \"$PATH\" \"$HAETTY_PROXY_DIR\" \"$HAETTY_CLAUDE_SETTINGS\" > {}; exec sleep 60",
+        out.display()
+    );
+    let id = gui
+        .create(CreateSpec {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), script],
+            cwd: None,
+            env: vec![("PATH".into(), "/usr/bin:/bin".into())],
+            size: Grid { cols: 40, rows: 8, cell_width: 9, cell_height: 18 },
+            scrollback_limit: 100_000,
+            default_fg: [200, 200, 200],
+            default_bg: [20, 20, 20],
+            palette: vec![],
+            cursor_color: None,
+            claude_integration: true,
+            engine: String::new(),
+        })
+        .unwrap();
+    let end = Instant::now() + Duration::from_secs(5);
+    while std::fs::read_to_string(&out).map_or(true, |s| s.lines().count() < 3) {
+        assert!(Instant::now() < end, "the shell did not write its environment");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let env = std::fs::read_to_string(&out).unwrap();
+    let lines: Vec<&str> = env.lines().collect();
+    let bin = dir.join("rt").join("bin");
+    assert_eq!(lines[0], format!("{}:/usr/bin:/bin", bin.display()), "the proxy folder first on PATH");
+    assert_eq!(lines[1], bin.to_string_lossy());
+    let settings = std::fs::read_to_string(lines[2]).unwrap();
+    assert!(settings.contains("\"hooks\"") && settings.contains("statusLine"), "the same observing settings");
+    assert!(std::fs::symlink_metadata(bin.join("claude")).unwrap().file_type().is_symlink());
+
+    // A shell tab until its Claude Code reports.
+    let orch = Client::connect(&ep, Role::Control, "orchestrator").unwrap();
+    assert_eq!(info(&gui, &id).attention, Attention::None);
+    hook(&ep, &id, "SessionStart", r#"{"session_id":"11111111-2222-3333-4444-555555555555","source":"startup"}"#);
+    hook(&ep, &id, "UserPromptSubmit", r#"{"session_id":"11111111-2222-3333-4444-555555555555"}"#);
+    hook(&ep, &id, "PermissionRequest", r#"{"session_id":"11111111-2222-3333-4444-555555555555","tool_name":"Bash"}"#);
+    assert_eq!(info(&gui, &id).attention, Attention::Ask);
+    assert!(!program_write_taken(&orch, &id), "held while the dialog waits, as in a Claude Code tab");
+    let m = MouseInput::at_pixel(MouseAction::Press, Some(MouseButton::Left), 30.0, 40.0);
+    gui.send(&ClientMsg::Mouse { session: id.clone(), origin: Origin::Human, mouse: WireMouse::from(&m) }).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    assert_eq!(info(&gui, &id).attention, Attention::None, "a press answers");
+    hook(&ep, &id, "Stop", r#"{"session_id":"11111111-2222-3333-4444-555555555555"}"#);
+    assert!(program_write_taken(&orch, &id));
+    hook(
+        &ep,
+        &id,
+        "SessionEnd",
+        r#"{"session_id":"11111111-2222-3333-4444-555555555555","reason":"prompt_input_exit"}"#,
+    );
+    let i = info(&gui, &id);
+    assert!(i.claude_session.is_empty() && i.attention == Attention::None, "a shell tab again: {i:?}");
+    // A second claude in the same shell is a Claude Code again.
+    hook(&ep, &id, "SessionStart", r#"{"session_id":"66666666-2222-3333-4444-555555555555","source":"startup"}"#);
+    hook(&ep, &id, "PermissionRequest", r#"{"session_id":"66666666-2222-3333-4444-555555555555","tool_name":"Bash"}"#);
+    assert_eq!(info(&gui, &id).attention, Attention::Ask);
+    gui.close(&id).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    assert!(!Path::new(lines[2]).exists(), "the settings file goes with the session");
+    haetty_testkit::remove_dir_all(&dir);
+}

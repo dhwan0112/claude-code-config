@@ -299,7 +299,8 @@ fn reader_loop(mut r: Stream, sh: Arc<Shared>, replies: Sender<DaemonMsg>) {
             DaemonMsg::Claude { session, info } => {
                 let mut ms = sh.mirrors.lock().unwrap_or_else(|p| p.into_inner());
                 if let Some(m) = ms.get_mut(&session) {
-                    m.claude = Some(Arc::from(info));
+                    // A proxied Claude Code ended: the tab is a shell tab again (stage PH, H1).
+                    m.claude = (!info.ended).then(|| Arc::from(info));
                     if !m.woken {
                         m.woken = true;
                         let _ = m.tx.send(SessionEvent::Wakeup);

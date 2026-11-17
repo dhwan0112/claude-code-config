@@ -603,8 +603,17 @@ fn message_box(msg: &str) {
 fn main() {
     // Claude Code's hooks and status line: first, before any setup (they
     // must end within milliseconds and never print; DESIGN.md §3.13).
+    // Started as `claude` from a shell tab's proxy folder (Windows: `claude.cmd` → `haetty claude-proxy`): run the
+    // real claude with the observing settings (stage PH, H1). Before anything else, like the hooks.
+    let argv0 = std::env::args_os().next().map(std::path::PathBuf::from).unwrap_or_default();
+    if argv0.file_stem().is_some_and(|n| n == "claude") {
+        haetty_cc::proxy::main(std::env::args().skip(1).collect());
+    }
     let mut argv = std::env::args().skip(1);
     let help = std::env::args().nth(2).is_some_and(|a| a == "--help" || a == "-h");
+    if std::env::args().nth(1).as_deref() == Some(haetty_cc::proxy::SUBCOMMAND) {
+        haetty_cc::proxy::main(std::env::args().skip(2).collect());
+    }
     match argv.next().as_deref() {
         Some(s @ ("hook" | "statusline")) if help => {
             init_log(None);

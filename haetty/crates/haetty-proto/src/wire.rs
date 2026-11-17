@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 13;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -470,6 +470,12 @@ pub struct ClaudeInfo {
     /// The worker report of the latest finished turn (DESIGN.md §8.2);
     /// cleared when a new turn starts.
     pub report: Option<WorkerReport>,
+    /// Started through the `claude` proxy in a shell tab (stage PH, H1; version 13).
+    #[serde(default)]
+    pub via_proxy: bool,
+    /// The proxied Claude Code ended (its `SessionEnd`): the tab is a shell tab again. Sent once (version 13).
+    #[serde(default)]
+    pub ended: bool,
 }
 
 /// A worker's report (`STATUS:` … `NEXT_ACTION:` at the end of its final

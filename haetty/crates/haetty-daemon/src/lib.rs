@@ -84,8 +84,11 @@ struct Sess {
     /// Claude Code state (a Claude Code tab with the integration). While it
     /// waits for a permission answer, only Human input is accepted.
     claude: Option<Claude>,
-    /// The `--settings` file given to Claude Code; removed with the session.
+    /// The `--settings` file given to Claude Code; removed with the session (with the proxy's merged copies).
     settings_file: Option<PathBuf>,
+    /// A shell tab with the `claude` proxy folder first on its `PATH` (stage PH, H1): a Claude Code started in it
+    /// reports here and makes the tab a Claude Code tab until its `SessionEnd`.
+    proxy: bool,
     /// Key → screen latency (DESIGN.md §3.8, friction log).
     lat: Latency,
 }
@@ -194,6 +197,15 @@ impl Sess {
 
     fn drop_settings_file(&mut self) {
         if let Some(p) = self.settings_file.take() {
+            // The proxy's merged copies: `settings-<id>-p<pid>.json` beside it.
+            if let (Some(dir), Some(stem)) = (p.parent(), p.file_stem().and_then(|s| s.to_str())) {
+                let prefix = format!("{stem}-p");
+                for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                    if e.file_name().to_str().is_some_and(|n| n.starts_with(&prefix) && n.ends_with(".json")) {
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                }
+            }
             let _ = std::fs::remove_file(p);
         }
     }
@@ -260,6 +272,7 @@ pub fn run(cfg: Config) -> io::Result<()> {
         events_path: cfg.state_dir.join("events.log"),
         observed: HashMap::new(),
         counter: 0,
+        proxy_dir: proxy_folder(&cfg.run_dir),
         run_dir: cfg.run_dir,
         health: health::Health::new(now_ms()),
         health_every: cfg.health_every,
@@ -366,6 +379,8 @@ struct Daemon {
     observed: HashMap<SessionId, Vec<(u64, u64)>>,
     counter: u64,
     run_dir: PathBuf,
+    /// `<run dir>/bin` with the `claude` proxy (stage PH, H1); `None` when it could not be made.
+    proxy_dir: Option<PathBuf>,
     /// The daemon's own counts (P1c): the hourly `health` line, `GetHealth`.
     health: health::Health,
     health_every: Duration,
@@ -854,6 +869,13 @@ impl Daemon {
         what: &str,
     ) {
         let Some(sid) = session else { return };
+        // A Claude Code started through the proxy in a shell tab: the tab is a Claude Code tab from its first report.
+        if let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.proxy && s.claude.is_none()) {
+            let mut cl = Claude::default();
+            cl.info.via_proxy = true;
+            s.claude = Some(cl);
+            self.event("claude_started", &sid, &[("via", "proxy")]);
+        }
         let Some(cl) = self.sessions.get_mut(&sid).and_then(|s| s.claude.as_mut()) else {
             log::debug!("{what} for session {sid}, which has no Claude Code integration");
             return;
@@ -866,7 +888,12 @@ impl Daemon {
             }
         };
         let attention = cl.info.attention;
-        if !apply(cl, &j) {
+        let changed = apply(cl, &j);
+        // The proxied Claude Code ended: the tab is a shell tab again (its subscribers get `ended` once).
+        let ended = what == "SessionEnd" && cl.info.via_proxy;
+        if ended {
+            cl.info.ended = true;
+        } else if !changed {
             return;
         }
         let now = cl.info.attention;
@@ -874,6 +901,13 @@ impl Daemon {
             self.event("attention", &sid, &[("event", what), ("attention", &format!("{now:?}"))]);
         }
         self.push_claude(&sid);
+        if ended {
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                s.claude = None;
+                s.info.claude_session.clear();
+            }
+            self.event("claude_ended", &sid, &[("via", "proxy")]);
+        }
     }
 
     fn log_latency(&mut self, sid: &str, f: Vec<(&'static str, String)>) {
@@ -920,15 +954,47 @@ impl Daemon {
         Some((args, path))
     }
 
+    /// A shell tab with the integration: the `claude` proxy folder first on `PATH` and the session's settings file,
+    /// the same hooks and status line a Claude Code tab gets (protected area, approved: stage PH, H1).
+    fn proxy_env(&self, id: &str, spec: &CreateSpec) -> Option<(Vec<(String, String)>, PathBuf)> {
+        let dir = self.proxy_dir.as_ref()?;
+        if !spec.claude_integration || settings::is_claude(&spec.program) {
+            return None;
+        }
+        let exe_path = product::exe_path();
+        let exe = exe_path.to_string_lossy().into_owned();
+        let (ours, _) = settings::merge(settings::ours(&exe, &settings::shell_safe_exe(&exe_path)), None);
+        let path = self.run_dir.join(format!("settings-{id}.json"));
+        if let Err(e) = write_private(&path, ours.to_string().as_bytes()) {
+            log::error!("session {id}: {}: {e}", path.display());
+            return None;
+        }
+        let base = spec.env.iter().find(|(k, _)| k == "PATH").map(|(_, v)| std::ffi::OsString::from(v));
+        let base = base.or_else(|| std::env::var_os("PATH")).unwrap_or_default();
+        let mut parts = vec![dir.clone()];
+        parts.extend(std::env::split_paths(&base).filter(|p| p != dir));
+        let joined = std::env::join_paths(parts).ok()?.to_string_lossy().into_owned();
+        let env = vec![
+            ("PATH".to_string(), joined),
+            (haetty_cc::proxy::DIR_ENV.to_string(), dir.to_string_lossy().into_owned()),
+            (haetty_cc::proxy::SETTINGS_ENV.to_string(), path.to_string_lossy().into_owned()),
+        ];
+        Some((env, path))
+    }
+
     fn create(&mut self, c: ClientId, req: u32, spec: CreateSpec) {
         let id = self.new_id();
         let claude = self.claude_args(&id, &spec);
+        let proxy = if claude.is_none() { self.proxy_env(&id, &spec) } else { None };
         let args = claude.as_ref().map_or(&spec.args, |(a, _)| a);
         let mut cmd = CommandSpec::new(&spec.program).args(args);
         if let Some(cwd) = &spec.cwd {
             cmd = cmd.cwd(cwd);
         }
         for (k, v) in &spec.env {
+            cmd = cmd.env(k, v);
+        }
+        for (k, v) in proxy.iter().flat_map(|(e, _)| e) {
             cmd = cmd.env(k, v);
         }
         cmd = cmd.env(product::SESSION_ENV, &id);
@@ -980,13 +1046,23 @@ impl Daemon {
                 });
                 self.event("session_created", &id, &[("program", &spec.program), ("cwd", &info.cwd)]);
                 log::info!("session {id}: {} (pid {:?}) in {:?}", spec.program, info.pid, spec.cwd);
-                let (claude, settings_file) = match claude {
-                    Some((_, p)) => (Some(Claude::default()), Some(p)),
-                    None => (None, None),
+                let is_proxy = proxy.is_some();
+                let (claude, settings_file) = match (claude, proxy) {
+                    (Some((_, p)), _) => (Some(Claude::default()), Some(p)),
+                    (None, Some((_, p))) => (None, Some(p)),
+                    (None, None) => (None, None),
                 };
                 self.sessions.insert(
                     id.clone(),
-                    Sess { session, info, latest: None, claude, settings_file, lat: Latency::default() },
+                    Sess {
+                        session,
+                        info,
+                        latest: None,
+                        claude,
+                        settings_file,
+                        proxy: is_proxy,
+                        lat: Latency::default(),
+                    },
                 );
                 // A session's threads and descriptors are there now: the largest counts follow them.
                 let now = self.health_sample();
@@ -994,7 +1070,7 @@ impl Daemon {
                 self.reply(c, DaemonMsg::Created { req, session: id });
             }
             Err(e) => {
-                if let Some((_, p)) = claude {
+                for p in [claude.map(|(_, p)| p), proxy.map(|(_, p)| p)].into_iter().flatten() {
                     let _ = std::fs::remove_file(p);
                 }
                 self.event("error", &id, &[("what", "create failed"), ("program", &spec.program)]);
@@ -1038,6 +1114,35 @@ fn msg_name(m: &ClientMsg) -> &'static str {
 
 /// Writes a file only this user can read (Unix mode 0600; on Windows the
 /// directory is in the user's profile).
+/// `<run dir>/bin` holding `claude`: on Unix a link to this executable, on Windows `claude.cmd` calling
+/// `haetty claude-proxy` (stage PH, H1). Remade at each daemon start (the executable may have moved).
+fn proxy_folder(run_dir: &std::path::Path) -> Option<PathBuf> {
+    let dir = run_dir.join("bin");
+    let made = (|| -> io::Result<()> {
+        std::fs::create_dir_all(&dir)?;
+        let exe = product::exe_path();
+        #[cfg(unix)]
+        {
+            let link = dir.join("claude");
+            let _ = std::fs::remove_file(&link);
+            std::os::unix::fs::symlink(&exe, &link)?;
+        }
+        #[cfg(windows)]
+        {
+            let text = format!("@\"{}\" {} %*\r\n", exe.display(), haetty_cc::proxy::SUBCOMMAND);
+            std::fs::write(dir.join("claude.cmd"), text)?;
+        }
+        Ok(())
+    })();
+    match made {
+        Ok(()) => Some(dir),
+        Err(e) => {
+            log::warn!("claude proxy folder {}: {e}", dir.display());
+            None
+        }
+    }
+}
+
 fn write_private(path: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write;
     let mut o = std::fs::OpenOptions::new();
