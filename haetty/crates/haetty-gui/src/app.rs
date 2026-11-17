@@ -47,6 +47,8 @@ use haetty_cc::orch::{self, WorkerState};
 
 #[path = "app_settings.rs"]
 mod app_settings;
+#[path = "app_sidebar.rs"]
+mod app_sidebar;
 
 /// How long a close request waits for its confirming second press, and how
 /// long a hint stays.
@@ -59,6 +61,16 @@ pub enum UserEvent {
     Session(String, SessionEvent),
     /// The updater thread's report (stage PU).
     Update(crate::updater::Event),
+    /// The sidebar's background reads (stage PH, H2).
+    Sidebar(SidebarEvent),
+}
+
+#[derive(Debug)]
+pub enum SidebarEvent {
+    /// An agent's record was read (its id; the record or why not).
+    Record(String, Result<crate::agentview::Record, String>),
+    /// A shell tab's git changes and branch (its session id).
+    Git(String, crate::sidebar::GitSummary, Option<String>),
 }
 
 pub struct App {
@@ -109,6 +121,16 @@ struct Tab {
     /// Observe-only readers may see it (DESIGN.md §6.1); the daemon keeps the
     /// flag, this is the window's copy for the tab bar.
     observable: bool,
+    /// The sidebar (stage PH, H2): a shell tab's git changes, when read and whether a read runs; the tab's latest
+    /// event-log lines and when asked; whether `claude` runs in it without the integration, and when checked.
+    git_sum: Option<crate::sidebar::GitSummary>,
+    git_sum_at: Option<Instant>,
+    git_sum_busy: bool,
+    git_branch: Option<String>,
+    log: Vec<haetty_proto::wire::LogEvent>,
+    log_at: Option<Instant>,
+    unintegrated: bool,
+    fg_at: Option<Instant>,
 }
 
 impl Tab {
@@ -295,9 +317,19 @@ struct Win {
     clear_hint: u8,
     saving_mode: bool,
     context_window: u64,
-    /// Status panel: open, width in columns (persisted in the state dir).
-    panel_open: bool,
+    /// The sidebar (DESIGN.md §13.3; stage PH): shown on the right when wide enough (the person can hide it; kept in
+    /// the ui state file), its width with the line (columns), shown over the terminal (a narrow window), folded
+    /// sections, what each of its rows does, the overlay's keyboard selection, a press taken by it, an agent's record.
+    sidebar_shown: bool,
     panel_width: u16,
+    sidebar_overlay: bool,
+    folded: Vec<crate::sidebar::Section>,
+    sidebar_hits: Vec<(usize, crate::sidebar::Hit)>,
+    sidebar_sel: Option<usize>,
+    sidebar_press: bool,
+    agent_view: Option<crate::agentview::AgentView>,
+    /// The next redraw of running agents' elapsed times (each second).
+    sidebar_second: Option<Instant>,
     diff: Option<DiffView>,
     last_slow_draw: Option<Instant>,
     /// Tabs not opened yet: waiting for the scale (Wayland; A7).
@@ -504,8 +536,15 @@ impl App {
             restore_claude: self.opts.config.restore_claude,
             notifications: self.opts.config.notifications,
             observe_new_tabs: self.opts.config.observe_new_tabs,
-            panel_open: ui_state.0,
-            panel_width: ui_state.1,
+            sidebar_shown: ui_state.shown,
+            panel_width: ui_state.width.unwrap_or(self.opts.config.sidebar_width).clamp(24, 80),
+            sidebar_overlay: false,
+            folded: ui_state.folded,
+            sidebar_hits: vec![],
+            sidebar_sel: None,
+            sidebar_press: false,
+            agent_view: None,
+            sidebar_second: None,
             diff: None,
             last_slow_draw: None,
             cfg: self.opts.config.clone(),
@@ -658,15 +697,41 @@ impl Win {
         u16::from(self.integrated || self.tabs.len() >= 2)
     }
 
-    /// Columns of the status panel (with its separator), when shown: the
-    /// window must keep at least 40 columns for the program.
+    /// Columns of the docked sidebar (with its line): `sidebar = auto`, not hidden by the person, and a window of at
+    /// least `sidebar-min-cols` columns (DESIGN.md §13.3). The same for every tab, so switching tabs never resizes.
     fn panel_cols(&self) -> u16 {
-        let w = self.panel_width + 1;
-        if self.panel_open && self.grid.cols >= w + 40 {
-            w
+        crate::sidebar::docked_cols(
+            self.grid.cols,
+            self.cfg.sidebar_auto,
+            self.cfg.sidebar_min_cols,
+            self.panel_width,
+            self.sidebar_shown,
+        )
+    }
+
+    /// The window is wide enough for the docked sidebar (and `sidebar = auto`).
+    fn sidebar_wide(&self) -> bool {
+        crate::sidebar::docked_cols(
+            self.grid.cols,
+            self.cfg.sidebar_auto,
+            self.cfg.sidebar_min_cols,
+            self.panel_width,
+            true,
+        ) > 0
+    }
+
+    /// Columns of the sidebar shown over the terminal (narrow window, Ctrl+Shift+S): the terminal keeps its size.
+    fn overlay_cols(&self) -> u16 {
+        if self.panel_cols() == 0 && self.sidebar_overlay {
+            self.panel_width.min(self.grid.cols.saturating_sub(10))
         } else {
             0
         }
+    }
+
+    /// The status row of the active tab: Claude Code tabs, while the sidebar is not docked (it shows all of it).
+    fn status_rows(&self) -> u16 {
+        u16::from(self.tabs.get(self.active).is_some_and(|t| t.integrated) && self.panel_cols() == 0)
     }
 
     /// The grid a tab's program gets: the window minus the tab bar, the
@@ -674,7 +739,8 @@ impl Win {
     fn term_grid_for(&self, integrated: bool, tabs: usize) -> GridSize {
         let mut g = self.grid;
         let top = u16::from(self.integrated || tabs >= 2);
-        g.rows = g.rows.saturating_sub(top + u16::from(integrated)).max(1);
+        let status = u16::from(integrated && self.panel_cols() == 0);
+        g.rows = g.rows.saturating_sub(top + status).max(1);
         g.cols = g.cols.saturating_sub(self.panel_cols()).max(1);
         g
     }
@@ -990,6 +1056,14 @@ impl Win {
             git_read: None,
             task: None,
             observable: false,
+            git_sum: None,
+            git_sum_at: None,
+            git_sum_busy: false,
+            git_branch: None,
+            log: vec![],
+            log_at: None,
+            unintegrated: false,
+            fg_at: None,
         };
         tab.task = tab
             .spec
@@ -1214,6 +1288,12 @@ impl Win {
 
     /// Opens the diff view `mode` for the active tab (`old`: the view it
     /// replaces, for a reread keeping its place).
+    /// The diff of one file against HEAD (a click on the sidebar's Files row).
+    fn open_file_diff(&mut self, path: &str) {
+        self.diff = Some(diffview::DiffView::git(DiffMode::Head, gitview::head(path, &gitview::Limits::default())));
+        self.full = true;
+    }
+
     fn open_diff(&mut self, mode: DiffMode, old: Option<&diffview::DiffView>) {
         let id = self.tab().session.id.clone();
         let edit = match self.client.get_edit(&id) {
@@ -1252,7 +1332,7 @@ impl Win {
             log::info!("diff view {}: {:?} to collect, {} rows", mode.label(), t, v.row_count(cols));
         }
         if let Some(o) = old {
-            let area = self.grid.rows.saturating_sub(self.top() + u16::from(self.tab().integrated)) as usize;
+            let area = self.grid.rows.saturating_sub(self.top() + self.status_rows()) as usize;
             v.keep_scroll(o, area, (self.grid.cols - self.panel_cols()) as usize);
         }
         self.diff = Some(v);
@@ -1331,7 +1411,7 @@ impl Win {
             }
             Action::DiffView => {
                 if self.diff.take().is_none() {
-                    if !self.tab().integrated {
+                    if !self.tab().integrated && self.tab().claude.is_none() {
                         self.show_hint("the diff view is for Claude Code tabs".into());
                     } else {
                         self.open_diff(DiffMode::Edit, None);
@@ -1399,18 +1479,23 @@ impl Win {
                 self.recompose();
             }
             Action::StatusPanel => {
-                self.panel_open = !self.panel_open;
-                save_ui_state(self.panel_open, self.panel_width);
-                if self.panel_open && self.panel_cols() == 0 {
-                    self.show_hint("the window is too narrow for the status panel".into());
+                if self.sidebar_wide() {
+                    // The person's choice: the terminal resizes once (DESIGN.md §13.3).
+                    self.sidebar_shown = !self.sidebar_shown;
+                    self.save_ui();
+                    self.relayout();
+                } else {
+                    // Narrow (or `sidebar = hide`): over the terminal, which keeps its size.
+                    self.sidebar_overlay = !self.sidebar_overlay;
+                    self.sidebar_sel = self.sidebar_overlay.then_some(0);
+                    self.full = true;
+                    self.recompose();
                 }
-                self.relayout();
             }
             Action::StatusPanelWider | Action::StatusPanelNarrower => {
-                let d: i32 = if a == Action::StatusPanelWider { 4 } else { -4 };
+                let d: i32 = if a == Action::StatusPanelWider { 2 } else { -2 };
                 self.panel_width = (self.panel_width as i32 + d).clamp(24, 80) as u16;
-                self.panel_open = true;
-                save_ui_state(self.panel_open, self.panel_width);
+                self.save_ui();
                 self.relayout();
             }
             Action::ReloadConfig => {
@@ -1606,6 +1691,7 @@ impl Win {
                 self.tabs[i].claude.as_ref().map(|c| c.claude_session.clone()).unwrap_or_default(),
             );
             self.tabs[i].claude = claude;
+            self.tabs[i].log_at = None;
             self.attention_changed(i, before);
             let sid_changed = self.tabs[i].claude.as_ref().is_some_and(|c| c.claude_session != before_sid);
             if i != self.active {
@@ -1715,19 +1801,27 @@ impl Win {
         });
         let tab = self.tab();
         let diff_key = self.keys.chord_for(Action::DiffView).map(|c| c.to_string()).unwrap_or_default();
-        let status = tab.integrated.then(|| {
+        let docked = self.panel_cols() as usize;
+        let status = (tab.integrated && docked == 0).then(|| {
             let gear = gear_at.is_some();
             ui::status_row_gear(tab.claude.as_deref(), self.grid.cols as usize, g, &diff_key, self.saving_mode, gear)
         });
-        let pc = self.panel_cols() as usize;
+        let pc = docked.max(self.overlay_cols() as usize);
         let area = (self.grid.rows as usize).saturating_sub(self.top() as usize + usize::from(status.is_some()));
         if (self.token_status || self.clear_hint > 0) && pc > 0 {
             self.tokens.follow(self.watched_transcripts());
         }
-        let workers = if pc > 0 { self.worker_lines() } else { vec![] };
-        let tab_tokens = self.token_line_of(tab);
-        let panel =
-            (pc > 0).then(|| ui::panel(tab.claude.as_deref(), &workers, pc, area, g, now_ms(), tab_tokens.as_deref()));
+        let mut new_hits = vec![];
+        let panel = (pc > 0).then(|| {
+            let (rows, hits) = self.sidebar_rows(pc, area, g);
+            new_hits = hits;
+            rows
+        });
+        let agent_rows = self.agent_view.as_ref().map(|v| {
+            let w = (self.grid.cols as usize).saturating_sub(docked);
+            (v.draw(w, area, g, now_ms()), None)
+        });
+        let settings = settings.or(agent_rows);
         let next = Compose {
             screen,
             accents: &self.theme.palette,
@@ -1750,6 +1844,7 @@ impl Win {
             }),
         }
         .build();
+        self.sidebar_hits = new_hits;
         if self.composed.as_ref().is_some_and(|s| (s.cols, s.rows) != (next.cols, next.rows)) {
             self.full = true;
         }
@@ -1782,7 +1877,8 @@ impl Win {
         let snap = self.tab().snap.as_ref()?;
         let (col, row) = self.layout.cell_at(self.origin(), self.mouse.x, self.mouse.y, self.grid);
         let row = row.checked_sub(self.top())?;
-        if col >= self.grid.cols.saturating_sub(self.panel_cols()) {
+        if col >= self.grid.cols.saturating_sub(self.panel_cols().max(self.overlay_cols())) || self.agent_view.is_some()
+        {
             return None;
         }
         snap.cell(col, row)?.link.clone()
@@ -1894,7 +1990,17 @@ impl Win {
                 }
                 return;
             }
-            if let Some(a) = self.keys.action(&chord) {
+            let action = self.keys.action(&chord);
+            if action.is_none() && (self.agent_view.is_some() || self.overlay_cols() > 0) {
+                let taken = if self.agent_view.is_some() { self.agent_key(&chord) } else { self.sidebar_key(&chord) };
+                if taken {
+                    if let Some(c) = code {
+                        self.swallowed.insert(c);
+                    }
+                    return;
+                }
+            }
+            if let Some(a) = action {
                 if let Some(c) = code {
                     self.swallowed.insert(c);
                 }
@@ -1924,7 +2030,7 @@ impl Win {
         if self.diff.is_some() {
             if ev.state == ElementState::Pressed {
                 if let Some(chord) = chord_of(ev, self.mods) {
-                    let area = self.grid.rows.saturating_sub(self.top() + u16::from(self.tab().integrated)) as usize;
+                    let area = self.grid.rows.saturating_sub(self.top() + self.status_rows()) as usize;
                     let cols = (self.grid.cols - self.panel_cols()) as usize;
                     let key = self.diff.as_mut().map(|d| d.key(&chord.key, chord.shift, area, cols));
                     match key {
@@ -1953,7 +2059,7 @@ impl Win {
             }
             return;
         }
-        if self.palette.is_some() || self.tab().exited.is_some() {
+        if self.palette.is_some() || self.tab().exited.is_some() || self.agent_view.is_some() {
             return;
         }
         let unshifted = match ev.key_without_modifiers() {
@@ -2206,8 +2312,9 @@ impl Win {
         }
         let relayout = self.settle_relayout(now);
         let update = self.update_tick(now);
+        let sidebar = if self.daemon_lost { None } else { self.sidebar_tick(now) };
         let hint = self.hint.as_ref().filter(|_| !self.daemon_lost).map(|(_, t)| *t + CONFIRM);
-        [hint, relayout, update].into_iter().flatten().min()
+        [hint, relayout, update, sidebar].into_iter().flatten().min()
     }
 }
 
@@ -2257,27 +2364,42 @@ fn notify(tab: &str, body: &str) {
     let _ = (tab, body);
 }
 
-/// Status panel state (`ui` in the state directory, `key = value`).
-fn load_ui_state() -> (bool, u16) {
+/// The sidebar's window state (`ui` in the state directory, `key = value`; stage PH). The status panel's old keys
+/// (`status-panel`, `status-panel-width`) are not read: the sidebar shows by default.
+pub(crate) struct UiState {
+    pub shown: bool,
+    pub width: Option<u16>,
+    pub folded: Vec<crate::sidebar::Section>,
+}
+
+pub(crate) fn load_ui_state() -> UiState {
     let text = std::fs::read_to_string(haetty_proto::paths::state_dir().join("ui")).unwrap_or_default();
-    let mut st = (false, 36u16);
+    let mut st = UiState { shown: true, width: None, folded: vec![] };
     for line in text.lines() {
         match line.split_once('=').map(|(k, v)| (k.trim(), v.trim())) {
-            Some(("status-panel", v)) => st.0 = v == "open",
-            Some(("status-panel-width", v)) => st.1 = v.parse().unwrap_or(36u16).clamp(24, 80),
+            Some(("sidebar", v)) => st.shown = v != "hidden",
+            Some(("sidebar-width", v)) => st.width = v.parse().ok().map(|w: u16| w.clamp(24, 80)),
+            Some(("sidebar-folded", v)) => {
+                st.folded = v.split(',').filter_map(crate::sidebar::Section::parse).collect()
+            }
             _ => {}
         }
     }
     st
 }
 
-fn save_ui_state(open: bool, width: u16) {
+fn save_ui_state(st: &UiState) {
     let dir = haetty_proto::paths::state_dir();
     let _ = std::fs::create_dir_all(&dir);
-    let text = format!(
-        "# haetty window state\nstatus-panel = {}\nstatus-panel-width = {width}\n",
-        if open { "open" } else { "closed" }
+    let folded: Vec<&str> = st.folded.iter().map(|s| s.name()).collect();
+    let mut text = format!(
+        "# haetty window state\nsidebar = {}\nsidebar-folded = {}\n",
+        if st.shown { "shown" } else { "hidden" },
+        folded.join(",")
     );
+    if let Some(w) = st.width {
+        text.push_str(&format!("sidebar-width = {w}\n"));
+    }
     if let Err(e) = std::fs::write(dir.join("ui"), text) {
         log::warn!("ui state: {e}");
     }
@@ -2348,6 +2470,10 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Update(u) => {
                 win.updater.handle(u);
                 win.recompose();
+                return;
+            }
+            UserEvent::Sidebar(e) => {
+                win.sidebar_event(e);
                 return;
             }
         };
@@ -2491,6 +2617,11 @@ impl ApplicationHandler<UserEvent> for App {
                             }
                             return;
                         }
+                        // The sidebar (stage PH): its rows act, nothing reaches the program.
+                        if b == MouseButton::Left && win.sidebar_click() {
+                            win.sidebar_press = true;
+                            return;
+                        }
                         // Ctrl+click on a hyperlink (DESIGN.md §2.2); not
                         // sent to the program.
                         if b == MouseButton::Left && win.mods.control_key() && win.link_click() {
@@ -2510,6 +2641,9 @@ impl ApplicationHandler<UserEvent> for App {
                             return;
                         }
                         if b == MouseButton::Left && std::mem::take(&mut win.gear_press) {
+                            return;
+                        }
+                        if b == MouseButton::Left && std::mem::take(&mut win.sidebar_press) {
                             return;
                         }
                         if win.settings_panel.is_some() {

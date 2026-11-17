@@ -131,8 +131,7 @@ impl Win {
 
     /// Columns and rows of the screen area (what the panel covers).
     fn settings_area(&self) -> (usize, usize) {
-        let status = u16::from(self.tabs.get(self.active).is_some_and(|t| t.integrated));
-        let rows = self.grid.rows.saturating_sub(self.top() + status) as usize;
+        let rows = self.grid.rows.saturating_sub(self.top() + self.status_rows()) as usize;
         let cols = self.grid.cols.saturating_sub(self.panel_cols()) as usize;
         (cols, rows)
     }
@@ -393,7 +392,8 @@ impl Win {
             return None;
         }
         let at = Some((rows - 1, cols - 1));
-        if self.tab().integrated {
+        // A Claude Code tab's status row, or the docked sidebar's corner: haetty's own cell, always shown.
+        if self.tab().integrated || self.panel_cols() > 0 {
             return at;
         }
         let tracking = self.tab().snap.as_ref().is_some_and(|s| s.modes.mouse_tracking);

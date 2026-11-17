@@ -5,6 +5,7 @@
 
 /// `tpgid` from the text of `/proc/PID/stat` (the field after `tty_nr`; the command name may hold spaces and
 /// parentheses, so fields are counted after the last `)`).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))] // tests and Linux only
 pub fn tpgid(stat: &str) -> Option<i32> {
     let rest = &stat[stat.rfind(')')? + 1..];
     // state ppid pgrp session tty_nr tpgid
@@ -13,6 +14,7 @@ pub fn tpgid(stat: &str) -> Option<i32> {
 
 /// Whether a command line (NUL-separated, as `/proc/PID/cmdline`) is Claude Code: its program is named `claude`
 /// (the native build is a link named so), or a script of the npm package runs under node.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))] // tests and Linux only
 pub fn is_claude_cmdline(cmdline: &[u8]) -> bool {
     let mut words = cmdline.split(|b| *b == 0).filter(|w| !w.is_empty()).map(String::from_utf8_lossy);
     let base = |w: &str| w.rsplit(['/', '\\']).next().unwrap_or(w).to_ascii_lowercase();

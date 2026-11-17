@@ -291,6 +291,13 @@ keybind = ctrl+shift+n=new_tab
 | `settings-button` | `auto` / `always` / `never` — the dim ⚙ that opens the settings: auto: always in a Claude Code tab's status row, in other tabs only while the pointer is near the bottom-right corner; always: in other tabs whenever the pointer is in the window; never: no button (Ctrl+, and the palette's "Settings" stay) | `auto` |
 | `scrollback-limit` | bytes of scrollback per session, as in Ghostty (plain bytes, `_` allowed; rows of 120 columns take ~1.1 KB, the default keeps ~11 000 of them) | `12000000` |
 | `restore-tabs` | `true` / `false` — reopen the previous run's tabs at start | `true` |
+| `sidebar` | `auto` / `hide` — auto: the sidebar on the right from `sidebar-min-cols` columns on, for every tab (Ctrl+Shift+S hides or shows it; a narrower window shows it over the terminal); hide: only over the terminal, on Ctrl+Shift+S | `auto` |
+| `sidebar-width` | columns, the line included (24–80); Ctrl+Shift+Alt+→/← change it for the window | `42` |
+| `sidebar-min-cols` | the window's width in columns from which the sidebar stays on the right (narrower: over the terminal, on Ctrl+Shift+S) | `121` |
+| `sidebar-agents` | `true` / `false` — the Agents section (subagents of the tab's Claude Code) | `true` |
+| `sidebar-files` | `true` / `false` — the Files section (files changed in the conversation; a shell tab: git changes) | `true` |
+| `sidebar-workers` | `true` / `false` — the Workers section (orchestrator tasks) | `true` |
+| `sidebar-log` | `true` / `false` — the Log section (the tab's recent events) | `true` |
 | `restore-claude` | `resume` / `shell` — a shell tab saved while `claude` ran in it: reopen the shell and run `claude --resume ID` there, or the shell only | `resume` |
 | `engine` | `ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native) | `ghostty` |
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |

@@ -26,6 +26,7 @@
 //! `--window-padding-color=extend`).
 #![cfg_attr(all(windows, not(debug_assertions), not(test)), windows_subsystem = "windows")]
 
+mod agentview;
 mod app;
 mod chrome;
 mod cli;
@@ -35,7 +36,6 @@ mod config_edit;
 mod damage;
 mod diffview;
 mod emoji;
-#[allow(dead_code)] // the sidebar uses it (stage PH, H2)
 mod fgproc;
 mod font;
 mod geom;
@@ -52,6 +52,7 @@ mod reftest;
 mod render;
 mod run;
 mod settings;
+mod sidebar;
 mod tabnames;
 mod tabsets;
 mod tasks;

@@ -33,18 +33,26 @@ Principle: nothing on screen without a job, and every function one keystroke
 away. Functions stay; what changes is when they are visible.
 
 ### 2.1 Layout
-- Default view: the terminal (Claude Code) and one status line. Tab bar only
-  with two or more tabs. The status line exists only in Claude Code tabs and
-  shows only when it has something to show (a reserved row stays blank until
-  then, §3.10); a shell tab has no status line and gets the whole height. Status panel, diff pane and worker list are hidden
-  by default and opened by key, palette or click; open/closed state and sizes
+- Default view: the terminal and, from `sidebar-min-cols` (121) window columns on, the **sidebar** on the right
+  (§13.3; stage PH, approved): `sidebar-width` (42) columns with its line, the same for every tab and shown from the
+  moment a tab opens, so switching tabs or any event never resizes a terminal; only the person's window resize or
+  Ctrl+Shift+S (hide/show, kept per user) does. Narrower (or `sidebar = hide`): no sidebar; Ctrl+Shift+S shows it over
+  the terminal, which keeps its size. Tab bar only with two or more tabs. While the sidebar is docked a Claude Code tab
+  has no status line (the sidebar shows all of it); without it, the status line exists only in Claude Code tabs and
+  shows only when it has something to show (a reserved row stays blank until then, §3.10); a shell tab has no status
+  line and gets the whole height. A `claude` started in a shell tab (the proxy, §13) never adds a status line. The
+  diff view and an agent's record are hidden by default and opened by key, palette or click; folded sections and sizes
   persist per user.
 - Events never change the layout. An edit, a finished worker or a pending
   permission shows an indicator in the status line or on the tab
   ("3 files changed · Ctrl+Shift+D"; plain Ctrl+D belongs to Claude Code, §3.10); only the user opens panes. Reason: every
   resize makes Claude Code's fullscreen renderer redraw the whole screen.
-- No information Claude Code already shows (model, effort, mode). The status
-  line and panel show context use, rate limits, cost and workers.
+- The status line and the sidebar show context use, rate limits, cost and workers; the sidebar's Lead also names the
+  model and effort (stage PH: the harness view of many agents needs them per agent), never the mode. Sidebar sections:
+  Lead, Agents (one line per subagent: state glyph, type, short model, current tool or calls, elapsed; nesting by
+  indent and └; worktree and fork as dim tags; running first, the last 6 finished, "+ N earlier"), Files, Workers, Log
+  (the tab's recent events), and a footer (folder:branch, last update); a shell tab shows its folder, branch and git
+  changes instead of the Lead and Agents. Sections fold by a click on their title.
 
 ### 2.2 Visual rules
 - Colours come from one theme (Ghostty's theme format, §3.14); the default
@@ -61,7 +69,10 @@ away. Functions stay; what changes is when they are visible.
 - One font, one size everywhere; hierarchy by weight and dimming only. State
   glyphs (● ✓ ✗ ? -) instead of icons.
 - Space instead of boxes; where a separator is needed, a 1 px low-contrast
-  line. No shadows, gradients or rounded boxes inside the window.
+  line. No shadows, gradients or rounded boxes inside the window. The sidebar has the terminal's own background and
+  a 1 px low-contrast line on its left; section titles one step brighter (bold), items in the normal or dim grey; its
+  only colours are state: an agent waiting for a permission answer shows `?` in colour 9, usage ≥ 80 % / ≥ 95 % as in
+  the status line. Nothing in it blinks or animates; running agents' elapsed times change once a second.
 - Tab bar: on the terminal's own background (no band); the active tab's
   text in the foreground colour with a thin line of that colour under its
   whole share (the font's stroke: 1 px at 100 %, 2 px at 200 %), other tabs'
@@ -100,7 +111,10 @@ away. Functions stay; what changes is when they are visible.
 ### 2.3 Checks (report after implementation)
 - Layout changes without user input: 0.
 - Accent colours on an idle screen: 0.
-- With one tab: no element besides the terminal and the status line.
+- With one tab: no element besides the terminal and the status line (or, from `sidebar-min-cols`, the sidebar).
+- Sidebar (stage PH): the terminal's grid never changes with an event (`sidebar::docked_cols` takes only the window
+  and the settings); greys only on an idle screen and while agents run, the one exception a waiting agent's `?`
+  (`sidebar` unit tests; reference frames `claude-sidebar`, `workers`).
 - Settings button (§2.4): it adds no layout change (a shell tab's button is drawn over a cell, the session's size
   stays); on an idle screen it is grey (`scripts/e2e/design-2-3.sh`: its Claude Code tab shows the button).
 

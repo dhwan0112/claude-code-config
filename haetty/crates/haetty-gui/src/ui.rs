@@ -479,11 +479,11 @@ impl Palette {
 
 /// A percentage with a fixed width ("  7%", " 42%", "100%"): the row does
 /// not shift while numbers change.
-fn pct(v: f32) -> String {
+pub(crate) fn pct(v: f32) -> String {
     format!("{:>3.0}%", v.clamp(0.0, 999.0))
 }
 
-fn level_color(v: f32, g: Greys) -> Rgb {
+pub(crate) fn level_color(v: f32, g: Greys) -> Rgb {
     if v >= 95.0 {
         g.ask
     } else if v >= 80.0 {
@@ -605,7 +605,7 @@ pub fn status_row(info: Option<&ClaudeInfo>, cols: usize, g: Greys, diff_key: &s
 }
 
 /// "1.2M", "200k", "950".
-fn human(n: u64) -> String {
+pub(crate) fn human(n: u64) -> String {
     match n {
         n if n >= 1_000_000 => format!("{:.1}M", n as f64 / 1e6),
         n if n >= 10_000 => format!("{}k", n / 1000),
@@ -614,18 +614,9 @@ fn human(n: u64) -> String {
     }
 }
 
-fn duration(ms: u64) -> String {
-    let s = ms / 1000;
-    match s {
-        s if s >= 3600 => format!("{}h{:02}m", s / 3600, s % 3600 / 60),
-        s if s >= 60 => format!("{}m{:02}s", s / 60, s % 60),
-        s => format!("{s}s"),
-    }
-}
-
 /// Local time of a Unix timestamp as `MM-DD HH:MM` (UTC offset from the
 /// platform is not available without a dependency: shown in UTC, marked).
-fn when(unix_s: i64) -> String {
+pub(crate) fn when(unix_s: i64) -> String {
     let days = unix_s.div_euclid(86_400);
     let secs = unix_s.rem_euclid(86_400);
     // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
@@ -640,11 +631,7 @@ fn when(unix_s: i64) -> String {
     format!("{m:02}-{d:02} {:02}:{:02} UTC", secs / 3600, secs % 3600 / 60)
 }
 
-/// The status panel (right column, hidden by default): what Claude Code's
-/// own screen does not show — limits with their reset times, subagents,
-/// the last edit, cache, lines, session id. `w` columns, `h` rows; the
-/// first column is the separator.
-/// One orchestrator task in the status panel's WORKERS section.
+/// One orchestrator task (the sidebar's Workers section).
 #[derive(Clone, Debug, Default)]
 pub struct WorkerLine {
     /// Glyph, id, title, state.
@@ -654,123 +641,6 @@ pub struct WorkerLine {
     pub next: Option<String>,
     /// `token-status`: the worker's tokens line (`tokens.rs`), when it is shown.
     pub tokens: Option<String>,
-}
-
-pub fn panel(
-    info: Option<&ClaudeInfo>,
-    workers: &[WorkerLine],
-    w: usize,
-    h: usize,
-    g: Greys,
-    now_ms: u64,
-    tokens: Option<&str>,
-) -> Vec<Vec<Cell>> {
-    let bg = g.bar;
-    let mut rows = vec![vec![blank(g.normal, bg); w]; h];
-    for r in rows.iter_mut() {
-        if let Some(c) = r.first_mut() {
-            *c = Cell { text: "│".into(), ..blank(g.dim, bg) };
-        }
-    }
-    let mut lines: Vec<(String, String, Rgb)> = vec![];
-    let mut add = |k: &str, v: String, c: Rgb| lines.push((k.to_string(), v, c));
-    if let Some(t) = tokens {
-        add("tokens", t.to_string(), g.normal);
-    }
-    let add_workers = |add: &mut dyn FnMut(&str, String, Rgb)| {
-        if workers.is_empty() {
-            return;
-        }
-        add("workers", format!("{} task(s)", workers.len()), g.normal);
-        for wl in workers {
-            add("", wl.text.clone(), g.normal);
-            if let Some(t) = &wl.tokens {
-                add("tokens", t.clone(), g.dim);
-            }
-            if let Some(b) = &wl.blockers {
-                add("blockers", b.clone(), g.normal);
-            }
-            if let Some(n) = &wl.next {
-                add("next", n.clone(), g.normal);
-            }
-        }
-    };
-    let Some(i) = info else {
-        add("", "No Claude Code status yet.".into(), g.dim);
-        add_workers(&mut add);
-        draw_lines(&mut rows, &lines, g);
-        return rows;
-    };
-    if !i.name.is_empty() {
-        add("session", i.name.clone(), g.strong);
-    }
-    if !i.claude_session.is_empty() {
-        add("id", i.claude_session.chars().take(8).collect(), g.dim);
-    }
-    if let Some(c) = i.context_pct {
-        let size = i.context_size.map(|s| format!(" of {}", human(s))).unwrap_or_default();
-        add("context", format!("{}{size}", pct(c).trim_start()), level_color(c, g));
-    }
-    for l in &i.limits {
-        let name = match l.name.as_str() {
-            "five_hour" => "5h limit".to_string(),
-            "seven_day" => "7d limit".to_string(),
-            other => other.replace('_', " "),
-        };
-        let reset = l.resets_at.map(|t| format!(" · {}", when(t))).unwrap_or_default();
-        add(&name, format!("{}{reset}", pct(l.used_pct).trim_start()), level_color(l.used_pct, g));
-    }
-    if let Some(c) = i.cost_usd {
-        let est = if i.limits.is_empty() { "" } else { " (API estimate)" };
-        add("cost", format!("${c:.2}{est}"), g.normal);
-    }
-    if i.lines_added + i.lines_removed > 0 {
-        add("lines", format!("+{} -{}", i.lines_added, i.lines_removed), g.normal);
-    }
-    if let (Some(w), hit) = (i.cache_warm, i.cache_hit_pct) {
-        let hit = hit.map(|h| format!(" · hit {h:.0}%")).unwrap_or_default();
-        add("cache", format!("{}{hit}", if w { "warm" } else { "cold" }), g.normal);
-    }
-    if i.files_changed > 0 {
-        add("files", format!("{} changed, {} edits", i.files_changed, i.edits), g.normal);
-    }
-    if let Some(e) = &i.last_edit {
-        let name = e.path.rsplit(['/', '\\']).next().unwrap_or(&e.path);
-        add("last edit", format!("{name} +{} -{} · {}", e.added, e.removed, e.agent), g.normal);
-    }
-    let running: Vec<_> = i.workers.iter().filter(|w| w.ended_ms.is_none()).collect();
-    if !i.workers.is_empty() {
-        add("subagents", format!("{} running, {} done", running.len(), i.workers.len() - running.len()), g.normal);
-    }
-    for wk in &i.workers {
-        let (mark, t) = match wk.ended_ms {
-            None => ("●", duration(now_ms.saturating_sub(wk.started_ms))),
-            Some(e) => ("✓", format!("took {}", duration(e.saturating_sub(wk.started_ms)))),
-        };
-        add("", format!("{mark} {} {t}", if wk.kind.is_empty() { "agent" } else { &wk.kind }), g.normal);
-    }
-    add_workers(&mut add);
-    if i.updated_ms > 0 {
-        add("updated", format!("{} ago", duration(now_ms.saturating_sub(i.updated_ms))), g.dim);
-    }
-    draw_lines(&mut rows, &lines, g);
-    rows
-}
-
-fn draw_lines(rows: &mut [Vec<Cell>], lines: &[(String, String, Rgb)], g: Greys) {
-    let w = rows.first().map_or(0, |r| r.len());
-    if w < 6 {
-        return;
-    }
-    for (r, (k, v, c)) in rows.iter_mut().skip(1).zip(lines) {
-        if k.is_empty() {
-            put(r, 3, &fit(v, w - 4), *c, g.bar, false);
-        } else {
-            let x = put(r, 2, &fit(k, 10), g.dim, g.bar, false);
-            let x = x.max(12);
-            put(r, x, &fit(v, w.saturating_sub(x + 1)), *c, g.bar, false);
-        }
-    }
 }
 
 /// A hyperlink's target in `w` cells. Where it goes is what must show: the
@@ -1275,48 +1145,7 @@ mod tests {
     }
 
     #[test]
-    fn panel_shows_what_claude_code_does_not() {
-        let g = Greys::from(FG, BG);
-        let mut i = ClaudeInfo {
-            claude_session: "0f0fc5c9-9b5a".into(),
-            context_pct: Some(42.0),
-            context_size: Some(200_000),
-            ..Default::default()
-        };
-        i.limits.push(haetty_proto::wire::Limit {
-            name: "five_hour".into(),
-            used_pct: 12.0,
-            resets_at: Some(1_793_900_000),
-        });
-        i.workers.push(haetty_proto::wire::Worker {
-            id: "a".into(),
-            kind: "Explore".into(),
-            started_ms: 1000,
-            ended_ms: None,
-            ..Default::default()
-        });
-        i.updated_ms = 5000;
-        let p = panel(Some(&i), &[], 40, 12, g, 66_000, None);
-        let all: Vec<String> = p.iter().map(|r| text(r)).collect();
-        let joined = all.join("\n");
-        assert!(joined.contains("context   42% of 200k"), "{joined}");
-        assert!(joined.contains("5h limit  12% · 11-05 17:33 UTC"), "{joined}");
-        assert!(joined.contains("● Explore 1m05s"), "{joined}");
-        assert!(joined.contains("updated   1m01s ago"), "{joined}");
-        assert!(all.iter().all(|r| r.starts_with('│')));
-        // The WORKERS section, also before Claude Code has said anything.
-        let wl = [
-            WorkerLine {
-                text: "✓ t1 Fix · verified".into(),
-                blockers: Some("none".into()),
-                next: Some("merge".into()),
-                tokens: None,
-            },
-            WorkerLine { text: "… t2 Port · running".into(), ..Default::default() },
-        ];
-        let joined = panel(None, &wl, 40, 12, g, 0, None).iter().map(|r| text(r)).collect::<Vec<_>>().join("\n");
-        assert!(joined.contains("workers   2 task(s)"), "{joined}");
-        assert!(joined.contains("✓ t1 Fix · verified") && joined.contains("next      merge"), "{joined}");
+    fn times_and_sizes() {
         assert_eq!(when(0), "01-01 00:00 UTC");
         assert_eq!(human(1_234_567), "1.2M");
     }

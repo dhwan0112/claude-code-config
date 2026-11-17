@@ -161,7 +161,7 @@ pub struct SettingsPanel {
     /// The bottom line's message (saved, re-read, …) until the selection moves.
     note: Option<String>,
     /// The groups in their order: Updates first while a newer version is out (stage PU).
-    order: [Group; 7],
+    order: [Group; 8],
     update: UpdateView,
     /// Restart or Roll back pressed once: the next press does it (the bottom line says what it ends).
     confirm: Option<Up>,
@@ -244,6 +244,7 @@ impl SettingsPanel {
                 Group::Window,
                 Group::Terminal,
                 Group::Claude,
+                Group::Sidebar,
                 Group::Advanced,
             ];
         }
@@ -1237,7 +1238,7 @@ mod tests {
         for (cols, rows) in [(100, 30), (40, 12), (20, 4)] {
             let mut grid = vec![vec![Cell::default(); cols]; rows];
             let mut p = SettingsPanel::default();
-            p.set_group(5);
+            p.set_group(6);
             p.draw(&mut grid, g, &mut fake());
             let text: String =
                 grid.iter().map(|r| r.iter().map(|c| c.text.as_str()).collect::<String>() + "\n").collect();

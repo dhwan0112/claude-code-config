@@ -255,12 +255,35 @@ fn claude_info() -> ClaudeInfo {
             removed: 4,
             diffable: true,
         }),
-        workers: vec![Worker {
-            id: "w1".into(),
-            kind: "Explore".into(),
-            started_ms: NOW_MS - 95_000,
-            ended_ms: Some(NOW_MS - 50_000),
-            ..Default::default()
+        effort: "high".into(),
+        workers: vec![
+            Worker {
+                id: "w2".into(),
+                kind: "Plan".into(),
+                model: "claude-sonnet-5-5".into(),
+                started_ms: NOW_MS - 30_000,
+                tool: "Read".into(),
+                target: "parser.rs".into(),
+                depth: 1,
+                ..Default::default()
+            },
+            Worker {
+                id: "w1".into(),
+                kind: "Explore".into(),
+                model: "claude-haiku-5-5".into(),
+                started_ms: NOW_MS - 95_000,
+                ended_ms: Some(NOW_MS - 50_000),
+                calls: 7,
+                depth: 1,
+                ..Default::default()
+            },
+        ],
+        files: vec![haetty_proto::wire::FileStat {
+            path: "src/parser.rs".into(),
+            added: 12,
+            removed: 4,
+            edits: 2,
+            at_ms: NOW_MS - 20_000,
         }],
         updated_ms: NOW_MS - 2_000,
         ..Default::default()
@@ -358,8 +381,26 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
     let row = titlebar::row(&two, 0, COLS as usize, g, "", &b, Some(Button::Close), false);
     out.push(("integrated-tabs", Compose { tab_bar: Some(row), ..compose(&s) }.build(), None, None));
 
+    // The docked sidebar (DESIGN.md §13.3, stage PH): no status row, the settings button in its corner.
     let info = claude_info();
-    let area = ROWS as usize - 1;
+    let area = ROWS as usize;
+    let side = |info: Option<&ClaudeInfo>, workers: &[crate::sidebar::WorkerRow], h: usize| {
+        let m = crate::sidebar::Model {
+            claude: info,
+            folder: "~/projects/haetty".into(),
+            branch: Some("main".into()),
+            git: None,
+            workers,
+            log: &[],
+            unintegrated: false,
+            folded: &[],
+            hidden: &[],
+            tokens: None,
+            now_ms: NOW_MS,
+            selected: None,
+        };
+        crate::sidebar::draw(&m, PANEL_COLS, h, g).0
+    };
     let s = screen(
         COLS - PANEL_COLS as u16,
         area as u16,
@@ -376,11 +417,10 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         ],
         Some((2, 8)),
     );
-    let status = ui::status_row_gear(Some(&info), COLS as usize, g, "ctrl+shift+d", false, true);
-    let panel = ui::panel(Some(&info), &[], PANEL_COLS, area, g, NOW_MS, None);
+    let panel = side(Some(&info), &[], area);
     out.push((
-        "claude-panel",
-        Compose { status: Some(status), panel: Some(panel), gear: Some(gear(false)), ..compose(&s) }.build(),
+        "claude-sidebar",
+        Compose { panel: Some(panel), gear: Some(gear(false)), ..compose(&s) }.build(),
         None,
         None,
     ));
@@ -412,31 +452,34 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         },
     ];
     let bar = ui::tab_bar(&tabs, 0, COLS as usize, g);
-    let lines = [
-        ui::WorkerLine {
+    let rows = [
+        crate::sidebar::WorkerRow {
             text: format!("{} t1 Fix the parser · verified", W::Verified.glyph()),
             blockers: Some("none".into()),
-            next: Some("review and merge task/t1-fix-the-parser".into()),
-            tokens: None,
+            next: Some("review and merge".into()),
+            session: "s1".into(),
+            ..Default::default()
         },
-        ui::WorkerLine { text: format!("{} t2 Port the tests · running", W::Running.glyph()), ..Default::default() },
-        ui::WorkerLine { text: format!("{} t3 Update docs · blocked", W::Blocked.glyph()), ..Default::default() },
+        crate::sidebar::WorkerRow {
+            text: format!("{} t2 Port the tests · running", W::Running.glyph()),
+            agents: 2,
+            session: "s2".into(),
+            ..Default::default()
+        },
+        crate::sidebar::WorkerRow {
+            text: format!("{} t3 Update docs · blocked", W::Blocked.glyph()),
+            session: "s3".into(),
+            ..Default::default()
+        },
     ];
-    let area = ROWS as usize - 2;
+    let area = ROWS as usize - 1;
     let s = screen(COLS - PANEL_COLS as u16, area as u16, &["● Done.", "", "STATUS: verified", "", "> "], Some((2, 4)));
-    let info = ClaudeInfo { turns: 1, updated_ms: NOW_MS - 2_000, ..Default::default() };
-    let status = ui::status_row_gear(Some(&info), COLS as usize, g, "ctrl+shift+d", false, true);
-    let panel = ui::panel(Some(&info), &lines, PANEL_COLS, area, g, NOW_MS, None);
+    let info =
+        ClaudeInfo { turns: 1, name: "t1 Fix the parser".into(), updated_ms: NOW_MS - 2_000, ..Default::default() };
+    let panel = side(Some(&info), &rows, area);
     out.push((
         "workers",
-        Compose {
-            tab_bar: Some(bar),
-            status: Some(status),
-            panel: Some(panel),
-            gear: Some(gear(false)),
-            ..compose(&s)
-        }
-        .build(),
+        Compose { tab_bar: Some(bar), panel: Some(panel), gear: Some(gear(false)), ..compose(&s) }.build(),
         None,
         None,
     ));
