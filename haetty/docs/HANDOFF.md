@@ -58,7 +58,8 @@ Stages:
 - P6: SSH, Tailscale (system OpenSSH). P7/P8: remote daemon, delegation (docs). P9: tidy-up (token tools, Windows
   hand-over, `NOT-RUN (foreground)`, the auto-mode deny path).
 
-**On hold** (no point moves): the differences to the newest Ghostty (F2), the default engine, H2, slow memory growth.
+**On hold** (no point moves): the differences to the newest Ghostty (F2), the default engine, H2, slow memory growth;
+since PH (2026-11-17) the terminal itself — engine, soaks, look polish, release tools — gets defect fixes only.
 
 ## 3. Rules in short (`CLAUDE.md` is the source)
 

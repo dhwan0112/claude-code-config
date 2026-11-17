@@ -183,3 +183,97 @@ only queries.
   unverified.
 - The auto-mode deny path (K1's open item): look with a real Claude Code, minimally. If the rules must change, propose
   only.
+
+## PH. The harness screen (points 3 and 1; the person's instruction of 2026-11-17)
+
+Change of direction: from this stage on, the terminal itself (engine, soaks, look polish, release tools) gets defect
+fixes only ("On hold" in HANDOFF). P3a (sidebar) is part of this stage; DESIGN §13.3's decisions stand, the Agents
+section grows. One session to the end, no check-ins; if the session limit hits, commit what is done in the order
+H1 → H2 → H3 and write the point to continue from into HANDOFF.
+
+Approved in advance:
+- DESIGN §2 change: §13.3's sidebar and H2's Agents and Log sections; code and reference frames in one commit.
+- Protected "settings haetty injects": H1's proxy injecting the **same** observing settings (hooks, status line) as a
+  Claude Code tab. The injected content itself does not grow. Separate commit, "protected area, approved".
+- Protocol 12 → 13 or more (ClaudeInfo fields). In the role table: a read-only query on the same line as ListSessions.
+- Real Claude Code: for H0, the person's real login (not an isolated HOME), at most two short runs (a one-sentence task
+  that starts subagents, model haiku). Every other test replays the recorded hook input.
+
+H0. Measurement (before code; a new file in docs/history/): record the hook input haetty gets in a real run (input text
+and file contents removed; field names and formats only): SubagentStart, SubagentStop, PreToolUse / PostToolUse inside
+a subagent, TaskCreated, TaskCompleted, WorktreeCreate, WorktreeRemove, Stop. Check where agent_id and agent_type come,
+whether a field names the parent agent (else a rule from the order of the Agent tool's PreToolUse and SubagentStart),
+whether background runs and forks (/subtask) can be told apart, where model and effort come from. The subagent
+transcript `~/.claude/projects/{project}/{sessionId}/subagents/agent-{agentId}.jsonl`: model, token use, which line
+holds the last message, when the file is written (the docs say asynchronously, possibly late). Whether the status-line
+JSON has effort, model or agent fields. "advisor" in the official docs (sub-agents, CLI reference, model settings): if
+present, its observable signals; if not, "not in the docs", not built. A table: item shown / source (hook, transcript,
+status line) / official doc basis. No item without a source; no progress %.
+
+H1. `claude` typed in a shell tab becomes a Claude Code tab (proxy). Every tab haetty opens gets an instance folder
+(under the runtime directory) first on PATH, holding a proxy named `claude` (Linux: a link to the haetty executable;
+Windows: decide after looking at claude.cmd / claude.exe; no new executable shipped). The proxy removes its folder from
+PATH, finds the real claude and execs it with the same arguments plus the Claude Code tab's `--settings` (the merge
+rule when the user gave `--settings`), passing the tab's session variables; stdio, exit code and signals pass through.
+No injection when: claude-integration = false; non-interactive (-p/--print …); stdout not a terminal; already through
+the proxy (recursion); a non-conversation subcommand (claude mcp, update, doctor …, the list from `claude --help`). Real
+claude not found: the shell's "command not found" exit code and one line. The tab becomes a Claude Code tab at its
+first SessionStart (attention marks, sidebar contents, tab names, permission mark and input hold) and returns to a
+shell tab when claude ends — without a terminal size change (docked sidebar stays; narrow: no status row reserved, state
+only via the sidebar overlay and the tab bar). Tab sets save the claude session id and folder; a restore opens the shell
+and runs `claude --resume <id>` there without asking (setting restore-claude = resume | shell, default resume); this
+closes HANDOFF P4's "hand-started claude restored as zsh". If the tab's foreground process is claude without reports:
+one sidebar line "claude is running without haetty's integration" with likely reasons (PATH, absolute path, alias);
+never read or change the user's shell files. claude inside ssh: out of scope (P6), no line. Tests: a fake claude for
+arguments, exit code, signals, recursion, non-interactive pass-through, --settings merge, claude-integration=false; Xvfb
+e2e: claude in a shell tab → marks and sidebar → back to shell → resume after restart; one case in tests/permission.rs
+that the permission mark and input hold work the same for a proxied claude.
+
+H2. Sidebar (§13.3 1–8 as decided, plus): a Lead line at the top (session name, model and effort when sourced, context
+%, 5h/7d limits, cost). Agents section (replaces §13.3's Subagents): header "Agents  2 running · 1 done"; one line per
+agent: state glyph (● running, ✓ done, ✗ failed, ◌ waiting in the background), agent_type, short model, elapsed time,
+and the current tool and target while running (file names cut on the left), or tool calls and tokens when done (when
+sourced); nesting by indent and └; worktree isolation and fork as dim tags; running first, the last 6 finished, the
+rest "+ 12 earlier". Click or Enter in the overlay list: the agent's record in a read-only overlay (prompt first line,
+tool calls with times, last message, errors; shown on screen, never logged; the file read off the UI thread, tail only;
+before the file exists, what the hooks gave). Colours: grey only; only an agent waiting for permission gets a colour-9
+?; no blinking; elapsed time redrawn each second for that line only (idle CPU budget). Workers section: orchestrator
+tasks plus the number of agents in each worker tab; a click goes to that tab. Log section (bottom, the remaining
+height): this tab's recent events one per line (time, who, what): agent start/end, edited files, permission questions
+and answers, turn ends, compaction; from the daemon's event log, no new store. Sections fold (title click, ←/→ in the
+overlay list), kept in the ui state file. A Sidebar group in the settings panel (sidebar, sidebar-width,
+sidebar-min-cols, sections on/off). `haetty agents [--json] [TAB]` (Observe-allowed sessions only; the table on
+screen). Data: an agent table in haetty-cc's state machine (agent_id → type, parent, start/end, current tool, call
+count, state), limits per session (200 finished agents) and rules for /clear and resume; tool events still never
+release the permission mark or input hold (state.rs's tests keep passing). Tests: replay of H0's real hook order
+(nesting, three parallel, background, failure, another agent's tool finishing during a permission question, arrivals
+out of order); layout (events never change the grid); renderer (idle screen grey only, no accent while agents run);
+Xvfb e2e sidebar.sh; idle CPU and key-to-screen latency measured with 5 agents running. Frame dumps docs/look/ph-*:
+wide Claude tab (0, 3 and nested agents), narrow overlay, agent record view, shell tab, three themes.
+
+H3. Remake the ccx difference table and fill it: cc-panel/README.md's panel.py sections (sess, model, ctx, workers,
+limits, cost, keys …) and hook.sh's agentpre/agentpost/substart/substop, line by line against haetty, in the history
+record: same / different (why) / missing. Add the missing ones that do not change Claude Code's behaviour; leave out
+those that do (permission defaults, ask rules, tui settings, autoCompactWindow) as "left out on purpose". One thing only
+haetty can do: a whole-window view of the agents of all tabs (palette "All agents": grouped by tab, longest-waiting
+first, Enter goes there); it replaces P2's "key to the longest-waiting worker".
+
+H4. Docs: README "Claude Code in haetty" (what happens when claude is typed in a shell, what is injected and what not,
+how to turn it off, the sidebar sections, haetty agents); DESIGN §2 and §13, NORTH-STAR point 3's row, HANDOFF (≤ 400
+lines, next: P2 in real use), CHANGELOG (unreleased), §6.1 person checks (5+ agents in real work, Windows proxy).
+Windows: build, clippy, unit tests required; the proxy (claude.cmd resolution order, PowerShell and cmd, Git Bash)
+marked unverified, with windows/ scripts and check items. Commits per step, each gated, check-range 0 failing before a
+push. No tag.
+
+Keep: no command or write to the stable instance, daemon or install folder; dev and test processes only. Hooks and
+status line observe-only (no output, exit 0); the proxy changes nothing of Claude Code's arguments and behaviour but
+the added --settings; no path where haetty answers a permission question. No credentials or OAuth tokens read; the
+user's shell files and ~/.claude/settings.json untouched; no typed text, prompts or file contents in logs. Commits:
+the person's git identity, no AI mark. Two heavy jobs at a time.
+
+Stop when: a protected-area change beyond the scope above is needed; H0 shows the docs and reality differ so that half
+of the Agents section cannot be built (report the table and wait); on Windows the proxy cannot work in principle
+because of how claude is installed (finish Linux and report).
+
+Report: H0's table, results and evidence per step, the ccx table, the commit list, sizes and idle CPU before and after,
+what is unverified, choices and alternatives, what the person decides from the frame dumps.
