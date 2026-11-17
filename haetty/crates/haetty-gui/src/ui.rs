@@ -269,6 +269,8 @@ pub enum PaletteMode {
     Message,
     /// Tasks whose worktree can be removed: (task, details) each.
     Tasks(Vec<(String, String)>),
+    /// Every tab's agents (stage PH, H3): (agent line, tab · waiting) each.
+    Agents(Vec<(String, String)>),
 }
 
 /// What Enter picks.
@@ -283,6 +285,8 @@ pub enum Pick {
     Message(String),
     /// Index into the list given to [`Palette::tasks`].
     Task(usize),
+    /// Index into the list given to [`Palette::agents`].
+    Agent(usize),
 }
 
 /// The answers to the new-task questions, in order (a missing answer is blank).
@@ -312,6 +316,10 @@ impl Palette {
 
     pub fn message() -> Palette {
         Palette { query: String::new(), selected: 0, mode: PaletteMode::Message }
+    }
+
+    pub fn agents(items: Vec<(String, String)>) -> Palette {
+        Palette { query: String::new(), selected: 0, mode: PaletteMode::Agents(items) }
     }
 
     pub fn tasks(items: Vec<(String, String)>) -> Palette {
@@ -346,7 +354,9 @@ impl Palette {
 
     /// Closed tabs matching the query (indices).
     fn closed_matches(&self) -> Vec<usize> {
-        let (PaletteMode::Closed(items) | PaletteMode::Tasks(items)) = &self.mode else { return vec![] };
+        let (PaletteMode::Closed(items) | PaletteMode::Tasks(items) | PaletteMode::Agents(items)) = &self.mode else {
+            return vec![];
+        };
         (0..items.len()).filter(|&i| words_match(&self.query, &format!("{} {}", items[i].0, items[i].1))).collect()
     }
 
@@ -356,6 +366,7 @@ impl Palette {
             PaletteMode::Rename { .. } => Some(Pick::Rename(self.query.clone())),
             PaletteMode::Closed(_) => self.closed_matches().get(self.selected).copied().map(Pick::Closed),
             PaletteMode::Tasks(_) => self.closed_matches().get(self.selected).copied().map(Pick::Task),
+            PaletteMode::Agents(_) => self.closed_matches().get(self.selected).copied().map(Pick::Agent),
             PaletteMode::NewTask { step: 6, answers, .. } => Some(Pick::NewTask(draft(answers), self.query.clone())),
             PaletteMode::NewTask { .. } => None,
             PaletteMode::Message => Some(Pick::Message(self.query.clone())),
@@ -366,7 +377,7 @@ impl Palette {
         let n = match self.mode {
             PaletteMode::Actions => self.matches().len(),
             PaletteMode::Rename { .. } | PaletteMode::NewTask { .. } | PaletteMode::Message => 0,
-            PaletteMode::Closed(_) | PaletteMode::Tasks(_) => self.closed_matches().len(),
+            PaletteMode::Closed(_) | PaletteMode::Tasks(_) | PaletteMode::Agents(_) => self.closed_matches().len(),
         };
         if n == 0 {
             self.selected = 0;
@@ -394,11 +405,14 @@ impl Palette {
             PaletteMode::Rename { now } => {
                 vec![(format!("Enter renames · empty: automatic name · now: {now}"), String::new(), false)]
             }
-            PaletteMode::Closed(list) | PaletteMode::Tasks(list) => {
+            PaletteMode::Closed(list) | PaletteMode::Tasks(list) | PaletteMode::Agents(list) => {
                 let m = self.closed_matches();
                 if list.is_empty() {
-                    let none =
-                        if matches!(self.mode, PaletteMode::Closed(_)) { "No closed tabs." } else { "No tasks." };
+                    let none = match self.mode {
+                        PaletteMode::Closed(_) => "No closed tabs.",
+                        PaletteMode::Agents(_) => "No agents in any tab.",
+                        _ => "No tasks.",
+                    };
                     vec![(none.into(), String::new(), false)]
                 } else {
                     m.into_iter().map(|i| (list[i].0.clone(), list[i].1.clone(), true)).collect()
@@ -427,6 +441,7 @@ impl Palette {
             PaletteMode::Rename { .. } => "Rename tab: ",
             PaletteMode::Closed(_) => "Reopen: ",
             PaletteMode::Tasks(_) => "Remove worktree: ",
+            PaletteMode::Agents(_) => "Go to agent: ",
             PaletteMode::NewTask { step: 0, .. } => "Task title: ",
             PaletteMode::NewTask { step: 1, .. } => "Description: ",
             PaletteMode::NewTask { step: 2, .. } => "Scope (optional, blank: the whole repository): ",

@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 14;
+pub const VERSION: u32 = 15;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -476,6 +476,12 @@ pub struct Worker {
     /// A permission question of this agent is open.
     #[serde(default)]
     pub asking: bool,
+    /// The Agent call's short description (written by the model; shown, never logged; version 15).
+    #[serde(default)]
+    pub description: String,
+    /// The `STATUS:` its last message ended with (`verified`, `blocked`, `needs_review`), if any (version 15).
+    #[serde(default)]
+    pub status: String,
 }
 
 /// One file Claude Code changed in this conversation: the sums of its edits' line counts (version 14).

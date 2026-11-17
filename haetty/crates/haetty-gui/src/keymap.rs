@@ -53,6 +53,8 @@ pub enum Action {
     Settings,
     /// The settings panel at its Updates group (stage PU).
     Updates,
+    /// Every tab's agents in one list, the tab that waited longest first; Enter goes to its tab (stage PH, H3).
+    AllAgents,
 }
 
 impl Action {
@@ -84,6 +86,7 @@ impl Action {
             Action::ToggleObserve => "toggle_observe".into(),
             Action::Settings => "settings".into(),
             Action::Updates => "updates".into(),
+            Action::AllAgents => "all_agents".into(),
         }
     }
 
@@ -101,9 +104,9 @@ impl Action {
             Action::OpenSavedTabs => "Open saved tabs".into(),
             Action::OpenPreviousTabs => "Open the previous run's tabs".into(),
             Action::DiffView => "Diff of the last edit (Claude Code)".into(),
-            Action::StatusPanel => "Status panel (Claude Code)".into(),
-            Action::StatusPanelWider => "Status panel wider".into(),
-            Action::StatusPanelNarrower => "Status panel narrower".into(),
+            Action::StatusPanel => "Sidebar: show or hide".into(),
+            Action::StatusPanelWider => "Sidebar wider".into(),
+            Action::StatusPanelNarrower => "Sidebar narrower".into(),
             Action::AttachDetached => "Attach detached sessions".into(),
             Action::ReloadConfig => "Reload config (theme and colours)".into(),
             Action::RenameTab => "Rename tab".into(),
@@ -115,6 +118,7 @@ impl Action {
             Action::ToggleObserve => "Observing: allow or stop for this tab (haetty screen, haetty events)".into(),
             Action::Settings => "Settings".into(),
             Action::Updates => "Updates (haetty's version, a newer one)".into(),
+            Action::AllAgents => "All agents (every tab, the longest waiting first)".into(),
         }
     }
 
@@ -144,6 +148,7 @@ impl Action {
             "toggle_observe" => Action::ToggleObserve,
             "settings" => Action::Settings,
             "updates" => Action::Updates,
+            "all_agents" => Action::AllAgents,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -168,6 +173,7 @@ impl Action {
         ];
         v.extend((1..=9).map(Action::GotoTab));
         v.extend([
+            Action::AllAgents,
             Action::DiffView,
             Action::StatusPanel,
             Action::StatusPanelWider,
@@ -272,6 +278,8 @@ impl Default for Keymap {
         // Claude Code binds Ctrl+D (exit) and Ctrl+S (stash), not these.
         b("ctrl+shift+d", Action::DiffView);
         b("ctrl+shift+s", Action::StatusPanel);
+        // Claude Code binds Ctrl+A (line start), not this.
+        b("ctrl+shift+a", Action::AllAgents);
         // Claude Code binds Ctrl+R (history search), not this.
         b("ctrl+shift+r", Action::RenameTab);
         b("ctrl+shift+v", Action::Paste);

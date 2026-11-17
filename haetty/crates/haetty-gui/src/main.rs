@@ -112,6 +112,7 @@ pub const SUBCOMMANDS: &[&str] = &[
     "events",
     "log",
     "screen",
+    "agents",
     "tokens",
     "wait",
     "completions",
@@ -128,6 +129,7 @@ pub const IMPLEMENTED: &[&str] = &[
     "statusline",
     "events",
     "screen",
+    "agents",
     "tokens",
     "run",
     "log",
@@ -147,6 +149,11 @@ pub enum Command {
         json: bool,
     },
     /// `status --screen ID`: one session's screen as text (read-only).
+    /// `agents [--json] [SESSION]`: the agent tables of observable Claude Code tabs (stage PH).
+    Agents {
+        json: bool,
+        tab: Option<String>,
+    },
     Screen {
         id: String,
     },
@@ -230,6 +237,18 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
                 }
             }
             Ok(Command::Events { follow, json, since })
+        }
+        Some("agents") => {
+            let mut json = false;
+            let mut tab = None;
+            for a in &args[1..] {
+                match a.as_str() {
+                    "--json" => json = true,
+                    t if !t.starts_with('-') && tab.is_none() => tab = Some(t.to_string()),
+                    _ => return Err("usage: haetty agents [--json] [SESSION]".into()),
+                }
+            }
+            Ok(Command::Agents { json, tab })
         }
         Some("screen") => match &args[1..] {
             [id] if !id.starts_with('-') => Ok(Command::Observe { id: id.clone(), json: false }),
@@ -675,6 +694,11 @@ fn main() {
         Command::Screen { id } => {
             init_log(None);
             let (text, code) = cli::screen(&id);
+            exit_with(&text, code)
+        }
+        Command::Agents { json, tab } => {
+            init_log(None);
+            let (text, code) = cli::agents(tab.as_deref(), json);
             exit_with(&text, code)
         }
         Command::Wait { cond, timeout } => {

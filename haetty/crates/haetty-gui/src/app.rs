@@ -131,6 +131,8 @@ struct Tab {
     log_at: Option<Instant>,
     unintegrated: bool,
     fg_at: Option<Instant>,
+    /// Since when the tab waits for the person (its mark is Wait or Ask): "All agents" lists the longest first.
+    waiting_since: Option<Instant>,
 }
 
 impl Tab {
@@ -330,6 +332,8 @@ struct Win {
     agent_view: Option<crate::agentview::AgentView>,
     /// The next redraw of running agents' elapsed times (each second).
     sidebar_second: Option<Instant>,
+    /// "All agents": the tab of each line in the palette.
+    agent_pick: Vec<usize>,
     diff: Option<DiffView>,
     last_slow_draw: Option<Instant>,
     /// Tabs not opened yet: waiting for the scale (Wayland; A7).
@@ -545,6 +549,7 @@ impl App {
             sidebar_press: false,
             agent_view: None,
             sidebar_second: None,
+            agent_pick: vec![],
             diff: None,
             last_slow_draw: None,
             cfg: self.opts.config.clone(),
@@ -1064,6 +1069,7 @@ impl Win {
             log_at: None,
             unintegrated: false,
             fg_at: None,
+            waiting_since: None,
         };
         tab.task = tab
             .spec
@@ -1508,6 +1514,7 @@ impl Win {
             }
             Action::Settings => self.toggle_settings(),
             Action::Updates => self.open_updates(),
+            Action::AllAgents => self.open_all_agents(),
             Action::AttachDetached => {
                 let n = self.attach_detached();
                 self.show_hint(if n == 0 { "no detached sessions".into() } else { format!("attached {n} session(s)") });
@@ -1719,6 +1726,11 @@ impl Win {
     /// Claude Code's attention of tab `i` changed from `before`.
     fn attention_changed(&mut self, i: usize, before: Attention) {
         let now = self.tabs[i].attention();
+        if now == Attention::None {
+            self.tabs[i].waiting_since = None;
+        } else if self.tabs[i].waiting_since.is_none() {
+            self.tabs[i].waiting_since = Some(Instant::now());
+        }
         if now != before {
             log::debug!(
                 "tab {} attention {before:?} -> {now:?} (active {}, focused {})",
@@ -2085,6 +2097,14 @@ impl Win {
                 let pick = p.current();
                 self.palette = None;
                 match pick {
+                    Some(Pick::Agent(i)) => {
+                        if let Some(&t) = self.agent_pick.get(i) {
+                            if t < self.tabs.len() {
+                                self.select(t);
+                            }
+                        }
+                        self.recompose();
+                    }
                     Some(Pick::Action(a)) => {
                         self.recompose();
                         // Chosen in haetty's own UI: what it sends is made up by

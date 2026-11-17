@@ -419,7 +419,7 @@ pub const SETTINGS: &[Setting] = &[
         kind: num(24.0, 80.0, 2.0, true, true),
         default: "42",
         default_note: None,
-        doc: "columns, the line included (24–80); Ctrl+Shift+Alt+→/← change it for the window",
+        doc: "columns, the line included (24–80); the palette's \"Sidebar wider\" / \"Sidebar narrower\" change it for the window",
         line: "The sidebar's width in columns.",
         group: Group::Sidebar,
         when: When::NextStart,

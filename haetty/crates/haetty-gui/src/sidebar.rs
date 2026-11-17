@@ -332,6 +332,13 @@ fn lead(o: &mut Out, c: &ClaudeInfo, m: &Model) {
         let est = if c.limits.is_empty() { "" } else { " (API estimate)" };
         kv(o, "cost", &format!("${cost:.2}{est}"), g.normal);
     }
+    if c.lines_added + c.lines_removed > 0 {
+        kv(o, "lines", &format!("+{} -{}", c.lines_added, c.lines_removed), g.normal);
+    }
+    if let (Some(warm), hit) = (c.cache_warm, c.cache_hit_pct) {
+        let hit = hit.map(|h| format!(" · hit {h:.0}%")).unwrap_or_default();
+        kv(o, "cache", &format!("{}{hit}", if warm { "warm" } else { "cold" }), g.normal);
+    }
     if let Some(t) = m.tokens {
         kv(o, "tokens", t, g.normal);
     }
@@ -404,7 +411,7 @@ fn agent_row(o: &mut Out, a: &Worker, now_ms: u64) {
     let tree = if depth > 0 { "└ " } else { "" };
     let (glyph, gc) = if a.asking {
         ("?", g.ask)
-    } else if a.failed {
+    } else if a.failed || a.status == "blocked" {
         ("✗", g.normal)
     } else if a.ended_ms.is_some() {
         ("✓", g.dim)
@@ -423,12 +430,15 @@ fn agent_row(o: &mut Out, a: &Worker, now_ms: u64) {
     if a.worktree {
         tags.push_str(" wt");
     }
+    // Running: the current tool and target, else the call's description; finished: its STATUS, else its calls.
     let detail = if a.ended_ms.is_none() {
         match (a.tool.is_empty(), a.target.is_empty()) {
-            (true, _) => String::new(),
+            (true, _) => a.description.clone(),
             (false, true) => a.tool.clone(),
             (false, false) => format!("{} {}", a.tool, a.target),
         }
+    } else if !a.status.is_empty() {
+        a.status.replace('_', " ")
     } else if a.calls > 0 {
         format!("{} calls", a.calls)
     } else {
@@ -542,6 +552,7 @@ mod tests {
                 agent("a2", "general-purpose", "", 1, 0, None),
                 Worker { background: true, ..agent("a3", "Explore", "a2", 2, 1000, None) },
                 Worker { calls: 4, ..agent("a4", "Plan", "", 1, 0, Some(30_000)) },
+                Worker { status: "blocked".into(), ..agent("a6", "Plan", "", 1, 0, Some(31_000)) },
             ],
             files: vec![FileStat {
                 path: "/home/u/projects/demo/src/very/long/path/main.rs".into(),
@@ -562,7 +573,8 @@ mod tests {
         let t = text(&rows);
         assert!(t.contains("fix parser") && t.contains("Haiku 5.5 · medium"), "{t}");
         assert!(t.contains("context  34% of 200k") || t.contains("context   34% of 200k"), "{t}");
-        assert!(t.contains("Agents  3 running · 1 done"), "{t}");
+        assert!(t.contains("Agents  3 running · 2 done"), "{t}");
+        assert!(t.contains("✗ Plan haiku blocked"), "a finished agent's STATUS: {t}");
         assert!(t.contains("● Explore haiku Read app.rs"), "{t}");
         assert!(t.contains("└ ◌ Explore haiku"), "nested and background: {t}");
         assert!(t.contains("✓ Plan haiku 4 calls"), "{t}");
@@ -575,7 +587,7 @@ mod tests {
         assert!(lines[p + 1].contains("└"), "{t}");
         // Clickable: the section titles, the agents, the file.
         assert!(hits.iter().any(|(_, h)| *h == Hit::Fold(Section::Agents)));
-        assert_eq!(hits.iter().filter(|(_, h)| matches!(h, Hit::Agent(_))).count(), 4);
+        assert_eq!(hits.iter().filter(|(_, h)| matches!(h, Hit::Agent(_))).count(), 5);
         assert!(hits.iter().any(|(_, h)| matches!(h, Hit::File(p) if p.ends_with("main.rs"))));
         // Every row is the sidebar's width.
         assert!(rows.iter().all(|r| r.len() == 42) && rows.len() == 30);
@@ -607,7 +619,7 @@ mod tests {
         }
         let (rows, _) = draw(&model(Some(&i), 62_000), 42, 40, greys());
         let t = text(&rows);
-        assert!(t.contains("+ 5 earlier"), "11 finished, 6 shown: {t}");
+        assert!(t.contains("+ 6 earlier"), "12 finished, 6 shown: {t}");
         let folded = [Section::Agents];
         let mut m = model(Some(&i), 62_000);
         m.folded = &folded;

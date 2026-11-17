@@ -99,6 +99,72 @@ impl Win {
             .collect()
     }
 
+    /// "All agents" (stage PH, H3): every tab's agents in one palette list — the tabs that wait for the person first,
+    /// the longest-waiting one at the top, then the others in tab order; each tab's agents running first. Enter goes to
+    /// the line's tab. It replaces P2's "key to the longest-waiting worker".
+    pub(super) fn open_all_agents(&mut self) {
+        let now = Instant::now();
+        let mut order: Vec<usize> = (0..self.tabs.len()).filter(|&i| self.tabs[i].exited.is_none()).collect();
+        order.sort_by_key(|&i| (self.tabs[i].waiting_since.is_none(), self.tabs[i].waiting_since, i));
+        let (mut items, mut pick) = (vec![], vec![]);
+        let ms = now_ms();
+        for i in order {
+            let t = &self.tabs[i];
+            let Some(c) = t.claude.as_ref() else { continue };
+            let name = t.name();
+            let waiting = match (t.attention(), t.waiting_since) {
+                (haetty_proto::wire::Attention::Ask, Some(w)) => {
+                    format!("asks · {}", sidebar::age(now.duration_since(w).as_millis() as u64))
+                }
+                (haetty_proto::wire::Attention::Wait, Some(w)) => {
+                    format!("waits · {}", sidebar::age(now.duration_since(w).as_millis() as u64))
+                }
+                _ if c.busy => "working".into(),
+                _ => String::new(),
+            };
+            let tree = haetty_cc::agents::tree(&c.workers);
+            let shown: Vec<_> = tree
+                .iter()
+                .filter(|a| a.ended_ms.is_none())
+                .chain(tree.iter().filter(|a| a.ended_ms.is_some()).take(3))
+                .collect();
+            if shown.is_empty() {
+                items.push((format!("{name} · no agents"), waiting.clone()));
+                pick.push(i);
+            }
+            for a in shown {
+                let glyph = if a.asking {
+                    "?"
+                } else if a.ended_ms.is_some() {
+                    "✓"
+                } else if a.background {
+                    "◌"
+                } else {
+                    "●"
+                };
+                let el = sidebar::age(a.ended_ms.unwrap_or(ms).saturating_sub(a.started_ms));
+                let what = if a.ended_ms.is_none() && !a.tool.is_empty() {
+                    format!(" {} {}", a.tool, a.target)
+                } else {
+                    String::new()
+                };
+                let indent = "  ".repeat(a.depth.max(1) as usize - 1);
+                items.push((
+                    format!(
+                        "{name} · {indent}{glyph} {} {}{what}",
+                        if a.kind.is_empty() { "agent" } else { &a.kind },
+                        sidebar::short_model(&a.model)
+                    ),
+                    if waiting.is_empty() { el } else { format!("{waiting} · {el}") },
+                ));
+                pick.push(i);
+            }
+        }
+        self.agent_pick = pick;
+        self.palette = Some(crate::ui::Palette::agents(items));
+        self.recompose();
+    }
+
     /// The sidebar's column range on screen (docked or over the terminal), if shown.
     fn sidebar_cols(&self) -> Option<(u16, u16)> {
         let w = self.panel_cols().max(self.overlay_cols());

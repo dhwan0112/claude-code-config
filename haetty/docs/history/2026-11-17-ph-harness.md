@@ -120,3 +120,40 @@ Only rows with a source are built. No progress percentage (no source).
 
 The stop condition "agent_id missing on subagent tool hooks" does not hold: everything the Agents section needs has a
 source.
+
+## H3. ccx (cc-panel) against haetty
+
+Line by line: `cc-panel/README.md`'s `panel.py` sections and `hook.sh`'s Agent-tool and subagent handlers (the ccx of
+`claude-code-config` at this stage's start) against haetty after PH. Same / different (why) / missing → what was done.
+
+| ccx | haetty | |
+|---|---|---|
+| panel `sess` (session name) | sidebar Lead, first line (bold) | same |
+| panel `model` | Lead, second line, with effort (`effort.level`) | same (+ effort) |
+| panel `ctx` (context %, of size) | Lead `context  34% of 200k` | same |
+| panel `limits`: every `rate_limits` window as `name · used% · reset`; `5h` and `7d all` always listed, `-` when absent | Lead: every window present, `5h limit 12% · 11-05 17:33 UTC` | different: an absent window is not listed (nothing without a source, §2.1) |
+| panel `cost` | Lead `cost $1.23 (API estimate)` | same |
+| panel `cache` | Lead `cache warm · hit 92%` (was in the old status panel; back in H3) | missing → added |
+| panel `lines` | Lead `lines +12 -4` (H3) | missing → added |
+| panel `upd` | footer `updated 3s ago` | same |
+| panel `workers`: summary | Agents title `3 running · 2 done · 1 failed` | same |
+| running `●` lines: elapsed + first 40 characters of the description | `● type model tool target  elapsed`; with no tool running, the Agent call's description (H3) | missing description → added (from the Agent tool's `tool_input.description`; shown, never logged) |
+| last 6 finished, `✓ verified` / `✗ blocked` / `? needs_review` / `- no STATUS` from SubagentStop's last message | last 6 finished and `+ N earlier`; the STATUS word (`blocked` with ✗) from SubagentStop's `last_assistant_message` (H3), else the call count | missing STATUS → added; `?` stays the permission question's glyph (colour 9), so needs_review is a word, not `?` |
+| interactive: Agent returns `async_launched`, the worker stays `●` until SubagentStop | `◌` while a background agent runs, `✓` at its stop | same (glyph differs: background is visible) |
+| internal agents (no `agent_type`) not shown | not in the table (stop without start) | same |
+| below 44 columns no duration; values wrap; short labels below 56 columns | one line per agent, the detail cut on the left; elapsed always | different: one line per agent keeps the tree readable |
+| folding when short: keys, cache, lines, cost, limits first | sections fold by the person (title click, ←/→); the Log takes what is left | different: no automatic folding (nothing changes without input) |
+| panel `keys` (ccx shortcuts, one per row) | none: the palette (Ctrl+Shift+P) and hints next to elements | different on purpose (DESIGN §2.2: no resident key list) |
+| `hook.sh agentpre` (type, description) | the Agent tool's PreToolUse: isolation, description | same (+ isolation) |
+| `hook.sh agentpost` (status from the response text) | PostToolUse of the Agent tool: `status` (async/completed), `agentId`, `resolvedModel`, parent | same (+ parent, model) |
+| `hook.sh substart` / `substop` | SubagentStart / SubagentStop: start, end, resume, STATUS | same |
+| ccx `--settings` merge (user's keys win, hooks both, statusLine ours) | the same merge (`settings::merge`), also through the proxy | same |
+| ccx permission defaults (bypassPermissions unless `--safe`), 39 `ask` rules for destructive git/gh, `tui`, `autoCompactWindow`, `CLAUDE_CODE_NO_FLICKER`, `TMUX_TRUECOLOR` | not injected | left out on purpose: they change Claude Code's behaviour (DESIGN §3.13) |
+| diff pane (`diffview.py`, side by side from 110 columns) | the diff view (side by side from 110 columns; P3b: 100) | same |
+| tab sets (`savetabs.sh`, closed tabs) | tab sets, closed tabs, and now the conversation of a shell tab (H1) | same (+ shell tabs) |
+| `savesize.sh` (panel width per tab) | sidebar width per user (ui state) | different: one width for every tab (no resize on tab switch) |
+| tab colours: amber bell (waiting), red `?` (asks) | tab marks (colour 3 / colour 9) | same |
+
+Only haetty: **All agents** (palette, Ctrl+Shift+A): every tab's agents in one list, the tabs waiting for the person
+first and the longest-waiting one at the top, each tab's running agents first; Enter goes to that tab. It replaces
+P2's "a key to the longest-waiting worker". And `haetty agents [--json] [SESSION]` for observable tabs.

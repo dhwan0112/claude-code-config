@@ -93,6 +93,128 @@ pub fn screen(id: &str) -> (String, i32) {
     (format!("haetty status: no screen from session {id}"), 1)
 }
 
+/// `haetty agents [--json] [SESSION]` (stage PH): the agent table of each observable Claude Code tab (or of SESSION, a
+/// session id or its start), as the sidebar shows it. An observe-only connection: a tab the person did not make
+/// observable is not listed (SESSION: exit 3). Derived fields only (types, models, tools, file names); no prompts.
+pub fn agents(tab: Option<&str>, json: bool) -> (String, i32) {
+    let ep = match Endpoint::default_for_user() {
+        Ok(e) => e,
+        Err(e) => return (format!("haetty agents: {e}"), 1),
+    };
+    let client = match Client::connect(&ep, Role::Observe, "agents") {
+        Ok(c) => c,
+        Err(ConnectError::NotRunning) => return ("haetty agents: no daemon running".into(), 1),
+        Err(e) => return (format!("haetty agents: {e}"), 1),
+    };
+    let sessions = match client.list_sessions() {
+        Ok(s) => s,
+        Err(e) => return (format!("haetty agents: {e}"), 1),
+    };
+    let picked: Vec<_> = sessions.iter().filter(|s| tab.is_none_or(|t| s.id.starts_with(t))).collect();
+    if let Some(t) = tab {
+        match picked.as_slice() {
+            [] => return (format!("haetty agents: no session {t}"), 1),
+            [s] if !s.observable => {
+                return (
+                    format!("haetty agents: session {} is not observable (allow it in its tab: palette \"Observing: allow or stop for this tab\")", s.id),
+                    3,
+                )
+            }
+            [_] => {}
+            _ => return (format!("haetty agents: {t} names more than one session"), 1),
+        }
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+    let mut out = vec![];
+    for s in picked.into_iter().filter(|s| s.observable) {
+        if let Ok(info) = client.claude_state(&s.id) {
+            out.push((s.id.clone(), info));
+        }
+    }
+    if json {
+        let items: Vec<String> = out.iter().map(|(id, i)| agents_json(id, i)).collect();
+        return (format!("{{\"sessions\":[{}]}}", items.join(",")), 0);
+    }
+    if out.is_empty() {
+        return ("no observable Claude Code tab".into(), 0);
+    }
+    let mut t = String::new();
+    for (id, i) in &out {
+        let name = if i.name.is_empty() { "Claude Code" } else { &i.name };
+        t.push_str(&format!("{id}  {name}\n"));
+        let tree = haetty_cc::agents::tree(&i.workers);
+        if tree.is_empty() {
+            t.push_str("  no agents\n");
+        }
+        for a in tree {
+            let indent = "  ".repeat(a.depth.max(1) as usize);
+            let elapsed = crate::sidebar::age(a.ended_ms.unwrap_or(now).saturating_sub(a.started_ms));
+            let what = if a.ended_ms.is_none() {
+                format!("{} {}", a.tool, a.target).trim().to_string()
+            } else {
+                format!("{} calls", a.calls)
+            };
+            t.push_str(&format!(
+                "{indent}{} {} {} {elapsed} {what}{}{}\n",
+                agent_state(a).0,
+                if a.kind.is_empty() { "agent" } else { &a.kind },
+                crate::sidebar::short_model(&a.model),
+                if a.worktree { " wt" } else { "" },
+                if a.fork && a.kind != "fork" { " fork" } else { "" },
+            ));
+        }
+    }
+    (t.trim_end().to_string(), 0)
+}
+
+/// An agent's glyph and state name (the sidebar's).
+fn agent_state(a: &haetty_proto::wire::Worker) -> (&'static str, &'static str) {
+    if a.asking {
+        ("?", "asking")
+    } else if a.failed {
+        ("✗", "failed")
+    } else if a.ended_ms.is_some() {
+        ("✓", "done")
+    } else if a.background {
+        ("◌", "background")
+    } else {
+        ("●", "running")
+    }
+}
+
+fn agents_json(id: &str, i: &haetty_proto::wire::ClaudeInfo) -> String {
+    let agents: Vec<String> = haetty_cc::agents::tree(&i.workers)
+        .into_iter()
+        .map(|a| {
+            format!(
+                r#"{{"id":{},"type":{},"parent":{},"depth":{},"model":{},"state":"{}","started_ms":{},"ended_ms":{},"tool":{},"target":{},"calls":{},"background":{},"fork":{},"worktree":{}}}"#,
+                json_str(&a.id),
+                json_str(&a.kind),
+                json_str(&a.parent),
+                a.depth,
+                json_str(&a.model),
+                agent_state(a).1,
+                a.started_ms,
+                a.ended_ms.map_or("null".into(), |e| e.to_string()),
+                json_str(&a.tool),
+                json_str(&a.target),
+                a.calls,
+                a.background,
+                a.fork,
+                a.worktree
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"session":{},"name":{},"model":{},"effort":{},"agents":[{}]}}"#,
+        json_str(id),
+        json_str(&i.name),
+        json_str(&i.model),
+        json_str(&i.effort),
+        agents.join(",")
+    )
+}
+
 /// An observer connection for `events` / `screen` (never starts a daemon).
 pub(crate) fn observer(cmd: &str) -> Result<ObserverClient, String> {
     let ep = Endpoint::default_for_user().map_err(|e| format!("haetty {cmd}: {e}"))?;

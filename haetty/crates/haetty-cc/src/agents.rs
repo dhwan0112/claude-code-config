@@ -45,8 +45,8 @@ pub fn target(input: Option<&Json>) -> String {
 
 #[derive(Default)]
 pub struct Agents {
-    /// Agent tool calls by `tool_use_id`: the requested isolation.
-    calls: HashMap<String, bool>,
+    /// Agent tool calls by `tool_use_id`: the requested isolation and the call's description.
+    calls: HashMap<String, (bool, String)>,
 }
 
 impl Agents {
@@ -93,6 +93,14 @@ impl Agents {
                     a.tool.clear();
                     a.target.clear();
                     a.asking = false;
+                    // The STATUS its last message ended with (the orchestrator's report lines, DESIGN.md §8.2).
+                    if let Some(r) = j
+                        .get("last_assistant_message")
+                        .and_then(Json::str)
+                        .and_then(|m| crate::orch::parse_report(m, ts_ms, false))
+                    {
+                        a.status = r.status;
+                    }
                 }
             }
             "PreToolUse" | crate::settings::PRE_ALL => {
@@ -102,7 +110,8 @@ impl Agents {
                             self.calls.clear();
                         }
                         let wt = j.at(&["tool_input", "isolation"]).and_then(Json::str) == Some("worktree");
-                        self.calls.insert(id.to_string(), wt);
+                        let d: String = text(j, &["tool_input", "description"]).chars().take(120).collect();
+                        self.calls.insert(id.to_string(), (wt, d));
                     }
                 }
                 if let Some(a) = w.iter_mut().find(|a| a.id == me) {
@@ -138,7 +147,7 @@ impl Agents {
     /// The Agent tool call ended: link the child to its parent, its model and mode.
     fn agent_call(&mut self, w: &mut Vec<Worker>, j: &Json, parent: &str, failed: bool, ts_ms: u64) {
         let call = j.get("tool_use_id").and_then(Json::str).unwrap_or_default().to_string();
-        let worktree = self.calls.remove(&call).unwrap_or(false);
+        let (worktree, description) = self.calls.remove(&call).unwrap_or_default();
         let depth = w.iter().find(|a| a.id == parent).map_or(1, |p| p.depth.saturating_add(1));
         let child = text(j, &["tool_response", "agentId"]);
         if failed || child.is_empty() {
@@ -152,6 +161,7 @@ impl Agents {
                     parent: parent.to_string(),
                     depth,
                     worktree,
+                    description,
                     failed: true,
                     ..Default::default()
                 });
@@ -175,6 +185,9 @@ impl Agents {
         a.parent = parent.to_string();
         a.depth = depth;
         a.worktree |= worktree;
+        if !description.is_empty() {
+            a.description = description;
+        }
         let model = text(j, &["tool_response", "resolvedModel"]);
         if !model.is_empty() {
             a.model = model;
@@ -303,6 +316,12 @@ mod tests {
         ag.hook(&mut w, "PostToolUse", &j(r#"{"agent_id":"a1","tool_name":"Bash"}"#), 8);
         let a1 = w.iter().find(|a| a.id == "a1").unwrap();
         assert!(!a1.asking && a1.tool.is_empty() && a1.calls == 1);
+        // The description of the call and the STATUS of the last message.
+        ag.hook(&mut w, "PreToolUse", &j(r#"{"tool_name":"Agent","tool_use_id":"t5","tool_input":{"subagent_type":"Plan","description":"Plan the port"}}"#), 8);
+        ag.hook(&mut w, "PostToolUse", &j(r#"{"tool_name":"Agent","tool_use_id":"t5","tool_response":{"status":"async_launched","agentId":"a5"}}"#), 8);
+        ag.hook(&mut w, "SubagentStop", &j(r#"{"agent_id":"a5","agent_type":"Plan","last_assistant_message":"Done.\nSTATUS: blocked\nBLOCKERS: x"}"#), 8);
+        let a5 = w.iter().find(|a| a.id == "a5").unwrap();
+        assert_eq!((a5.description.as_str(), a5.status.as_str()), ("Plan the port", "blocked"));
         // A failed Agent call: one failed line.
         ag.hook(
             &mut w,

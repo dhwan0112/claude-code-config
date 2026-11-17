@@ -55,6 +55,12 @@ pub const SUBS: &[Sub] = &[
         ],
     },
     Sub {
+        name: "agents",
+        usage: "haetty agents [--json] [SESSION]",
+        about: "the agents (subagents) of observable Claude Code tabs, as the sidebar shows them: type, model, state, current tool (exit 3 when SESSION is not observable)",
+        options: &[("--json", "one JSON object: sessions and their agents"), ("SESSION", "one session (an id or its start)")],
+    },
+    Sub {
         name: "screen",
         usage: "haetty screen [--json] SESSION",
         about: "an observable tab's screen and state, read-only (exit 3 when not observable)",
