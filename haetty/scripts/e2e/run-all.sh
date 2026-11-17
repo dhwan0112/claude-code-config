@@ -40,5 +40,6 @@ run bash "$here/daemon-crash.sh"
 run bash "$here/scale.sh"
 run bash "$here/settings.sh"
 run bash "$here/update.sh"
+run bash "$here/sidebar.sh"
 echo "E2E scripts with a failure: $bad"
 exit $bad

@@ -62,6 +62,7 @@ impl Win {
         let tokens = self.token_line_of(tab);
         let m = sidebar::Model {
             claude: tab.claude.as_deref(),
+            root: tab.folder().unwrap_or_default(),
             folder,
             branch,
             git: tab.git_sum.as_ref().filter(|_| tab.claude.is_none()),

@@ -388,6 +388,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         let m = crate::sidebar::Model {
             claude: info,
             folder: "~/projects/haetty".into(),
+            root: "/home/u/projects/haetty".into(),
             branch: Some("main".into()),
             git: None,
             workers,

@@ -77,8 +77,10 @@ pub struct GitSummary {
 
 pub struct Model<'a> {
     pub claude: Option<&'a ClaudeInfo>,
-    /// The tab's folder (`~` for the home folder) and git branch.
+    /// The tab's folder (`~` for the home folder) and git branch; `root` the folder as given (file paths under it are
+    /// shown relative to it).
     pub folder: String,
+    pub root: String,
     pub branch: Option<String>,
     pub git: Option<&'a GitSummary>,
     pub workers: &'a [WorkerRow],
@@ -201,7 +203,7 @@ pub fn draw(m: &Model, w: usize, h: usize, g: Greys) -> (Vec<Vec<Cell>>, Vec<(us
             section_title(&mut o, Section::Files, &format!("{}", c.files.len()), folded(Section::Files));
             if !folded(Section::Files) {
                 for f in &c.files {
-                    file_row(&mut o, &f.path, f.added, f.removed);
+                    file_row(&mut o, &f.path, &m.root, f.added, f.removed);
                 }
             }
         }
@@ -211,7 +213,7 @@ pub fn draw(m: &Model, w: usize, h: usize, g: Greys) -> (Vec<Vec<Cell>>, Vec<(us
             section_title(&mut o, Section::Files, &format!("{}", gs.files.len()), folded(Section::Files));
             if !folded(Section::Files) {
                 for (p, a, r) in &gs.files {
-                    file_row(&mut o, p, *a, *r);
+                    file_row(&mut o, p, "", *a, *r);
                 }
             }
         }
@@ -231,12 +233,12 @@ pub fn draw(m: &Model, w: usize, h: usize, g: Greys) -> (Vec<Vec<Cell>>, Vec<(us
             }
         }
     }
-    if on(Section::Log) && !m.log.is_empty() && o.y + 3 < body {
+    let lines: Vec<(String, String)> = m.log.iter().filter_map(|e| log_text(e, m.now_ms)).collect();
+    if on(Section::Log) && !lines.is_empty() && o.y + 3 < body {
         o.gap();
         section_title(&mut o, Section::Log, "", folded(Section::Log));
         if !folded(Section::Log) {
             let room = body.saturating_sub(o.y);
-            let lines: Vec<(String, String)> = m.log.iter().filter_map(|e| log_text(e, m.now_ms)).collect();
             for (t, a) in lines.iter().skip(lines.len().saturating_sub(room)) {
                 o.line(0, &[(t, g.normal, false)], Some((a, g.dim)), None);
             }
@@ -254,12 +256,17 @@ pub fn draw(m: &Model, w: usize, h: usize, g: Greys) -> (Vec<Vec<Cell>>, Vec<(us
     let mut rows = o.rows;
     let hits = o.hits;
     // Footer.
+    // The last part keeps its room; earlier parts are cut on the left into what is left.
     let mut foot = |text: &[(&str, Rgb)]| {
         let mut r = vec![blank(g.normal, g.bg); w];
         r[0] = Cell { text: "│".into(), ..blank(g.bar, g.bg) };
+        let room = w.saturating_sub(4);
+        let tail: usize = text.iter().skip(1).map(|(t, _)| width(t)).sum();
         let mut x = 2;
-        for (t, c) in text {
-            x = put(&mut r, x, &fit_left(t, w.saturating_sub(x + 1)), *c, g.bg, false);
+        for (n, (t, c)) in text.iter().enumerate() {
+            let left = (2 + room).saturating_sub(x);
+            let t = if n == 0 && text.len() > 1 { fit_left(t, room.saturating_sub(tail)) } else { fit_left(t, left) };
+            x = put(&mut r, x, &t, *c, g.bg, false);
         }
         rows.push(r);
     };
@@ -290,11 +297,16 @@ fn section_title(o: &mut Out, s: Section, count: &str, folded: bool) {
     );
 }
 
-fn file_row(o: &mut Out, path: &str, added: u64, removed: u64) {
+fn file_row(o: &mut Out, path: &str, root: &str, added: u64, removed: u64) {
     let g = o.g;
     let counts = format!("+{added} -{removed}");
     let room = o.w.saturating_sub(3 + width(&counts) + 1);
-    let p = fit_left(path, room);
+    let root = root.trim_end_matches(['/', '\\']);
+    let shown = match path.strip_prefix(root) {
+        Some(rest) if !root.is_empty() && rest.starts_with(['/', '\\']) => &rest[1..],
+        _ => path,
+    };
+    let p = fit_left(shown, room);
     o.line(0, &[(&p, g.normal, false)], Some((&counts, g.dim)), Some(Hit::File(path.to_string())));
 }
 
@@ -351,7 +363,8 @@ fn shell_lead(o: &mut Out, m: &Model) {
     if let Some(b) = &m.branch {
         o.line(0, &[(b, g.dim, false)], None, None);
     }
-    if let Some(gs) = m.git {
+    // Git changes only inside a repository (a branch is known or files changed).
+    if let Some(gs) = m.git.filter(|gs| m.branch.is_some() || !gs.files.is_empty()) {
         let (a, r) = gs.files.iter().fold((0, 0), |(a, r), (_, x, y)| (a + x, r + y));
         let mut t = if gs.files.is_empty() {
             "no changes".to_string()
@@ -447,8 +460,15 @@ fn agent_row(o: &mut Out, a: &Worker, now_ms: u64) {
     let kc = if a.ended_ms.is_some() { g.dim } else { g.normal };
     // The detail is cut from the left (a file name's end stays).
     let used = 2 + indent + width(tree) + 2 + width(kind) + 1 + width(&model) + width(&tags) + 1 + width(&elapsed) + 2;
-    let detail =
-        if detail.is_empty() { detail } else { format!(" {}", fit_left(&detail, o.w.saturating_sub(used + 1))) };
+    // The tool's name stays; its target (or a description) is cut on the left into the room left.
+    let room = o.w.saturating_sub(used + 1);
+    let detail = if detail.is_empty() {
+        detail
+    } else if a.ended_ms.is_none() && !a.tool.is_empty() && !a.target.is_empty() && width(&detail) > room {
+        format!(" {} {}", a.tool, fit_left(&a.target, room.saturating_sub(width(&a.tool) + 1)))
+    } else {
+        format!(" {}", fit_left(&detail, room))
+    };
     o.line(
         indent,
         &[
@@ -513,6 +533,7 @@ mod tests {
         Model {
             claude: c,
             folder: "~/projects/demo".into(),
+            root: "/home/u/projects/demo".into(),
             branch: Some("main".into()),
             git: None,
             workers: &[],
@@ -578,7 +599,7 @@ mod tests {
         assert!(t.contains("● Explore haiku Read app.rs"), "{t}");
         assert!(t.contains("└ ◌ Explore haiku"), "nested and background: {t}");
         assert!(t.contains("✓ Plan haiku 4 calls"), "{t}");
-        assert!(t.contains("…") && t.contains("main.rs") && t.contains("+12 -3"), "a path cut on the left: {t}");
+        assert!(t.contains("src/very/long/path/main.rs") && t.contains("+12 -3"), "relative to the folder: {t}");
         assert!(t.contains("~/projects/demo:main"), "{t}");
         assert!(t.contains("updated 4s ago"), "{t}");
         // The nested one right after its parent.

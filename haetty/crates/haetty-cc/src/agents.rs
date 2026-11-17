@@ -34,11 +34,15 @@ fn text(j: &Json, path: &[&str]) -> String {
 /// A file name or pattern a tool works on, for the screen only: the last path part.
 pub fn target(input: Option<&Json>) -> String {
     let Some(i) = input else { return String::new() };
-    for k in ["file_path", "notebook_path", "path", "pattern"] {
+    for k in ["file_path", "notebook_path", "path"] {
         if let Some(v) = i.get(k).and_then(Json::str).filter(|v| !v.is_empty()) {
             let v = v.trim_end_matches(['/', '\\']);
             return v.rsplit(['/', '\\']).next().unwrap_or(v).chars().take(80).collect();
         }
+    }
+    // A search pattern is shown whole (`src/**/*.rs`).
+    if let Some(v) = i.get("pattern").and_then(Json::str) {
+        return v.chars().take(80).collect();
     }
     String::new()
 }
