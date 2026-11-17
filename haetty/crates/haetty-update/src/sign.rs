@@ -3,7 +3,7 @@
 //! never signs: the person signs with minisign or rsign2 and their own secret key (`tools/release.sh`).
 //!
 //! The public keys are built in: `assets/update/haetty.pub` (one or more minisign public key files, concatenated;
-//! empty until the person makes the key — such a build checks for updates but installs none). A build with the
+//! the person's key since `29c490a`; a build with the file empty checks for updates but installs none). A build with the
 //! `test-support` feature (the tests' builds only) also trusts the test key in `tests/TEST-ONLY-*`.
 
 use minisign_verify::{PublicKey, Signature};
@@ -69,9 +69,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keys_are_read_and_the_release_key_slot_is_empty_for_now() {
+    fn keys_are_read_and_the_release_key_is_a_minisign_key() {
         assert_eq!(keys_in("untrusted comment: x\nRWQabc\n\n# note\nRWQdef\n"), ["RWQabc", "RWQdef"]);
-        assert!(keys_in(RELEASE_KEYS).is_empty(), "the person's key is not made yet (SELF-HOSTING.md, Releases)");
+        // The person's key since `29c490a` (SELF-HOSTING.md, Releases): one or more readable public keys.
+        let release = keys_in(RELEASE_KEYS);
+        assert!(!release.is_empty(), "assets/update/haetty.pub holds no key");
+        for k in &release {
+            assert!(PublicKey::from_base64(k).is_ok(), "an unreadable key in assets/update/haetty.pub: {k}");
+        }
+        assert!(have_release_key());
         assert!(verify(b"x", "y", &[]).unwrap_err().contains("no release key"));
     }
 }
