@@ -257,6 +257,10 @@ pub fn list(opt: &Path, link: &Path) -> Vec<(String, bool, String)> {
     let mut v: Vec<(String, bool, String)> = std::fs::read_dir(opt)
         .map(|rd| {
             rd.filter_map(|e| e.ok())
+                // Windows: the link `current` lies in this folder and shows the active version's `INSTALLED` through
+                // itself. It is not a version: counted as one, it took a place in `prune`, was removed by it after a
+                // rollback, and was offered as the rollback target.
+                .filter(|e| !(cfg!(windows) && junction::is_junction(&e.path())))
                 .filter(|e| e.path().join("INSTALLED").is_file())
                 .map(|e| {
                     let n = e.file_name().to_string_lossy().into_owned();
@@ -518,5 +522,47 @@ mod tests {
         let missing = base.join("nope/haetty");
         assert!(replace_single(&missing, b"x").is_err());
         haetty_testkit::remove_dir_all(&base);
+    }
+}
+
+/// The Windows side of the layout (the tests above are Unix-only: they use a shell script as the program).
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    fn files(tag: &str) -> Vec<(String, Vec<u8>)> {
+        vec![(exe_name().into(), format!("not a program: {tag}").into_bytes()), ("LICENSE".into(), b"MIT".to_vec())]
+    }
+
+    fn info<'a>(v: &'a str) -> Installed<'a> {
+        Installed { version: v, reference: "test", commit: "0123456789ab", source: "test" }
+    }
+
+    /// Windows: the junction lies in the versions folder; it is neither listed nor pruned, and it is never the
+    /// version a rollback would go to.
+    #[test]
+    fn the_junction_is_not_a_version() {
+        let dir = haetty_testkit::run_dir("layout-junction");
+        let opt = dir.join("Programs").join("haetty");
+        let link = link_of(&opt).unwrap();
+        for v in ["0.1.0-aaaaaaaaaaaa", "0.2.0-bbbbbbbbbbbb", "0.3.0-cccccccccccc"] {
+            put_version(&opt, v, &files(v), &info(v)).unwrap();
+            // `installed=` has whole seconds: the order of the list needs different ones.
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+        }
+        activate(&opt, &link, "0.3.0-cccccccccccc").unwrap();
+        let names = |o: &Path, l: &Path| list(o, l).into_iter().map(|x| x.0).collect::<Vec<_>>();
+        assert_eq!(names(&opt, &link), ["0.3.0-cccccccccccc", "0.2.0-bbbbbbbbbbbb", "0.1.0-aaaaaaaaaaaa"]);
+        // A rollback, then a prune that keeps one other version: the junction and the active version stay whole.
+        activate(&opt, &link, "0.1.0-aaaaaaaaaaaa").unwrap();
+        assert_eq!(names(&opt, &link), ["0.3.0-cccccccccccc", "0.2.0-bbbbbbbbbbbb", "0.1.0-aaaaaaaaaaaa"]);
+        assert_eq!(prune(&opt, &link, 1, None), ["0.2.0-bbbbbbbbbbbb"]);
+        assert!(junction::is_junction(&link), "the junction is still there");
+        assert_eq!(active(&link).as_deref(), Some("0.1.0-aaaaaaaaaaaa"));
+        let exe = opt.join("0.1.0-aaaaaaaaaaaa").join(exe_name());
+        assert!(std::fs::metadata(&exe).unwrap().permissions().readonly(), "the active version keeps its attribute");
+        for v in ["0.1.0-aaaaaaaaaaaa", "0.3.0-cccccccccccc"] {
+            remove_version(&opt, v).unwrap();
+        }
     }
 }
