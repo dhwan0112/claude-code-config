@@ -12,7 +12,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 ## 1. Current state
 
-- **Version** 0.3.2 (0.3.0 `b1262d2` and 0.3.1 `1163a0a` were never tagged and are superseded by it). Tags:
+- **Version** 0.3.3 (stage release-0.3.3; tag `haetty-v0.3.3` after the candidate check). Before: 0.3.2 (0.3.0
+  `b1262d2` and 0.3.1 `1163a0a` were never tagged and are superseded by it). Tags:
   **`haetty-v0.3.2` = `622d629`** (tagged 2026-11-16; record [history](history/2026-11-12-p1.md), "v0.3.2"),
   `haetty-v0.1.0` = `4d75fcd`, `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;

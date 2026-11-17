@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.3.3 (2026-11-17)
+
+The settings button and panel (stage PS) and signed releases with the in-app update (stage PU), with the person's
+release key (`assets/update/haetty.pub`, `29c490a`). 0.3.2 has neither, so 0.3.3 is installed by hand
+(`tools/install-stable.sh haetty-v0.3.3`); the in-app update works from 0.3.3 on, once a release is published
+(SELF-HOSTING "Releases"). The tag `haetty-v0.3.3` goes on the release commit under the P1c rule (the Linux candidate
+check with the short soak, `tools/check-range.sh haetty-v0.3.2..` with 0 failing; `29c490a` is KNOWN, approved
+2026-11-17).
+
+**Windows:** unverified for this commit. Its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Not run on
+Windows: the settings panel, the updater and the installer layout (the Windows check list in `docs/dev-commands.md`);
+the Windows reference frames still need making on the PC.
+
 ### Added
 
 - Settings: one schema for every key (`config::SETTINGS`: type, range, default, group, when it applies); the parser,
@@ -43,6 +56,8 @@
   1.5.5 starts in Latin mode, the test's own ibus now gets a private GSettings keyfile with Hangul mode (and no
   longer writes into the real `~/.config/ibus`) (29 of 30 → 30 of 30). The Windows twins got the same wizard keys
   (not run).
+- The release-key test of `haetty-update` expected an empty key slot and failed once the person's key was in
+  (`29c490a`); it now checks that the slot holds readable minisign keys (`6296de2`).
 
 ## 0.3.2 (2026-11-12, tagged 2026-11-16)
 
