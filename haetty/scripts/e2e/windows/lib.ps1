@@ -12,15 +12,70 @@ if (Get-Command Enter-HaettyHeavy -ErrorAction SilentlyContinue) { Enter-HaettyH
 elseif (-not $env:HAETTY_HEAVY_SLOT) { throw "lib.ps1: tools\heavy.ps1 not found (and no heavy-job slot held)" }   # at most two heavy jobs, Linux and Windows together (tools/heavy.ps1)
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
-using System; using System.Runtime.InteropServices;
+using System; using System.Text; using System.Runtime.InteropServices;
 public static class HW {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll", SetLastError = true)] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
   [StructLayout(LayoutKind.Sequential)] public struct LII { public uint cbSize; public uint dwTime; }
   [DllImport("user32.dll")] public static extern bool GetLastInputInfo(ref LII p);
+  // Stage W1: the pointer (windows\settings.ps1) and what the focus diagnostics read. Nothing here sends input
+  // except SetCursorPos and mouse_event, which the scripts call only through Click-At / Move-To.
+  [StructLayout(LayoutKind.Sequential)] public struct PT { public int x; public int y; }
+  [StructLayout(LayoutKind.Sequential)] public struct RC { public int l; public int t; public int r; public int b; }
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RC r);
+  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref PT p);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] static extern bool SystemParametersInfoW(uint action, uint p, ref uint v, uint f);
+  [DllImport("user32.dll")] static extern IntPtr GetProcessWindowStation();
+  [DllImport("user32.dll")] static extern IntPtr GetThreadDesktop(uint tid);
+  [DllImport("user32.dll", SetLastError = true)] static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+  [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr h);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetUserObjectInformationW(IntPtr h, int index, StringBuilder s, int n, out int needed);
+  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+  [DllImport("kernel32.dll")] public static extern uint WTSGetActiveConsoleSessionId();
+  [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr p, uint access, out IntPtr tok);
+  [DllImport("advapi32.dll", SetLastError = true)] static extern bool GetTokenInformation(IntPtr tok, int cls, IntPtr buf, uint len, out uint ret);
+  [DllImport("advapi32.dll")] static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
+  [DllImport("advapi32.dll")] static extern IntPtr GetSidSubAuthority(IntPtr sid, uint n);
+  public static string ClassName(IntPtr h) { StringBuilder s = new StringBuilder(128); GetClassNameW(h, s, 128); return s.ToString(); }
+  public static uint ForegroundLockTimeout() { uint v = 0; SystemParametersInfoW(0x2000, 0, ref v, 0); return v; }
+  static string ObjName(IntPtr h) { StringBuilder s = new StringBuilder(256); int n; return GetUserObjectInformationW(h, 2, s, 512, out n) ? s.ToString() : "?"; }
+  public static string Station() { return ObjName(GetProcessWindowStation()) + "\\" + ObjName(GetThreadDesktop(GetCurrentThreadId())); }
+  // The desktop that receives input now: "Default" for the user's, "Winlogon" (or not readable) while locked.
+  public static string InputDesktop() {
+    IntPtr d = OpenInputDesktop(0, false, 0x0001);
+    if (d == IntPtr.Zero) return "not readable (error " + Marshal.GetLastWin32Error() + ")";
+    string n = ObjName(d); CloseDesktop(d); return n;
+  }
+  // low / medium / high / system: a medium process cannot put keys into, or take the foreground from, a high one.
+  public static string Integrity(uint pid) {
+    IntPtr p = OpenProcess(0x1000, false, pid);
+    if (p == IntPtr.Zero) return "unknown (OpenProcess error " + Marshal.GetLastWin32Error() + ")";
+    try {
+      IntPtr tok;
+      if (!OpenProcessToken(p, 0x0008, out tok)) return "unknown (OpenProcessToken error " + Marshal.GetLastWin32Error() + ")";
+      try {
+        uint len; GetTokenInformation(tok, 25, IntPtr.Zero, 0, out len);
+        IntPtr buf = Marshal.AllocHGlobal((int)len);
+        try {
+          if (!GetTokenInformation(tok, 25, buf, len, out len)) return "unknown (GetTokenInformation error " + Marshal.GetLastWin32Error() + ")";
+          IntPtr sid = Marshal.ReadIntPtr(buf);
+          int n = Marshal.ReadByte(GetSidSubAuthorityCount(sid));
+          int rid = Marshal.ReadInt32(GetSidSubAuthority(sid, (uint)(n - 1)));
+          return rid >= 0x4000 ? "system" : rid >= 0x3000 ? "high" : rid >= 0x2000 ? "medium" : "low";
+        } finally { Marshal.FreeHGlobal(buf); }
+      } finally { CloseHandle(tok); }
+    } finally { CloseHandle(p); }
+  }
 }
 "@
 $script:P = 0; $script:F = 0
@@ -34,6 +89,31 @@ function Total($name) { Write-Host "TOTAL ${name}: $script:P passed, $script:F f
 $script:MinIdle = 120
 function Idle-Seconds { $l = New-Object HW+LII; $l.cbSize = 8; [void][HW]::GetLastInputInfo([ref]$l); [int](([Environment]::TickCount - $l.dwTime) / 1000) }
 function Last-Input { $l = New-Object HW+LII; $l.cbSize = 8; [void][HW]::GetLastInputInfo([ref]$l); $l.dwTime }
+
+# Focus diagnostics (stage W1; the night runs of 2026-11-10 and 11-11 stopped at their first focus check and left
+# no record of the desktop's state). One line, written to the host (never to the output a caller captures): who
+# runs the script (integrity, session, window station and desktop), which window has the foreground (process,
+# integrity, window class — never its title: titles can hold what the person was doing), whether the screen is
+# locked, the desktop that takes input, the idle time, the foreground lock timeout, the display's idle timeout.
+# Reading only: it sends nothing and moves no window.
+function Display-Timeout {
+    if ($null -ne $script:DisplayTimeout) { return $script:DisplayTimeout }
+    $v = @(& powercfg.exe /q SCHEME_CURRENT SUB_VIDEO VIDEOIDLE 2>$null | Select-String '0x[0-9a-fA-F]{8}\s*$' | ForEach-Object { [Convert]::ToInt32(($_.Line -replace '.*(0x[0-9a-fA-F]{8})\s*$', '$1'), 16) })
+    $script:DisplayTimeout = if ($v.Count -ge 2) { "AC $($v[$v.Count - 2]) s, DC $($v[$v.Count - 1]) s" } else { "unknown" }
+    $script:DisplayTimeout
+}
+function Focus-Diag([string]$Where) {
+    $me = [Diagnostics.Process]::GetCurrentProcess()
+    $fg = [HW]::GetForegroundWindow(); $fp = 0; [void][HW]::GetWindowThreadProcessId($fg, [ref]$fp)
+    $fn = if ($fp) { try { (Get-Process -Id $fp -ErrorAction Stop).ProcessName } catch { "?" } } else { "none" }
+    $fi = if ($fp) { [HW]::Integrity($fp) } else { "-" }
+    $ours = if ($script:Gui) { "pid $($script:Gui.Id) hwnd $($script:Gui.MainWindowHandle) minimized $([HW]::IsIconic($script:Gui.MainWindowHandle)) integrity $([HW]::Integrity($script:Gui.Id))" } else { "not started" }
+    $locked = [bool](Get-Process -Name LogonUI -ErrorAction SilentlyContinue)
+    Write-Host ("DIAG {0}: script pid {1} integrity {2} session {3} (console session {4}, remote {5}) station {6}; foreground hwnd {7} = {8} (pid {9}, integrity {10}, class {11}); haetty window: {12}; ours in front: {13}; locked {14}; input desktop {15}; idle {16} s; foreground lock timeout {17} ms; display timeout {18}" -f
+        $Where, $PID, [HW]::Integrity($PID), $me.SessionId, [HW]::WTSGetActiveConsoleSessionId(), ([HW]::GetSystemMetrics(0x1000) -ne 0), [HW]::Station(),
+        $fg, $fn, $fp, $fi, $(if ($fg -ne [IntPtr]::Zero) { [HW]::ClassName($fg) } else { "-" }), $ours, $(if ($script:Gui) { Ours } else { "-" }), $locked, [HW]::InputDesktop(), (Idle-Seconds), [HW]::ForegroundLockTimeout(), (Display-Timeout))
+}
+
 function Require-Idle {
     $i = Idle-Seconds
     if ($i -lt $script:MinIdle) { Write-Host "SKIP: the desktop is in use (last input $i s ago; needs $script:MinIdle s idle)"; exit 77 }
@@ -61,6 +141,7 @@ function New-HaettyRun([string]$Name) {
 [IO.File]::AppendAllText('$w\claude-starts.log', "`$PID|`$PWD|`$a``n")
 while (`$true) { `$k = [Console]::ReadKey(`$true); [IO.File]::AppendAllText('$w\claude-input.txt', [string]`$k.KeyChar) }
 "@ | Set-Content -Path "$w\fake.ps1" -Encoding utf8
+    Focus-Diag "start of $Name"
     $w
 }
 
@@ -76,18 +157,26 @@ function Start-Gui([string]$Program, [string[]]$Arguments, [string]$Cwd, [string
     $script:Gui = Start-Process -FilePath $Exe -ArgumentList $al -WorkingDirectory $Cwd -PassThru
     for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 250; $script:Gui.Refresh(); if ($script:Gui.MainWindowHandle -ne 0) { break } }
     Start-Sleep 2
+    Focus-Diag "window up"
 }
 
 function Ours { $fg = [HW]::GetForegroundWindow(); $fp = 0; [void][HW]::GetWindowThreadProcessId($fg, [ref]$fp); $fp -eq $script:Gui.Id }
 function Front {
+    $tries = @()
     for ($i = 0; $i -lt 10; $i++) {
         if (Ours) { return $true }
         [HW]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [HW]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)  # Alt: allows SetForegroundWindow
         $script:LastSent = Last-Input
-        [void][HW]::ShowWindow($script:Gui.MainWindowHandle, 9); [void][HW]::SetForegroundWindow($script:Gui.MainWindowHandle)
+        [void][HW]::ShowWindow($script:Gui.MainWindowHandle, 9)
+        $ok = [HW]::SetForegroundWindow($script:Gui.MainWindowHandle); $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        $tries += "$ok/$err"
         Start-Sleep -Milliseconds 300
     }
-    Ours
+    if (Ours) { return $true }
+    # Not in front after ten tries: what the desktop looked like (SetForegroundWindow's result/last error per try).
+    Write-Host "DIAG SetForegroundWindow tries (result/error): $($tries -join ' ')"
+    Focus-Diag "focus lost"
+    $false
 }
 # SendKeys syntax: ^ Ctrl, + Shift, % Alt, {ENTER}, {BS}; literal text must not contain + ^ % ~ ( ) { } [ ].
 function Keys([string]$k, [int]$WaitMs = 600) {
@@ -102,6 +191,23 @@ function Keys([string]$k, [int]$WaitMs = 600) {
     [System.Windows.Forms.SendKeys]::SendWait($k); $script:LastSent = Last-Input; Start-Sleep -Milliseconds $WaitMs
 }
 function Palette([string]$Filter) { Keys "^+p"; Keys $Filter 300; Keys "{ENTER}" }
+
+# The pointer (windows\settings.ps1): the same rules as Keys — nothing while somebody else types or moves the mouse,
+# nothing unless the haetty window is in front. ($X, $Y) are pixels in the window's client area.
+function Client-Size { $r = New-Object HW+RC; [void][HW]::GetClientRect($script:Gui.MainWindowHandle, [ref]$r); @(($r.r - $r.l), ($r.b - $r.t)) }
+function Move-To([int]$X, [int]$Y, [int]$WaitMs = 400) {
+    if (Someone-Active) { Write-Host "STOP: keyboard or mouse input from somebody else; the pointer is not moved"; Stop-Gui; Total "aborted"; exit 2 }
+    if (-not (Front)) { Bad "focus" "the haetty window is not in the foreground: the pointer is not moved"; Stop-Gui; Total "aborted"; exit 2 }
+    $p = New-Object HW+PT; $p.x = $X; $p.y = $Y; [void][HW]::ClientToScreen($script:Gui.MainWindowHandle, [ref]$p)
+    [void][HW]::SetCursorPos($p.x, $p.y)
+    [HW]::mouse_event(0x0001, 0, 0, 0, [UIntPtr]::Zero)   # a zero move: the window gets a pointer-moved message
+    $script:LastSent = Last-Input; Start-Sleep -Milliseconds $WaitMs
+}
+function Click-At([int]$X, [int]$Y, [int]$WaitMs = 600) {
+    Move-To $X $Y 200
+    [HW]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero); [HW]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)   # left down, up
+    $script:LastSent = Last-Input; Start-Sleep -Milliseconds $WaitMs
+}
 
 # haetty.exe as a hidden child (no console window: a `cmd /c` window takes the foreground from the haetty window
 # and keys sent then are lost), stdin written directly (a PowerShell pipe into the GUI-subsystem exe does not
