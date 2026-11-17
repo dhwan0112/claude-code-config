@@ -148,7 +148,22 @@ fn test_roots() -> Option<RootCerts> {
     Some(RootCerts::new_with_certs(&certs))
 }
 
-#[cfg(not(all(feature = "test-support", not(windows))))]
+/// Test builds only, Windows: the same variable for Schannel. ureq hands the certificates to native-tls as the only
+/// roots of this connection (an in-memory store; the Windows certificate stores are neither read nor changed).
+#[cfg(all(feature = "test-support", windows))]
+fn test_roots() -> Option<RootCerts> {
+    let pem = std::fs::read(std::env::var_os("HAETTY_UPDATE_TEST_ROOT")?).ok()?;
+    let certs: Vec<ureq::tls::Certificate<'static>> = ureq::tls::parse_pem(&pem)
+        .filter_map(Result::ok)
+        .filter_map(|item| match item {
+            ureq::tls::PemItem::Certificate(c) => Some(c),
+            _ => None,
+        })
+        .collect();
+    (!certs.is_empty()).then(|| RootCerts::new_with_certs(&certs))
+}
+
+#[cfg(not(feature = "test-support"))]
 fn test_roots() -> Option<RootCerts> {
     None
 }
