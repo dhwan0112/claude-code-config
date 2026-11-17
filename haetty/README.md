@@ -5,7 +5,7 @@ executable per platform. `haetty` opens a window (the GUI client); the
 sessions (programs in pseudo-terminals) live in a per-user daemon,
 `haetty daemon`, which the window starts when needed. The window has tabs,
 a command palette and a config file, and in Claude Code tabs it adds
-attention marks, a status row, a status panel and a diff view of the last
+attention marks, a status row, a sidebar (agents, files, workers, log) and a diff view of the last
 edit, fed by Claude Code's hooks and status line. Terminal emulation is
 libghostty-vt; the window draws on the CPU (winit + softbuffer + swash).
 `haetty-headless` runs programs without a window for testing.
@@ -156,8 +156,9 @@ settings); plain Ctrl+letter keys go to the program.
 | New task (a worker in a git worktree) | — (palette) | `new_task` |
 | Message the worker | — (palette) | `message_worker` |
 | Remove a task's worktree | — (palette) | `remove_task_worktree` |
-| Status panel (Claude Code tabs) | Ctrl+Shift+S | `status_panel` |
-| Status panel wider / narrower | — (palette) | `status_panel_wider` / `status_panel_narrower` |
+| Sidebar: show or hide (narrow window: over the terminal) | Ctrl+Shift+S | `status_panel` |
+| Sidebar wider / narrower | — (palette) | `status_panel_wider` / `status_panel_narrower` |
+| All agents (every tab, the longest waiting first) | Ctrl+Shift+A | `all_agents` |
 | Save tabs as the set "saved" | — (palette) | `save_tabs` |
 | Open saved tabs | — (palette) | `open_saved_tabs` |
 | Open the previous run's tabs | — (palette) | `open_previous_tabs` |
@@ -206,7 +207,7 @@ click reaches the program.
 Each row shows the value, a dim `•` when it differs from the default, and a dim **next start** when it applies only
 from the next start: `decorations`, `engine`, `scrollback-limit`, `restore-tabs`, `claude-integration`,
 `observe-new-tabs`. Everything else in the panel applies at once — colours and theme, `minimum-contrast`, the font
-family and size, the padding, the settings button, notifications and the status panel's numbers. A change that cannot
+family and size, the padding, the settings button, notifications and the sidebar's numbers. A change that cannot
 be made (a font the system does not have, a number out of range, a read-only file) keeps the old value and says why in
 its row. The bottom line shows the selected setting's description and its key in the config file. **Open config
 file** opens it in a new tab with `$EDITOR` (without `$EDITOR`, it shows the path); **Reload config** reads it again.
@@ -304,7 +305,7 @@ keybind = ctrl+shift+n=new_tab
 | `worker-command` | the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1) | `claude` |
 | `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
 | `observe-new-tabs` | `true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only)) | `false` |
-| `token-status` | `true` / `false` — the status panel shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md)) | `false` |
+| `token-status` | `true` / `false` — the sidebar shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md)) | `false` |
 | `clear-hint` | a percentage, 0 for off: a worker tab shows a dim `/clear` once its context has passed that share of `context-window`. A hint only: nothing is sent ([Orchestrator](#orchestrator-tasks-and-workers)) | `60` |
 | `context-window` | the context window of the workers' model, in tokens, for `clear-hint` (at least 1000) | `200000` |
 | `saving-mode` | `true` / `false` — saving mode: Claude Code sessions haetty starts get `BASH_MAX_OUTPUT_LENGTH=12000` and `MAX_MCP_OUTPUT_TOKENS=12000`, the official limits on Bash output read back and on MCP tool output ([the values and sources](docs/tokens/README.md#saving-mode)); the status row shows a dim `◆ saving` | `false` |
@@ -489,15 +490,48 @@ Context use, 5-hour and 7-day limits, cost and files changed, in greys;
 colour 3 (brown/amber) from 80 %, colour 9 (red) from 95 %. "esc to interrupt" appears at the right
 while Claude Code works.
 
-**Status panel (Ctrl+Shift+S).** A column on the right, hidden by default;
-opening it resizes the program, and it is not shown when fewer than 40
-columns would be left for the program. It shows what Claude Code's own
-screen lacks: session id and name, context of size, limits with reset times
-(UTC), cost (an API estimate with subscription limits), lines, prompt cache,
-files and edits, the last edit, subagents with durations, last update.
-Model and effort are left out (Claude Code shows them). Width (24–80
-columns, palette "Status panel wider/narrower") and open state are kept in
-`ui` in the state directory.
+**The sidebar (Ctrl+Shift+S).** From `sidebar-min-cols` (121) window columns on, a column of `sidebar-width` (42) on
+the right, for every tab, from the moment a tab opens: switching tabs or anything Claude Code does never resizes a
+terminal; only resizing the window or Ctrl+Shift+S (hide/show) does. A narrower window: Ctrl+Shift+S shows it over the
+terminal (↑/↓ choose a row, Enter opens it, ←/→ fold a section, Esc closes); the terminal keeps its size. While it is
+docked a Claude Code tab has no status row (the sidebar shows all of it). Sections (the settings' Sidebar group turns
+each on or off; a click on a title folds it):
+
+- **Lead**: session name, model · effort, context of size, limits with reset times (UTC), cost (an API estimate with
+  subscription limits), lines, prompt cache, tokens (`token-status`).
+- **Agents**: `3 running · 2 done`; one line per subagent — `●` running, `◌` in the background, `✓` done, `✗` failed or
+  blocked, `?` (colour 9) waiting for your answer; its type, short model, the tool it runs and its target (or the
+  task's description), elapsed time; finished: its STATUS word or its tool calls. Nested agents under their parent
+  (`└`), `wt` for a worktree, `fork` for a fork. Running first, the last 6 finished, `+ N earlier`. A click (or Enter)
+  opens the agent's **record** over the terminal: the prompt's first line, tool calls with times, errors, tokens, the
+  last message (read from Claude Code's transcript of that agent; Esc closes, `r` reads again).
+- **Files**: the files changed in the conversation with `+A -R` (a shell tab: git changes against HEAD); a click opens
+  the file's diff against HEAD.
+- **Workers**: the orchestrator's tasks and the agents running in each worker tab; a click goes to the tab.
+- **Log**: the tab's recent events (agents starting and ending, edits, permission questions, turn ends, compaction).
+- Footer: folder:branch and the last update.
+
+Greys only, except a waiting agent's `?` and limits at 80 % / 95 %. Width and the folded sections are kept in `ui` in
+the state directory (the old status panel's keys there are no longer read).
+
+**All agents (Ctrl+Shift+A).** Every tab's agents in one list in the palette: the tabs waiting for you first, the one
+that waited longest at the top, then the others; Enter goes to that tab. `haetty agents [--json] [SESSION]` prints
+the same table for observable tabs (palette "Observing: allow or stop for this tab").
+
+**`claude` typed in a shell tab.** Every tab haetty opens has a folder of haetty's own first on its `PATH` (`bin` in
+the instance's runtime folder) holding `claude`: on Linux a link to haetty, on Windows `claude.cmd`. When you type
+`claude` in a shell tab, haetty takes that folder off `PATH` again, finds your real `claude` and runs it with your
+arguments unchanged plus one `--settings` — the same observing hooks and status line a Claude Code tab gets (merged
+with a `--settings` you gave), nothing else: no permissions, no model, no other setting. The tab then counts as a
+Claude Code tab (marks, the sidebar, the permission mark and input hold) until that `claude` ends, without any
+resize. Not injected (your arguments pass as they are): `claude-integration = false`, `-p`/`--print`, `--bg`,
+`--version`, `--help`, output that is not a terminal (pipes, scripts), a `claude` started inside a `claude`, and
+subcommands that are not a conversation (`claude mcp`, `update`, `doctor`, `install`, `auth`, `plugin`, …). Your
+shell files are not read or changed: if your shell puts another `claude` first on `PATH` (or you use an absolute path
+or an alias), that `claude` runs without the integration and the sidebar says "claude is running without haetty's
+integration" (Linux). A tab set keeps such a tab's conversation: when haetty starts again it opens the shell and runs
+`claude --resume <id>` in it (`restore-claude = shell`: the shell only). To turn the proxy off:
+`claude-integration = false`. `claude` inside `ssh` is not seen.
 
 **Diff view (Ctrl+Shift+D).** The last edit (Write, Edit, MultiEdit) of the
 active tab, drawn over its screen; the program is not resized and keeps
@@ -592,10 +626,10 @@ When a worker's context has passed `clear-hint` percent of `context-window` toke
 
 The state comes only from the latest turn's final message (Claude Code's
 Stop hook); haetty never guesses. A red `?` on the tab is Claude Code's own
-question mark, as in any Claude Code tab: it waits for you. The status
-panel (Ctrl+Shift+S, in a Claude Code tab) has a **workers** section: one
-line per task (mark, id, title, state) and, for the active worker, the
-first line of its `BLOCKERS` and `NEXT_ACTION`.
+question mark, as in any Claude Code tab: it waits for you. The sidebar
+has a **Workers** section: one line per task (mark, id, title, state, the
+agents running in its tab; a click goes to the tab) and, for the active
+worker, the first line of its `BLOCKERS` and `NEXT_ACTION`.
 
 **The report** the worker is asked for, at the end of its final message:
 
@@ -757,7 +791,7 @@ right daemon and tab.
   or a copy, DESIGN.md §3.13). A machine without Git Bash was not
   available for testing (HANDOFF.md §6.1, check 23).
 - Windows: no toast notifications; only the taskbar flash.
-- Status panel reset times are in UTC.
+- The sidebar's reset times are in UTC.
 - `scrollback-limit` takes plain bytes; suffixes such as `10MB` are not
   parsed.
 - No own text selection yet when the application does not track the mouse

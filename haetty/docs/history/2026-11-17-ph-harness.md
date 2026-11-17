@@ -157,3 +157,54 @@ Line by line: `cc-panel/README.md`'s `panel.py` sections and `hook.sh`'s Agent-t
 Only haetty: **All agents** (palette, Ctrl+Shift+A): every tab's agents in one list, the tabs waiting for the person
 first and the longest-waiting one at the top, each tab's running agents first; Enter goes to that tab. It replaces
 P2's "a key to the longest-waiting worker". And `haetty agents [--json] [SESSION]` for observable tabs.
+
+## H1, H2, H4: what was built and checked
+
+| Commit | What | Checked |
+|---|---|---|
+| `0dca631` | H0: the measurement, the recordings, the stage text | gate |
+| `8cc2d91` | H1: the claude proxy (protected area, approved: the same settings, nothing more) | gate; `tests/proxy.rs` 3/3 (arguments, exit code, exec keeps the pid, `--settings` merge 0600, `-p`/subcommand/no terminal/integration off/recursion unchanged, 127); `tests/permission.rs` (mark and hold for a proxied claude, back to a shell) |
+| `a962f2d` | H1: resume on restore (`restore-claude`), foreground check | gate; unit tests |
+| `e485506` | H2: the agent table, files, effort, `GetClaude`/`GetSessionLog` (protocol 14) | gate; replays of both real runs, out-of-order arrival, another agent's tool end during a question, failed call, resume, `/clear`, 200 limit; the queries' roles |
+| `18bb4ba` | H2: the sidebar (DESIGN §2 change, approved), the record view | gate (a first attempt failed clippy on Windows: two Linux-only helpers unused; fixed); unit tests; reference frames |
+| `b8c3828` | H2/H3: `haetty agents`, All agents, description and STATUS (protocol 15), lines and cache | gate; unit tests; reference frames |
+| `e56f152` | `scripts/e2e/sidebar.sh`, frame dumps, fixes | gate; sidebar.sh 15/15 |
+
+**Measured** (kramers, Xvfb, release build): GUI idle CPU 0.0 % with the sidebar shown and no agents (also with
+`sidebar = hide`); 1.2 % with five agents running (the once-a-second redraw of their elapsed times; the damage
+tracking redraws only changed rows); the daemon 0.0 %. Stripped sizes (the gate): Linux `haetty` 12 664 440 → 12 898
+800 B (+234 360), Windows `haetty.exe` 11 673 600 → 11 912 704 B (+239 104); no new dependency. Key-to-screen latency
+with agents running was not measured separately (the daemon's latency lines need a person's keys; §6.1).
+
+**Choices** (the rule "closest to the four points", alternatives noted):
+- `◌` is a running agent launched in the background, `●` one Claude Code waits for. In 2.1.326 almost every launch is
+  background (H0), so most running agents show `◌`. Alternative: `◌` only for agents listed in a `Stop`'s
+  `background_tasks` (after the main turn ended).
+- An agent's question closes with its own tool end or stop, or when the session's question mark goes (the K1 rules
+  stay the only source of the mark and hold).
+- The Log comes from derived event-log lines kept in the daemon's memory (64 per session); no new file.
+- The restore types `claude --resume <id>` into the new shell (read by the shell once it is ready) instead of
+  starting the shell with `-c`: the shell keeps its own startup files and history.
+- The sidebar settings apply at the next start (`sidebar`, width, min columns); the section switches live.
+- A docked sidebar takes the Claude Code tab's status row back (§13.3) — so a Claude Code tab's grid is one row taller
+  than with the old panel.
+
+**Windows unverified**: the unit and integration tests build for `x86_64-pc-windows-gnu` (`cargo test --no-run`) and clippy passes there (the gate), but they were not run (no Windows or Wine here); the proxy (`claude.cmd`, cmd, PowerShell, Git Bash, Ctrl+C in a batch file), the reference
+frames, the record view's paths (`docs/dev-commands.md`, Windows check list; `scripts/e2e/windows/proxy.ps1` written,
+not run).
+
+**For the person** (frame dumps `docs/look/ph-1` … `ph-8`): the sidebar's width (42) and threshold (121), the Lead's
+order, `◌` versus `●`, the Agents line's parts (model, tags, elapsed), the Log's wording; whether the shell tab's
+sidebar should show more than folder, branch and git changes.
+
+## Moved from HANDOFF §6.0 (2026-11-17, PH: the terminal itself is on hold)
+
+- The default engine stays libghostty. Open for the person (DESIGN §10.15, the transition table): the 744 vtdiff
+  FAILs of ghostty-main (`docs/vtdiff/2026-11-09-f2.md`); the native engine's key-to-frame latency (+0.13 ms at the
+  median); SGR throughput at the 80 % threshold; no native-only installer option; no Windows soak with libghostty.
+- F5 (`b1262d2`): the cause of the Windows FAIL of 2026-11-10 (focus check) is open; see "Next session".
+- **For the person: `decorations = auto` on Xfce.** `auto` picks `native` on every X11; DESIGN §3.12's reason (the
+  window manager colours the bar, mutter follows `_GTK_THEME_VARIANT=dark`) does not hold on Xfce: xfwm4 4.18 does
+  not read that property, so its bar keeps xfwm4's theme colours. `integrated` there would change the default look
+  on Xfce — the person's choice (P0 record, history/2026-11-12-p0-north-star.md).
+- Upstream drafts: `docs/upstream/README.md` (01 and 02 fixed at the pin; 03 still present; none sent).

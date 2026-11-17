@@ -178,3 +178,35 @@ One per session (quota), each gated and pushed:
    `diff-split-cols`, `diff-view`, `diff-after-edit`; frame dumps: split, stacked, narrow.
 3. **P3c IDE prototype** (protected scope above): the daemon's WebSocket server, lock files, the wire messages, the
    overlay's accept/reject, one short real Claude Code run in an isolated home (quota), README.
+
+## 13.7 Stage PH: the harness screen as built (2026-11-17)
+
+Stage PH (the person's text in [STAGES.md](../STAGES.md), "PH") took P3a in and grew the Agents section; record
+`docs/history/2026-11-17-ph-harness.md` (H0 measurement, the ccx table). What differs from 13.3:
+
+- **The proxy** (H1): every shell tab with the integration has `<run dir>/bin` first on `PATH` (Linux: `claude` →
+  haetty; Windows: `claude.cmd` → `haetty claude-proxy`) and `HAETTY_CLAUDE_SETTINGS` (its settings file, written as a
+  Claude Code tab's). `haetty-cc::proxy` runs the real claude with the same arguments plus `--settings` (merged with
+  the user's), never for `-p`/`--bg`/`--version`/`--help`, a non-conversation subcommand, output that is not a
+  terminal, or inside a proxied claude. The daemon makes the tab a Claude Code tab at its first report and a shell tab
+  at `SessionEnd` (`ClaudeInfo.via_proxy`, `ended`); no status row is reserved for it. Tab sets keep its conversation;
+  a restore types `claude --resume <id>` into the shell (`restore-claude`). A `claude` in the foreground without
+  reports (Linux `/proc`: the terminal's `tpgid`) gets the sidebar line "claude is running without haetty's
+  integration". The injected content is unchanged (protected area, approved).
+- **Lead**: the session name, then model · effort (the stage text asks for them; §2.1's rule against what Claude Code
+  shows was changed for this), context, limits, cost, lines, cache, tokens.
+- **Agents** (replaces Subagents): from `haetty-cc::agents` — the hooks of H0 only (no new injected event): parent and
+  depth from the parent's Agent tool call, model (`resolvedModel`), background (`async_launched`), fork (type `fork`),
+  worktree (`tool_input.isolation`), current tool and target, calls, failed call, the agent's open question (shown
+  only while the session's is), description, the STATUS of its last message; running first, 200 finished kept, 6
+  shown. The record view (`agentview.rs`) reads the agent's transcript tail on a thread.
+- **Log**: derived event-log lines (`agent_start`, `agent_end`, `edit` with the file name, `ask`, `turn_end`,
+  `turn_failed`, `compact`), the latest 64 per session kept in the daemon's memory for `GetSessionLog`.
+- **Queries** (protocol 14–15): `GetClaude` → `ClaudeState`, `GetSessionLog` → `SessionLog`, read-only on
+  `ListSessions`' line of the role table; an observe-only client gets them only for observable sessions
+  (`haetty agents`).
+- **All agents** (H3): palette list of every tab's agents, the longest-waiting tab first (replaces P2's key to the
+  longest-waiting worker).
+- Measured on kramers: GUI idle CPU 0.0 % with the sidebar shown and no agents, 1.2 % with five agents running (a
+  redraw of their elapsed times each second; only changed rows are drawn); the daemon 0.0 %. Stripped size +234 KB
+  (Linux) / +239 KB (Windows) against v0.3.3, no new dependency.

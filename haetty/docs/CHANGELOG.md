@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added
+
+- `claude` typed in a shell tab becomes a Claude Code tab: a proxy folder first on every tab's `PATH` runs your real
+  `claude` with your arguments and the same observing `--settings` a Claude Code tab gets (not for `-p`, `--bg`,
+  subcommands such as `mcp`/`update`, output that is not a terminal); the tab is a shell tab again when it ends; a
+  restored tab set resumes its conversation in the shell (`restore-claude`, default `resume`). Fixes the hand-started
+  claude restored as a bare shell. Stage PH, `docs/history/2026-11-17-ph-harness.md`. **Windows:** unverified.
+- The sidebar (replaces the status panel; DESIGN §2 change, approved): on the right from 121 columns (`sidebar`,
+  `sidebar-width`, `sidebar-min-cols`, Sidebar group), over the terminal in a narrower window (Ctrl+Shift+S); Lead,
+  Agents (every subagent with its parent, model, current tool, background/worktree/fork, question, STATUS), Files,
+  Workers, Log; an agent's record view. Same for every tab: no resize on events.
+- All agents (palette, Ctrl+Shift+A) and `haetty agents [--json] [SESSION]`.
+- Protocol 15: the agent table, changed files, effort, `GetClaude` / `GetSessionLog` (read-only).
+
+### Changed
+
+- The status panel's `ui` keys (`status-panel`, `status-panel-width`) are no longer read; the sidebar shows by default.
+- Since PH the terminal itself (engine, soaks, look polish, release tools) gets defect fixes only.
+
 ## 0.3.3 (2026-11-17, tagged 2026-11-17)
 
 The settings button and panel (stage PS) and signed releases with the in-app update (stage PU), with the person's

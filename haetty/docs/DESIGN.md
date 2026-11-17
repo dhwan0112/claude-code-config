@@ -73,3 +73,4 @@ hook output rules, the IPC permission checks, and the path of Claude Code permis
 | 13.4 | Decisions: diff overlay | Over the terminal, side by side from 100 columns else stacked; files and hunks; `diff-after-edit` off | [13](design/13-sidebar-diff-ide.md) |
 | 13.5 | Decisions: IDE prototype | Off by default; a server per session in the daemon; accept and reject only by the person's keys; Esc never accepts | [13](design/13-sidebar-diff-ide.md) |
 | 13.6 | Plan | P3a sidebar, P3b diff overlay, P3c IDE prototype, one session each | [13](design/13-sidebar-diff-ide.md) |
+| 13.7 | PH as built | The claude proxy in shell tabs, the sidebar with Agents, Log and Workers, the agent table and queries, All agents; measured CPU and size | [13](design/13-sidebar-diff-ide.md) |

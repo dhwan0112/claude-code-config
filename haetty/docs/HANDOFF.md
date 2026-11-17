@@ -8,8 +8,6 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage ph (branch `haetty/ph`, worktree `~/projects/claude-code-config-wt/ph`). Remaining: PH harness screen: H0 measurement, H1 claude shim in shell tabs, H2 sidebar with Agents/Workers/Log, H3 ccx table + All agents, H4 docs
-
 ## 1. Current state
 
 - **Version** 0.3.3. Tags: **`haetty-v0.3.3` = `ca70269`** (tagged 2026-11-17; record
@@ -45,16 +43,18 @@ Stages:
   release (SELF-HOSTING "Releases"; §6.1 34). Windows unverified for PS and PU (Windows check list; reference frames
   to make on the PC). **P3 research** (2026-11-17, [record](history/2026-11-17-p3-research.md)): OpenCode and IDE
   protocol research, decisions and plan in DESIGN §13 ([13](design/13-sidebar-diff-ide.md)). **v0.3.3** tagged on `ca70269`
-  (2026-11-17, [record](history/2026-11-17-v0.3.3.md)): PS and PU released; the person installs it by hand.
-- P2: working inside haetty — coordinating session + workers, two small stages, `haetty tokens` comparison; a key to
-  the longest-waiting worker. **v0.3.2 is stable on kramers since 2026-11-17** (the person), so P2 can run. v0.3.2 has
-  neither PS (gear, settings panel) nor PU (in-app update): both came after `622d629`, so they need a new release.
-- **Next: P3a sidebar** (DESIGN §13.3, §13.6 item 1; §2 change approved; frame dumps `docs/look/p3-*`), then P3b diff
-  overlay (§13.4), P3c IDE prototype (§13.5, protected scope).
-- P4: session browser, fork, names, `haetty sessions --json`; **and `claude` started by hand in a shell tab**: today
-  only a tab whose program is `claude` is a Claude Code tab (§3.13), so such a tab is saved as the shell, without the
-  session id, and a restore reopens only the shell (the person, 2026-11-17: four tabs came back as zsh). Detect it
-  (the foreground process), save its conversation id and resume it. P5: connections, `haetty mcp` (stdio, Observe) + install.
+  (2026-11-17, [record](history/2026-11-17-v0.3.3.md)): PS and PU released; the person installs it by hand. **PH
+  harness screen** (2026-11-17, [record](history/2026-11-17-ph-harness.md), DESIGN §13.7; P3a taken in): the claude
+  proxy in shell tabs (resume on restore; closes P4's "hand-started claude restored as zsh"), the sidebar (Agents,
+  Files, Workers, Log), an agent's record, All agents (Ctrl+Shift+A, replaces P2's key), `haetty agents`; protocol 15.
+  Windows unverified (proxy, frames: Windows check list). Frame dumps `docs/look/ph-*` for the person.
+- **Next: P2 in real use** — a coordinating session and workers in haetty (the sidebar's Agents and Workers, All
+  agents), two small stages, `haetty tokens` comparison (one-session versus workers); write down every inconvenience.
+  Needs a stable with PH (after the next release, or `install-stable.sh` of a main commit — the person decides).
+- Then P3b diff overlay (§13.4), P3c IDE prototype (§13.5, protected scope).
+- P4: session browser, fork, names, `haetty sessions --json` (a `claude` started outside the proxy — another `claude`
+  first on PATH, an alias — is still saved as the shell; the sidebar names it). P5: connections, `haetty mcp` (stdio,
+  Observe) + install.
 - P6: SSH, Tailscale (system OpenSSH). P7/P8: remote daemon, delegation (docs). P9: tidy-up (token tools, Windows
   hand-over, `NOT-RUN (foreground)`, the auto-mode deny path).
 
@@ -166,15 +166,7 @@ Windows, WSL and the dev machine:
   markers are not passed on, docs/history/2026-11-09-k2-child-markers.md); the worker mark stayed `–` after a restart though its last report was stored (fixed in K3a); a `WARN` for the empty left button side (cosmetic).
   Pending: 2 (not applicable), 17 (reboot), 25 (X11, 200 %).
 
-- The default engine stays libghostty. Open for the person (DESIGN §10.15, the transition table): the 744 vtdiff
-  FAILs of ghostty-main (`docs/vtdiff/2026-11-09-f2.md`); the native engine's key-to-frame latency (+0.13 ms at the
-  median); SGR throughput at the 80 % threshold; no native-only installer option; no Windows soak with libghostty.
-- F5 (`b1262d2`): the cause of the Windows FAIL of 2026-11-10 (focus check) is open; see "Next session".
-- **For the person: `decorations = auto` on Xfce.** `auto` picks `native` on every X11; DESIGN §3.12's reason (the
-  window manager colours the bar, mutter follows `_GTK_THEME_VARIANT=dark`) does not hold on Xfce: xfwm4 4.18 does
-  not read that property, so its bar keeps xfwm4's theme colours. `integrated` there would change the default look
-  on Xfce — the person's choice (P0 record, history/2026-11-12-p0-north-star.md).
-- Upstream drafts: `docs/upstream/README.md` (01 and 02 fixed at the pin; 03 still present; none sent).
+- Engine, F5, Xfce `decorations = auto`, upstream drafts (on hold since PH): moved to [history/2026-11-17-ph-harness.md](history/2026-11-17-ph-harness.md), "Moved from HANDOFF".
 - The open list of 2026-11-07 (E5, 79 vtdiff FAILs, the 2-hour soak, SGR 58 %) is kept in
   `docs/history/2026-11-09-g0-handoff-trim.md`.
 - The Windows soak v2 (`scripts/e2e/windows/soak.ps1`) has never run end to end, and the Windows GUI e2e (item 29)
@@ -327,6 +319,12 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 34. [new, PU 2026-11-16] **Releases and updates** (SELF-HOSTING "Releases"): the minisign key and `haetty.pub` commit;
     a tag, `tools/release.sh` in your terminal, the draft checked and published; an installed haetty updates from the
     panel (Restart now brings the tabs back, Roll back returns). Windows: the Windows check list.
+35. [new, PH 2026-11-17] **Agents in real work**: a Claude Code session that starts five or more subagents (some
+    nested, some in the background): the sidebar's Agents follow (parent, model, tool, `◌`/`●`, `✓` and STATUS),
+    a click opens an agent's record, Ctrl+Shift+A lists every tab's agents; idle CPU and keys stay quick while they
+    run; `claude` typed in your zsh tab becomes a Claude Code tab (if your `.zshrc` puts `~/.local/bin` first on PATH,
+    the sidebar says "claude is running without haetty's integration" instead). Windows: `claude` in cmd, PowerShell
+    and Git Bash tabs (the Windows check list).
 
 #### B. Linux with a real account (Claude Code logged in)
 

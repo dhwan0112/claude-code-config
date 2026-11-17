@@ -563,7 +563,7 @@ pub const SETTINGS: &[Setting] = &[
         kind: BOOL,
         default: "false",
         default_note: None,
-        doc: "`true` / `false` — the status panel shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md))",
+        doc: "`true` / `false` — the sidebar shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md))",
         line: "The status panel shows the tokens of the tab and of each worker.",
         group: Group::Claude,
         when: When::Live,

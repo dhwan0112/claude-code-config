@@ -7,7 +7,9 @@
 
 - Which tabs: the program's file name is `claude` (`.exe`, `.cmd`), and
   `claude-integration` is on (config or `--claude-integration false`; the
-  GUI passes it in `CreateSpec`). The daemon then adds
+  GUI passes it in `CreateSpec`). Since stage PH also a shell tab while a
+  `claude` started in it through haetty's proxy runs (§13.7): the same
+  settings, from its first report to its `SessionEnd`. The daemon then adds
   `--settings <run dir>/settings-<session>.json` (0600 in the 0700 runtime
   directory; Windows `%LOCALAPPDATA%\haetty\run`), removed when the session
   ends or is closed, and at daemon start for sessions a killed daemon left.
