@@ -44,10 +44,14 @@ Stages:
   to make on the PC). **P3 research** (2026-11-17, [record](history/2026-11-17-p3-research.md)): OpenCode and IDE
   protocol research, decisions and plan in DESIGN §13 ([13](design/13-sidebar-diff-ide.md)).
 - P2: working inside haetty — coordinating session + workers, two small stages, `haetty tokens` comparison; a key to
-  the longest-waiting worker (after the person installs v0.3.2).
+  the longest-waiting worker. **v0.3.2 is stable on kramers since 2026-11-17** (the person), so P2 can run. v0.3.2 has
+  neither PS (gear, settings panel) nor PU (in-app update): both came after `622d629`, so they need a new release.
 - **Next: P3a sidebar** (DESIGN §13.3, §13.6 item 1; §2 change approved; frame dumps `docs/look/p3-*`), then P3b diff
-  overlay (§13.4), P3c IDE prototype (§13.5, protected scope). P2 still waits for v0.3.2 as stable (kramers: 0.2.0).
-- P4: session browser, fork, names, `haetty sessions --json`. P5: connections, `haetty mcp` (stdio, Observe) + install.
+  overlay (§13.4), P3c IDE prototype (§13.5, protected scope).
+- P4: session browser, fork, names, `haetty sessions --json`; **and `claude` started by hand in a shell tab**: today
+  only a tab whose program is `claude` is a Claude Code tab (§3.13), so such a tab is saved as the shell, without the
+  session id, and a restore reopens only the shell (the person, 2026-11-17: four tabs came back as zsh). Detect it
+  (the foreground process), save its conversation id and resume it. P5: connections, `haetty mcp` (stdio, Observe) + install.
 - P6: SSH, Tailscale (system OpenSSH). P7/P8: remote daemon, delegation (docs). P9: tidy-up (token tools, Windows
   hand-over, `NOT-RUN (foreground)`, the auto-mode deny path).
 
@@ -169,25 +173,20 @@ Windows, WSL and the dev machine:
 - Upstream drafts: `docs/upstream/README.md` (01 and 02 fixed at the pin; 03 still present; none sent).
 - The open list of 2026-11-07 (E5, 79 vtdiff FAILs, the 2-hour soak, SGR 58 %) is kept in
   `docs/history/2026-11-09-g0-handoff-trim.md`.
-- The Windows soak v2 (`scripts/e2e/windows/soak.ps1`) has never run end to
-  end, and the Windows GUI e2e (item 29) ran once, 13/14: its first full
-  runs are on an idle desktop.
-- `tools/dev-run.ps1`: the build and a real start are not yet run on
-  Windows (U5).
-- Memory: the `.wslconfig` proposal (`memory=8GB`) waits for the user's
-  decision; Claude Code reaped background shells on Windows although its
-  docs say it does not (U3).
+- The Windows soak v2 (`scripts/e2e/windows/soak.ps1`) has never run end to end, and the Windows GUI e2e (item 29)
+  ran once, 13/14: its first full runs are on an idle desktop.
+- `tools/dev-run.ps1`: the build and a real start are not yet run on Windows (U5).
+- Memory: the `.wslconfig` proposal (`memory=8GB`) waits for the user's decision; Claude Code reaped background
+  shells on Windows although its docs say it does not (U3).
 - The S4 soak may have shared an X server with `crashrun.sh` (T4); its
   figures are kept as recorded.
-- **A7 (kramers 2026-11-06): on Wayland at a fractional scale the first
-  window was about 1/scale of the requested grid** (`--cols 80 --rows 24`
-  gave 64x19 at 125 %). Fix in V7 (DESIGN §3.10), passing on X11 (`scale.sh`).
-  **Open risk:** the Wayland waiting path has not run on a compositor yet
-  (WSLg needs an idle desktop; kramers §6.1 item 32).
+- **A7 (kramers 2026-11-06): on Wayland at a fractional scale the first window was about 1/scale of the requested
+  grid** (`--cols 80 --rows 24` gave 64x19 at 125 %). Fix in V7 (DESIGN §3.10), passing on X11 (`scale.sh`).
+  **Open risk:** the Wayland waiting path has not run on a compositor yet (WSLg needs an idle desktop; §6.1 item 32).
 - winit#4746 workaround to remove once winit has the fix (§4).
-- A test daemon can outlive an abnormally ended test run: a `threads`
-  test daemon ran 12 h with its folder gone (found in V5). Tests should
-  stop their daemon in a guard that runs on panic too.
+- A test daemon can outlive an abnormally ended test run: a `threads` test daemon ran 12 h with its folder gone
+  (found in V5); 10 daemons of the `ime` e2e runs of 2026-11-16 16:05 still ran on 2026-11-17 (stopped by PID).
+  Tests should stop their daemon in a guard that runs on panic too.
 
 ### 6.1 Manual checks (by a person; regrouped 2026-11-05 after the rename)
 
