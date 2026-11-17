@@ -204,13 +204,40 @@ pub fn put_version(opt: &Path, name: &str, files: &[(String, Vec<u8>)], info: &I
             set_read_only(&e?.path(), true)?;
         }
         set_read_only(&stage, true)?;
-        std::fs::rename(&stage, &dest)
+        rename_into_place(&stage, &dest)
     })();
     if let Err(e) = res {
         let _ = remove_version(opt, &format!(".{name}.partial"));
         return Err(format!("installing {name}: {e}"));
     }
     Ok(dest)
+}
+
+/// The staging folder becomes the version folder. Windows refuses to rename a folder while a file in it is open
+/// ("access denied", or a sharing violation) — by this program's own settings panel reading the versions ([`list`]
+/// looks at `INSTALLED` in every entry, the staging folder included), a virus scanner or the search indexer. Such a
+/// reader is gone within milliseconds, so the rename is tried again for up to two seconds.
+#[cfg(windows)]
+fn rename_into_place(stage: &Path, dest: &Path) -> std::io::Result<()> {
+    const ACCESS_DENIED: i32 = 5;
+    const SHARING_VIOLATION: i32 = 32;
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match std::fs::rename(stage, dest) {
+            Err(e)
+                if matches!(e.raw_os_error(), Some(ACCESS_DENIED | SHARING_VIOLATION))
+                    && std::time::Instant::now() < end =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+            r => return r,
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn rename_into_place(stage: &Path, dest: &Path) -> std::io::Result<()> {
+    std::fs::rename(stage, dest)
 }
 
 /// Points the link at `opt/name`; returns the version it pointed at before.
@@ -563,6 +590,45 @@ mod windows_tests {
         assert!(std::fs::metadata(&exe).unwrap().permissions().readonly(), "the active version keeps its attribute");
         for v in ["0.1.0-aaaaaaaaaaaa", "0.3.0-cccccccccccc"] {
             remove_version(&opt, v).unwrap();
+        }
+    }
+
+    /// Windows: a version is put while another thread reads the versions folder all the time, as the settings
+    /// panel does during an install (`list` opens `INSTALLED` in the staging folder too). Without the retry of
+    /// the rename this failed with "access denied" within a few rounds.
+    #[test]
+    fn a_version_is_put_while_the_folder_is_read() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let dir = haetty_testkit::run_dir("layout-readers");
+        let opt = dir.join("Programs").join("haetty");
+        let link = link_of(&opt).unwrap();
+        put_version(&opt, "0.0.1-base", &files("base"), &info("0.0.1-base")).unwrap();
+        activate(&opt, &link, "0.0.1-base").unwrap();
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let readers: Vec<_> = (0..4)
+            .map(|_| {
+                let (opt, link, stop) = (opt.clone(), link.clone(), stop.clone());
+                std::thread::spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        let _ = list(&opt, &link);
+                    }
+                })
+            })
+            .collect();
+        let mut failed = vec![];
+        for i in 0..150 {
+            let v = format!("0.1.{i}-test");
+            if let Err(e) = put_version(&opt, &v, &files(&v), &info(&v)) {
+                failed.push(e);
+            }
+        }
+        stop.store(true, Ordering::Relaxed);
+        for r in readers {
+            r.join().unwrap();
+        }
+        assert!(failed.is_empty(), "{} of 150 failed: {:?}", failed.len(), failed.first());
+        for (v, _, _) in list(&opt, &link) {
+            remove_version(&opt, &v).unwrap();
         }
     }
 }
