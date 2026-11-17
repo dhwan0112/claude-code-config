@@ -280,6 +280,8 @@ struct Win {
     scrollback_limit: usize,
     engine: haetty_core::vt::EngineKind,
     claude_integration: bool,
+    /// `restore-claude = resume` (stage PH, H1).
+    restore_claude: bool,
     /// OS notification (Linux `notify-send`) besides the taskbar/urgency
     /// hint when Claude Code waits and the window is unfocused.
     notifications: bool,
@@ -499,6 +501,7 @@ impl App {
             scrollback_limit: self.opts.config.scrollback_limit,
             engine: self.opts.config.engine,
             claude_integration: self.opts.config.claude_integration,
+            restore_claude: self.opts.config.restore_claude,
             notifications: self.opts.config.notifications,
             observe_new_tabs: self.opts.config.observe_new_tabs,
             panel_open: ui_state.0,
@@ -793,7 +796,22 @@ impl Win {
                 continue;
             }
             let mut args = t.args.clone();
-            if haetty_cc::settings::is_claude(&t.program) && !t.claude_session.is_empty() {
+            // A shell tab saved while a proxied `claude` ran in it (stage PH, H1): the shell, then `claude --resume`.
+            let mut resume_in_shell = None;
+            let claude_tab = haetty_cc::settings::is_claude(&t.program);
+            if !claude_tab
+                && !t.claude_session.is_empty()
+                && self.restore_claude
+                && haetty_cc::resume::valid_id(&t.claude_session)
+                && haetty_cc::resume::transcript_exists(&t.cwd, &t.claude_session)
+                && !live.iter().any(|s| s.state == SessionState::Running && s.claude_session == t.claude_session)
+                && !self.tabs.iter().any(|x| {
+                    x.exited.is_none() && x.claude.as_ref().is_some_and(|c| c.claude_session == t.claude_session)
+                })
+            {
+                resume_in_shell = Some(t.claude_session.clone());
+            }
+            if claude_tab && !t.claude_session.is_empty() {
                 // The conversation is already open: do not open it twice. A
                 // session started with `--resume ID` counts before Claude Code
                 // has reported its id (a second reopen right after the first).
@@ -829,7 +847,13 @@ impl Win {
                 once: vec![],
             };
             match self.open_spec(spec) {
-                Ok(()) => n += 1,
+                Ok(()) => {
+                    n += 1;
+                    if let Some(id) = resume_in_shell {
+                        // Typed ahead into the new shell; it reads the line once it is ready.
+                        self.tab().session.handle.write(Origin::Program, format!("claude --resume {id}\r"));
+                    }
+                }
                 Err(e) => log::warn!("tab set: {:?}: {e}", t.name),
             }
         }

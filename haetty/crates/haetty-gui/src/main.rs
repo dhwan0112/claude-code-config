@@ -35,6 +35,8 @@ mod config_edit;
 mod damage;
 mod diffview;
 mod emoji;
+#[allow(dead_code)] // the sidebar uses it (stage PH, H2)
+mod fgproc;
 mod font;
 mod geom;
 mod gitview;
