@@ -38,7 +38,9 @@ run the result. Only the Windows PC can do these:
 
 - the native unit and integration tests (`cargo test` built for Windows: `scripts/e2e/README.md`, "Windows");
 - the smoke run (`scripts/windows-smoke.ps1`) and the daemon-crash runs;
-- the GUI end-to-end runs (`scripts/e2e/windows/tabs.ps1`, `orchestrator.ps1`; an idle desktop);
+- the GUI end-to-end runs (`scripts/e2e/windows/tabs.ps1`, `orchestrator.ps1`, `settings.ps1`, `update.ps1`; an idle
+  desktop), all of them in one run with `tools\windows-catchup.ps1` (W1: started by the person from a PowerShell
+  window; `-DryRun` checks the scripts and paths without starting anything);
 - the Windows soak and the night run (`tools/overnight-soak.ps1`, HANDOFF §6.1 item 30);
 - the installer and dev-run self-tests (`tools/test-install-stable.ps1`, `tools/test-dev-run.ps1`,
   `tools/test-heavy.ps1`), ConPTY, the IME, DWM and HiDPI checks of HANDOFF §6.1 C.
@@ -54,28 +56,34 @@ and the Windows result goes into the release's CHANGELOG "Windows:" line (verifi
 Items a stage could not check because they need Windows; the PC works through them and records each on its
 `checks/windows-<date>` branch. Newest last; an item goes when a check record covers it.
 
-- `70f97a4` (#1): `Focused` and `Occluded(false)` now draw a full frame on every platform. On Windows: restore from
-  minimized and switch focus a few times — the window looks as before, idle CPU stays about 0 %.
+Covered by `docs/checks/2026-11-17-windows.md` (stage W1, branch `checks/windows-2026-11-17`) and gone from this
+list: the PS and PU reference frames and the single-colour ⚙; a CRLF config file and `config.bak` after a change in
+the panel; `orchestrator.ps1` with the seven-question wizard; the build's DLLs and `--version`; the junction made by
+`haetty install-layout` without a shell; `HTTPS_PROXY`; #1's minimize and restore with 0 % idle CPU. What is left:
+
+- `70f97a4` (#1): switching the focus to and from the window a few times — the window looks as before (minimize and
+  restore, and the idle CPU, are checked).
 - Stage PS (settings button and panel, DESIGN §2.4, §3.16):
-  - the reference frames: `claude-panel` and `workers` gained the ⚙, `settings` and `shell-gear` are new — run the
-    Windows test binary once with `HAETTY_UPDATE_REFERENCE=1` and `HAETTY_REFERENCE_DIR` (then a rerun: every frame
-    identical), and commit `tests/reference/windows/` with the reason;
-  - the ⚙ glyph is single-colour (Segoe UI Symbol expected, not the Segoe UI Emoji colour one; the log line
-    `settings button: ⚙` at start, `≡` would mean no single-colour face);
-  - at 150 % DPI a click on the ⚙ cell (bottom-right) opens the panel, a click next to it does not;
-  - a config file with CRLF line ends keeps them after a change in the panel (`config.bak` beside it);
-  - `scripts/e2e/windows/orchestrator.ps1` and `windows/soak.ps1` with the seven-question New task wizard (S7).
+  - at 150 % DPI a click on the ⚙ cell (bottom-right) opens the panel, a click next to it does not:
+    `scripts/e2e/windows/settings.ps1` checks both and prints the scale; it passed at 100 % (23 of 23), run it once
+    with the display at 150 %;
+  - `scripts/e2e/windows/soak.ps1` with the seven-question New task wizard (S7): not run yet.
 - Stage PU (updates, DESIGN §2.4, §3.17):
-  - the build: `haetty.exe` imports only system DLLs (Schannel: `secur32`, `crypt32`), `--version` works;
-  - `scripts/e2e/windows/update.ps1` (written, **not run**): an update over HTTPS through Schannel with the test CA,
-    and form (b): the running `haetty.exe` renamed to `haetty.exe.old`, the new one in its place, the `.old` gone at
+  - `scripts/e2e/windows/update.ps1` (rewritten in W1 after update.sh: form (a) and form (b)): its first run found that
+    the panel's install failed on Windows ("access denied", fixed in W1: the version folder's rename is tried again;
+    the junction is no longer listed as a version). **Still to pass on an idle desktop:** the install from the panel,
+    Restart now with the tab back, Roll back, a version that ends at once, and form (b) with `haetty.exe.old` gone at
     the next start;
-  - form (a) by hand: `install-stable.ps1` a version, then update from the panel: a new version folder (read-only
-    files), the junction `current` re-pointed (`haetty install-layout` makes it without a shell), the Start menu
-    shortcut and the taskbar pin (through `current\haetty.exe`) start the new version; Roll back re-points it;
-  - the reference frames `claude-gear-update` and `settings-updates` (new) with the Windows test binary and
-    `HAETTY_UPDATE_REFERENCE=1`, together with the PS frames;
-  - a system proxy set only in Windows' settings (not `HTTPS_PROXY`) is not used (ureq reads the environment).
+  - a taskbar pin (through `current\haetty.exe`) starts the new version after an update: by hand;
+  - a system proxy set only in Windows' settings (not `HTTPS_PROXY`) is not used: shown by the import table (no
+    `winhttp`, no `wininet`) and the source; the behaviour itself is a check by hand (it changes Windows' settings).
+- From W1 itself:
+  - `tools\windows-catchup.ps1` runs every GUI check above in one go (focus probe, tabs, orchestrator, settings,
+    update, a 10-minute soak on each engine) on an idle desktop and writes one result file; its dry run passed, a real
+    run has to be started by the person from a PowerShell window;
+  - the Windows night run's focus stop (2026-11-10, 11-11) is still open: `lib.ps1` now prints DIAG lines (integrity
+    levels, the foreground window, lock state, foreground lock timeout); compare the line of a run started from a
+    PowerShell window with one started by Task Scheduler (`windows-catchup.ps1 -TaskFocusProbe`).
 
 ## Short soak (candidate check, P1c)
 
