@@ -8,6 +8,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage release-0.3.3 (branch `haetty/release-0.3.3`, worktree `~/projects/claude-code-config-wt/release-0.3.3`). Remaining: v0.3.3: version, CHANGELOG, KNOWN line for 29c490a (approved 2026-11-17); candidate check (check-range haetty-v0.3.2.., run-all, installer self-tests, short soak); tag haetty-v0.3.3; record
+
 ## 1. Current state
 
 - **Version** 0.3.2 (0.3.0 `b1262d2` and 0.3.1 `1163a0a` were never tagged and are superseded by it). Tags:
