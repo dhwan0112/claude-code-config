@@ -8,8 +8,6 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage p3-research (branch `haetty/p3-research`, worktree `~/projects/claude-code-config-wt/p3-research`). Remaining: P3 research session: OpenCode sidebar/diff research, IDE-protocol research, design file 13 (sidebar, diff overlay, IDE prototype plan); then P3 implementation sessions
-
 ## 1. Current state
 
 - **Version** 0.3.2 (0.3.0 `b1262d2` and 0.3.1 `1163a0a` were never tagged and are superseded by it). Tags:
@@ -41,11 +39,14 @@ Stages:
   **`haetty-v0.3.2` = `622d629`**; open: P1a's one-hour soak); PS settings panel (2026-11-16,
   [record](history/2026-11-16-ps-settings.md)); **PU releases and in-app update** (2026-11-16,
   [record](history/2026-11-16-pu-update.md)): `tools/release.sh`, signed manifests, the Updates group, restart and
-  rollback. **The person:** make the release key and run the first release (SELF-HOSTING "Releases"; §6.1 34).
-  Windows unverified for PS and PU (Windows check list; reference frames to make on the PC).
+  rollback; the person's release key is in (`29c490a`; its test fixed in `6296de2`) — **the person:** run the first
+  release (SELF-HOSTING "Releases"; §6.1 34). Windows unverified for PS and PU (Windows check list; reference frames
+  to make on the PC). **P3 research** (2026-11-17, [record](history/2026-11-17-p3-research.md)): OpenCode and IDE
+  protocol research, decisions and plan in DESIGN §13 ([13](design/13-sidebar-diff-ide.md)).
 - P2: working inside haetty — coordinating session + workers, two small stages, `haetty tokens` comparison; a key to
   the longest-waiting worker (after the person installs v0.3.2).
-- P3: sidebar, side-by-side diff overlay, IDE-integration research (DESIGN §2 change approved; dumps in `docs/look/`).
+- **Next: P3a sidebar** (DESIGN §13.3, §13.6 item 1; §2 change approved; frame dumps `docs/look/p3-*`), then P3b diff
+  overlay (§13.4), P3c IDE prototype (§13.5, protected scope). P2 still waits for v0.3.2 as stable (kramers: 0.2.0).
 - P4: session browser, fork, names, `haetty sessions --json`. P5: connections, `haetty mcp` (stdio, Observe) + install.
 - P6: SSH, Tailscale (system OpenSSH). P7/P8: remote daemon, delegation (docs). P9: tidy-up (token tools, Windows
   hand-over, `NOT-RUN (foreground)`, the auto-mode deny path).
@@ -139,7 +140,7 @@ Windows, WSL and the dev machine:
 - From Git Bash, `printf > /mnt/c/...` can fail silently: write Windows files through their Windows path.
 - Build directories other than `target/` (the gate's `target-native`, worktrees' `target-*`) reached the Dropbox mirror until E4; `tools/mirror-dropbox.sh` now skips `target-*/`. Files Dropbox holds are removed from Windows (`rmdir /s /q`), not through `/mnt/c`.
 - `heavy.ps1` from Git Bash (E3): `-Label … -- pwsh …` printed pwsh's help; dot-sourcing it in `pwsh -Command` left `Enter-HaettyHeavy` undefined. Not yet understood.
-- `tools/check-range.sh` builds into the usual target dir, and our crates' artifacts are named the same in every checkout: a build of another worktree into it meanwhile got stale or missing crates (E5). Give other builds their own `CARGO_TARGET_DIR` while it runs.
+- `tools/check-range.sh` builds into the usual target dir, and our crates' artifacts are named the same in every checkout: a build of another worktree into it meanwhile got stale or missing crates (E5). Give other builds their own `CARGO_TARGET_DIR` while it runs. The same with `tools/stage/e.sh`: a main-checkout test can run the worktree's build (`touch` the file; P3).
 - Git Bash turns a `\\wsl.localhost\…` argument into `\wsl.localhost\…`: put such paths inside a PowerShell script file (E5).
 - PowerShell resolves aliases before functions: a function `R` is shadowed by `r` (Invoke-History) (E5).
 - Claude Code may stop idle background shells when memory runs low (seen on Windows too, against its docs, U3): keep long runs outside Claude Code.
@@ -391,11 +392,7 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     In Claude Code, `/theme` → "Dark mode (ANSI colors only)": its screen
     then uses the theme's colours.
 
-### 6.2 Known gaps, 6.3 Later milestones
-
-Moved to [docs/history/2026-11-09-handoff-6-2-6-3.md](history/2026-11-09-handoff-6-2-6-3.md).
-
 ## 7. Where the old sections went (2026-11-07, V2)
 
 The table of the old HANDOFF sections and where their text is now: [history/handoff-sections.md](history/handoff-sections.md)
-(moved in G0, 2026-11-09).
+(moved in G0, 2026-11-09). §6.2 Known gaps and §6.3 Later milestones: [history/2026-11-09-handoff-6-2-6-3.md](history/2026-11-09-handoff-6-2-6-3.md).
