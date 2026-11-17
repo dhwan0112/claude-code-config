@@ -23,7 +23,7 @@ foreach ($shell in @("cmd", "powershell")) {
     $code = $LASTEXITCODE
     $args_ = (Get-Content "$w\args.txt" -Raw -ErrorAction SilentlyContinue)
     Check "$shell finds claude.cmd in the proxy folder; the real claude ran with the same arguments" ($args_ -match "--model haiku hello") "args: $args_"
-    Check "$shell: the real claude's exit code (7)" ($code -eq 7) "exit $code"
+    Check "${shell}: the real claude's exit code (7)" ($code -eq 7) "exit $code"
 }
 Remove-Item "$w\args.txt" -ErrorAction SilentlyContinue
 cmd /c "claude -p hi" | Out-Null
