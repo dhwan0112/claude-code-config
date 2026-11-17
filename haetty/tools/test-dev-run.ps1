@@ -7,7 +7,7 @@ param([Parameter(Mandatory = $true)][string]$Exe)
 $run = Initialize-HaettyGuard -Name HAETTY_TEST_TMP
 $F = Join-Path $run "dev-run"; Assert-HaettyPath $F
 $env:LOCALAPPDATA = "$F\local"; $env:APPDATA = "$F\roaming"
-Get-ChildItem env: | Where-Object { $_.Name -match '^(HAETTY_|CCTERM_)' } | ForEach-Object { Remove-Item "env:$($_.Name)" }
+Get-ChildItem env: | Where-Object { $_.Name -match '^HAETTY_' } | ForEach-Object { Remove-Item "env:$($_.Name)" }
 New-Item -ItemType Directory -Force "$F\local\haetty-dev\bin", "$F\roaming\haetty-dev" | Out-Null
 Copy-Item $Exe "$F\local\haetty-dev\bin\haetty.exe"
 $D = Join-Path $PSScriptRoot "dev-run.ps1"
@@ -25,7 +25,6 @@ Ok ($r.out -match [regex]::Escape("\\.\pipe\haetty-dev-$sid") -and $r.out -match
 Ok ($r.out -match [regex]::Escape("$F\local\haetty-dev") -and $r.out -match 'instance dev') "state haetty-dev; the build reports instance dev"
 Ok (Refused "HAETTY_STATE_DIR" "$F\local\haetty") "refused: HAETTY_STATE_DIR = the stable state directory"
 Ok (Refused "HAETTY_CONFIG_DIR" "$F\roaming\haetty\sub") "refused: HAETTY_CONFIG_DIR inside the stable config directory"
-Ok (Refused "CCTERM_SOCKET" "\\.\pipe\haetty-$sid") "refused: the old CCTERM_SOCKET = the stable pipe"
 Ok (Refused "HAETTY_LOG_FILE" "$F\local\Programs\haetty\x.log") "refused: a path in the stable install"
 "theme = $F\roaming\haetty\themes\mine" | Set-Content "$F\roaming\haetty-dev\config"
 $r = Run; Ok ($r.rc -eq 3 -and $r.out -match 'names') "refused: the dev config names a stable path"
