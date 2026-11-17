@@ -2,14 +2,14 @@
 
 ## Unreleased
 
-## 0.3.3 (2026-11-17)
+## 0.3.3 (2026-11-17, tagged 2026-11-17)
 
 The settings button and panel (stage PS) and signed releases with the in-app update (stage PU), with the person's
 release key (`assets/update/haetty.pub`, `29c490a`). 0.3.2 has neither, so 0.3.3 is installed by hand
 (`tools/install-stable.sh haetty-v0.3.3`); the in-app update works from 0.3.3 on, once a release is published
 (SELF-HOSTING "Releases"). The tag `haetty-v0.3.3` goes on the release commit under the P1c rule (the Linux candidate
 check with the short soak, `tools/check-range.sh haetty-v0.3.2..` with 0 failing; `29c490a` is KNOWN, approved
-2026-11-17).
+2026-11-17). Tagged on `ca70269` after that check passed (`docs/history/2026-11-17-v0.3.3.md`).
 
 **Windows:** unverified for this commit. Its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Not run on
 Windows: the settings panel, the updater and the installer layout (the Windows check list in `docs/dev-commands.md`);
