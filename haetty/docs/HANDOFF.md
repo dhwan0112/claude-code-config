@@ -8,6 +8,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage ph (branch `haetty/ph`, worktree `~/projects/claude-code-config-wt/ph`). Remaining: PH harness screen: H0 measurement, H1 claude shim in shell tabs, H2 sidebar with Agents/Workers/Log, H3 ccx table + All agents, H4 docs
+
 ## 1. Current state
 
 - **Version** 0.3.3. Tags: **`haetty-v0.3.3` = `ca70269`** (tagged 2026-11-17; record
