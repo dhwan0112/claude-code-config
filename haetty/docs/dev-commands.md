@@ -77,9 +77,12 @@ Items a stage could not check because they need Windows; the PC works through th
     `HAETTY_UPDATE_REFERENCE=1`, together with the PS frames;
   - a system proxy set only in Windows' settings (not `HTTPS_PROXY`) is not used (ureq reads the environment).
 - Stage PH (the claude proxy, the sidebar; DESIGN §13):
-  - `scripts/e2e/windows/proxy.ps1` (written, **not run**): `claude.cmd` in the proxy folder found first by cmd and
-    PowerShell, the real claude (claude.exe of the native installer, or npm's claude.cmd) runs with the same arguments
-    and exit code, `-p` passes, a missing claude gives 127 and one line;
+  - (`scripts/e2e/windows/proxy.ps1` ran in W1 after three fixes of the script, 7 of 7:
+    `docs/checks/2026-11-17-windows.md`, part D. It has no terminal, so it cannot see the next item.)
+  - **found in W1, open:** in a tab, with a release or dist `haetty.exe` (a GUI-subsystem program), the proxy has no
+    console: no `--settings` is added and the real claude gets a console of its own instead of the tab (cmd,
+    PowerShell 5.1, pwsh 7). The debug build passes every case. Until that is decided and fixed, the by-hand item
+    below cannot pass with a release build;
   - by hand in a dev window: `claude` typed in a cmd tab and a PowerShell tab becomes a Claude Code tab (the sidebar's
     Lead and Agents fill), its end makes it a shell tab again; Ctrl+C inside claude: the batch file's "Terminate batch
     job (Y/N)?" may follow claude's exit — note what happens; Git Bash finds npm's extensionless `claude` before
