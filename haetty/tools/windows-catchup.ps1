@@ -220,7 +220,7 @@ try {
 }
 finally {
     [void][CatchupPower]::SetThreadExecutionState([uint32]"0x80000000")
-    $w = ($rows.Keys | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
+    $w = [Math]::Max(4, [int](($rows.Keys | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum))   # (no item selected: an empty table)
     $body = @("windows-catchup.ps1, started $stamp, ended $(Get-Date -Format 'yyyyMMdd-HHmm')") + $head + @("", ("{0,-$w}  {1}" -f "item", "result"), ("{0,-$w}  {1}" -f ("-" * $w), "------"))
     foreach ($k in $rows.Keys) { $body += ("{0,-$w}  {1}" -f $k, $rows[$k]) }
     $body += @("", "== DIAG lines (scripts\e2e\windows\lib.ps1)")
