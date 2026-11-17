@@ -23,7 +23,7 @@ $p = 0; $f = 0
 function Check($name, $ok, $why) { if ($ok) { $script:p++; Write-Host "PASS $name" } else { $script:f++; Write-Host "FAIL ${name}: $why" } }
 foreach ($shell in @("cmd", "powershell")) {
     Remove-Item "$w\args.txt" -ErrorAction SilentlyContinue
-    if ($shell -eq "cmd") { cmd /c "claude --model haiku hello" | Out-Null } else { powershell -NoProfile -Command "claude --model haiku hello" | Out-Null }
+    if ($shell -eq "cmd") { cmd /c "claude --model haiku hello" | Out-Null } else { powershell -NoProfile -Command "claude --model haiku hello; exit `$LASTEXITCODE" | Out-Null }   # (-Command alone answers 0 or 1)
     $code = $LASTEXITCODE
     $args_ = (Get-Content "$w\args.txt" -Raw -ErrorAction SilentlyContinue)
     Check "$shell finds claude.cmd in the proxy folder; the real claude ran with the same arguments" ($args_ -match "--model haiku hello") "args: $args_"
