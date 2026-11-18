@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.4.0 (2026-11-19, release candidate, not tagged)
+
+Stage PH's harness screen: `claude` typed in a shell tab becomes a Claude Code tab (the proxy), the sidebar with the
+agents of a conversation, All agents and `haetty agents` (`docs/history/2026-11-17-ph-harness.md`). The tag
+`haetty-v0.4.0` goes on this commit under the P1c rule once the Linux candidate check passes
+(`docs/history/2026-11-19-pm.md`); the person tags, builds the release and installs it.
+
+**Windows:** unverified for this commit; its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Known
+problems: the claude proxy in shell tabs does not work with release builds (`haetty.exe` is a GUI-subsystem program,
+so the proxy has no console: no `--settings` is added and the real claude opens in a console of its own; Windows
+record `checks/windows-2026-11-17`, D3); the settings panel cannot install an update (the version folder's rename is
+refused while the panel reads the folder, and the junction `current` is listed as a version; the fixes are on
+`windows/2026-11-17-fixes`, not merged). Both wait for stage PW.
+
 ### Added
 
 - `claude` typed in a shell tab becomes a Claude Code tab: a proxy folder first on every tab's `PATH` runs your real
@@ -33,6 +47,9 @@ check with the short soak, `tools/check-range.sh haetty-v0.3.2..` with 0 failing
 **Windows:** unverified for this commit. Its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Not run on
 Windows: the settings panel, the updater and the installer layout (the Windows check list in `docs/dev-commands.md`);
 the Windows reference frames still need making on the PC.
+Known problem found later (Windows record `checks/windows-2026-11-17`, B3): on Windows 0.3.3 cannot install an
+update from the settings panel ("access denied" on the version folder's rename; `prune` after a rollback can remove the
+junction `current`). Update a Windows install with `tools/install-stable.ps1` until stage PW merges the fixes.
 
 ### Added
 
