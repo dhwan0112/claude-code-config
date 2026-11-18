@@ -182,10 +182,7 @@ pub fn send(h: &RemoteHandle, info: Option<&ClaudeInfo>, text: &str) -> Result<(
 /// final message must end with. The report's STATUS is the only part of that message haetty keeps.
 pub fn prompt(id: &str, title: &str, briefing: &str, branch: &str, base: &str) -> String {
     let mut p = format!("haetty task {id}: {title}\n\n");
-    p.push_str(&format!(
-        "Read the briefing first: {briefing}\n\
-         It has the scope, the related files and when the task is done. If you cannot read it, report STATUS: blocked.\n\n"
-    ));
+    p.push_str(&format!("The briefing (scope, related files, when the task is done):\n\n{}\n\n", briefing.trim_end()));
     p.push_str(&format!(
         "You work in a git worktree on branch {branch} (from {base}); stay in it. \
          End your final message with exactly this report and nothing after it:\n\n\
@@ -377,8 +374,8 @@ mod tests {
 
     #[test]
     fn prompt_and_slug() {
-        let p = prompt("t3", "Fix parser", "/state/tasks/t3.briefing.md", "task/t3-fix-parser", "main");
-        assert!(p.starts_with("haetty task t3: Fix parser\n\nRead the briefing first: /state/tasks/t3.briefing.md\n"));
+        let p = prompt("t3", "Fix parser", "# Fix parser\n\n## Scope\n\nparser.rs\n", "task/t3-fix-parser", "main");
+        assert!(p.starts_with("haetty task t3: Fix parser\n\nThe briefing (scope, related files, when the task is done):\n\n# Fix parser\n\n## Scope\n\nparser.rs\n\nYou work"));
         assert!(p.contains("STATUS: verified | blocked | needs_review\nARTIFACT:"));
         assert_eq!(slug("Fix the CRLF parser!! (urgent)"), "fix-the-crlf-parser-urgent");
         assert_eq!(slug("한글만"), "task");

@@ -613,7 +613,7 @@ mode whether you accept it — **answer these yourself**; the task is
 submitted only after that, by Claude Code itself. haetty never types into
 these questions.
 
-The answers are written to a briefing file in haetty's own state folder, not in the repository: the title, the scope, the related files and when the task is done. The worker's first prompt points to that file, and removing the task deletes it. A task's model and effort are passed to Claude Code as launch arguments only; no settings file changes. Claude Code may ask whether it may read the briefing outside the worktree: answer that yourself, because the orchestrator never answers permission prompts.
+The answers make the briefing: the title, the scope, the related files and when the task is done. The worker's first prompt carries it, so the worker reads nothing outside its worktree to start (a Claude Code that blocks reads outside the working folders would otherwise stop at a permission question first). A copy is kept in haetty's own state folder, not in the repository; removing the task deletes it. A task's model and effort are passed to Claude Code as launch arguments only; no settings file changes.
 
 When a worker's context has passed `clear-hint` percent of `context-window` tokens, its tab shows a dim `/clear`: use `/clear` at a task boundary, not in the middle of a change. haetty only shows the mark; it sends nothing.
 

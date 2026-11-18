@@ -28,14 +28,14 @@ pub struct Task {
     pub base: String,
     pub branch: String,
     pub worktree: String,
-    /// The briefing file the worker reads first: beside the task record, not in the repository.
+    /// The briefing file, a copy of what the first prompt carries: beside the task record, not in the repository.
     pub briefing: String,
     pub created_ms: u64,
 }
 
 impl Task {
     pub fn prompt(&self) -> String {
-        orch::prompt(&self.id, &self.title, &self.briefing, &self.branch, &self.base)
+        orch::prompt(&self.id, &self.title, &briefing_text(self), &self.branch, &self.base)
     }
 
     /// Whether `folder` is this task's worktree.
@@ -149,8 +149,8 @@ pub fn flag_value(v: &str) -> Result<String, String> {
     }
 }
 
-/// The briefing a worker reads first: the title, the scope, the related files and when the task is done. A blank
-/// answer says so. The person may edit the file until the worker reads it.
+/// The briefing in a worker's first prompt and in the task's briefing file: the title, the scope, the related files
+/// and when the task is done. A blank answer says so.
 pub fn briefing_text(t: &Task) -> String {
     let or = |s: &str, none: &str| if s.trim().is_empty() { none.to_string() } else { s.trim().to_string() };
     format!(
@@ -326,7 +326,7 @@ mod tests {
         assert!(parse("# x\nid=t1\n").is_none(), "no worktree: not a task");
         assert!(t.is_folder("/r-tasks/t12-fix-parser/") && !t.is_folder("/r-tasks/t1"));
         assert!(is_prompt_arg(&t.prompt()) && !is_prompt_arg("haetty task t1: x"));
-        assert!(t.prompt().contains("Read the briefing first: /state/tasks/t12.briefing.md\n"));
+        assert!(t.prompt().contains("## Scope\n\nparser.rs only\n") && !t.prompt().contains("/state/tasks/"));
         // A task file from before the optional answers has them blank.
         let old = parse("id=t3\ntitle=Old\nworktree=/w\n").unwrap();
         assert_eq!((old.scope.as_str(), old.model.as_str(), old.briefing.as_str()), ("", "", ""));
