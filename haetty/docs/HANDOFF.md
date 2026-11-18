@@ -8,6 +8,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage pm (branch `haetty/pm`, worktree `~/projects/claude-code-config-wt/pm`). Remaining: M1 merge the two Windows fixes branches + the record's not-fixed items, M2 Windows proxy through haetty-headless (protected, approved), M3 0.4.0 candidate (no tag), M4 P2 in real use in a dev instance
+
 ## 1. Current state
 
 - **Version** 0.3.3. Tags: **`haetty-v0.3.3` = `ca70269`** (tagged 2026-11-17; record
