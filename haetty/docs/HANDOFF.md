@@ -8,11 +8,11 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage pm (branch `haetty/pm`, worktree `~/projects/claude-code-config-wt/pm`). Remaining (the person's revised text of 2026-11-19, STAGES "PM"): M1 0.4.0 candidate (Linux, no tag), M2 P2 in real use in a dev instance, M3 P3b diff overlay (M2's work)
 
 ## 1. Current state
 
-- **Version** 0.4.0 (release candidate of stage PM, not tagged; [record](history/2026-11-19-pm.md)). Tags: **`haetty-v0.3.3` = `ca70269`** (tagged 2026-11-17; record
+- **Version** 0.4.0: release commit **`98a9b71`**, Linux candidate check passed 2026-11-19, **not tagged** (the person
+  tags; commands in [history/2026-11-19-pm.md](history/2026-11-19-pm.md), M1). Tags: **`haetty-v0.3.3` = `ca70269`** (tagged 2026-11-17; record
   [history](history/2026-11-17-v0.3.3.md)), **`haetty-v0.3.2` = `622d629`** (tagged 2026-11-16; record [history](history/2026-11-12-p1.md), "v0.3.2"),
   `haetty-v0.1.0` = `4d75fcd`, `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
@@ -56,11 +56,16 @@ Stages:
   harness screen** (2026-11-17, [record](history/2026-11-17-ph-harness.md), DESIGN §13.7; P3a taken in): the claude
   proxy in shell tabs (resume on restore; closes P4's "hand-started claude restored as zsh"), the sidebar (Agents,
   Files, Workers, Log), an agent's record, All agents (Ctrl+Shift+A, replaces P2's key), `haetty agents`; protocol 15.
-  Windows unverified (proxy, frames: Windows check list). Frame dumps `docs/look/ph-*` for the person.
-- **Next: P2 in real use** — a coordinating session and workers in haetty (the sidebar's Agents and Workers, All
-  agents), two small stages, `haetty tokens` comparison (one-session versus workers); write down every inconvenience.
-  Needs a stable with PH (after the next release, or `install-stable.sh` of a main commit — the person decides).
-- Then P3b diff overlay (§13.4), P3c IDE prototype (§13.5, protected scope).
+  Windows unverified (proxy, frames: Windows check list). Frame dumps `docs/look/ph-*` for the person. **PM**
+  (2026-11-19, [record](history/2026-11-19-pm.md)): **0.4.0 candidate `98a9b71`** (Linux check passed, not tagged);
+  **P2 in real use** in a dev instance (a Sonnet coordinator, six workers: three merged, three stopped by permission
+  questions or the classifier; the inconvenience list and the token comparison in the record); **P3b diff overlay**
+  (`d0fc76f`, DESIGN §13.4 "as built"; dumps `docs/look/p3b-*`); fixes found in use: the worker's prompt carries its
+  briefing, the sidebar tokens label, the gate in a dev tab, Workers shows a worker that asks.
+- **Next (proposed from PM's list, most hands first): P2b coordinator tools** — `haetty task new` for a Control
+  client, `haetty wait worker ID`, a one-line `haetty workers`, the report spelling, worker tabs observable for their
+  coordinator, "waits for a background task"; protected and needing the person's approval: the hook path after an
+  in-place binary replace (P13), a `haetty` link in the proxy folder (P2). Then P3c IDE prototype (§13.5).
 - P4: session browser, fork, names, `haetty sessions --json` (a `claude` started outside the proxy — another `claude`
   first on PATH, an alias — is still saved as the shell; the sidebar names it). P5: connections, `haetty mcp` (stdio,
   Observe) + install.
@@ -71,7 +76,9 @@ Stages:
   (11 commits on `e8a48be`; three merge conflicts and their resolution in that record's "For kramers" table) and
   `windows/2026-11-17-ph-fixes` (4 commits on `58386ab`); the Windows check list in `docs/dev-commands.md`; and the
   lines stages add here:
-  - (none yet)
+  - PM (2026-11-19): the diff overlay (P3b) unverified on Windows — `diff.sh` is Linux only, the three `diff-*`
+    scenes have no Windows reference frames; the Windows items of §6.0 and the Windows pitfalls of §4 moved to
+    [history/2026-11-19-pm.md](history/2026-11-19-pm.md), "Moved from HANDOFF".
 
 **On hold** (no point moves): the differences to the newest Ghostty (F2), the default engine, H2, slow memory growth;
 since PH (2026-11-17) the terminal itself — engine, soaks, look polish, release tools — gets defect fixes only.
@@ -147,27 +154,14 @@ Testing and Claude Code:
 - A script typing blind into a palette breaks silently when it gains a step: check the result (soaks made no task G5→PS).
 - Ubuntu 26.04 has uutils coreutils: its `cat` stops after the first read from a raw terminal (use python3 in fixtures); kramers' `/tmp` is a tmpfs (RAM). `echo "$out" | grep -q` under `pipefail` fails when grep matches early (SIGPIPE): read a here-string (the gate did this until 2026-11-10).
 
-Windows, WSL and the dev machine:
-- WSLg windows get focus only when the Windows desktop allows it: check the cursor in a frame dump first.
-- `SetForegroundWindow` is refused while the user is active: attach to the foreground thread's input, check the foreground process before every send, never type blind; GUI runs only on an idle desktop.
-- Windows PowerShell 5 reads BOM-less UTF-8 as ANSI: use `pwsh` or a BOM.
-- WSLg's X11 frame is white/grey and ignores `_GTK_THEME_VARIANT`: not haetty's padding.
-- DWM colour attributes are set-only and `PrintWindow` misses the border: check with a real screen capture.
+The dev machine (the Windows and WSL ones: [history/2026-11-19-pm.md](history/2026-11-19-pm.md), for PW):
 - `cargo build --target <triple>` writes `target/<triple>/`: plain `target/release/haetty` may be stale.
-- From Git Bash, `wsl.exe -- bash -lc` expands `$VARS` on Windows and MSYS rewrites paths: `MSYS_NO_PATHCONV=1`, script files; WSL `/tmp` is cleared when the VM stops.
-- `wsl -- bash -c` goes through the login shell (zsh), which expands first: run script files.
 - Xvfb without sudo: an extracted root, `unshare -rm` overlay for `xkbcomp` and a tmpfs X socket dir (`scripts/e2e/README.md`).
-- PowerShell 7 expands a leading `~` in native command arguments to the Windows home (U4).
-- Scripts on `\\wsl.localhost` are unsigned: a new window needs `-ExecutionPolicy Bypass` (U5b).
-- PowerShell function names are case-insensitive: a function `Git` calling `git` recursed forever (T5).
-- From Git Bash, `printf > /mnt/c/...` can fail silently: write Windows files through their Windows path.
 - Build directories other than `target/` (the gate's `target-native`, worktrees' `target-*`) reached the Dropbox mirror until E4; `tools/mirror-dropbox.sh` now skips `target-*/`. Files Dropbox holds are removed from Windows (`rmdir /s /q`), not through `/mnt/c`.
-- `heavy.ps1` from Git Bash (E3): `-Label … -- pwsh …` printed pwsh's help; dot-sourcing it in `pwsh -Command` left `Enter-HaettyHeavy` undefined. Not yet understood.
 - `tools/check-range.sh` builds into the usual target dir, and our crates' artifacts are named the same in every checkout: a build of another worktree into it meanwhile got stale or missing crates (E5). Give other builds their own `CARGO_TARGET_DIR` while it runs. The same with `tools/stage/e.sh`: a main-checkout test can run the worktree's build (`touch` the file; P3).
-- Git Bash turns a `\\wsl.localhost\…` argument into `\wsl.localhost\…`: put such paths inside a PowerShell script file (E5).
-- PowerShell resolves aliases before functions: a function `R` is shadowed by `r` (Invoke-History) (E5).
 - Claude Code may stop idle background shells when memory runs low (seen on Windows too, against its docs, U3): keep long runs outside Claude Code.
-- A Task Scheduler night run (2026-11-10) stopped at its first focus check; cause open. Unattended trial 2026-11-07 passed (`docs/history/2026-11-10-windows-handover.md` §2).
+- Replacing a running daemon's binary file in place: its `current_exe()` becomes `…/haetty (deleted)` and new sessions get hooks on that path (no Claude Code tab). Start a new build beside, never `mv` over the daemon's file (PM, P13).
+- Claude Code with `blockReadsOutsideWorkingDirectories` asks before any Read outside its folders: briefs, test output and frame dumps a worker must open belong inside its worktree (PM).
 
 ## 6. Next tasks
 
@@ -184,11 +178,6 @@ Windows, WSL and the dev machine:
 - Engine, F5, Xfce `decorations = auto`, upstream drafts (on hold since PH): moved to [history/2026-11-17-ph-harness.md](history/2026-11-17-ph-harness.md), "Moved from HANDOFF".
 - The open list of 2026-11-07 (E5, 79 vtdiff FAILs, the 2-hour soak, SGR 58 %) is kept in
   `docs/history/2026-11-09-g0-handoff-trim.md`.
-- The Windows soak v2 (`scripts/e2e/windows/soak.ps1`) has never run end to end, and the Windows GUI e2e (item 29)
-  ran once, 13/14: its first full runs are on an idle desktop.
-- `tools/dev-run.ps1`: the build and a real start are not yet run on Windows (U5).
-- Memory: the `.wslconfig` proposal (`memory=8GB`) waits for the user's decision; Claude Code reaped background
-  shells on Windows although its docs say it does not (U3).
 - The S4 soak may have shared an X server with `crashrun.sh` (T4); its
   figures are kept as recorded.
 - **A7 (kramers 2026-11-06): on Wayland at a fractional scale the first window was about 1/scale of the requested
@@ -369,34 +358,9 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 
 #### C. Windows 11 (and 10 where noted)
 
-18. [kramers 2026-11-09: not run (Windows)] **Name and icon**: `haetty.exe` in Explorer (file icon, Properties),
-    pinned to Start and the taskbar, in Alt+Tab, in the title bar — the new
-    icon at every size; the window title "haetty"; `haetty install-desktop`
-    says nothing is needed. Pin haetty to the taskbar, then start a copy of
-    `haetty.exe` from another folder: its window joins the pinned button
-    (same AppUserModelID); a `HAETTY_INSTANCE=dev` window gets its own.
-19. [kramers 2026-11-09: not run (Windows)] **Migration and the old daemon**: with a ccterm installation, the first
-    start copies `%APPDATA%\ccterm\config` and the tab sets
-    (`%LOCALAPPDATA%\ccterm\tabs`); with `ccterm.exe` still open, haetty runs
-    beside it (separate pipes) and says so; the ccterm window keeps working.
-20. [kramers 2026-11-09: not run (Windows)] **Microsoft Korean IME** in `haetty.exe` running Claude Code:
-    composition inline and underlined at the cursor, no caret at the start
-    of the syllable, Hanja candidate window next to the cursor, commit on
-    Space/Enter, Enter right after a syllable submits once; Ctrl+C while
-    composing.
-21. [kramers 2026-11-09: not run (Windows)] **Keys, mouse, clipboard, fonts, HiDPI** as in 5–9 (Ctrl+V also pastes
-    on Windows); dark title bar on Windows 10 (Windows 11 colours do not
-    apply there).
-22. [kramers 2026-11-09: not run (Windows)] **With a real account**: 11–17 on Windows (taskbar flash instead of a
-    notification for 13; the permission dialog after the synchronous hook,
-    ~70 ms on the test machine).
-23. [kramers 2026-11-09: not run (Windows)] **Status line on a machine without Git Bash** (Claude Code then runs it
-    through PowerShell; could not be produced here — Claude Code finds Git
-    Bash at its default install location even with Git off `PATH`): with
-    haetty in a folder with spaces (e.g. `C:\Program Files\haetty`) or in a
-    user folder with a space, the status row at the bottom of a Claude Code
-    tab fills (`$ 0.00` …) within a few seconds. The injected command is the
-    8.3 short path (checked to run in PowerShell 5.1 and 7 directly).
+Items 18–23 (name and icon, migration, the Korean IME, keys and HiDPI, a real account, the status line without
+Git Bash) moved for stage PW to [history/2026-11-19-pm.md](history/2026-11-19-pm.md), "Moved from HANDOFF".
+
 24. [kramers 2026-11-09: not run (Windows)] **Theme** (Linux and Windows): IBM 5153 CGA on your display — text
     `#cecece` on `#141414`, colour 3 brown, blue dark; the title bar
     (Windows 11), padding, tab bar and status row in the same greys; the

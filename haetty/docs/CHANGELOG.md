@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- The diff overlay (P3b; DESIGN §2 change, approved; README "Diff overlay"; DESIGN §13.4): over the terminal area,
+  the terminal never resized and closing gives back the exact screen; side by side from `diff-split-cols` (100)
+  columns, else top and bottom (`diff-view`, `v`); a click on a file in the sidebar's Files opens it (Enter in the
+  sidebar over a narrow window), the sidebar marks the shown file; `n`/`p` files, `]`/`[` hunks, `m` last edit / vs
+  HEAD / working tree; `diff-after-edit` (off by default) opens it on an edit. Settings `diff-view`,
+  `diff-split-cols`, `diff-after-edit` in the Sidebar group. Stage PM, `docs/history/2026-11-19-pm.md`.
+  **Windows:** unverified.
+
+### Fixed
+
+- A worker started by the orchestrator stopped at once on a permission question when Claude Code blocks reads
+  outside its folders: the first prompt pointed at a briefing file in haetty's state folder. The prompt now carries
+  the briefing (`018f906`).
+- The sidebar's tokens line read "tokens   tokens …"; the gate failed inside a dev instance's tab (an install test
+  read `HAETTY_INSTANCE`) (`e431c41`).
+- The sidebar's Workers listed a worker waiting on a permission question as running: it shows `?` and "asks"
+  (`77c5325`).
+
 ## 0.4.0 (2026-11-19, release candidate, not tagged)
 
 Stage PH's harness screen: `claude` typed in a shell tab becomes a Claude Code tab (the proxy), the sidebar with the
