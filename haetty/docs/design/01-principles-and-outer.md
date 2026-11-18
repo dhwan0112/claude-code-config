@@ -41,12 +41,15 @@ away. Functions stay; what changes is when they are visible.
   has no status line (the sidebar shows all of it); without it, the status line exists only in Claude Code tabs and
   shows only when it has something to show (a reserved row stays blank until then, §3.10); a shell tab has no status
   line and gets the whole height. A `claude` started in a shell tab (the proxy, §13) never adds a status line. The
-  diff view and an agent's record are hidden by default and opened by key, palette or click; folded sections and sizes
-  persist per user.
+  diff overlay and an agent's record are hidden by default and opened by key, palette or click; folded sections and
+  sizes persist per user. The diff overlay (stage PM, §13.4) covers the terminal area beside the docked sidebar, side by
+  side from `diff-split-cols` (100) columns else top and bottom, and closes back to the exact screen it covered; its
+  added and removed tints are the only colours it brings, and only while it is open.
 - Events never change the layout. An edit, a finished worker or a pending
   permission shows an indicator in the status line or on the tab
   ("3 files changed · Ctrl+Shift+D"; plain Ctrl+D belongs to Claude Code, §3.10); only the user opens panes. Reason: every
-  resize makes Claude Code's fullscreen renderer redraw the whole screen.
+  resize makes Claude Code's fullscreen renderer redraw the whole screen. One exception the person chooses:
+  `diff-after-edit = true` (default off) opens the diff overlay on an edit; the overlay never resizes the terminal.
 - The status line and the sidebar show context use, rate limits, cost and workers; the sidebar's Lead also names the
   model and effort (stage PH: the harness view of many agents needs them per agent), never the mode. Sidebar sections:
   Lead, Agents (one line per subagent: state glyph, type, short model, current tool or calls, elapsed; nesting by

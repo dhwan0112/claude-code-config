@@ -75,7 +75,19 @@ impl Win {
             now_ms: now_ms(),
             selected: self.sidebar_sel.filter(|_| self.overlay_cols() > 0),
         };
-        sidebar::draw(&m, w, h, g)
+        let (mut rows, hits) = sidebar::draw(&m, w, h, g);
+        if let Some(shown) = self.diff_shown() {
+            for (y, hit) in &hits {
+                let sidebar::Hit::File(p) = hit else { continue };
+                if !super::same_file(p, &shown) {
+                    continue;
+                }
+                if let Some(row) = rows.get_mut(*y) {
+                    mark_row(row, g);
+                }
+            }
+        }
+        (rows, hits)
     }
 
     /// The Workers section: the orchestrator's tasks, each with the agents running in its worker tab.
@@ -205,13 +217,7 @@ impl Win {
                 }
             }
             Hit::File(path) => {
-                // The file's diff against HEAD (the diff view, DESIGN.md §13.4 grows from it).
-                let folder = self.tab().folder().unwrap_or_default();
-                let full = if std::path::Path::new(&path).is_absolute() {
-                    path
-                } else {
-                    std::path::Path::new(&folder).join(&path).to_string_lossy().into_owned()
-                };
+                let full = self.full_path(&path);
                 self.sidebar_overlay = false;
                 self.open_file_diff(&full);
             }
@@ -437,6 +443,18 @@ pub(super) fn git_summary(dir: &std::path::Path) -> (GitSummary, Option<String>)
     (sum, branch)
 }
 
+fn mark_row(row: &mut [haetty_core::Cell], g: Greys) {
+    for c in row.iter_mut().skip(2) {
+        if !c.text.is_empty() && c.fg == Some(g.normal) {
+            c.fg = Some(g.strong);
+            c.flags.0 |= haetty_core::CellFlags::BOLD;
+        }
+    }
+    if let Some(c) = row.get_mut(1) {
+        *c = haetty_core::Cell { text: "›".into(), fg: Some(g.strong), bg: Some(g.bg), ..Default::default() };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -457,5 +475,18 @@ mod tests {
         assert_eq!(sum.files, [("a.txt".to_string(), 2, 1)]);
         assert_eq!(sum.untracked, 1);
         haetty_testkit::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_shown_file_row_is_marked() {
+        use crate::ui::{put, Greys};
+        use haetty_core::{Cell, Rgb};
+        let g = Greys::from(Rgb { r: 220, g: 220, b: 220 }, Rgb { r: 30, g: 30, b: 30 });
+        let mut row = vec![Cell::default(); 12];
+        put(&mut row, 2, "a.rs", g.normal, g.bg, false);
+        super::mark_row(&mut row, g);
+        assert_eq!(row[1].text, "›");
+        assert_eq!(row[2].fg, Some(g.strong));
+        assert_eq!(row[6].text, "");
     }
 }

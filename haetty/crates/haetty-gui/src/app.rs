@@ -335,6 +335,7 @@ struct Win {
     /// "All agents": the tab of each line in the palette.
     agent_pick: Vec<usize>,
     diff: Option<DiffView>,
+    diff_pref: Option<diffview::DiffLayoutPref>,
     last_slow_draw: Option<Instant>,
     /// Tabs not opened yet: waiting for the scale (Wayland; A7).
     pending_start: Option<PendingStart>,
@@ -551,6 +552,7 @@ impl App {
             sidebar_second: None,
             agent_pick: vec![],
             diff: None,
+            diff_pref: None,
             last_slow_draw: None,
             cfg: self.opts.config.clone(),
             settings_panel: None,
@@ -1292,35 +1294,118 @@ impl Win {
         self.show_hint(format!("tab detached; \"{key}\" in the palette shows it again"));
     }
 
-    /// Opens the diff view `mode` for the active tab (`old`: the view it
-    /// replaces, for a reread keeping its place).
-    /// The diff of one file against HEAD (a click on the sidebar's Files row).
+    /// The files of the open diff's list: the conversation's changed files (Claude Code tabs), else git's.
+    fn diff_file_list(&self) -> Vec<diffview::DiffFile> {
+        let tab = self.tab();
+        let file = |path: String, added: u64, removed: u64| diffview::DiffFile {
+            path,
+            added: added as usize,
+            removed: removed as usize,
+        };
+        match tab.claude.as_deref() {
+            Some(c) => c.files.iter().map(|f| file(f.path.clone(), f.added, f.removed)).collect(),
+            None => tab
+                .git_sum
+                .as_ref()
+                .map(|g| g.files.iter().map(|(p, a, r)| file(self.full_path(p), *a, *r)).collect())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn full_path(&self, path: &str) -> String {
+        if std::path::Path::new(path).is_absolute() {
+            return path.to_string();
+        }
+        let folder = self.tab().folder().unwrap_or_default();
+        std::path::Path::new(&folder).join(path).to_string_lossy().into_owned()
+    }
+
+    /// Columns the diff overlay covers: the terminal area, beside the sidebar when it is shown.
+    fn diff_cols(&self) -> usize {
+        (self.grid.cols - self.panel_cols().max(self.overlay_cols())) as usize
+    }
+
+    fn diff_rows(&self) -> usize {
+        self.grid.rows.saturating_sub(self.top() + self.status_rows()) as usize
+    }
+
+    fn diff_pref(&self) -> diffview::DiffLayoutPref {
+        self.diff_pref.unwrap_or_else(|| self.cfg.diff_view.into())
+    }
+
+    /// The path the shown diff is of, for the sidebar's mark.
+    pub(super) fn diff_shown(&self) -> Option<String> {
+        let d = self.diff.as_ref()?;
+        d.files().get(d.current_file()).map(|f| f.path.clone())
+    }
+
+    /// Opens the diff for a file of the sidebar: a fresh overlay on it, or the open one switched to it (same view).
     fn open_file_diff(&mut self, path: &str) {
-        self.diff = Some(diffview::DiffView::git(DiffMode::Head, gitview::head(path, &gitview::Limits::default())));
+        let (mode, old) = match self.diff.take() {
+            Some(d) if d.mode == DiffMode::Tree => (DiffMode::Tree, Some(d)),
+            Some(d) => (d.mode, None),
+            None => {
+                self.diff_pref = None;
+                let last = self.tab().claude.as_deref().and_then(|c| c.last_edit.as_ref()).map(|m| m.path.clone());
+                let edited = last.is_some_and(|l| same_file(&l, path));
+                (if edited { DiffMode::Edit } else { DiffMode::Head }, None)
+            }
+        };
+        self.open_diff(mode, old.as_ref(), Some(path));
         self.full = true;
     }
 
-    fn open_diff(&mut self, mode: DiffMode, old: Option<&diffview::DiffView>) {
+    /// An edit by Claude Code in the active tab: with `diff-after-edit` on, the overlay opens on that file, or the
+    /// open one switches to it. Never over the palette or the settings panel, never while the tab awaits permission.
+    fn after_edit(&mut self, path: &str) {
+        let busy = self.palette.is_some() || self.settings_panel.is_some() || self.agent_view.is_some();
+        let tab = self.tab();
+        if !after_edit_allowed(self.cfg.diff_after_edit, tab.asking(), tab.attention(), busy) {
+            return;
+        }
+        if self.diff.is_some() {
+            self.open_file_diff(path);
+        } else {
+            self.diff_pref = None;
+            self.open_diff(DiffMode::Edit, None, None);
+        }
+        self.full = true;
+    }
+
+    /// Opens the diff view `mode` for the active tab (`old`: the view it replaces, for a reread keeping its place;
+    /// `file`: the file to show, else the last edit's).
+    fn open_diff(&mut self, mode: DiffMode, old: Option<&diffview::DiffView>, file: Option<&str>) {
         let id = self.tab().session.id.clone();
-        let edit = match self.client.get_edit(&id) {
-            Ok(e) => e,
-            Err(e) => {
-                self.show_hint(format!("diff: {e}"));
-                return;
+        let edit = if mode == DiffMode::Head && file.is_some() {
+            None
+        } else {
+            match self.client.get_edit(&id) {
+                Ok(e) => e,
+                Err(e) => {
+                    self.show_hint(format!("diff: {e}"));
+                    return;
+                }
             }
+        };
+        let mode = match (mode, file, edit.as_deref()) {
+            (DiffMode::Edit, Some(f), Some(e)) if !same_file(&e.meta.path, f) => DiffMode::Head,
+            (DiffMode::Edit, Some(_), None) => DiffMode::Head,
+            _ => mode,
         };
         let limits = gitview::Limits::default();
         let mut v = match mode {
             DiffMode::Edit => diffview::DiffView::new(edit.as_deref()),
-            DiffMode::Head => match edit.as_deref() {
-                Some(e) => diffview::DiffView::git(mode, gitview::head(&e.meta.path, &limits)),
-                None => diffview::DiffView::note_only(
-                    mode,
-                    "[vs HEAD] no edit yet".into(),
-                    "Claude Code has not edited a file in this tab yet: no file to compare (m: the working tree)."
-                        .into(),
-                ),
-            },
+            DiffMode::Head => {
+                match file.map(|f| self.full_path(f)).or_else(|| edit.as_deref().map(|e| e.meta.path.clone())) {
+                    Some(p) => diffview::DiffView::git(mode, gitview::head(&p, &limits)),
+                    None => diffview::DiffView::note_only(
+                        mode,
+                        "[vs HEAD] no edit yet".into(),
+                        "Claude Code has not edited a file in this tab yet: no file to compare (m: the working tree)."
+                            .into(),
+                    ),
+                }
+            }
             DiffMode::Tree => {
                 // The repository of the last edit, else of the tab's folder.
                 let dir = edit
@@ -1333,13 +1418,23 @@ impl Win {
                 }
             }
         };
+        let (cols, area) = (self.diff_cols(), self.diff_rows());
         if let Some(t) = v.collect_time() {
-            let cols = (self.grid.cols - self.panel_cols()) as usize;
             log::info!("diff view {}: {:?} to collect, {} rows", mode.label(), t, v.row_count(cols));
         }
+        if mode != DiffMode::Tree {
+            let (files, at) = merged_list(v.files(), self.diff_file_list());
+            v.set_files(files, at);
+        }
+        v.set_root(&self.tab().folder().unwrap_or_default());
+        let layout = v.layout(cols, self.diff_pref(), self.cfg.diff_split_cols);
         if let Some(o) = old {
-            let area = self.grid.rows.saturating_sub(self.top() + self.status_rows()) as usize;
-            v.keep_scroll(o, area, (self.grid.cols - self.panel_cols()) as usize);
+            v.keep_scroll(o, area, layout);
+        }
+        if mode == DiffMode::Tree {
+            if let Some(i) = file.and_then(|f| v.files().iter().position(|x| same_file(&x.path, f))) {
+                v.show_file(i, layout, area);
+            }
         }
         self.diff = Some(v);
     }
@@ -1420,7 +1515,8 @@ impl Win {
                     if !self.tab().integrated && self.tab().claude.is_none() {
                         self.show_hint("the diff view is for Claude Code tabs".into());
                     } else {
-                        self.open_diff(DiffMode::Edit, None);
+                        self.diff_pref = None;
+                        self.open_diff(DiffMode::Edit, None, None);
                     }
                 }
                 self.full = true;
@@ -1697,9 +1793,13 @@ impl Win {
                 self.tabs[i].attention(),
                 self.tabs[i].claude.as_ref().map(|c| c.claude_session.clone()).unwrap_or_default(),
             );
+            let arrived = edit_arrived(self.tabs[i].claude.as_deref(), claude.as_deref());
             self.tabs[i].claude = claude;
             self.tabs[i].log_at = None;
             self.attention_changed(i, before);
+            if let Some(path) = arrived.filter(|_| i == self.active) {
+                self.after_edit(&path);
+            }
             let sid_changed = self.tabs[i].claude.as_ref().is_some_and(|c| c.claude_session != before_sid);
             if i != self.active {
                 self.recompose(); // tab bar: mark, name
@@ -1778,6 +1878,10 @@ impl Win {
     fn recompose(&mut self) {
         if self.tabs.is_empty() {
             return;
+        }
+        let (pref, split) = (self.diff_pref(), self.cfg.diff_split_cols);
+        if let Some(d) = self.diff.as_mut() {
+            d.set_layout(pref, split);
         }
         let (fg0, bg0) = self
             .tab()
@@ -2042,9 +2146,15 @@ impl Win {
         if self.diff.is_some() {
             if ev.state == ElementState::Pressed {
                 if let Some(chord) = chord_of(ev, self.mods) {
-                    let area = self.grid.rows.saturating_sub(self.top() + self.status_rows()) as usize;
-                    let cols = (self.grid.cols - self.panel_cols()) as usize;
-                    let key = self.diff.as_mut().map(|d| d.key(&chord.key, chord.shift, area, cols));
+                    let a = DiffArea {
+                        height: self.diff_rows(),
+                        cols: self.diff_cols(),
+                        setting: self.cfg.diff_view.into(),
+                        split_cols: self.cfg.diff_split_cols,
+                    };
+                    let mut pref = self.diff_pref;
+                    let key = self.diff.as_mut().map(|d| diff_key(d, &chord.key, chord.shift, a, &mut pref));
+                    self.diff_pref = pref;
                     match key {
                         Some(diffview::Key::Close) => {
                             self.diff = None;
@@ -2052,12 +2162,25 @@ impl Win {
                         }
                         Some(diffview::Key::Next) => {
                             let mode = self.diff.as_ref().map_or(DiffMode::Edit, |d| d.mode.next());
-                            self.open_diff(mode, None);
+                            self.open_diff(mode, None, None);
                             self.full = true;
                         }
                         Some(diffview::Key::Refresh) => {
                             if let Some(old) = self.diff.take() {
-                                self.open_diff(old.mode, Some(&old));
+                                let file = (old.mode == DiffMode::Head)
+                                    .then(|| old.files().get(old.current_file()).map(|f| f.path.clone()))
+                                    .flatten();
+                                self.open_diff(old.mode, Some(&old), file.as_deref());
+                            }
+                            self.full = true;
+                        }
+                        Some(k @ (diffview::Key::NextFile | diffview::Key::PrevFile)) => {
+                            let path = self.diff.as_ref().and_then(|d| {
+                                let at = step_index(d.current_file(), d.file_count(), k == diffview::Key::NextFile)?;
+                                d.files().get(at).map(|f| f.path.clone())
+                            });
+                            if let Some(p) = path {
+                                self.open_file_diff(&p);
                             }
                             self.full = true;
                         }
@@ -2694,12 +2817,13 @@ impl ApplicationHandler<UserEvent> for App {
                         return;
                     }
                     if win.diff.is_some() {
-                        let page = win.grid.rows as usize;
-                        let cols = (win.grid.cols - win.panel_cols()) as usize;
+                        let page = win.diff_rows();
+                        let (cols, pref, split) = (win.diff_cols(), win.diff_pref(), win.cfg.diff_split_cols);
                         if let Some(d) = win.diff.as_mut() {
                             let k = if n > 0 { "k" } else { "j" };
+                            let layout = d.layout(cols, pref, split);
                             for _ in 0..(n.unsigned_abs() * 3) {
-                                d.key(k, false, page, cols);
+                                d.key(k, false, page, layout);
                             }
                         }
                         win.recompose();
@@ -2804,6 +2928,73 @@ fn preedit_cursor(cursor: Option<(usize, usize)>) -> Option<(usize, usize)> {
     }
 }
 
+/// The same file, one path perhaps relative to its repository: equal, or one ends with the other after a `/`.
+fn same_file(a: &str, b: &str) -> bool {
+    let (a, b) = (a.replace('\\', "/"), b.replace('\\', "/"));
+    a == b || a.ends_with(&format!("/{b}")) || b.ends_with(&format!("/{a}"))
+}
+
+/// The list of files with the shown view's own file in it, and its index: the view's file is put first when the list
+/// does not hold it.
+fn merged_list(own: &[diffview::DiffFile], mut list: Vec<diffview::DiffFile>) -> (Vec<diffview::DiffFile>, usize) {
+    let Some(own) = own.first() else { return (list, 0) };
+    match list.iter().position(|f| same_file(&f.path, &own.path)) {
+        Some(i) => (list, i),
+        None => {
+            list.insert(0, own.clone());
+            (list, 0)
+        }
+    }
+}
+
+/// The next (or previous) index of `n` files, wrapping; `None` when there is nothing to step to.
+fn step_index(cur: usize, n: usize, forward: bool) -> Option<usize> {
+    (n > 1).then(|| if forward { (cur + 1) % n } else { (cur + n - 1) % n })
+}
+
+/// The path of an edit that arrived with `new` (the edit count rose); `None` for the first sight of a session.
+fn edit_arrived(old: Option<&ClaudeInfo>, new: Option<&ClaudeInfo>) -> Option<String> {
+    let (old, new) = (old?, new?);
+    (new.edits > old.edits).then(|| new.last_edit.as_ref().map(|m| m.path.clone())).flatten()
+}
+
+fn after_edit_allowed(on: bool, asking: bool, attention: Attention, ui_busy: bool) -> bool {
+    on && !asking && attention != Attention::Ask && !ui_busy
+}
+
+/// The overlay's rectangle and the layout settings a key needs.
+#[derive(Clone, Copy)]
+struct DiffArea {
+    height: usize,
+    cols: usize,
+    setting: diffview::DiffLayoutPref,
+    split_cols: usize,
+}
+
+/// A key for the open diff: the layout toggle becomes a per-overlay override of the setting.
+fn diff_key(
+    d: &mut DiffView,
+    key: &str,
+    shift: bool,
+    a: DiffArea,
+    pref: &mut Option<diffview::DiffLayoutPref>,
+) -> diffview::Key {
+    let (height, split_cols) = (a.height, a.split_cols);
+    let layout = d.layout(a.cols, pref.unwrap_or(a.setting), split_cols);
+    match d.key(key, shift, height, layout) {
+        diffview::Key::ToggleLayout => {
+            let (next, p) = match layout {
+                diffview::Layout::Split => (diffview::Layout::Stacked, diffview::DiffLayoutPref::Stacked),
+                diffview::Layout::Stacked => (diffview::Layout::Split, diffview::DiffLayoutPref::Split),
+            };
+            *pref = Some(p);
+            d.key("", false, height, next);
+            diffview::Key::Stay
+        }
+        k => k,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /// A7: the window size asked for a grid gives that grid back at 100, 125,
@@ -2846,6 +3037,119 @@ mod tests {
                 );
             }
         }
+    }
+
+    use super::{after_edit_allowed, diff_key, edit_arrived, merged_list, same_file, step_index};
+    use crate::diffview::{DiffFile, DiffLayoutPref, DiffView, Key as DKey, Layout as DLayout};
+    use haetty_proto::wire::{Attention, ClaudeInfo, EditMeta, EditView, Secret, SnapStatus};
+
+    fn fake(path: &str, before: &str, after: &str) -> DiffView {
+        let e = EditView {
+            meta: EditMeta { path: path.into(), agent: "main".into(), at_ms: 0, added: 1, removed: 1, diffable: true },
+            status: SnapStatus::Copied,
+            before: Secret(before.into()),
+            after: Secret(after.into()),
+        };
+        DiffView::new(Some(&e))
+    }
+
+    fn file(p: &str) -> DiffFile {
+        DiffFile { path: p.into(), added: 1, removed: 0 }
+    }
+
+    fn info(edits: u32, path: &str) -> ClaudeInfo {
+        ClaudeInfo {
+            edits,
+            last_edit: Some(EditMeta {
+                path: path.into(),
+                agent: "main".into(),
+                at_ms: 0,
+                added: 1,
+                removed: 0,
+                diffable: true,
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn area(height: usize, cols: usize, setting: DiffLayoutPref) -> super::DiffArea {
+        super::DiffArea { height, cols, setting, split_cols: 100 }
+    }
+
+    #[test]
+    fn diff_keys_with_a_fake_view() {
+        let long: String = (0..300).map(|i| format!("{i}\n")).collect();
+        let changed = long.replace("\n30\n", "\nX\n").replace("\n250\n", "\nY\n");
+        let mut v = fake("/p/a.rs", &long, &changed);
+        let mut pref = None;
+        let key = |v: &mut DiffView, k: &str, pref: &mut Option<DiffLayoutPref>| {
+            diff_key(v, k, false, area(6, 120, DiffLayoutPref::Auto), pref)
+        };
+        assert_eq!(key(&mut v, "n", &mut pref), DKey::NextFile);
+        assert_eq!(key(&mut v, "p", &mut pref), DKey::PrevFile);
+        assert_eq!(key(&mut v, "m", &mut pref), DKey::Next);
+        assert_eq!(key(&mut v, "r", &mut pref), DKey::Refresh);
+        assert_eq!(key(&mut v, "escape", &mut pref), DKey::Close);
+        assert_eq!(key(&mut v, "q", &mut pref), DKey::Close);
+        assert_eq!(key(&mut v, "]", &mut pref), DKey::Stay);
+        let first = v.scroll;
+        assert!(first > 0);
+        assert_eq!(key(&mut v, "[", &mut pref), DKey::Stay);
+        assert!(v.scroll < first);
+        assert_eq!(key(&mut v, "]", &mut pref), DKey::Stay);
+        assert_eq!(v.scroll, first);
+        assert_eq!(pref, None);
+        assert_eq!(v.layout(120, DiffLayoutPref::Auto, 100), DLayout::Split);
+        assert_eq!(key(&mut v, "v", &mut pref), DKey::Stay);
+        assert_eq!(pref, Some(DiffLayoutPref::Stacked));
+        assert_eq!(key(&mut v, "v", &mut pref), DKey::Stay);
+        assert_eq!(pref, Some(DiffLayoutPref::Split));
+    }
+
+    #[test]
+    fn layout_override_beats_the_setting_until_the_next_overlay() {
+        let mut v = fake("/p/a.rs", "a\n", "b\n");
+        let mut pref = None;
+        diff_key(&mut v, "v", false, area(12, 80, DiffLayoutPref::Auto), &mut pref);
+        assert_eq!(pref, Some(DiffLayoutPref::Split));
+        assert_eq!(v.layout(80, pref.unwrap(), 100), DLayout::Split);
+        let mut fresh = None;
+        diff_key(&mut v, "v", false, area(12, 200, DiffLayoutPref::Stacked), &mut fresh);
+        assert_eq!(fresh, Some(DiffLayoutPref::Split));
+    }
+
+    #[test]
+    fn file_list_and_stepping() {
+        assert_eq!(step_index(0, 3, true), Some(1));
+        assert_eq!(step_index(2, 3, true), Some(0));
+        assert_eq!(step_index(0, 3, false), Some(2));
+        assert_eq!(step_index(0, 1, true), None);
+        assert_eq!(step_index(0, 0, false), None);
+        assert!(same_file("/r/src/a.rs", "src/a.rs"));
+        assert!(same_file("src/a.rs", "/r/src/a.rs"));
+        assert!(same_file("/r/a.rs", "/r/a.rs"));
+        assert!(!same_file("/r/xa.rs", "a.rs"));
+        let list = vec![file("/r/b.rs"), file("/r/src/a.rs")];
+        let (l, at) = merged_list(&[file("src/a.rs")], list.clone());
+        assert_eq!((l.len(), at), (2, 1));
+        let (l, at) = merged_list(&[file("c.rs")], list.clone());
+        assert_eq!((l.len(), at, l[0].path.as_str()), (3, 0, "c.rs"));
+        assert_eq!(merged_list(&[], list).1, 0);
+    }
+
+    #[test]
+    fn after_edit_wiring_decisions() {
+        let (a, b) = (info(1, "/r/a.rs"), info(2, "/r/b.rs"));
+        assert_eq!(edit_arrived(Some(&a), Some(&b)).as_deref(), Some("/r/b.rs"));
+        assert_eq!(edit_arrived(Some(&b), Some(&b)), None);
+        assert_eq!(edit_arrived(None, Some(&b)), None);
+        assert_eq!(edit_arrived(Some(&a), None), None);
+        assert!(after_edit_allowed(true, false, Attention::None, false));
+        assert!(after_edit_allowed(true, false, Attention::Wait, false));
+        assert!(!after_edit_allowed(false, false, Attention::None, false));
+        assert!(!after_edit_allowed(true, true, Attention::None, false));
+        assert!(!after_edit_allowed(true, false, Attention::Ask, false));
+        assert!(!after_edit_allowed(true, false, Attention::None, true));
     }
 
     use super::preedit_cursor;

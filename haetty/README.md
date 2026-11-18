@@ -146,7 +146,7 @@ settings); plain Ctrl+letter keys go to the program.
 | Go to tab N | Alt+1 … Alt+9 | `goto_tab:N` (1–9) |
 | Command palette | Ctrl+Shift+P | `command_palette` |
 | Paste | Ctrl+Shift+V, Shift+Insert, Paste key; Windows also Ctrl+V | `paste` |
-| Diff view (Claude Code tabs): last edit, `m` → vs HEAD → working tree | Ctrl+Shift+D | `diff_view` |
+| Diff overlay (Claude Code tabs): last edit, `m` → vs HEAD → working tree | Ctrl+Shift+D | `diff_view` |
 | Rename tab | Ctrl+Shift+R | `rename_tab` |
 | Settings panel ([Settings](#settings)) | Ctrl+, | `settings` |
 | Updates ([Updates](#updates)) | — (palette) | `updates` |
@@ -536,19 +536,22 @@ integration" (Linux). A tab set keeps such a tab's conversation: when haetty sta
 `claude --resume <id>` in it (`restore-claude = shell`: the shell only). To turn the proxy off:
 `claude-integration = false`. `claude` inside `ssh` is not seen.
 
-**Diff view (Ctrl+Shift+D).** The last edit (Write, Edit, MultiEdit) of the
-active tab, drawn over its screen; the program is not resized and keeps
-running. Side by side from 110 columns, unified below; header
-`[last edit] path · +A -R · by agent`. Keys: j/k, Space/b, g/G, wheel to
-scroll; `m` or Tab for the next view — that file against git `HEAD`, then
-the whole working tree against `HEAD` with untracked files (so changes made
-by Bash show too) — `r` to read again; Esc or q (or Ctrl+Shift+D again) to
-close. The git views read at most 300 files, 2 MiB each and 16 MiB in all,
-within 3 s, and say what they left out. Files that look like
-credentials or keys (`.ssh`, `.aws`, `.env*`, `*.pem`, `*.key`, `*token*`,
-`*secret*`, `.credentials.json`, …) are never read, and files over 2 MiB
-or not UTF-8 are not copied; for those the diff view says why instead of
-showing a diff.
+**Diff overlay (Ctrl+Shift+D, or a file in the sidebar).** Drawn over the terminal area, beside the sidebar when it is
+docked; the program is not resized and keeps running, and closing it leaves the screen exactly as it was. Open it with
+Ctrl+Shift+D (the last edit), a click on a file in the sidebar's Files (Enter on it in the sidebar over a narrow
+window), or the palette; with `diff-after-edit = true` an edit by Claude Code in the active tab opens it on that file
+(off by default; never over the palette or the settings panel, and not in a turn that asked for a permission). The
+header names the file from the tab's folder, its place in the list and the view (`2/3 src/lib.rs  +2 -2  vs HEAD
+split`); the sidebar marks the shown file. Side by side when the overlay is at least `diff-split-cols` (100) columns
+wide, else top and bottom (removed lines above the added ones); `diff-view = split | stacked` fixes it and `v` switches
+until the overlay closes. Keys: `n`/`p` next and previous file (the conversation's changed files; in the last-edit view
+another file shows against `HEAD`, since only the last edit has a snapshot), `]`/`[` next and previous hunk, j/k,
+Space/b, g/G, the wheel; `m` or Tab the next view — last edit, that file against git `HEAD`, the whole working tree
+against `HEAD` with untracked files (so changes made by Bash show too); `r` to read again; Esc or q (or Ctrl+Shift+D
+again) to close. Keys go to the overlay while it is open; nothing reaches the program. The git views read at most 300
+files, 2 MiB each and 16 MiB in all, within 3 s, and say what they left out. Files that look like credentials or keys
+(`.ssh`, `.aws`, `.env*`, `*.pem`, `*.key`, `*token*`, `*secret*`, `.credentials.json`, …) are never read, and files
+over 2 MiB or not UTF-8 are not copied; for those the diff overlay says why instead of showing a diff.
 
 <a id="resume"></a>**Resume.** Tab sets store each Claude Code tab's
 session id. A restored Claude Code tab gets `--resume ID` when Claude Code
@@ -783,8 +786,9 @@ right daemon and tab.
   The integrated title row has no window menu (right click does nothing).
 - Tab sets are not per window: with several haetty windows open, the last
   one to write wins the `last` set.
-- The diff view shows the last edit only (no diff against `HEAD`, no file
-  tree); NotebookEdit edits record the path only.
+- In the diff overlay's last-edit view, only the last edit has its own snapshot: other files show against `HEAD`.
+  NotebookEdit edits record the path only. The docked sidebar takes no keys: a file opens there by a click (Enter
+  works in the sidebar over a narrow window).
 - Windows: a hook process takes about 64 ms on the test machine (process
   start alone is about 52 ms), so the 50 ms target is not met there. Only
   the edit hook (PreToolUse for Write/Edit/MultiEdit/NotebookEdit) makes

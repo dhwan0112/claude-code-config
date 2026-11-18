@@ -530,7 +530,64 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         None,
         Some(link),
     ));
+    let view = diff_view();
+    for (name, cols, rows) in [("diff-split", 110u16, 14u16), ("diff-stacked", 80, 14), ("diff-narrow", 44, 12)] {
+        let s = screen(cols, rows, &["$ cargo test", "   Compiling haetty v0.1.0"], Some((0, 1)));
+        let snap = Compose { cols, rows, diff: Some(&view), ..self::compose(&s, &acc) }.build();
+        out.push((name, snap, None, None));
+    }
     out
+}
+
+const DIFF_BEFORE: &str = "fn main() {\n    let n = 3;\n    println!(\"{n}\");\n    run(n);\n}\n\nfn run(n: u32) {\n    for i in 0..n {\n        step(i);\n    }\n}\n";
+const DIFF_AFTER: &str = "fn main() {\n    let n = 4;\n    println!(\"n = {n}\");\n    run(n);\n}\n\nfn run(n: u32) {\n    for i in 0..n {\n        step(i);\n        log(i);\n    }\n}\n";
+
+fn diff_view() -> crate::diffview::DiffView {
+    use haetty_proto::wire::{EditView, Secret, SnapStatus};
+    let e = EditView {
+        meta: EditMeta {
+            path: "/work/src/main.rs".into(),
+            agent: "main".into(),
+            at_ms: 0,
+            added: 3,
+            removed: 2,
+            diffable: true,
+        },
+        status: SnapStatus::Copied,
+        before: Secret(DIFF_BEFORE.into()),
+        after: Secret(DIFF_AFTER.into()),
+    };
+    let mut v = crate::diffview::DiffView::new(Some(&e));
+    v.set_root("/work");
+    v
+}
+
+fn tinted(c: &Cell) -> bool {
+    [c.fg, c.bg].into_iter().flatten().any(|x| !is_grey(x))
+}
+
+fn is_grey(c: Rgb) -> bool {
+    c.r.abs_diff(c.g).max(c.g.abs_diff(c.b)).max(c.r.abs_diff(c.b)) <= 12
+}
+
+#[test]
+fn idle_screen_is_grey_and_diff_colours_show_only_while_the_overlay_is_open() {
+    let t = theme();
+    let acc = t.palette;
+    let s = screen(110, 14, &["cargo test", "   Compiling haetty v0.1.0"], Some((0, 1)));
+    let idle = Compose { cols: 110, rows: 14, ..compose(&s, &acc) }.build();
+    assert!(!idle.cells.iter().any(tinted), "an idle screen has no diff colour");
+    for c in idle.cells.iter().filter(|c| c.flags.has(CellFlags::HAETTY_UI)) {
+        assert!([c.fg, c.bg].into_iter().flatten().all(is_grey), "haetty's own idle cells are grey");
+    }
+    let view = diff_view();
+    for (cols, rows) in [(110u16, 14u16), (80, 14), (44, 12)] {
+        let s = screen(cols, rows, &["cargo test"], Some((0, 0)));
+        let open = Compose { cols, rows, diff: Some(&view), ..compose(&s, &acc) }.build();
+        assert!(open.cells.iter().any(tinted), "{cols} cols: the overlay shows the added and removed tints");
+        let closed = Compose { cols, rows, ..compose(&s, &acc) }.build();
+        assert!(!closed.cells.iter().any(tinted), "{cols} cols: closed again, no diff colour");
+    }
 }
 
 // ---- rendering ------------------------------------------------------------

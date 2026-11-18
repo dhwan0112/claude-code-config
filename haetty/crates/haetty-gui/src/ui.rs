@@ -778,7 +778,8 @@ impl Compose<'_> {
         if let Some(d) = self.diff {
             let pw = self.panel.as_ref().and_then(|p| p.first()).map_or(0, |r| r.len()).min(cols);
             let mut area_grid: Vec<Vec<Cell>> = grid[top..top + area].iter().map(|r| r[..cols - pw].to_vec()).collect();
-            d.draw(&mut area_grid, 0, area, g);
+            let rect = crate::diffview::Rect { x: 0, y: 0, w: cols - pw, h: area };
+            d.draw(&mut area_grid, rect, g, d.layout_pref(), d.split_cols());
             for (y, r) in area_grid.into_iter().enumerate() {
                 grid[top + y][..cols - pw].clone_from_slice(&r);
                 program[top + y][..cols - pw].fill(false);
@@ -968,6 +969,43 @@ mod tests {
         let l = line(&grid[1]);
         assert!(l.contains("my tab") && l.contains("…") && l.contains("claude · resume"), "{l}");
         assert_eq!(fit_left("abcdef", 4), "…def");
+    }
+
+    #[test]
+    fn closing_the_diff_leaves_the_screen_as_it_was() {
+        let mut s = Snapshot { cols: 6, rows: 4, default_fg: FG, default_bg: BG, ..Default::default() };
+        s.cells =
+            (0..24).map(|i| Cell { text: char::from(b'a' + i as u8).to_string(), ..Default::default() }).collect();
+        s.cursor = Some(Cursor { x: 2, y: 1, shape: haetty_core::CursorShape::Block, blinking: false });
+        let acc = haetty_core::theme::Theme::base().palette;
+        let compose = |diff: Option<&crate::diffview::DiffView>| {
+            Compose {
+                screen: &s,
+                accents: &acc,
+                cols: 6,
+                rows: 4,
+                tab_bar: None,
+                status: None,
+                panel: None,
+                diff,
+                palette: None,
+                hint: None,
+                link: None,
+                settings: None,
+                gear: None,
+            }
+            .build()
+        };
+        let before = compose(None);
+        let view = crate::diffview::DiffView::note_only(crate::diffview::Mode::Edit, "h".into(), "n".into());
+        let open = compose(Some(&view));
+        assert!(open.cursor.is_none());
+        assert!(open.cells != before.cells);
+        let after = compose(None);
+        assert_eq!((after.cols, after.rows), (before.cols, before.rows));
+        assert_eq!(after.cells, before.cells);
+        assert_eq!(after.cursor, before.cursor);
+        assert_eq!((s.cols, s.rows), (6, 4));
     }
 
     #[test]

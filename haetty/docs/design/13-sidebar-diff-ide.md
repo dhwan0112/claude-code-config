@@ -129,6 +129,19 @@ built; the implementation commit carries the §2 text and the frames.
    tree).
 6. The overlay never sends anything to the program; while it is open, keys go to it, as today.
 
+As built in stage PM (2026-11-19, workers of P2's real use plus the person's session; record
+[history/2026-11-19-pm.md](../history/2026-11-19-pm.md)): items 1–6 as written, with these differences:
+
+- Opening from the sidebar: a click on a file in the docked sidebar; Enter only in the sidebar over a narrow window
+  (the docked sidebar takes no keys, they go to Claude Code). The palette's "Diff of the last edit" stays.
+- `n`/`p` in the last-edit view: another file shows against `HEAD` (only the last edit has a snapshot); in the
+  working-tree view they scroll to that file's title.
+- `diff-after-edit` does not open the overlay in a turn that asked for a permission (`asking` stays set to the turn's
+  end), nor over the palette, the settings panel or an agent's record.
+- The header names the file relative to the tab's folder; in the working-tree view a file's first hunk starts at its
+  title row, so `]` from the top goes to the second hunk.
+- The sidebar marks the shown file (`›`, bold) while the overlay is open.
+
 ## 13.5 Decisions: the IDE prototype (optional, off by default)
 
 Setting `ide-integration = false`. Only when it is on:
