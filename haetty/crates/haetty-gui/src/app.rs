@@ -1222,11 +1222,13 @@ impl Win {
             .iter()
             .map(|t| {
                 let st = self.task_state(t);
+                let asks = self.worker_tab(&t.id).is_some_and(|w| w.attention() == Attention::Ask);
+                let (glyph, name) = if asks { ("?", "asks") } else { (st.glyph(), st.name()) };
                 let report = (active.as_deref() == Some(t.id.as_str()))
                     .then(|| self.tab().claude.as_ref().and_then(|c| c.report.clone()))
                     .flatten();
                 ui::WorkerLine {
-                    text: format!("{} {} {} · {}", st.glyph(), t.id, t.title, st.name()),
+                    text: format!("{glyph} {} {} · {name}", t.id, t.title),
                     blockers: report.as_ref().map(|r| first(&r.blockers.0)).filter(|s| !s.is_empty()),
                     next: report.as_ref().map(|r| first(&r.next_action.0)).filter(|s| !s.is_empty()),
                     tokens: self.worker_tab(&t.id).and_then(|w| self.token_line_of(w)),
