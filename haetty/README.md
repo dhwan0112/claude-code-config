@@ -299,6 +299,9 @@ keybind = ctrl+shift+n=new_tab
 | `sidebar-files` | `true` / `false` — the Files section (files changed in the conversation; a shell tab: git changes) | `true` |
 | `sidebar-workers` | `true` / `false` — the Workers section (orchestrator tasks) | `true` |
 | `sidebar-log` | `true` / `false` — the Log section (the tab's recent events) | `true` |
+| `diff-view` | `auto` / `split` / `stacked` — the diff overlay's layout: auto: side by side from `diff-split-cols` columns on, else stacked; split: side by side; stacked: one column | `auto` |
+| `diff-split-cols` | columns (40–400): the width from which `diff-view = auto` shows the diff side by side | `100` |
+| `diff-after-edit` | `true` / `false` — an edit by Claude Code in the active tab opens the diff overlay on that file | `false` |
 | `restore-claude` | `resume` / `shell` — a shell tab saved while `claude` ran in it: reopen the shell and run `claude --resume ID` there, or the shell only | `resume` |
 | `engine` | `ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native) | `ghostty` |
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |

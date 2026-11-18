@@ -1149,6 +1149,23 @@ mod tests {
     }
 
     #[test]
+    fn the_diff_settings_are_listed_in_the_sidebar_group() {
+        let mut p = SettingsPanel::default();
+        p.set_group(Group::ALL.iter().position(|g| *g == Group::Sidebar).unwrap());
+        let keys: Vec<&str> = p
+            .items()
+            .iter()
+            .filter_map(|i| match i {
+                Item::Setting(s) => Some(s.key),
+                _ => None,
+            })
+            .collect();
+        for k in ["diff-view", "diff-split-cols", "diff-after-edit"] {
+            assert!(keys.contains(&k), "{k} is in the Sidebar group");
+        }
+    }
+
+    #[test]
     fn keys_change_values_through_effects() {
         let mut src = fake();
         let mut p = SettingsPanel::default();

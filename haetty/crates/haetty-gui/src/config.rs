@@ -82,6 +82,15 @@ pub enum SettingsButton {
     Never,
 }
 
+/// The diff overlay's layout (`diff-view`, DESIGN.md §13.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiffViewSetting {
+    /// Side by side from `diff-split-cols` columns on, else stacked.
+    Auto,
+    Split,
+    Stacked,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     /// Minimum padding left/right and top/bottom, logical pixels.
@@ -139,6 +148,12 @@ pub struct Config {
     pub update_url: String,
     /// Older versions kept beside the active one and the rollback target.
     pub update_keep: u8,
+    /// The diff overlay's layout (`diff-view`).
+    pub diff_view: DiffViewSetting,
+    /// The width from which `diff-view = auto` shows the diff side by side (`diff-split-cols`).
+    pub diff_split_cols: usize,
+    /// Open the diff of a file as soon as Claude Code edits it (`diff-after-edit`).
+    pub diff_after_edit: bool,
 }
 
 impl Default for Config {
@@ -177,6 +192,9 @@ impl Default for Config {
             update_check: true,
             update_url: String::new(),
             update_keep: 2,
+            diff_view: DiffViewSetting::Auto,
+            diff_split_cols: 100,
+            diff_after_edit: false,
         }
     }
 }
@@ -481,6 +499,42 @@ pub const SETTINGS: &[Setting] = &[
         default_note: None,
         doc: "`true` / `false` — the Log section (the tab's recent events)",
         line: "Show the Log section.",
+        group: Group::Sidebar,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "diff-view",
+        kind: Kind::Choice(&["auto", "split", "stacked"]),
+        default: "auto",
+        default_note: None,
+        doc: "`auto` / `split` / `stacked` — the diff overlay's layout: auto: side by side from `diff-split-cols` columns on, else stacked; split: side by side; stacked: one column",
+        line: "The diff's layout: side by side or one column (auto: by the window's width).",
+        group: Group::Sidebar,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "diff-split-cols",
+        kind: num(40.0, 400.0, 1.0, true, true),
+        default: "100",
+        default_note: None,
+        doc: "columns (40–400): the width from which `diff-view = auto` shows the diff side by side",
+        line: "From this many columns the diff shows side by side (auto).",
+        group: Group::Sidebar,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "diff-after-edit",
+        kind: Kind::Bool,
+        default: "false",
+        default_note: None,
+        doc: "`true` / `false` — an edit by Claude Code in the active tab opens the diff overlay on that file",
+        line: "Open the diff of a file as soon as Claude Code edits it.",
         group: Group::Sidebar,
         when: When::Live,
         panel: true,
@@ -972,6 +1026,15 @@ impl Config {
             "sidebar-files" => self.sidebar_files = flag(),
             "sidebar-workers" => self.sidebar_workers = flag(),
             "sidebar-log" => self.sidebar_log = flag(),
+            "diff-view" => {
+                self.diff_view = match text().as_str() {
+                    "split" => DiffViewSetting::Split,
+                    "stacked" => DiffViewSetting::Stacked,
+                    _ => DiffViewSetting::Auto,
+                }
+            }
+            "diff-split-cols" => self.diff_split_cols = int() as usize,
+            "diff-after-edit" => self.diff_after_edit = flag(),
             "observe-new-tabs" => self.observe_new_tabs = flag(),
             "token-status" => self.token_status = flag(),
             "clear-hint" => self.clear_hint = int() as u8,
@@ -1075,6 +1138,14 @@ impl Config {
             "sidebar-files" => b(self.sidebar_files),
             "sidebar-workers" => b(self.sidebar_workers),
             "sidebar-log" => b(self.sidebar_log),
+            "diff-view" => match self.diff_view {
+                DiffViewSetting::Auto => "auto",
+                DiffViewSetting::Split => "split",
+                DiffViewSetting::Stacked => "stacked",
+            }
+            .into(),
+            "diff-split-cols" => self.diff_split_cols.to_string(),
+            "diff-after-edit" => b(self.diff_after_edit),
             "engine" => self.engine.name().into(),
             "claude-integration" => b(self.claude_integration),
             "worker-command" => self.worker_command.clone(),
@@ -1307,6 +1378,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn diff_settings_parse_reject_and_round_trip() {
+        let mut c = Config::default();
+        assert_eq!((c.diff_view, c.diff_split_cols, c.diff_after_edit), (DiffViewSetting::Auto, 100, false));
+        for (text, want) in
+            [("split", DiffViewSetting::Split), ("stacked", DiffViewSetting::Stacked), ("auto", DiffViewSetting::Auto)]
+        {
+            c.set("diff-view", text).unwrap();
+            assert_eq!(c.diff_view, want);
+            assert_eq!(c.value("diff-view").as_deref(), Some(text));
+        }
+        assert!(c.set("diff-view", "both").unwrap_err().starts_with("invalid value"));
+        assert_eq!(c.diff_view, DiffViewSetting::Auto, "a rejected value changes nothing");
+        c.set("diff-split-cols", "40").unwrap();
+        c.set("diff-split-cols", "400").unwrap();
+        assert_eq!(c.value("diff-split-cols").as_deref(), Some("400"));
+        for bad in ["39", "401", "wide", "2.5"] {
+            assert!(c.set("diff-split-cols", bad).is_err(), "{bad}");
+        }
+        assert_eq!(c.diff_split_cols, 400, "a rejected value changes nothing");
+        c.set("diff-after-edit", "yes").unwrap();
+        assert!(c.diff_after_edit);
+        assert_eq!(c.value("diff-after-edit").as_deref(), Some("true"));
+        assert!(c.set("diff-after-edit", "maybe").is_err());
+    }
+
     /// S1 (stage PS): the schema rewrite reads every existing config file as before. The defaults are written out
     /// here field by field, and files of the shapes people have are read to a whole `Config`.
     #[test]
@@ -1345,6 +1442,9 @@ mod tests {
             update_check: true,
             update_url: String::new(),
             update_keep: 2,
+            diff_view: DiffViewSetting::Auto,
+            diff_split_cols: 100,
+            diff_after_edit: false,
         };
         assert_eq!(Config::default(), defaults);
         let read = |text: &str| {
