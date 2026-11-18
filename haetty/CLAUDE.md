@@ -22,6 +22,8 @@ the start of a session.
 - Every change must build for `x86_64-unknown-linux-gnu` and
   `x86_64-pc-windows-gnu`. No platform-only feature without a working
   counterpart or a documented, tested fallback on the other platform.
+  Windows counterparts are checked and fixed in stage PW, after all other stages (the person, 2026-11-19;
+  `docs/HANDOFF.md`, "Next session").
 - Lightweight: no Electron/webview, no wgpu, no general UI framework (egui,
   iced, GPUI) for the terminal itself. Check the binary size impact of every
   new dependency (`strip`ped release build) and report it.

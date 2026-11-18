@@ -8,7 +8,7 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage pm (branch `haetty/pm`, worktree `~/projects/claude-code-config-wt/pm`). Remaining: M1 merge the two Windows fixes branches + the record's not-fixed items, M2 Windows proxy through haetty-headless (protected, approved), M3 0.4.0 candidate (no tag), M4 P2 in real use in a dev instance
+> **In progress:** stage pm (branch `haetty/pm`, worktree `~/projects/claude-code-config-wt/pm`). Remaining (the person's revised text of 2026-11-19, STAGES "PM"): M1 0.4.0 candidate (Linux, no tag), M2 P2 in real use in a dev instance, M3 P3b diff overlay (M2's work)
 
 ## 1. Current state
 
@@ -18,9 +18,10 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
   check-range `haetty-v0.1.1..63822de` 0 failing; record in
   [history](history/2026-11-06-07-stages-t-u-v.md)).
-- **Stable (installed by the user):** kramers has **v0.2.0 (`63822de`)**, installed 2026-11-07 with
-  `tools/install-stable.sh 63822de` (checked 2026-11-09: [docs/checks/2026-11-09-kramers.md](checks/2026-11-09-kramers.md)).
-  This line changes only when the user says so.
+- **Stable (installed by the user):** kramers has **v0.3.2 (`622d629`)**, installed 2026-11-17 06:15Z with
+  `tools/install-stable.sh haetty-v0.3.2` (read from its folder's `INSTALLED` on 2026-11-19; `~/.local/bin/haetty`
+  points at `0.3.2-622d629bb224`; 0.1.0, 0.1.1 and 0.2.0 stay for rollback). v0.3.3 is not installed. This line
+  changes only when the user installs another.
 - **After `63822de`, in 0.3.2:** V3's observe-only interface, V6's palette fix, the native engine (E1–E5, F0–F4),
   K1–K4, #1, #2, P1a–P1c (CHANGELOG; protocol 12).
 - Last stages (records in [history](history/)): T1–T7, U1–U6, V1–V7, E0–E5, F0–F6, G0–G7, K0–K4, H.
@@ -35,6 +36,12 @@ report names the point(s) it moves. The person's full stage text: **[STAGES.md](
 stage at hand). Roles: kramers (Linux) develops; the Windows PC only checks (`checks/windows-<date>`;
 `docs/dev-commands.md`). One stage per session (`docs/OPERATING.md`); after `/clear` the person says "next stage".
 The text this list replaced: [history/2026-11-12-p0-north-star.md](history/2026-11-12-p0-north-star.md).
+
+**Windows (the person, 2026-11-19):** Windows checks and fixes happen once, after all other stages, in **PW**. Until
+then no stage waits for a Windows result or does Windows-only work: the gate's `x86_64-pc-windows-gnu` build and
+clippy stay (fix what fails); no merging of `windows/*`, no handling of `checks/windows-*`, no `#[cfg(windows)]` defect
+fixes, no `.ps1` work, no Windows reference frames, no test ports to Windows. A new feature that needs Windows gets
+the least that builds (a fallback or one line "not supported on Windows yet") and one line in PW's list.
 
 Stages:
 - **Done:** P0, P1a–P1c (2026-11-12, [p0](history/2026-11-12-p0-north-star.md), [p1](history/2026-11-12-p1.md); tag
@@ -59,6 +66,12 @@ Stages:
   Observe) + install.
 - P6: SSH, Tailscale (system OpenSSH). P7/P8: remote daemon, delegation (docs). P9: tidy-up (token tools, Windows
   hand-over, `NOT-RUN (foreground)`, the auto-mode deny path).
+- **PW: Windows catch-up (last).** Inputs, untouched until then: the branches `checks/windows-2026-11-17` (record
+  `docs/checks/2026-11-17-windows.md`; its list "Not fixed here" is under "For kramers"), `windows/2026-11-17-fixes`
+  (11 commits on `e8a48be`; three merge conflicts and their resolution in that record's "For kramers" table) and
+  `windows/2026-11-17-ph-fixes` (4 commits on `58386ab`); the Windows check list in `docs/dev-commands.md`; and the
+  lines stages add here:
+  - (none yet)
 
 **On hold** (no point moves): the differences to the newest Ghostty (F2), the default engine, H2, slow memory growth;
 since PH (2026-11-17) the terminal itself — engine, soaks, look polish, release tools — gets defect fixes only.

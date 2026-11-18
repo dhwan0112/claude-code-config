@@ -277,3 +277,78 @@ because of how claude is installed (finish Linux and report).
 
 Report: H0's table, results and evidence per step, the ccx table, the commit list, sizes and idle CPU before and after,
 what is unverified, choices and alternatives, what the person decides from the frame dumps.
+
+## PM. 0.4.0 candidate, P2 in real use, P3b (points 3 and 1; the person's revised text of 2026-11-19)
+
+Policy (the person, 2026-11-19): Windows checks and fixes happen once, after all other stages, in **PW** (below).
+Until then no stage waits for a Windows result or does Windows-only work; written into HANDOFF "Next session" and
+OPERATING. Kept: the gate's `x86_64-pc-windows-gnu` build and clippy (fix what fails). Not done: merging `windows/*`
+branches, handling `checks/windows-*`, `#[cfg(windows)]` defect fixes, writing or changing `.ps1` scripts, Windows
+reference frames, porting tests to Windows. A new feature that needs Windows gets the least that builds (a fallback or
+one line "not supported on Windows yet") and one line in PW's list. The three branches (`checks/windows-2026-11-17`,
+`windows/2026-11-17-fixes`, `windows/2026-11-17-ph-fixes`) are neither deleted nor merged: HANDOFF's PW line names
+them and where the list "Not fixed here" is. CLAUDE.md's "No platform-only feature without a working counterpart" line
+stays, with one line under it: Windows counterparts are checked and fixed in PW (2026-11-19).
+
+One session to the end. If the session limit hits: push what is done in the order M1 → M2 → M3 and write the point to
+continue from into HANDOFF. No tag, signature, release publication or stable install.
+
+M1. 0.4.0 candidate (Linux)
+- CHANGELOG 0.4.0: PH (the claude proxy in shell tabs, the sidebar, All agents, `haetty agents`). The Windows line as
+  it is: "unverified; known problems: the claude proxy in shell tabs does not work in release builds; the panel cannot
+  install an update (the fix is on `windows/2026-11-17-fixes`, not merged)". The 0.3.3 section gets the line about
+  the update install too.
+- After the version 0.4.0 commit, the whole Linux candidate check: the gate, run-all, the short soak on both engines
+  (task failures 0), the installer's own test, `update.sh`, `settings.sh`, `sidebar.sh`, `check-range
+  haetty-v0.3.3..<commit>`. check-range and the install test run without a display, with the session display variables
+  removed, and the stable processes' PIDs and start times are compared before and after.
+- `tools/release.sh <commit> --out DIR` as a dry run: check the assets and the manifest (the Windows zip: only that it
+  is made).
+- HANDOFF's "Stable" line (v0.2.0) and commit `9c9a2ae` (v0.3.2 is stable) disagree: read the install folder's
+  `INSTALLED` files (no command to stable) and correct it.
+- The report gives the person's commands with exact hashes: tag → `release.sh` → publish the draft →
+  `install-stable.sh`. If the candidate check fails and the cause is not found within an hour, stop (no M2).
+
+M2. P2 in real use (in a dev instance, because stable has no PH)
+- In a haetty started by `tools/dev-run.sh`: one coordinating session and workers do M3's work for real. Coordinator
+  sonnet, workers haiku or sonnet; the work is split over two or more workers.
+- Write down every inconvenience: what the sidebar does not show, the hands it takes to get to a worker, missed
+  permission questions, wrong displays, the commands the coordinator used to learn the workers' state and their
+  tokens. Each with how to reproduce it and a proposed fix. This list sets the order of the next stages.
+- Fix in this stage what takes under an hour and is not a protected area.
+- `haetty tokens`: "one session" against "coordinator + workers" (a past stage of the same size may serve; write down
+  the comparison's limits).
+- Each worker's result passes the gate on its own worktree branch, then goes into main one at a time.
+- Nobody answers permission questions: not the coordinator, not a worker, not haetty. A worker stopped because no
+  person is there stays stopped and is recorded.
+
+M3. P3b diff overlay (M2's work; DESIGN §13.4; the §2 change is already approved)
+- All of §13.4's 1–6: drawn as an overlay (terminal size unchanged), side by side (100 columns or more) and top and
+  bottom, the sidebar's Files as the file list and a click opens, the keys (n/p, ]/[, j/k, v, m/Tab, r, Esc/q), the
+  settings `diff-view`, `diff-split-cols`, `diff-after-edit` (default off), their settings-panel items.
+- Close to seeing it inside the chat's flow: right after an edit, Enter or one click on that file's line in the sidebar
+  opens it, and closing leaves the terminal exactly as it was.
+- Tests: unit (layout, hunk moves, the switch by width), renderer (idle screen grey only; diff colours only while the
+  overlay is open), Xvfb e2e `diff.sh`, reference frames and `docs/look/p3b-*` dumps (side by side, top and bottom, a
+  narrow window, three themes). Code and reference frames in one commit, "DESIGN §2 change, approved".
+- P3c (IDE prototype) is not part of this stage.
+
+Keep: no command or write to the stable instance, daemon, install folder or config; processes of dev and tests only,
+by PID or their own socket. Tests and scripts never start the installed claude (M2's real use is the exception, only
+inside the dev instance's tabs). Protected areas (hook output rules, the role checks of `Daemon::message` /
+`Daemon::input`, the permission-prompt path, the injected settings) are not touched; if one becomes necessary, stop
+and report. No credentials, signing keys or gh auth read or changed; no typed text in logs. The terminal itself
+(engine, soaks, release tools) gets defect fixes only. New code carries no comments (except behaviour an external
+spec forces, SAFETY, doc comments of public items, script usage headers); the why goes into the commit body, without a
+per-file list. A mistake made a second time is stopped by a check, but a tool larger than the work itself is only
+proposed. Commits: the person's git identity, no AI mark; each passes the gate on its own; check-range 0 failing
+before a push; two heavy jobs at a time.
+
+Report: the candidate check table and the person's commands, M2's inconvenience list (fixed and left) and the token
+comparison, M3's frame dump list, what is unverified, the Windows items moved to PW, the proposed next stages.
+
+## PW. Windows catch-up (last)
+
+After all other stages. Inputs: the branches `checks/windows-2026-11-17` (its record's "For kramers": the fixes
+branch table, the merge conflicts and their resolution, "Not fixed here"), `windows/2026-11-17-fixes`,
+`windows/2026-11-17-ph-fixes`; the Windows check list in `docs/dev-commands.md`; PW's list in HANDOFF "Next session".

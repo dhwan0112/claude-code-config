@@ -54,6 +54,15 @@ A GitHub issue is handled as one stage of its own (`stage.sh start issue-N …`)
 5. What only Windows can show is marked "Windows unverified" and added to the Windows check list in
    `docs/dev-commands.md`; it does not hold the stage.
 
+## Windows: one catch-up stage at the end (the person, 2026-11-19)
+
+Windows checks and fixes are done once, in stage PW after all other stages. Until then no stage waits for a Windows
+result or does Windows-only work. Kept: the gate's `x86_64-pc-windows-gnu` build and clippy (a failure there is fixed
+like any other). Not done: merging `windows/*` branches, handling `checks/windows-*`, `#[cfg(windows)]` defect fixes,
+writing or changing `.ps1` scripts, Windows reference frames, porting tests to Windows. A new feature that needs Windows
+gets the least that builds (a fallback, or one line "not supported on Windows yet") and one line in PW's list in
+HANDOFF "Next session".
+
 ## Limits
 
 - Protected areas change only with the person's approval, and the commit and the report flag them: the attention state
