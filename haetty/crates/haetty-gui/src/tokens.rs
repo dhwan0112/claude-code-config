@@ -107,13 +107,13 @@ pub fn short(n: u64) -> String {
     format!("{:.2}{unit}", n as f64 / div)
 }
 
-/// The panel's line for a session: `tokens 2.08G (new 20.10M) · hit 99.3 %`. "new" is the input, the cache writes and
+/// The sidebar's value for a session (after its label "tokens"): `2.08G (new 20.10M) · hit 99.3 %`. "new" is the input, the cache writes and
 /// the output (what was processed fresh); "hit" is the cache's share of the input side.
 pub fn line(s: &Summary) -> String {
     let t = &s.totals;
     let fresh = t.input.saturating_add(t.cache_write).saturating_add(t.output);
     let hit = t.hit_ratio().map(|h| format!(" · hit {:.1} %", h * 100.0)).unwrap_or_default();
-    format!("tokens {} (new {}){hit}", short(t.sum()), short(fresh))
+    format!("{} (new {}){hit}", short(t.sum()), short(fresh))
 }
 
 #[cfg(test)]
@@ -132,8 +132,8 @@ mod tests {
             context: 0,
             totals: Tokens { input: 10, output: 4, cache_write: 100, cache_read: 1120 },
         };
-        assert_eq!(line(&s), "tokens 1.23K (new 114) · hit 91.1 %");
-        assert_eq!(line(&Summary::default()), "tokens 0 (new 0)");
+        assert_eq!(line(&s), "1.23K (new 114) · hit 91.1 %");
+        assert_eq!(line(&Summary::default()), "0 (new 0)");
     }
 
     #[test]

@@ -90,9 +90,10 @@ mod tests {
         std::env::set_var("XDG_DATA_HOME", &d);
         let msg = install_desktop().unwrap();
         std::env::remove_var("XDG_DATA_HOME");
-        assert!(msg.contains("io.github.dhwan0112.haetty.desktop"), "{msg}");
-        assert!(d.join("icons/hicolor/256x256/apps/io.github.dhwan0112.haetty.png").exists());
-        assert!(d.join("icons/hicolor/scalable/apps/io.github.dhwan0112.haetty.svg").exists());
+        let id = product::app_id();
+        assert!(msg.contains(&format!("{id}.desktop")), "{msg}");
+        assert!(d.join(format!("icons/hicolor/256x256/apps/{id}.png")).exists());
+        assert!(d.join(format!("icons/hicolor/scalable/apps/{id}.svg")).exists());
         haetty_testkit::remove_dir_all(&d);
     }
 }
