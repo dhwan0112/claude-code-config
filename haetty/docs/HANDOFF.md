@@ -8,6 +8,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage pi (branch `haetty/pi`, worktree `~/projects/claude-code-config-wt/pi`). Remaining: I1 zsh shell integration, I2 sidebar focus key, I3 0.4.0 new candidate
+
 ## 1. Current state
 
 - **Version** 0.4.0: release commit **`98a9b71`**, Linux candidate check passed 2026-11-19, **not tagged** (the person
