@@ -431,7 +431,14 @@ fn health_counts_the_hourly_line_and_the_idle_exit() {
     let dir = tmp("health");
     let (ep, daemon) = start_with(&dir, Duration::from_secs(2), Duration::from_millis(700));
     let obs = Client::connect(&ep, Role::Observe, "status").unwrap();
-    let h0 = obs.health().unwrap();
+    let end = Instant::now() + Duration::from_secs(5);
+    let h0 = loop {
+        let h = obs.health().unwrap();
+        if h.now.clients == 1 || Instant::now() > end {
+            break h;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
     assert_eq!((h0.now.sessions, h0.now.clients), (0, 1), "{h0:?}");
     #[cfg(target_os = "linux")]
     assert!(h0.now.threads.unwrap() >= 2 && h0.now.fds.unwrap() >= 1 && h0.now.anon_kb.unwrap() > 0, "{h0:?}");
