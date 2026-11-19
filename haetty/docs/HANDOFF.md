@@ -8,6 +8,7 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage p2b (branch `haetty/p2b`, worktree `~/projects/claude-code-config-wt/p2b`). Remaining: P2b coordinator tools: haetty task new, haetty wait worker, haetty workers, report spelling, observable worker tabs, background-task wait; approved P13 (deleted exe path) and P2 (haetty in the proxy folder); record, HANDOFF
 
 ## 1. Current state
 
