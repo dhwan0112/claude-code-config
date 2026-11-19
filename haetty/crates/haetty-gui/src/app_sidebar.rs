@@ -16,6 +16,7 @@ const GIT_EVERY: Duration = Duration::from_secs(10);
 /// The foreground check of a shell tab (Linux), and the Log's refresh while nothing else asks.
 const FG_EVERY: Duration = Duration::from_secs(2);
 const LOG_EVERY: Duration = Duration::from_secs(5);
+const WORKERS_EVERY: Duration = Duration::from_secs(3);
 
 impl Win {
     /// The sidebar is on screen (docked or over the terminal).
@@ -103,7 +104,10 @@ impl Win {
                     agents: tab
                         .and_then(|x| x.claude.as_ref())
                         .map_or(0, |c| c.workers.iter().filter(|a| a.ended_ms.is_none()).count()),
-                    session: tab.map(|x| x.session.id.clone()).unwrap_or_default(),
+                    session: tab
+                        .map(|x| x.session.id.clone())
+                        .or_else(|| self.detached_worker(t).map(|s| s.id.clone()))
+                        .unwrap_or_default(),
                     blockers: l.blockers,
                     next: l.next,
                     tokens: l.tokens,
@@ -211,6 +215,12 @@ impl Win {
             }
             Hit::Agent(id) => self.open_agent(&id),
             Hit::Worker(sid) => {
+                if let Some(s) = self.detached_workers.iter().find(|s| s.id == sid).cloned() {
+                    if let Err(e) = self.reattach(&s) {
+                        self.show_hint(format!("worker not opened: {e}"));
+                    }
+                    self.detached_workers.retain(|x| x.id != sid);
+                }
                 if let Some(i) = self.tabs.iter().position(|t| t.session.id == sid) {
                     self.sidebar_overlay = false;
                     self.select(i);
@@ -349,12 +359,36 @@ impl Win {
 
     /// Timers of the sidebar: the elapsed times of running agents (a redraw each second; the damage tracking redraws
     /// only the rows that changed), a shell tab's git changes and foreground check, the Log. The next wake, if any.
+    /// The task records again (a coordinator may have made one with `haetty task new`) and the worker sessions no
+    /// window shows; true when either changed.
+    pub(super) fn refresh_workers(&mut self) -> bool {
+        let tasks = crate::tasks::load_all(&crate::tasks::dir());
+        let live = if tasks.is_empty() { vec![] } else { self.client.list_sessions().unwrap_or_default() };
+        let detached: Vec<haetty_proto::SessionInfo> = live
+            .into_iter()
+            .filter(|s| s.attached == 0 && s.state == haetty_proto::SessionState::Running)
+            .filter(|s| self.tabs.iter().all(|t| t.session.id != s.id))
+            .filter(|s| tasks.iter().any(|t| t.is_folder(&super::osc7_path(&s.cwd))))
+            .collect();
+        let changed = tasks != self.tasks || detached != self.detached_workers;
+        self.tasks = tasks;
+        self.detached_workers = detached;
+        changed
+    }
+
     pub(super) fn sidebar_tick(&mut self, now: Instant) -> Option<Instant> {
         if !self.sidebar_visible() || self.tabs.is_empty() {
             return None;
         }
         let mut next: Option<Instant> = None;
         let mut redraw = false;
+        if self.cfg.sidebar_workers {
+            if self.workers_at.is_none_or(|t| now.duration_since(t) >= WORKERS_EVERY) {
+                self.workers_at = Some(now);
+                redraw |= self.refresh_workers();
+            }
+            next = min(next, self.workers_at.map(|t| t + WORKERS_EVERY));
+        }
         let i = self.active;
         // Shell tab: git changes (off the UI thread) and whether a claude runs without the integration.
         if self.tabs[i].claude.is_none() && !haetty_cc::settings::is_claude(&self.tabs[i].spec.program) {

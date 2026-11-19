@@ -57,6 +57,34 @@ path.
    `tools/check-range.sh origin/main..HEAD` ending in "0 failing"
    (`CLAUDE.md`, Commits).
 
+## Coordinating workers
+
+A coordinating Claude Code session (stage P2's way; tried in PM, tools in P2b) hands each piece of a stage to a
+worker and reads its report. The commands are in README, "Orchestrator", "From a coordinating session". What PM's real
+use taught (its record: `docs/history/2026-11-19-pm.md`, M2):
+
+1. **Make tasks with `haetty task new`**, in the coordinator's stage worktree (the base is its branch). Write the brief
+   to a file and pass `--brief FILE`: its text goes into the worker's first prompt, so the worker reads nothing outside
+   its worktree to start. The worker is detached; the person opens it (a click on its line in the sidebar's Workers)
+   and answers the folder-trust question. Tell the person in one line which task waits for that.
+2. **Wait, do not poll:** `haetty wait worker any --until verified,blocked,needs_review,asks --timeout 1800`, then
+   `haetty workers` for the overview and `haetty status --json` for one worker's full report.
+3. **A worker that `asks`** waits for the person: nobody else answers a permission question. A worker the person
+   left stopped stays stopped; make a new task for the rest of its work (its branch keeps what it committed).
+4. **Briefs that do not stop at a question** (with `permissions.blockReadsOutsideWorkingDirectories` or a
+   classifier):
+   - every file a worker must read is in its worktree or in the brief itself;
+   - test output a worker must look at (a frame under `HAETTY_TEST_TMP`) is copied into the worktree first, into a
+     folder git ignores (e.g. `target/look/`), or `worker-command` gets `--add-dir` for that folder;
+   - say "no window and no command for the stable haetty; a dev window only through `scripts/e2e/xvfb.sh`", not "no
+     haetty windows" (a classifier then refuses the e2e scripts);
+   - processes by PID only: a deny rule in the person's own Claude Code settings holds it better than a brief.
+5. **Merge one worker at a time:** rebase its branch on the stage branch, fast-forward, and gate the result; the
+   merged branch's worktree is removed with palette "Remove a task's worktree" (never `--force`).
+6. **In a dev instance** a shell tab's `haetty` is the dev build (the proxy folder holds it), so `haetty task new`
+   and `haetty workers` reach the dev daemon. `observe-workers = true` in the dev config lets the coordinator read the
+   worker tabs (`haetty screen`).
+
 ## Windows build without WSL
 
 The Windows build that the installer ships is cross-compiled in WSL (mingw, with libghostty and Zig). A build with

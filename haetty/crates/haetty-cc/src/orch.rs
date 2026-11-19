@@ -83,6 +83,7 @@ pub enum WorkerState {
     Blocked,
     NeedsReview,
     NoReport,
+    Background,
 }
 
 impl WorkerState {
@@ -105,6 +106,15 @@ impl WorkerState {
         }
     }
 
+    /// A turn ended without a report while background work it started still runs: Claude Code wakes the worker when
+    /// that work ends (Stop's `background_tasks`).
+    pub fn with_background(self, alive: bool, background: u32) -> WorkerState {
+        match self {
+            WorkerState::NoReport if alive && background > 0 => WorkerState::Background,
+            s => s,
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             WorkerState::Running => "running",
@@ -112,6 +122,16 @@ impl WorkerState {
             WorkerState::Blocked => "blocked",
             WorkerState::NeedsReview => "needs review",
             WorkerState::NoReport => "no report",
+            WorkerState::Background => "background",
+        }
+    }
+
+    /// The state as one word, spelled as the report's `STATUS` values (`haetty workers`).
+    pub fn key(self) -> &'static str {
+        match self {
+            WorkerState::NeedsReview => "needs_review",
+            WorkerState::NoReport => "no_report",
+            s => s.name(),
         }
     }
 
@@ -123,6 +143,7 @@ impl WorkerState {
             WorkerState::Blocked => "✗",
             WorkerState::NeedsReview => "◇",
             WorkerState::NoReport => "–",
+            WorkerState::Background => "◌",
         }
     }
 }
@@ -326,6 +347,19 @@ mod tests {
         assert_eq!(W::of(true, false, Some(&r("verified", ""))), W::NeedsReview);
         assert_eq!(W::of(true, false, Some(&r("blocked", ""))), W::Blocked);
         assert_eq!(W::of(true, false, Some(&r("needs_review", "x"))), W::NeedsReview);
+        assert_eq!(W::of(true, false, None).with_background(true, 1), W::Background);
+        assert_eq!(
+            W::of(false, false, None).with_background(false, 1),
+            W::NoReport,
+            "an exited worker waits for nothing"
+        );
+        assert_eq!(W::of(true, false, Some(&r("blocked", ""))).with_background(true, 2), W::Blocked, "a report wins");
+        assert_eq!(W::of(true, true, None).with_background(true, 1), W::Running);
+        let keys: Vec<&str> = [W::Running, W::Verified, W::Blocked, W::NeedsReview, W::NoReport, W::Background]
+            .iter()
+            .map(|s| s.key())
+            .collect();
+        assert_eq!(keys, ["running", "verified", "blocked", "needs_review", "no_report", "background"]);
     }
 
     #[test]

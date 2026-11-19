@@ -17,7 +17,9 @@ const CASES: &[(&str, &str)] = &[
     ("haetty ev", "events"),
     ("haetty events --f", "--follow"),
     ("haetty completions ", "bash zsh fish powershell"),
-    ("haetty --obs", "--observe-new-tabs"),
+    ("haetty --observe-n", "--observe-new-tabs"),
+    ("haetty --observe-w", "--observe-workers"),
+    ("haetty wor", "workers"),
     ("haetty status --", "--json --screen --help"),
     ("haetty gui --font-s", "--font-size"),
 ];

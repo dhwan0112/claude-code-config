@@ -115,6 +115,8 @@ pub struct Config {
     pub sidebar_log: bool,
     /// New tabs start observable (DESIGN.md §6.1).
     pub observe_new_tabs: bool,
+    /// Worker tabs start observable (`observe-workers`, DESIGN.md §8.1).
+    pub observe_workers: bool,
     /// The status panel shows the tokens of the tab and of each worker (`token-status`, DESIGN.md §8.3).
     pub token_status: bool,
     /// The share of a worker's context (percent of `context_window`) past which its tab shows a dim `/clear`; 0 is off.
@@ -175,6 +177,7 @@ impl Default for Config {
             sidebar_workers: true,
             sidebar_log: true,
             observe_new_tabs: false,
+            observe_workers: false,
             token_status: false,
             clear_hint: 60,
             saving_mode: false,
@@ -613,6 +616,18 @@ pub const SETTINGS: &[Setting] = &[
         cli: true,
     },
     Setting {
+        key: "observe-workers",
+        kind: BOOL,
+        default: "false",
+        default_note: None,
+        doc: "`true` / `false` — worker tabs (\"New task\", `haetty task new`) start observable, so a coordinating session can read them with `haetty screen` and `haetty wait event`",
+        line: "Worker tabs start readable by haetty screen and haetty events.",
+        group: Group::Advanced,
+        when: When::Live,
+        panel: false,
+        cli: true,
+    },
+    Setting {
         key: "token-status",
         kind: BOOL,
         default: "false",
@@ -1036,6 +1051,7 @@ impl Config {
             "diff-split-cols" => self.diff_split_cols = int() as usize,
             "diff-after-edit" => self.diff_after_edit = flag(),
             "observe-new-tabs" => self.observe_new_tabs = flag(),
+            "observe-workers" => self.observe_workers = flag(),
             "token-status" => self.token_status = flag(),
             "clear-hint" => self.clear_hint = int() as u8,
             "saving-mode" => self.saving_mode = flag(),
@@ -1151,6 +1167,7 @@ impl Config {
             "worker-command" => self.worker_command.clone(),
             "notifications" => b(self.notifications),
             "observe-new-tabs" => b(self.observe_new_tabs),
+            "observe-workers" => b(self.observe_workers),
             "token-status" => b(self.token_status),
             "clear-hint" => self.clear_hint.to_string(),
             "context-window" => self.context_window.to_string(),
@@ -1425,6 +1442,7 @@ mod tests {
             sidebar_workers: true,
             sidebar_log: true,
             observe_new_tabs: false,
+            observe_workers: false,
             token_status: false,
             clear_hint: 60,
             saving_mode: false,

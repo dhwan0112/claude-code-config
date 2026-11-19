@@ -8,6 +8,7 @@
 //!   starts.
 //! * `event SESSION --permission`: an observable tab asks for a permission answer (attention `Ask`), now or after the
 //!   wait starts.
+//! * `worker ID|any [--until STATES]`: a task's worker state (`haetty workers`) changes, or is one of STATES.
 //!
 //! Exit 0 when the condition holds; 124 when `--timeout` (600 seconds by default) passes first; 3 when the tab is not
 //! observable (its screen and events are for observers only, as `haetty screen` and `haetty events`); 1 on another
@@ -28,7 +29,8 @@ pub const EXIT_TIMEOUT: i32 = 124;
 pub const EXIT_NOT_OBSERVABLE: i32 = 3;
 const POLL: Duration = Duration::from_millis(200);
 const WAIT_USAGE: &str = "error: usage: haetty wait pid PID | file PATH (--contains TEXT | --changed) | \
-     screen SESSION --contains TEXT | event SESSION (--stop | --permission) [--timeout SECONDS]";
+     screen SESSION --contains TEXT | event SESSION (--stop | --permission) | \
+     worker (ID | any) [--until STATE[,STATE...]] [--timeout SECONDS]";
 
 /// What to wait for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,6 +41,7 @@ pub enum Cond {
     ScreenContains { session: String, text: String },
     EventStop(String),
     EventPermission(String),
+    Worker(crate::coord::WorkerWait),
 }
 
 impl Cond {
@@ -51,6 +54,7 @@ impl Cond {
             Cond::ScreenContains { session, text } => format!("screen of {session} shows {text:?}"),
             Cond::EventStop(s) => format!("session {s} ends its turn"),
             Cond::EventPermission(s) => format!("session {s} waits for a permission answer"),
+            Cond::Worker(w) => w.describe(),
         }
     }
 }
@@ -69,6 +73,7 @@ pub fn parse(args: &[String]) -> Result<Cond, String> {
         }
         ["event", s, "--stop"] => Cond::EventStop(s.to_string()),
         ["event", s, "--permission"] => Cond::EventPermission(s.to_string()),
+        ["worker", rest @ ..] => Cond::Worker(crate::coord::WorkerWait::parse(rest).ok_or(WAIT_USAGE.to_string())?),
         _ => return Err(WAIT_USAGE.to_string()),
     };
     if cond == Cond::Pid(0) {
@@ -250,7 +255,7 @@ impl Waiting {
                 observed(&mut client, session)?;
                 Waiting::Screen { client, session: session.clone(), text: text.clone() }
             }
-            Cond::EventStop(_) | Cond::EventPermission(_) => {
+            Cond::EventStop(_) | Cond::EventPermission(_) | Cond::Worker(_) => {
                 return Err(fail(1, "haetty wait: an event is streamed as it is written, not polled"));
             }
         })
@@ -288,6 +293,9 @@ fn timed_out(cond: &Cond, timeout: Duration) -> (String, i32) {
 /// Waits for `cond` until `timeout` has passed since `t0`; returns the one line to print and the exit code.
 pub fn wait(cond: &Cond, timeout: Duration) -> (String, i32) {
     let t0 = Instant::now();
+    if let Cond::Worker(w) = cond {
+        return crate::coord::wait_worker(w, timeout);
+    }
     if let Cond::EventStop(s) | Cond::EventPermission(s) = cond {
         let (view, events) = match watch_events(s) {
             Ok(v) => v,

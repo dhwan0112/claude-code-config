@@ -308,6 +308,7 @@ keybind = ctrl+shift+n=new_tab
 | `worker-command` | the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1) | `claude` |
 | `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
 | `observe-new-tabs` | `true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only)) | `false` |
+| `observe-workers` | `true` / `false` — worker tabs ("New task", `haetty task new`) start observable, so a coordinating session can read them with `haetty screen` and `haetty wait event` | `false` |
 | `token-status` | `true` / `false` — the sidebar shows the tokens of the active tab and of each worker, read from the Claude Code transcripts ([`haetty tokens`](docs/tokens/README.md)) | `false` |
 | `clear-hint` | a percentage, 0 for off: a worker tab shows a dim `/clear` once its context has passed that share of `context-window`. A hint only: nothing is sent ([Orchestrator](#orchestrator-tasks-and-workers)) | `60` |
 | `context-window` | the context window of the workers' model, in tokens, for `clear-hint` (at least 1000) | `200000` |
@@ -629,6 +630,7 @@ When a worker's context has passed `clear-hint` percent of `context-window` toke
 | `✗` | blocked | the report says `STATUS: blocked` (it could not finish; `BLOCKERS` says why) |
 | `◇` | needs review | the report says `needs_review`, or `verified` without any evidence |
 | `–` | no report | no turn finished yet, or the last final message had no valid report |
+| `◌` | background | the turn ended without a report while background work it started (a shell, an agent) still runs; Claude Code wakes the worker when it ends |
 
 The state comes only from the latest turn's final message (Claude Code's
 Stop hook); haetty never guesses. A red `?` on the tab is Claude Code's own
@@ -650,7 +652,9 @@ NEXT_ACTION: review the branch and merge it into main
 `STATUS` is exactly one of `verified`, `blocked`, `needs_review`. The full
 report is in `haetty status --json` under `workers` (`state`, `status`,
 `artifact`, `evidence`, `blockers`, `next_action`, the worktree, the
-branch and the session).
+branch and the session). There `state` is the word of the table above
+(`needs review`, `no report`, with a space) and `status` the report's own
+keyword (`needs_review`); `haetty workers` (below) spells every state as one word.
 
 **3. Look at the work.** In the worker tab, Ctrl+Shift+D shows its last
 edit; `m` switches to that file against `HEAD` and to the whole working
@@ -681,6 +685,30 @@ orchestrator never answers a permission prompt, a folder-trust question or
 any other dialog — those stay with you. It does not change Claude Code's
 settings or trust records either.
 
+**From a coordinating session.** A Claude Code session that splits work into tasks (a *coordinator*) uses three
+commands instead of the palette:
+
+- `haetty task new --title TEXT [--brief FILE|-] [--scope TEXT] [--related TEXT] [--model M] [--effort E]
+  [--repo DIR] [--base BRANCH] [--json]` makes the task as "New task" does — the branch, the worktree, the record,
+  the briefing (the brief file's text is the description) — and starts its worker **detached**: no tab appears in
+  your window. The worker shows in the sidebar's **Workers** as `detached`; a click on its line opens it as a tab
+  (or palette "Attach detached sessions"). Open it to answer Claude Code's first questions (folder trust); the task is
+  submitted only after them, as before. The repository and the base default to the current folder and its branch.
+  It refuses when no haetty runs, before anything is made.
+- `haetty workers [--json]`: one line per task — id, state, session, title, `(detached)`. The states are
+  `running`, `verified`, `blocked`, `needs_review`, `no_report`, `background` and `asks` (a permission question
+  waits; only you answer it).
+- `haetty wait worker ID|any [--until STATE,...]`: waits until that worker's (or any worker's) state changes, or is
+  one of the named states, and prints one line, e.g. `t3: running -> needs_review after 412.0 s`. Exit 124 after
+  `--timeout` (600 s), 1 for an unknown task.
+
+The worker gets haetty's environment without the coordinator's Claude Code markers and without the `claude` proxy of
+the coordinator's tab. `observe-workers = true` makes worker tabs observable at their start, so the coordinator can
+also read them with `haetty screen` and `haetty wait event` (off by default, like `observe-new-tabs`). In a shell tab
+`haetty` is the build that runs the tab (the proxy folder holds it beside `claude`), so a dev instance's commands
+reach the dev daemon. Notes for writing briefs that do not stop at a permission question are in
+`docs/SELF-HOSTING.md`, "Coordinating workers".
+
 **Restarting.** Worker tabs are saved in tab sets like other tabs; after a
 restart the worker's conversation is resumed (`--resume`) without the task
 being submitted again. Tasks are files in the `tasks` folder of the state
@@ -709,8 +737,8 @@ the log. Delete the `runs/` folder when you no longer need the logs.
 
 `haetty wait` waits for one thing and prints one line: `pid PID` (a process ends); `file PATH --contains TEXT` (the file
 has the text, counting from its start); `file PATH --changed` (the file appears, or its size or time changes);
-`screen SESSION --contains TEXT`; and `event SESSION --stop` or `--permission` (an observable tab's turn ends, or it waits
-for a permission answer). It exits 0 when the condition holds, 124 when `--timeout` (600 seconds by default) passes first,
+`screen SESSION --contains TEXT`; `event SESSION --stop` or `--permission` (an observable tab's turn ends, or it waits
+for a permission answer); and `worker ID|any [--until STATE,...]` (an orchestrator worker's state changes; above). It exits 0 when the condition holds, 124 when `--timeout` (600 seconds by default) passes first,
 and 3 when the tab is not observable: the same rule as `haetty screen` and `haetty events`. Waiting never answers a
 permission prompt.
 

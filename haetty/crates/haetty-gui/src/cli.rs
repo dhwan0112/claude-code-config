@@ -420,13 +420,9 @@ pub fn workers_json(tasks: &[crate::tasks::Task], list: &[SessionInfo]) -> Strin
     let items: Vec<String> = tasks
         .iter()
         .map(|t| {
-            let mut mine: Vec<&SessionInfo> =
-                list.iter().filter(|s| t.is_folder(&crate::app::osc7_path(&s.cwd))).collect();
-            mine.sort_by_key(|s| (s.state != SessionState::Running, std::cmp::Reverse(s.created_ms)));
-            let s = mine.first();
-            let alive = s.is_some_and(|s| s.state == SessionState::Running);
+            let s = crate::coord::task_session(t, list);
             let report = s.and_then(|s| s.report.as_ref());
-            let state = haetty_cc::orch::WorkerState::of(alive, s.is_some_and(|s| s.busy), report);
+            let state = crate::coord::task_state(s);
             let r = |f: fn(&haetty_proto::wire::WorkerReport) -> &str| report.map_or("null".into(), |x| json_str(f(x)));
             format!(
                 r#"{{"id":{},"title":{},"repository":{},"base":{},"branch":{},"worktree":{},"session":{},"state":{},"status":{},"artifact":{},"evidence":{},"blockers":{},"next_action":{},"report_from_transcript":{}}}"#,
@@ -512,6 +508,7 @@ mod tests {
             attention: Default::default(),
             busy: false,
             turns: 0,
+            background: 0,
             report: None,
             observable: false,
             scrollback: 0,
@@ -557,6 +554,7 @@ mod tests {
             attention: Default::default(),
             busy: false,
             turns: 1,
+            background: 0,
             report: Some(WorkerReport {
                 status: "verified".into(),
                 evidence: Secret("cargo test: ok".into()),

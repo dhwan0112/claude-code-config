@@ -171,7 +171,9 @@ impl Tab {
     /// A worker's state (DESIGN.md §8.2).
     fn worker_state(&self) -> WorkerState {
         let c = self.claude.as_deref();
-        WorkerState::of(self.exited.is_none(), c.is_some_and(|c| c.busy), c.and_then(|c| c.report.as_ref()))
+        let alive = self.exited.is_none();
+        WorkerState::of(alive, c.is_some_and(|c| c.busy), c.and_then(|c| c.report.as_ref()))
+            .with_background(alive, c.map_or(0, |c| c.background))
     }
 
     fn name(&self) -> String {
@@ -259,6 +261,9 @@ struct Win {
     closed: Vec<SavedTab>,
     /// Orchestrator tasks (DESIGN.md §8), from `tasks/` in the state directory.
     tasks: Vec<Task>,
+    /// Worker sessions no window shows (`haetty task new` makes them so); the sidebar's Workers opens one on a click.
+    detached_workers: Vec<SessionInfo>,
+    workers_at: Option<Instant>,
     /// The worker program and its arguments (`worker-command`).
     worker_command: Vec<String>,
     hint: Option<(String, Instant)>,
@@ -515,6 +520,8 @@ impl App {
             palette: None,
             closed: vec![],
             tasks: tasks::load_all(&tasks::dir()),
+            detached_workers: vec![],
+            workers_at: None,
             worker_command: self.opts.config.worker_command.split_whitespace().map(str::to_string).collect(),
             hint: None,
             link_hover: None,
@@ -1168,7 +1175,14 @@ impl Win {
             .filter(|x| x.task.as_ref().is_some_and(|(id, _)| *id == t.id))
             .map(Tab::worker_state)
             .next()
-            .unwrap_or(WorkerState::NoReport)
+            .unwrap_or_else(|| crate::coord::task_state(self.detached_worker(t)))
+    }
+
+    fn detached_worker(&self, t: &Task) -> Option<&SessionInfo> {
+        if self.worker_tab(&t.id).is_some() {
+            return None;
+        }
+        crate::coord::task_session(t, &self.detached_workers)
     }
 
     /// The worker's tab: the one whose task is `task` (DESIGN.md §8.1).
@@ -1222,8 +1236,14 @@ impl Win {
             .iter()
             .map(|t| {
                 let st = self.task_state(t);
-                let asks = self.worker_tab(&t.id).is_some_and(|w| w.attention() == Attention::Ask);
-                let (glyph, name) = if asks { ("?", "asks") } else { (st.glyph(), st.name()) };
+                let detached = self.detached_worker(t);
+                let asks = self.worker_tab(&t.id).is_some_and(|w| w.attention() == Attention::Ask)
+                    || detached.is_some_and(|s| s.attention == Attention::Ask);
+                let (glyph, name) = match (asks, detached) {
+                    (true, _) => ("?", "asks"),
+                    (false, Some(_)) => (st.glyph(), "detached"),
+                    (false, None) => (st.glyph(), st.name()),
+                };
                 let report = (active.as_deref() == Some(t.id.as_str()))
                     .then(|| self.tab().claude.as_ref().and_then(|c| c.report.clone()))
                     .flatten();
@@ -1272,7 +1292,12 @@ impl Win {
             once: vec![t.prompt()],
         };
         match self.open_spec(spec) {
-            Ok(()) => self.show_hint(format!("task {} started on {}", t.id, t.branch)),
+            Ok(()) => {
+                if self.cfg.observe_workers && !self.tabs.is_empty() {
+                    self.set_observable(self.tabs.len() - 1, true);
+                }
+                self.show_hint(format!("task {} started on {}", t.id, t.branch))
+            }
             Err(e) => self.show_hint(format!("task {} made, worker not started: {e}", t.id)),
         }
     }

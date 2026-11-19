@@ -706,6 +706,7 @@ impl Daemon {
                             i.attention = cl.info.attention;
                             i.busy = cl.info.busy;
                             i.turns = cl.info.turns;
+                            i.background = cl.info.background;
                             i.report.clone_from(&cl.info.report);
                         }
                         i
@@ -1064,6 +1065,7 @@ impl Daemon {
                     attention: Attention::None,
                     busy: false,
                     turns: 0,
+                    background: 0,
                     report: None,
                     observable: false,
                     scrollback: 0,

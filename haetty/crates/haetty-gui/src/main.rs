@@ -33,6 +33,7 @@ mod cli;
 mod clipboard;
 mod config;
 mod config_edit;
+mod coord;
 mod damage;
 mod diffview;
 mod emoji;
@@ -119,6 +120,8 @@ pub const SUBCOMMANDS: &[&str] = &[
     "update",
     "install-layout",
     "release-manifest",
+    "workers",
+    "task",
 ];
 pub const IMPLEMENTED: &[&str] = &[
     "gui",
@@ -138,6 +141,8 @@ pub const IMPLEMENTED: &[&str] = &[
     "update",
     "install-layout",
     "release-manifest",
+    "workers",
+    "task",
 ];
 
 /// What the command line asks for.
@@ -203,6 +208,11 @@ pub enum Command {
     /// `install-layout …` (tools/install-stable.sh) and `release-manifest …` (tools/release.sh).
     InstallLayout(Vec<String>),
     ReleaseManifest(Vec<String>),
+    /// `workers [--json]` and `task new …` (stage P2b, `coord.rs`).
+    Workers {
+        json: bool,
+    },
+    TaskNew(Box<coord::NewTask>),
 }
 
 fn parse_command(args: Vec<String>) -> Result<Command, String> {
@@ -342,6 +352,12 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
                     .into(),
             ),
         },
+        Some("workers") => match &args[1..] {
+            [] => Ok(Command::Workers { json: false }),
+            [j] if j == "--json" => Ok(Command::Workers { json: true }),
+            _ => Err("usage: haetty workers [--json]".into()),
+        },
+        Some("task") => coord::parse_task(&args[1..]).map(|n| Command::TaskNew(Box::new(n))),
         Some("install-layout") => Ok(Command::InstallLayout(args[1..].to_vec())),
         Some("release-manifest") => Ok(Command::ReleaseManifest(args[1..].to_vec())),
         Some("install-desktop") => match args.len() {
@@ -694,6 +710,16 @@ fn main() {
         Command::Screen { id } => {
             init_log(None);
             let (text, code) = cli::screen(&id);
+            exit_with(&text, code)
+        }
+        Command::Workers { json } => {
+            init_log(None);
+            let (text, code) = coord::workers(json);
+            exit_with(&text, code)
+        }
+        Command::TaskNew(n) => {
+            init_log(None);
+            let (text, code) = coord::task_new(&n);
             exit_with(&text, code)
         }
         Command::Agents { json, tab } => {

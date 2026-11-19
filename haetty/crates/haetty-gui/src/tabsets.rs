@@ -248,6 +248,7 @@ mod tests {
             attention: Default::default(),
             busy: false,
             turns: 0,
+            background: 0,
             report: None,
             observable: false,
             scrollback: 0,

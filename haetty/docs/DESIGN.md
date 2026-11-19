@@ -45,6 +45,7 @@ hook output rules, the IPC permission checks, and the path of Claude Code permis
 | 8.2 | Worker reports and states | Where a report comes from (the Stop hook) and the states | [06](design/06-milestones-external-orchestrator.md) |
 | 8.3 | Display | Worker tab names and state glyphs | [06](design/06-milestones-external-orchestrator.md) |
 | 8.4 | Safety boundary | What the orchestrator may send, and the one function that sends it (`Origin::Program`) | [06](design/06-milestones-external-orchestrator.md) |
+| 8.5 | Coordinator commands | `haetty task new` (a detached worker), `haetty workers`, `haetty wait worker`, `observe-workers` (P2b) | [06](design/06-milestones-external-orchestrator.md) |
 | 9 | Updating the stable instance without closing the tabs | Design only: options (a), (b), (c) | [07](design/07-stable-update.md) |
 | 9.1 | (a) Old and new daemon side by side | Both daemons run; new sessions go to the new one | [07](design/07-stable-update.md) |
 | 9.2 | (b) Hand the sessions to the new daemon | The old daemon passes its sessions to the new one | [07](design/07-stable-update.md) |

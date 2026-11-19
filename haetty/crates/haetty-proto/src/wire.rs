@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 15;
+pub const VERSION: u32 = 16;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -158,6 +158,8 @@ pub struct SessionInfo {
     pub busy: bool,
     /// Claude Code: turns finished.
     pub turns: u32,
+    /// Claude Code: background work in flight when the latest turn ended (version 16).
+    pub background: u32,
     /// Claude Code: the latest turn's worker report (DESIGN.md §8.2).
     pub report: Option<WorkerReport>,
     /// The person allowed observe-only readers (`haetty screen`, `haetty
@@ -526,6 +528,9 @@ pub struct ClaudeInfo {
     pub updated_ms: u64,
     /// Turns finished (Stop / StopFailure) since the session started.
     pub turns: u32,
+    /// Background work in flight (shells, agents, monitors) when the latest turn ended: the length of Stop's
+    /// `background_tasks`; 0 again when a turn starts (version 16).
+    pub background: u32,
     /// The worker report of the latest finished turn (DESIGN.md §8.2);
     /// cleared when a new turn starts.
     pub report: Option<WorkerReport>,

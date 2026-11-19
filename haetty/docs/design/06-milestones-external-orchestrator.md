@@ -143,7 +143,11 @@ automatic decomposition, no automatic merging, no MCP / Rakazo (§6).
     checked);
   - blocked, needs review — as reported;
   - no report — anything else: no turn finished yet, a final message
-    without a valid STATUS, the program exited without one.
+    without a valid STATUS, the program exited without one;
+  - background (stage P2b) — no report, and the turn's Stop listed
+    background work in flight (`background_tasks`: shells, agents,
+    monitors; Claude Code 2.1.327's hook schema), so Claude Code wakes
+    the worker again; protocol 16 carries the count (`background`).
 - Report texts are carried as `Secret` (never in logs, debug output or
   the event log); the event log gets the state only.
 - Wire: `ClaudeInfo` and `SessionInfo` get `turns` (Stops seen), `report`
@@ -156,6 +160,7 @@ automatic decomposition, no automatic merging, no MCP / Rakazo (§6).
   needs review, `–` no report. Grey like the rest of the name: the existing
   attention marks (amber "turn finished", red `?` question) already call
   the person; a second colour channel would compete with them (§2.2).
+  `◌` background (P2b), the sidebar's mark of background agents.
 - Status panel: a WORKERS section — one line per task (glyph, id, title,
   state) and, for the active worker, its BLOCKERS / NEXT_ACTION first
   lines.
@@ -187,3 +192,25 @@ automatic decomposition, no automatic merging, no MCP / Rakazo (§6).
   0 bytes; a permission question → held and a raw Program paste refused, 0
   bytes; after the answer and a Stop → delivered; busy → held; and that
   the orchestrator source contains no `Origin::Human`.
+
+### 8.5 Coordinator commands (stage P2b, 2026-11-19)
+
+From PM's real use (`docs/history/2026-11-19-pm.md`, M2: a task took the person ~14 key actions; the coordinator
+polled `status --json`). Commands for a coordinating Claude Code session, in `crates/haetty-gui/src/coord.rs`:
+
+- `haetty task new`: the same task as the palette's (`tasks::create`, the same briefing and prompt; `--brief FILE`
+  is the description), and its worker session created by a short Control connection with the GUI's spec (theme,
+  scrollback, engine, integration, saving mode from the config). The session is **detached**: §2's "events never
+  change the layout" holds, the person opens it — a click on its Workers line (the sidebar re-reads the task
+  records and the detached task sessions every 3 s while it shows Workers) or "Attach detached sessions". Nothing is
+  made when no daemon runs. The worker's environment is the command's without Claude Code's child markers and without
+  the coordinator tab's proxy variables and folder. No input is sent; the folder-trust and other start-up questions
+  stay the person's (§8.1, §8.4 unchanged).
+- `haetty workers [--json]`: per task the state as one word, the report's spelling (`needs_review`, `no_report`,
+  `background`), and `asks` while the worker's attention is Ask; `status --json` keeps its display words.
+- `haetty wait worker ID|any [--until STATES]`: an observe-only connection, once a second; the first look is the
+  baseline (a task made later starts its own). Exit 0, 124, 1 (unknown task, no daemon).
+- `observe-workers` (default off): worker tabs start observable, from the palette or `task new`.
+- Protected, approved 2026-11-19 (P13, P2): the hooks' executable is the file now at the daemon's path when it was
+  replaced in place (`product::live_path`), and a session gets no integration when it is gone; the proxy folder also
+  holds `haetty` (Unix; Windows in PW).

@@ -11,6 +11,14 @@
   HEAD / working tree; `diff-after-edit` (off by default) opens it on an edit. Settings `diff-view`,
   `diff-split-cols`, `diff-after-edit` in the Sidebar group. Stage PM, `docs/history/2026-11-19-pm.md`.
   **Windows:** unverified.
+- Coordinator commands (P2b; README "Orchestrator", "From a coordinating session"; DESIGN §8.5): `haetty task new`
+  makes a task and its worker without a window change (the worker is detached; a click on its line in the sidebar's
+  Workers opens it), `haetty workers` (one line per task, the states as one word), `haetty wait worker ID|any
+  [--until …]`; setting `observe-workers`; worker state `◌ background` (a turn ended while background work runs;
+  Stop's `background_tasks`). Protocol 16. `haetty task …` and `haetty workers` are subcommands now (a program of
+  that name runs with `haetty -- task`). **Windows:** unverified.
+- In a shell tab `haetty` is the build that runs the tab: the proxy folder holds it beside `claude` (Linux; protected
+  area, approved: P2).
 
 ### Fixed
 
@@ -21,6 +29,9 @@
   read `HAETTY_INSTANCE`) (`e431c41`).
 - The sidebar's Workers listed a worker waiting on a permission question as running: it shows `?` and "asks"
   (`77c5325`).
+- After the daemon's executable was replaced in place, new Claude Code tabs never reported: their hooks called
+  `…/haetty (deleted)`. The daemon now uses the file at its path, and starts a session without the integration when
+  none is there (protected area, approved: P13).
 
 ## 0.4.0 (2026-11-19, release candidate, not tagged)
 

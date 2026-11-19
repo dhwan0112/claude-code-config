@@ -113,6 +113,7 @@ impl Claude {
                 i.busy = true;
                 // A new turn: the last report is no longer the latest.
                 i.report = None;
+                i.background = 0;
                 self.turn_ts = ts_ms;
                 // A prompt is sent only when no dialog waits, so it ends the question before it: mark and hold.
                 self.resolved_ts = self.resolved_ts.max(ts_ms);
@@ -180,6 +181,7 @@ impl Claude {
             "Stop" | "StopFailure" => {
                 i.busy = false;
                 i.turns = i.turns.saturating_add(1);
+                i.background = j.get("background_tasks").and_then(Json::arr).map_or(0, |a| a.len() as u32);
                 self.resolved_ts = self.resolved_ts.max(ts_ms);
                 // The final message (DESIGN.md §8.2): the hook's own copy,
                 // else this turn's text in the transcript.
@@ -206,6 +208,7 @@ impl Claude {
             }
             "SessionEnd" => {
                 i.busy = false;
+                i.background = 0;
                 if i.attention != Attention::Ask || later_than_ask {
                     i.attention = Attention::None;
                 }
@@ -363,6 +366,13 @@ mod tests {
         c.hook("Stop", &j(r#"{"session_id":"s","last_assistant_message":"I fixed it."}"#), 40, None);
         assert!(c.info.report.is_none());
         assert_eq!(c.info.turns, 2);
+        let bg = r#"{"background_tasks":[{"id":"b1","type":"shell","status":"running","description":"gate"}]}"#;
+        c.hook("Stop", &j(bg), 45, None);
+        assert_eq!(c.info.background, 1, "a shell still running at the turn's end");
+        c.hook("UserPromptSubmit", &j("{}"), 46, None);
+        assert_eq!(c.info.background, 0);
+        c.hook("Stop", &j(r#"{"background_tasks":[]}"#), 47, None);
+        assert_eq!((c.info.background, c.info.turns), (0, 4));
         // No final message and a transcript that is not one: none.
         c.hook("UserPromptSubmit", &j("{}"), 50, None);
         c.hook("Stop", &j(r#"{"transcript_path":"/etc/passwd"}"#), 60, None);
