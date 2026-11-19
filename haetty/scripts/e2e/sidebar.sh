@@ -5,7 +5,8 @@
 # the tab becomes a Claude Code tab with the sidebar's Agents, `haetty agents` lists them, the grid never changes, a
 # `q` ends it and the tab is a shell again; the tab set keeps the conversation and a restart resumes it in the shell.
 # A narrow window: the sidebar over the terminal (Ctrl+Shift+S), an agent's record (Enter). Idle CPU with five agents
-# running. Frame dumps (docs/look/ph-*) when a PNG folder is given. Writes only in $HAETTY_RUN.
+# running. A zsh whose .zshrc puts ~/.local/bin first (the shell integration). Frame dumps (docs/look/ph-*) when a PNG
+# folder is given. Writes only in $HAETTY_RUN.
 # usage: sidebar.sh [PNG-DIR]
 . "$(dirname "$0")/lib.sh"
 OUT=${1:-}
@@ -137,6 +138,20 @@ key Down; key Return; sleep 1
 shot 7-agent-record
 key Escape
 key ctrl+shift+s
+stop
+# --- zsh whose .zshrc puts ~/.local/bin first (stage PI, I1): claude typed in the tab still goes through the proxy ---
+rm -f $W/step2 $W/step3 $W/state/tabs/last.tsv $W/claude-args
+ZSH=$(command -v zsh) || bad "zsh" "not installed (the shell integration needs it)"
+mkdir -p $W/zhome/.local/bin; cp $W/bin/claude $W/zhome/.local/bin/claude
+printf 'PATH=$HOME/.opencode/bin:$HOME/.local/bin:$PATH\nPS1="%%%% "\n' > $W/zhome/.zshrc
+HOME=$W/zhome SHELL=$ZSH start --cols 130 --rows 30 --restore-tabs false
+typ "claude"; sleep 1.5
+grep -qx -- "--settings" $W/claude-args && ok "zsh with ~/.local/bin first: claude went through the proxy" || bad "zsh proxy" "$(tr '\n' ' ' < $W/claude-args 2>/dev/null)"
+touch $W/step2; sleep 1.5
+[ "$(sess claude_session)" = "$SID" ] && ok "zsh: the sidebar's Lead (a Claude Code tab)" || bad "zsh lead" "$(sess claude_session)"
+N=$(HAETTY_LOG=warn $BIN agents --json | python3 -Ic "import json,sys; print(len(json.load(sys.stdin)['sessions'][0]['agents']))" 2>/dev/null)
+[ "$N" = 5 ] && ok "zsh: the sidebar's Agents (5)" || bad "zsh agents" "$N"
+shot 9-zsh-local-bin-first
 stop
 # Themes: the wide Claude Code tab with agents in the two other bundled themes.
 for th in "haetty classic" "IBM 5153 CGA (Black)"; do

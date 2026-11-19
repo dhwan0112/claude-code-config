@@ -275,6 +275,7 @@ pub fn run(cfg: Config) -> io::Result<()> {
         observed: HashMap::new(),
         counter: 0,
         proxy_dir: proxy_folder(&cfg.run_dir),
+        zsh_dir: zsh_folder(&cfg.run_dir),
         run_dir: cfg.run_dir,
         health: health::Health::new(now_ms()),
         health_every: cfg.health_every,
@@ -383,6 +384,8 @@ struct Daemon {
     run_dir: PathBuf,
     /// `<run dir>/bin` with the `claude` proxy (stage PH, H1); `None` when it could not be made.
     proxy_dir: Option<PathBuf>,
+    /// `<run dir>/zsh` with haetty's `.zshenv` (DESIGN.md §13.8); `None` when it could not be made, and on Windows.
+    zsh_dir: Option<PathBuf>,
     /// The daemon's own counts (P1c): the hourly `health` line, `GetHealth`.
     health: health::Health,
     health_every: Duration,
@@ -990,7 +993,9 @@ impl Daemon {
     }
 
     /// A shell tab with the integration: the `claude` proxy folder first on `PATH` and the session's settings file,
-    /// the same hooks and status line a Claude Code tab gets (protected area, approved: stage PH, H1).
+    /// the same hooks and status line a Claude Code tab gets (protected area, approved: stage PH, H1). A zsh started
+    /// without arguments also gets haetty's startup folder, whose prompt hook keeps the proxy folder first after the
+    /// person's own startup files (protected area, approved: stage PI, I1).
     fn proxy_env(&self, id: &str, spec: &CreateSpec) -> Option<(Vec<(String, String)>, PathBuf)> {
         let dir = self.proxy_dir.as_ref()?;
         if !spec.claude_integration || settings::is_claude(&spec.program) {
@@ -1009,11 +1014,25 @@ impl Daemon {
         let mut parts = vec![dir.clone()];
         parts.extend(std::env::split_paths(&base).filter(|p| p != dir));
         let joined = std::env::join_paths(parts).ok()?.to_string_lossy().into_owned();
-        let env = vec![
+        let mut env = vec![
             ("PATH".to_string(), joined),
             (haetty_cc::proxy::DIR_ENV.to_string(), dir.to_string_lossy().into_owned()),
             (haetty_cc::proxy::SETTINGS_ENV.to_string(), path.to_string_lossy().into_owned()),
         ];
+        if let Some(z) = self.zsh_dir.as_ref().filter(|_| spec.shell_integration && spec.args.is_empty()) {
+            let own = |k: &str| {
+                spec.env
+                    .iter()
+                    .find(|(n, _)| n == k)
+                    .map(|(_, v)| std::ffi::OsString::from(v))
+                    .or_else(|| std::env::var_os(k))
+            };
+            if haetty_cc::shell::is_zsh(&spec.program) {
+                env.extend(haetty_cc::shell::zsh_env(z, own("ZDOTDIR")));
+            } else if haetty_cc::shell::is_bash(&spec.program) {
+                env.extend(haetty_cc::shell::bash_env(own("PROMPT_COMMAND").as_deref().and_then(|v| v.to_str())));
+            }
+        }
         Some((env, path))
     }
 
@@ -1230,6 +1249,15 @@ fn proxy_folder(run_dir: &std::path::Path) -> Option<PathBuf> {
             None
         }
     }
+}
+
+fn zsh_folder(run_dir: &std::path::Path) -> Option<PathBuf> {
+    if cfg!(windows) {
+        return None;
+    }
+    haetty_cc::shell::write_zsh(run_dir)
+        .map_err(|e| log::warn!("zsh startup folder in {}: {e}", run_dir.display()))
+        .ok()
 }
 
 fn write_private(path: &std::path::Path, bytes: &[u8]) -> io::Result<()> {

@@ -223,3 +223,35 @@ Stage PH (the person's text in [STAGES.md](../STAGES.md), "PH") took P3a in and 
 - Measured on kramers: GUI idle CPU 0.0 % with the sidebar shown and no agents, 1.2 % with five agents running (a
   redraw of their elapsed times each second; only changed rows are drawn); the daemon 0.0 %. Stripped size +234 KB
   (Linux) / +239 KB (Windows) against v0.3.3, no new dependency.
+
+## 13.8 Stage PI: shell integration (2026-11-20)
+
+The person's `.zshrc` puts `~/.opencode/bin` and `~/.local/bin` before the proxy folder, so `claude` and `haetty`
+typed in a tab were not the proxy's (PM's list, P1 and P2). The research behind the method (Ghostty, kitty) is in
+`docs/history/2026-11-20-pi.md`. As built (protected area, approved: stage PI, I1):
+
+- `shell-integration = auto | off` (default `auto`; panel group Claude Code); it needs the proxy, so
+  `claude-integration = false` turns it off too. `CreateSpec.shell_integration` (protocol 17); the daemon decides in
+  `proxy_env`, only for a program named `zsh` or `bash` with no arguments. Worker tabs and `haetty task new` run claude
+  directly and are not shell tabs.
+- zsh: the daemon writes `<run dir>/zsh/.zshenv` at start (`haetty-cc/src/shell/zshenv.zsh`, built into the
+  executable) and gives the tab `ZDOTDIR=<run dir>/zsh`, plus `HAETTY_ZSH_ZDOTDIR` with the person's own value when
+  they had one (an empty value counts as set). That file gives `ZDOTDIR` back (or unsets it), sources
+  `${ZDOTDIR-$HOME}/.zshenv`, and in an interactive shell appends one function to `precmd_functions`; zsh then reads
+  `.zprofile`, `.zshrc`, `.zlogin` from the person's `ZDOTDIR` in its own order. The hook compares the first `PATH`
+  entry with `HAETTY_PROXY_DIR` and, when it differs, rebuilds `path` with the folder first and every other copy of it
+  removed.
+- bash: the tab gets `BASH_FUNC__haetty_path_first%%` (an exported function; bash imports it) and `PROMPT_COMMAND`
+  with that name first (before a `PROMPT_COMMAND` the environment had). The function keeps `$?`. No `--posix`/`ENV`
+  rewrite of bash's start (Ghostty's and kitty's way), because that means reading the person's startup files in
+  haetty's order instead of bash's.
+- "No shell at run time" (CLAUDE.md): haetty runs no shell script; the `.zshenv` and the bash function are startup
+  settings that the person's own shell reads, like the `--settings` file Claude Code reads.
+- Limits (README, "Claude Code integration"): `exec zsh` and nested shells inherit `PATH` but not the hook; a
+  `.zshrc` that empties `precmd_functions` or a `.bashrc` that overwrites `PROMPT_COMMAND` removes it; a `ZDOTDIR` set
+  in `/etc/zsh/zshenv` bypasses the folder; nothing inside `ssh`; Windows has no shell integration (the daemon makes
+  no folder there).
+- Checked by `tests/shell.rs` (a real daemon, real zsh and bash in isolated homes: the cases above, the startup files'
+  order with and without, `which haetty`, `claude` through the proxy) and `scripts/e2e/sidebar.sh` (a zsh whose
+  `.zshrc` puts `~/.local/bin` first). zsh to the first prompt: 36.21 → 36.45 ms median (200 runs each, isolated home).
+

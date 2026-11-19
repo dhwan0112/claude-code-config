@@ -309,6 +309,7 @@ struct Win {
     scrollback_limit: usize,
     engine: haetty_core::vt::EngineKind,
     claude_integration: bool,
+    shell_integration: bool,
     /// `restore-claude = resume` (stage PH, H1).
     restore_claude: bool,
     /// OS notification (Linux `notify-send`) besides the taskbar/urgency
@@ -545,6 +546,7 @@ impl App {
             scrollback_limit: self.opts.config.scrollback_limit,
             engine: self.opts.config.engine,
             claude_integration: self.opts.config.claude_integration,
+            shell_integration: self.opts.config.shell_integration,
             restore_claude: self.opts.config.restore_claude,
             notifications: self.opts.config.notifications,
             observe_new_tabs: self.opts.config.observe_new_tabs,
@@ -1008,6 +1010,7 @@ impl Win {
             palette: self.theme.palette.iter().map(|c| rgb(*c)).collect(),
             cursor_color: self.theme.cursor_color.map(rgb),
             claude_integration: self.claude_integration,
+            shell_integration: self.shell_integration,
             engine: self.engine.name().into(),
         };
         let id = self.client.create(create).map_err(|e| e.to_string())?;

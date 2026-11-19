@@ -55,6 +55,7 @@ fn spec(script: &str) -> CreateSpec {
         palette: vec![],
         cursor_color: None,
         claude_integration: false,
+        shell_integration: false,
         engine: String::new(),
     }
 }

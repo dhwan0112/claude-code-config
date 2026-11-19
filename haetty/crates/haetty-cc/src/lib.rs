@@ -11,6 +11,7 @@ pub mod proxy;
 pub mod report;
 pub mod resume;
 pub mod settings;
+pub mod shell;
 pub mod state;
 pub mod transcript;
 

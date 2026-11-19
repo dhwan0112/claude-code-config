@@ -140,6 +140,7 @@ fn orchestrator_input_is_program_input_and_never_answers_a_question() {
             palette: vec![],
             cursor_color: None,
             claude_integration: true,
+            shell_integration: false,
             engine: String::new(),
         })
         .unwrap();

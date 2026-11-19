@@ -54,6 +54,7 @@ fn main() {
             palette: vec![],
             cursor_color: None,
             claude_integration: false,
+            shell_integration: false,
             engine: std::env::var("HAETTY_ENGINE").unwrap_or_default(),
         })
         .expect("create");

@@ -361,6 +361,7 @@ fn make(n: &NewTask) -> Result<(Task, String, bool), String> {
         palette: theme.palette.iter().map(|c| rgb(*c)).collect(),
         cursor_color: theme.cursor_color.map(rgb),
         claude_integration: cfg.claude_integration,
+        shell_integration: false,
         engine: cfg.engine.name().into(),
     };
     let sid = client.create(spec).map_err(|e| format!("task {} made, worker not started: {e}", t.id))?;

@@ -205,7 +205,7 @@ theme list shows each theme as you move over it; Esc goes back to the theme you 
 click reaches the program.
 
 Each row shows the value, a dim `•` when it differs from the default, and a dim **next start** when it applies only
-from the next start: `decorations`, `engine`, `scrollback-limit`, `restore-tabs`, `claude-integration`,
+from the next start: `decorations`, `engine`, `scrollback-limit`, `restore-tabs`, `claude-integration`, `shell-integration`,
 `observe-new-tabs`. Everything else in the panel applies at once — colours and theme, `minimum-contrast`, the font
 family and size, the padding, the settings button, notifications and the sidebar's numbers. A change that cannot
 be made (a font the system does not have, a number out of range, a read-only file) keeps the old value and says why in
@@ -305,6 +305,7 @@ keybind = ctrl+shift+n=new_tab
 | `restore-claude` | `resume` / `shell` — a shell tab saved while `claude` ran in it: reopen the shell and run `claude --resume ID` there, or the shell only | `resume` |
 | `engine` | `ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native) | `ghostty` |
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |
+| `shell-integration` | `auto` / `off` — a zsh or bash shell tab started without arguments keeps haetty's `claude` first on `PATH` after your own startup files ran ([Claude Code integration](#claude-code-integration)); `off`, or `claude-integration = false`, leaves the shell alone | `auto` |
 | `worker-command` | the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1) | `claude` |
 | `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
 | `observe-new-tabs` | `true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only)) | `false` |
@@ -530,10 +531,20 @@ with a `--settings` you gave), nothing else: no permissions, no model, no other 
 Claude Code tab (marks, the sidebar, the permission mark and input hold) until that `claude` ends, without any
 resize. Not injected (your arguments pass as they are): `claude-integration = false`, `-p`/`--print`, `--bg`,
 `--version`, `--help`, output that is not a terminal (pipes, scripts), a `claude` started inside a `claude`, and
-subcommands that are not a conversation (`claude mcp`, `update`, `doctor`, `install`, `auth`, `plugin`, …). Your
-shell files are not read or changed: if your shell puts another `claude` first on `PATH` (or you use an absolute path
-or an alias), that `claude` runs without the integration and the sidebar says "claude is running without haetty's
-integration" (Linux). A tab set keeps such a tab's conversation: when haetty starts again it opens the shell and runs
+subcommands that are not a conversation (`claude mcp`, `update`, `doctor`, `install`, `auth`, `plugin`, …).
+
+**Shell integration (`shell-integration = auto`, Linux).** Your `.zshrc` or `.bashrc` may put `~/.local/bin` (where
+the real `claude` lives) before haetty's folder. So a zsh or bash tab that haetty starts without arguments gets one
+prompt hook: before each prompt it puts haetty's folder back at the front of `PATH` (once, never twice) if something
+moved it. zsh: haetty points `ZDOTDIR` at a folder in its runtime folder whose `.zshenv` gives `ZDOTDIR` back (your
+own value, or none), reads your `.zshenv` and adds the hook; zsh then reads your `.zprofile`, `.zshrc` and `.zlogin`
+in its own order. bash: the hook is an exported function named first in `PROMPT_COMMAND` (it keeps `$?` for your
+prompt). haetty never reads or changes your files; zsh and bash read them as always (zsh to the first prompt: +0.2 ms
+measured). Not done: a shell command with arguments, other shells (fish …), a shell inside `ssh`, `exec zsh` or a
+nested shell (they inherit `PATH` but not the hook), a `.zshrc` that empties `precmd_functions`, a `.bashrc` that
+sets `PROMPT_COMMAND` without keeping the old value, and a `ZDOTDIR` set in `/etc/zsh/zshenv`. Then, as with an
+absolute path or an alias, that `claude` runs without the integration and the sidebar says "claude is running without
+haetty's integration" (Linux). A tab set keeps such a tab's conversation: when haetty starts again it opens the shell and runs
 `claude --resume <id>` in it (`restore-claude = shell`: the shell only). To turn the proxy off:
 `claude-integration = false`. `claude` inside `ssh` is not seen.
 
