@@ -8,8 +8,6 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage p2b (branch `haetty/p2b`, worktree `~/projects/claude-code-config-wt/p2b`). Remaining: P2b coordinator tools: haetty task new, haetty wait worker, haetty workers, report spelling, observable worker tabs, background-task wait; approved P13 (deleted exe path) and P2 (haetty in the proxy folder); record, HANDOFF
-
 ## 1. Current state
 
 - **Version** 0.4.0: release commit **`98a9b71`**, Linux candidate check passed 2026-11-19, **not tagged** (the person
@@ -62,11 +60,16 @@ Stages:
   **P2 in real use** in a dev instance (a Sonnet coordinator, six workers: three merged, three stopped by permission
   questions or the classifier; the inconvenience list and the token comparison in the record); **P3b diff overlay**
   (`d0fc76f`, DESIGN §13.4 "as built"; dumps `docs/look/p3b-*`); fixes found in use: the worker's prompt carries its
-  briefing, the sidebar tokens label, the gate in a dev tab, Workers shows a worker that asks.
-- **Next (proposed from PM's list, most hands first): P2b coordinator tools** — `haetty task new` for a Control
-  client, `haetty wait worker ID`, a one-line `haetty workers`, the report spelling, worker tabs observable for their
-  coordinator, "waits for a background task"; protected and needing the person's approval: the hook path after an
-  in-place binary replace (P13), a `haetty` link in the proxy folder (P2). Then P3c IDE prototype (§13.5).
+  briefing, the sidebar tokens label, the gate in a dev tab, Workers shows a worker that asks. **P2b coordinator
+  tools** (2026-11-19, [record](history/2026-11-19-p2b.md), DESIGN §8.5): `haetty task new` (a detached worker; one
+  click on its Workers line opens it), `haetty workers`, `haetty wait worker ID|any [--until]`, `◌ background` (Stop's
+  `background_tasks`), `observe-workers`; protocol 16; approved protected P13 (hooks after an in-place replace) and
+  P2 (`haetty` in the proxy folder); SELF-HOSTING "Coordinating workers"; a real Haiku worker checked end to end.
+- **Next (proposed): P3c IDE prototype (§13.5), run the P2 way** — a coordinating session in a dev instance makes the
+  tasks with `haetty task new` and waits with `haetty wait worker`; the person opens each worker and answers its
+  trust and permission questions; the stage's own session gates, merges and reports. Left from PM's list (record
+  "Left"): the PATH order of the person's zsh (P1), a queued message to a busy worker (P19, §8.4 protected), a focus
+  key for the docked sidebar (C14), a merge helper (C11).
 - P4: session browser, fork, names, `haetty sessions --json` (a `claude` started outside the proxy — another `claude`
   first on PATH, an alias — is still saved as the shell; the sidebar names it). P5: connections, `haetty mcp` (stdio,
   Observe) + install.
@@ -77,6 +80,9 @@ Stages:
   (11 commits on `e8a48be`; three merge conflicts and their resolution in that record's "For kramers" table) and
   `windows/2026-11-17-ph-fixes` (4 commits on `58386ab`); the Windows check list in `docs/dev-commands.md`; and the
   lines stages add here:
+  - P2b (2026-11-19): `haetty` in the proxy folder is Unix only (Windows: a `haetty.cmd` beside `claude.cmd`);
+    `task new`, `workers`, `wait worker` and the detached-worker click unverified on Windows (`coordinator.sh` is
+    Linux only); P13's `(deleted)` path is Linux behaviour (Windows locks a running executable).
   - PM (2026-11-19): the diff overlay (P3b) unverified on Windows — `diff.sh` is Linux only, the three `diff-*`
     scenes have no Windows reference frames; the Windows items of §6.0 and the Windows pitfalls of §4 moved to
     [history/2026-11-19-pm.md](history/2026-11-19-pm.md), "Moved from HANDOFF".
@@ -161,8 +167,10 @@ The dev machine (the Windows and WSL ones: [history/2026-11-19-pm.md](history/20
 - Build directories other than `target/` (the gate's `target-native`, worktrees' `target-*`) reached the Dropbox mirror until E4; `tools/mirror-dropbox.sh` now skips `target-*/`. Files Dropbox holds are removed from Windows (`rmdir /s /q`), not through `/mnt/c`.
 - `tools/check-range.sh` builds into the usual target dir, and our crates' artifacts are named the same in every checkout: a build of another worktree into it meanwhile got stale or missing crates (E5). Give other builds their own `CARGO_TARGET_DIR` while it runs. The same with `tools/stage/e.sh`: a main-checkout test can run the worktree's build (`touch` the file; P3).
 - Claude Code may stop idle background shells when memory runs low (seen on Windows too, against its docs, U3): keep long runs outside Claude Code.
-- Replacing a running daemon's binary file in place: its `current_exe()` becomes `…/haetty (deleted)` and new sessions get hooks on that path (no Claude Code tab). Start a new build beside, never `mv` over the daemon's file (PM, P13).
+- Replacing a running daemon's binary file in place: since P2b the hooks use the file now at that path (a new build there may speak another protocol than the running daemon); still start a new build beside, never `mv` over a running one (P13, history/2026-11-19-pm.md).
 - Claude Code with `blockReadsOutsideWorkingDirectories` asks before any Read outside its folders: briefs, test output and frame dumps a worker must open belong inside its worktree (PM).
+- In a dev tab of the person's zsh, `haetty` is still the stable binary: `.zshrc` puts `~/.local/bin` before the proxy folder; call `$HAETTY_PROXY_DIR/haetty` (P2b).
+- `haetty …` with a non-zero exit prints its line on stderr: an e2e check of that line captures `2>&1` (P2b).
 
 ## 6. Next tasks
 
