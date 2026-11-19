@@ -259,7 +259,8 @@ impl DiffView {
                 }
                 (_, _, why) => format!("{} · {}", f.path, why.unwrap_or("not read")),
             };
-            files.push(DiffFile { path: f.path.clone(), added: fa, removed: fd });
+            let full = c.top.join(&f.path).to_string_lossy().into_owned();
+            files.push(DiffFile { path: full, added: fa, removed: fd });
             if mode == Mode::Tree {
                 let r = Row { kind: Kind::File, old: Some((0, title)), new: None };
                 b.unified.insert(at, r.clone());
@@ -308,7 +309,7 @@ impl DiffView {
             current: 0,
             pref: DiffLayoutPref::Auto,
             split_cols: DEFAULT_SPLIT_COLS,
-            root: String::new(),
+            root: c.top.to_string_lossy().into_owned(),
             scroll: 0,
         }
     }
@@ -355,12 +356,16 @@ impl DiffView {
         self.current = i.min(self.files.len().saturating_sub(1));
     }
 
-    /// Replaces the list of files (the conversation's or git's) and marks file `current`.
-    /// The folder the header's file names are shown relative to.
+    /// The folder the header's file names are shown relative to: the repository's for a git view.
+    pub fn root(&self) -> &str {
+        &self.root
+    }
+
     pub fn set_root(&mut self, root: &str) {
         self.root = root.trim_end_matches(['/', '\\']).to_string();
     }
 
+    /// Replaces the list of files (the conversation's or git's) and marks file `current`.
     pub fn set_files(&mut self, files: Vec<DiffFile>, current: usize) {
         self.files = files;
         self.set_current(current);
@@ -834,7 +839,7 @@ mod tests {
         let mut v = DiffView::git(Mode::Tree, Ok(c));
         assert_eq!(v.header, "[working tree] proj · 2 file(s) · +1 -1");
         assert_eq!(v.file_count(), 2);
-        assert_eq!(v.files()[0], DiffFile { path: "a.rs".into(), added: 1, removed: 1 });
+        assert_eq!(v.files()[0], DiffFile { path: "/w/proj/a.rs".into(), added: 1, removed: 1 }, "the full path");
         assert_eq!(v.current_file(), 0);
         v.set_current(9);
         assert_eq!(v.current_file(), 1);

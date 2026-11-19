@@ -70,7 +70,9 @@ pub struct WorkerRow {
 /// A shell tab's git state (collected off the UI thread).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GitSummary {
-    /// (path, added, removed) of tracked changes against HEAD.
+    /// The repository's top-level folder; the files are shown relative to it.
+    pub top: String,
+    /// (full path, added, removed) of tracked changes against HEAD.
     pub files: Vec<(String, u64, u64)>,
     pub untracked: usize,
 }
@@ -214,7 +216,7 @@ pub fn draw(m: &Model, w: usize, h: usize, g: Greys) -> (Vec<Vec<Cell>>, Vec<(us
             section_title(&mut o, Section::Files, &format!("{}", gs.files.len()), folded(Section::Files));
             if !folded(Section::Files) {
                 for (p, a, r) in &gs.files {
-                    file_row(&mut o, p, "", *a, *r);
+                    file_row(&mut o, p, &gs.top, *a, *r);
                 }
             }
         }
@@ -677,7 +679,11 @@ mod tests {
 
     #[test]
     fn shell_tab_git_summary_and_the_unintegrated_line() {
-        let gs = GitSummary { files: vec![("src/a.rs".into(), 5, 1), ("b.md".into(), 2, 0)], untracked: 1 };
+        let gs = GitSummary {
+            top: "/r".into(),
+            files: vec![("/r/src/a.rs".into(), 5, 1), ("/r/b.md".into(), 2, 0)],
+            untracked: 1,
+        };
         let mut m = model(None, 0);
         m.git = Some(&gs);
         m.unintegrated = true;
@@ -686,7 +692,8 @@ mod tests {
         assert!(t.contains("demo") && t.contains("main"), "{t}");
         assert!(t.contains("2 changed +7 -1 · 1 new"), "{t}");
         assert!(t.contains("claude is running without") && t.contains("haetty's integration"), "{t}");
-        assert!(hits.iter().any(|(_, h)| *h == Hit::File("src/a.rs".into())));
+        assert!(hits.iter().any(|(_, h)| *h == Hit::File("/r/src/a.rs".into())), "the full path behind the row");
+        assert!(t.contains("src/a.rs") && !t.contains("/r/src"), "shown from the repository's folder: {t}");
     }
 
     #[test]

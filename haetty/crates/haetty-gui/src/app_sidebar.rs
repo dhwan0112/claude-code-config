@@ -101,7 +101,7 @@ impl Win {
         if let Some(shown) = self.diff_shown() {
             for (y, hit) in &hits {
                 let sidebar::Hit::File(p) = hit else { continue };
-                if !super::same_file(p, &shown) {
+                if !super::same_file(&self.full_path(p), &shown) {
                     continue;
                 }
                 if let Some(row) = rows.get_mut(*y) {
@@ -494,13 +494,14 @@ pub(super) fn git_summary(dir: &std::path::Path) -> (GitSummary, Option<String>)
     let branch = crate::gitview::repo_branch(dir).and_then(|n| n.split_once(':').map(|x| x.1.to_string()));
     let Some((top, _)) = crate::gitview::find_top(dir) else { return (GitSummary::default(), branch) };
     let deadline = Instant::now() + Duration::from_secs(3);
-    let mut sum = GitSummary::default();
+    let mut sum = GitSummary { top: top.to_string_lossy().into_owned(), ..Default::default() };
     if let Ok(out) = crate::gitview::run_git(&top, &["diff", "--numstat", "HEAD", "--"], deadline) {
         for line in String::from_utf8_lossy(&out).lines().take(500) {
             let mut f = line.splitn(3, '\t');
             let (a, r, p) = (f.next().unwrap_or("-"), f.next().unwrap_or("-"), f.next().unwrap_or(""));
             if !p.is_empty() {
-                sum.files.push((p.to_string(), a.parse().unwrap_or(0), r.parse().unwrap_or(0)));
+                let full = top.join(p).to_string_lossy().into_owned();
+                sum.files.push((full, a.parse().unwrap_or(0), r.parse().unwrap_or(0)));
             }
         }
     }
@@ -539,7 +540,9 @@ mod tests {
         std::fs::write(dir.join("new.txt"), "x\n").unwrap();
         let (sum, branch) = super::git_summary(&dir);
         assert_eq!(branch.as_deref(), Some("work"));
-        assert_eq!(sum.files, [("a.txt".to_string(), 2, 1)]);
+        let top = crate::gitview::find_top(&dir).unwrap().0;
+        assert_eq!(sum.files, [(top.join("a.txt").to_string_lossy().into_owned(), 2, 1)]);
+        assert_eq!(sum.top, top.to_string_lossy());
         assert_eq!(sum.untracked, 1);
         haetty_testkit::remove_dir_all(&dir);
     }

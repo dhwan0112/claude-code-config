@@ -1459,7 +1459,9 @@ impl Win {
             let (files, at) = merged_list(v.files(), self.diff_file_list());
             v.set_files(files, at);
         }
-        v.set_root(&self.tab().folder().unwrap_or_default());
+        if v.root().is_empty() {
+            v.set_root(&self.tab().folder().unwrap_or_default());
+        }
         let layout = v.layout(cols, self.diff_pref(), self.cfg.diff_split_cols);
         if let Some(o) = old {
             v.keep_scroll(o, area, layout);
@@ -2973,8 +2975,7 @@ fn preedit_cursor(cursor: Option<(usize, usize)>) -> Option<(usize, usize)> {
 
 /// The same file, one path perhaps relative to its repository: equal, or one ends with the other after a `/`.
 fn same_file(a: &str, b: &str) -> bool {
-    let (a, b) = (a.replace('\\', "/"), b.replace('\\', "/"));
-    a == b || a.ends_with(&format!("/{b}")) || b.ends_with(&format!("/{a}"))
+    a.replace('\\', "/") == b.replace('\\', "/")
 }
 
 /// The list of files with the shown view's own file in it, and its index: the view's file is put first when the list
@@ -3168,12 +3169,13 @@ mod tests {
         assert_eq!(step_index(0, 3, false), Some(2));
         assert_eq!(step_index(0, 1, true), None);
         assert_eq!(step_index(0, 0, false), None);
-        assert!(same_file("/r/src/a.rs", "src/a.rs"));
-        assert!(same_file("src/a.rs", "/r/src/a.rs"));
         assert!(same_file("/r/a.rs", "/r/a.rs"));
+        assert!(same_file("C:\\r\\a.rs", "C:/r/a.rs"));
+        assert!(!same_file("/r/src/a.rs", "src/a.rs"), "full paths only");
+        assert!(!same_file("/wt1/src/a.rs", "/wt2/src/a.rs"), "the same tail in another worktree is another file");
         assert!(!same_file("/r/xa.rs", "a.rs"));
         let list = vec![file("/r/b.rs"), file("/r/src/a.rs")];
-        let (l, at) = merged_list(&[file("src/a.rs")], list.clone());
+        let (l, at) = merged_list(&[file("/r/src/a.rs")], list.clone());
         assert_eq!((l.len(), at), (2, 1));
         let (l, at) = merged_list(&[file("c.rs")], list.clone());
         assert_eq!((l.len(), at, l[0].path.as_str()), (3, 0, "c.rs"));
