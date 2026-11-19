@@ -100,7 +100,42 @@ pub fn title_prefix() -> String {
 }
 
 /// Path of the running executable, for spawning the daemon and writing hook
-/// commands; falls back to the bare name (found on PATH).
+/// commands; falls back to the bare name (found on PATH). When the file was
+/// replaced while this process runs, the path of the file there now.
 pub fn exe_path() -> std::path::PathBuf {
-    std::env::current_exe().unwrap_or_else(|_| EXE.into())
+    live_path(std::env::current_exe().unwrap_or_else(|_| EXE.into()))
+}
+
+/// Linux names an executable that was replaced or removed after the process started `<path> (deleted)`: the path
+/// without that suffix when a file is there again, else the path as it is.
+pub fn live_path(p: std::path::PathBuf) -> std::path::PathBuf {
+    match p.to_str().and_then(|s| s.strip_suffix(" (deleted)")) {
+        Some(base) if std::path::Path::new(base).is_file() => base.into(),
+        _ => p,
+    }
+}
+
+/// Whether `p` names an executable that is gone (an absolute path with no file): hooks written with it could not run.
+pub fn exe_gone(p: &std::path::Path) -> bool {
+    p.is_absolute() && !p.is_file()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_replaced_executable_is_named_by_the_file_there_now() {
+        let dir = std::env::temp_dir().join(format!("haetty-live-path-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("haetty");
+        let deleted = dir.join("haetty (deleted)");
+        assert_eq!(live_path(deleted.clone()), deleted, "nothing there: the path as it is");
+        assert!(exe_gone(&deleted));
+        std::fs::write(&exe, b"x").unwrap();
+        assert_eq!(live_path(deleted), exe);
+        assert!(!exe_gone(&exe));
+        assert!(!exe_gone(std::path::Path::new(EXE)), "the bare name is looked up on PATH");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

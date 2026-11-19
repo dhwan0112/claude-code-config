@@ -268,6 +268,7 @@ fn a_claude_started_through_the_proxy_gets_the_same_mark_and_hold() {
     let settings = std::fs::read_to_string(lines[2]).unwrap();
     assert!(settings.contains("\"hooks\"") && settings.contains("statusLine"), "the same observing settings");
     assert!(std::fs::symlink_metadata(bin.join("claude")).unwrap().file_type().is_symlink());
+    assert_eq!(std::fs::read_link(bin.join("haetty")).unwrap(), std::fs::read_link(bin.join("claude")).unwrap());
 
     // A shell tab until its Claude Code reports.
     let orch = Client::connect(&ep, Role::Control, "orchestrator").unwrap();

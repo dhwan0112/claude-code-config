@@ -970,7 +970,7 @@ impl Daemon {
                 .map_err(|e| log::warn!("session {id}: {e}; haetty's settings only"))
                 .ok()
         });
-        let exe_path = product::exe_path();
+        let exe_path = hook_exe(id)?;
         let exe = exe_path.to_string_lossy().into_owned();
         let statusline_exe = settings::shell_safe_exe(&exe_path);
         let (merged, warnings) = settings::merge(settings::ours(&exe, &statusline_exe), user);
@@ -995,7 +995,7 @@ impl Daemon {
         if !spec.claude_integration || settings::is_claude(&spec.program) {
             return None;
         }
-        let exe_path = product::exe_path();
+        let exe_path = hook_exe(id)?;
         let exe = exe_path.to_string_lossy().into_owned();
         let (ours, _) = settings::merge(settings::ours(&exe, &settings::shell_safe_exe(&exe_path)), None);
         let path = self.run_dir.join(format!("settings-{id}.json"));
@@ -1188,8 +1188,19 @@ fn log_line(what: &str, j: &Json, info: &haetty_proto::wire::ClaudeInfo) -> Opti
     }
 }
 
+fn hook_exe(id: &str) -> Option<PathBuf> {
+    let p = product::exe_path();
+    if product::exe_gone(&p) {
+        log::warn!("session {id}: {} is gone; the session starts without haetty's integration", p.display());
+        return None;
+    }
+    Some(p)
+}
+
 /// `<run dir>/bin` holding `claude`: on Unix a link to this executable, on Windows `claude.cmd` calling
-/// `haetty claude-proxy` (stage PH, H1). Remade at each daemon start (the executable may have moved).
+/// `haetty claude-proxy` (stage PH, H1). Remade at each daemon start (the executable may have moved). On Unix also
+/// `haetty`, a link to this executable, so a tab's `haetty` is the build that runs it (protected area, approved
+/// 2026-11-19: P2).
 fn proxy_folder(run_dir: &std::path::Path) -> Option<PathBuf> {
     let dir = run_dir.join("bin");
     let made = (|| -> io::Result<()> {
@@ -1197,9 +1208,11 @@ fn proxy_folder(run_dir: &std::path::Path) -> Option<PathBuf> {
         let exe = product::exe_path();
         #[cfg(unix)]
         {
-            let link = dir.join("claude");
-            let _ = std::fs::remove_file(&link);
-            std::os::unix::fs::symlink(&exe, &link)?;
+            for name in ["claude", product::EXE] {
+                let link = dir.join(name);
+                let _ = std::fs::remove_file(&link);
+                std::os::unix::fs::symlink(&exe, &link)?;
+            }
         }
         #[cfg(windows)]
         {
