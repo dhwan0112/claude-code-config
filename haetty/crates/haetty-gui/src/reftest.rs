@@ -384,7 +384,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
     // The docked sidebar (DESIGN.md §13.3, stage PH): no status row, the settings button in its corner.
     let info = claude_info();
     let area = ROWS as usize;
-    let side = |info: Option<&ClaudeInfo>, workers: &[crate::sidebar::WorkerRow], h: usize| {
+    let side = |info: Option<&ClaudeInfo>, workers: &[crate::sidebar::WorkerRow], h: usize, selected: Option<usize>| {
         let m = crate::sidebar::Model {
             claude: info,
             folder: "~/projects/haetty".into(),
@@ -398,7 +398,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
             hidden: &[],
             tokens: None,
             now_ms: NOW_MS,
-            selected: None,
+            selected,
         };
         crate::sidebar::draw(&m, PANEL_COLS, h, g).0
     };
@@ -418,9 +418,17 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         ],
         Some((2, 8)),
     );
-    let panel = side(Some(&info), &[], area);
+    let panel = side(Some(&info), &[], area, None);
     out.push((
         "claude-sidebar",
+        Compose { panel: Some(panel), gear: Some(gear(false)), ..compose(&s) }.build(),
+        None,
+        None,
+    ));
+    // Stage PI (DESIGN.md §2.1): the docked sidebar has the keyboard (Ctrl+Shift+E), its second agent selected.
+    let panel = side(Some(&info), &[], area, Some(2));
+    out.push((
+        "sidebar-focus",
         Compose { panel: Some(panel), gear: Some(gear(false)), ..compose(&s) }.build(),
         None,
         None,
@@ -477,7 +485,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
     let s = screen(COLS - PANEL_COLS as u16, area as u16, &["● Done.", "", "STATUS: verified", "", "> "], Some((2, 4)));
     let info =
         ClaudeInfo { turns: 1, name: "t1 Fix the parser".into(), updated_ms: NOW_MS - 2_000, ..Default::default() };
-    let panel = side(Some(&info), &rows, area);
+    let panel = side(Some(&info), &rows, area, None);
     out.push((
         "workers",
         Compose { tab_bar: Some(bar), panel: Some(panel), gear: Some(gear(false)), ..compose(&s) }.build(),

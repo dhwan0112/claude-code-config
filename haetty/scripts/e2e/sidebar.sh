@@ -5,7 +5,8 @@
 # the tab becomes a Claude Code tab with the sidebar's Agents, `haetty agents` lists them, the grid never changes, a
 # `q` ends it and the tab is a shell again; the tab set keeps the conversation and a restart resumes it in the shell.
 # A narrow window: the sidebar over the terminal (Ctrl+Shift+S), an agent's record (Enter). Idle CPU with five agents
-# running. A zsh whose .zshrc puts ~/.local/bin first (the shell integration). Frame dumps (docs/look/ph-*) when a PNG
+# running. A zsh whose .zshrc puts ~/.local/bin first (the shell integration); the docked sidebar from the keyboard
+# (Ctrl+Shift+E). Frame dumps (docs/look/ph-*) when a PNG
 # folder is given. Writes only in $HAETTY_RUN.
 # usage: sidebar.sh [PNG-DIR]
 . "$(dirname "$0")/lib.sh"
@@ -152,6 +153,16 @@ touch $W/step2; sleep 1.5
 N=$(HAETTY_LOG=warn $BIN agents --json | python3 -Ic "import json,sys; print(len(json.load(sys.stdin)['sessions'][0]['agents']))" 2>/dev/null)
 [ "$N" = 5 ] && ok "zsh: the sidebar's Agents (5)" || bad "zsh agents" "$N"
 shot 9-zsh-local-bin-first
+# The docked sidebar from the keyboard (stage PI, I2): Ctrl+Shift+E takes it, typing stays out of the program, Esc
+# gives it back.
+SID2=$(sess id)
+key ctrl+shift+e
+xdotool type --delay 20 "zzqq"; key Down; key Down
+HAETTY_LOG=warn $BIN screen $SID2 | grep -q zzqq && bad "sidebar focus" "typed text reached the program" || ok "Ctrl+Shift+E: typed text did not reach the program"
+shot 10-sidebar-focus
+key Escape
+xdotool type --delay 20 "yyww"; sleep 0.5
+HAETTY_LOG=warn $BIN screen $SID2 | grep -q yyww && ok "Esc: the terminal has the keyboard again" || bad "sidebar unfocus" "$(HAETTY_LOG=warn $BIN screen $SID2 | tail -3)"
 stop
 # Themes: the wide Claude Code tab with agents in the two other bundled themes.
 for th in "haetty classic" "IBM 5153 CGA (Black)"; do

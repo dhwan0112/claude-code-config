@@ -200,6 +200,8 @@ Alt+M/P/T/O/Y/B/F/D/V.
 | In the settings panel | ↑/↓, Tab, Space, ←/→, Enter, /, r, Esc | the panel has the keyboard while open; nothing reaches the program |
 | Reopen a closed tab, detach tab, attach detached sessions | palette only | — (no chord: rarely used; detach is easy to mistake for close) |
 | New task, message the worker, remove a task's worktree (§8) | palette only | — (no chord: each makes or sends something; a chord pressed by mistake must not) |
+| Sidebar keyboard (stage PI) | Ctrl+Shift+E | free (Claude Code: Ctrl+E = end of line) |
+| In the sidebar with the keyboard: select, fold, act, back | ↑/↓, ←/→, Enter, Esc | the sidebar has the keyboard until Esc, the key again, a click in the terminal or an action that opens something; nothing reaches the program |
 | In the diff overlay: next view, read again, next/previous file, next/previous hunk, layout | m or Tab, r, n/p, ]/[, v | the overlay has the keyboard while open; nothing reaches the program |
 
 Linux: GNOME/KDE terminals use the same Ctrl+Shift family inside their own

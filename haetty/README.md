@@ -157,6 +157,7 @@ settings); plain Ctrl+letter keys go to the program.
 | Message the worker | — (palette) | `message_worker` |
 | Remove a task's worktree | — (palette) | `remove_task_worktree` |
 | Sidebar: show or hide (narrow window: over the terminal) | Ctrl+Shift+S | `status_panel` |
+| Sidebar: keyboard (↑/↓, ←/→, Enter, Esc; narrow window: over the terminal) | Ctrl+Shift+E | `focus_sidebar` |
 | Sidebar wider / narrower | — (palette) | `status_panel_wider` / `status_panel_narrower` |
 | All agents (every tab, the longest waiting first) | Ctrl+Shift+A | `all_agents` |
 | Save tabs as the set "saved" | — (palette) | `save_tabs` |
@@ -498,7 +499,10 @@ while Claude Code works.
 **The sidebar (Ctrl+Shift+S).** From `sidebar-min-cols` (121) window columns on, a column of `sidebar-width` (42) on
 the right, for every tab, from the moment a tab opens: switching tabs or anything Claude Code does never resizes a
 terminal; only resizing the window or Ctrl+Shift+S (hide/show) does. A narrower window: Ctrl+Shift+S shows it over the
-terminal (↑/↓ choose a row, Enter opens it, ←/→ fold a section, Esc closes); the terminal keeps its size. While it is
+terminal (↑/↓ choose a row, Enter opens it, ←/→ fold a section, Esc closes); the terminal keeps its size. Docked, the
+same keys work after Ctrl+Shift+E: a `›` marks the chosen row, Enter does what a click does (a file's diff, an agent's
+record, a worker's tab), and Esc, Ctrl+Shift+E again or a click in the terminal gives the keyboard back; until then
+nothing you type reaches the program. While it is
 docked a Claude Code tab has no status row (the sidebar shows all of it). Sections (the settings' Sidebar group turns
 each on or off; a click on a title folds it):
 

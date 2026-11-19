@@ -92,7 +92,8 @@ pub struct Model<'a> {
     pub hidden: &'a [Section],
     pub tokens: Option<&'a str>,
     pub now_ms: u64,
-    /// The overlay's keyboard selection: an index into the returned hits.
+    /// The keyboard selection while the sidebar has the keyboard (over a narrow window, or docked after Ctrl+Shift+E):
+    /// an index into the returned hits, drawn as a `›` before the row and the row in the normal grey.
     pub selected: Option<usize>,
 }
 
@@ -244,13 +245,15 @@ pub fn draw(m: &Model, w: usize, h: usize, g: Greys) -> (Vec<Vec<Cell>>, Vec<(us
             }
         }
     }
-    // The overlay's selection: that row's text in the strongest grey (no accent).
-    if let Some((y, _)) = m.selected.and_then(|i| o.hits.get(i)) {
-        for c in o.rows[*y].iter_mut().skip(1) {
+    if let Some((y, _)) = m.selected.and_then(|i| o.hits.get(i.min(o.hits.len().saturating_sub(1)))) {
+        let row = &mut o.rows[*y];
+        for c in row.iter_mut().skip(2) {
             if !c.text.is_empty() && c.text != " " {
-                c.fg = Some(g.strong);
-                c.flags.0 |= haetty_core::CellFlags::UNDERLINE;
+                c.fg = Some(g.normal);
             }
+        }
+        if let Some(c) = row.get_mut(1) {
+            *c = Cell { text: "›".into(), ..blank(g.normal, g.bg) };
         }
     }
     let mut rows = o.rows;
@@ -585,6 +588,25 @@ mod tests {
             updated_ms: 58_000,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn the_keyboard_selection_is_a_mark_and_the_normal_grey() {
+        let i = info();
+        let g = greys();
+        let (plain, hits) = draw(&model(Some(&i), 62_000), 42, 30, g);
+        let k = hits.iter().position(|(_, h)| matches!(h, Hit::Fold(Section::Files))).unwrap();
+        let (rows, _) = draw(&Model { selected: Some(k), ..model(Some(&i), 62_000) }, 42, 30, g);
+        let y = hits[k].0;
+        assert_eq!(rows[y][1].text, "›");
+        let title: Vec<_> = rows[y].iter().skip(2).filter(|c| !c.text.trim().is_empty()).collect();
+        assert!(title.iter().all(|c| c.fg == Some(g.normal)), "the title in the normal grey, not the strong one");
+        assert!(rows.iter().flatten().all(|c| c.flags.0 & haetty_core::CellFlags::UNDERLINE == 0), "no underline");
+        for (n, (a, b)) in plain.iter().zip(&rows).enumerate().filter(|(n, _)| *n != y) {
+            assert!(a.iter().zip(b).all(|(x, z)| x.text == z.text && x.fg == z.fg), "row {n} unchanged");
+        }
+        let (rows, _) = draw(&Model { selected: Some(999), ..model(Some(&i), 62_000) }, 42, 30, g);
+        assert_eq!(rows[hits.last().unwrap().0][1].text, "›", "a selection past the end marks the last row");
     }
 
     #[test]

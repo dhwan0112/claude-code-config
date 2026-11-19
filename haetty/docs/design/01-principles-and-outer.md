@@ -55,7 +55,11 @@ away. Functions stay; what changes is when they are visible.
   Lead, Agents (one line per subagent: state glyph, type, short model, current tool or calls, elapsed; nesting by
   indent and └; worktree and fork as dim tags; running first, the last 6 finished, "+ N earlier"), Files, Workers, Log
   (the tab's recent events), and a footer (folder:branch, last update); a shell tab shows its folder, branch and git
-  changes instead of the Lead and Agents. Sections fold by a click on their title.
+  changes instead of the Lead and Agents. Sections fold by a click on their title. The keyboard reaches the sidebar
+  over a narrow window (Ctrl+Shift+S) and, docked, after Ctrl+Shift+E (stage PI, approved): ↑/↓ select a line, ←/→
+  fold, Enter acts as a click, Esc gives the keyboard back; nothing typed reaches the program meanwhile. The only mark
+  is a `›` before the selected line, whose text (a section title too) is drawn in the normal grey; no accent, no
+  underline, nothing else changes (reference frame `sidebar-focus`).
 
 ### 2.2 Visual rules
 - Colours come from one theme (Ghostty's theme format, §3.14); the default

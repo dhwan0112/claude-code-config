@@ -365,3 +365,32 @@ fn agent_table_and_session_log_are_read_only_queries() {
     assert!(gui.sync(Duration::from_secs(5)));
     haetty_testkit::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_sidebar_taking_the_keyboard_leaves_the_question_and_the_hold() {
+    // Stage PI, I2: while the docked sidebar has the keyboard (Ctrl+Shift+E) the window sends the tab nothing; what it
+    // asks the daemon meanwhile are the sidebar's read-only queries. Before, during and after, the question's mark and
+    // the input hold stay as they were.
+    let (dir, ep, gui, id) = fake_claude("permission-sidebar-focus");
+    let orch = Client::connect(&ep, Role::Control, "orchestrator").unwrap();
+    hook(&ep, &id, "UserPromptSubmit", r#"{"session_id":"s"}"#);
+    hook(&ep, &id, "PermissionRequest", r#"{"session_id":"s","tool_name":"Bash"}"#);
+    assert_eq!(info(&gui, &id).attention, Attention::Ask);
+    assert!(!program_write_taken(&orch, &id));
+    for _ in 0..3 {
+        let _ = gui.list_sessions().unwrap();
+        let c = gui.claude_state(&id).unwrap();
+        assert_eq!(c.attention, Attention::Ask);
+        let _ = gui.session_log(&id).unwrap();
+        let _ = gui.get_edit(&id).unwrap();
+        assert!(gui.sync(Duration::from_secs(5)));
+        assert_eq!(info(&gui, &id).attention, Attention::Ask, "the sidebar's queries are no answer");
+        assert!(!program_write_taken(&orch, &id), "and open no hold");
+    }
+    gui.send(&ClientMsg::Write { session: id.clone(), origin: Origin::Human, bytes: Secret(b"1".to_vec()) }).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    assert_eq!(info(&gui, &id).attention, Attention::None, "the person's key after the keyboard came back answers");
+    gui.close(&id).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    haetty_testkit::remove_dir_all(&dir);
+}

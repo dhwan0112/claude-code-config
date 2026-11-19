@@ -55,6 +55,9 @@ pub enum Action {
     Updates,
     /// Every tab's agents in one list, the tab that waited longest first; Enter goes to its tab (stage PH, H3).
     AllAgents,
+    /// The docked sidebar takes the keyboard (↑/↓, ←/→, Enter, Esc); over a narrow window it opens over the terminal
+    /// (stage PI, I2).
+    FocusSidebar,
 }
 
 impl Action {
@@ -87,6 +90,7 @@ impl Action {
             Action::Settings => "settings".into(),
             Action::Updates => "updates".into(),
             Action::AllAgents => "all_agents".into(),
+            Action::FocusSidebar => "focus_sidebar".into(),
         }
     }
 
@@ -119,6 +123,7 @@ impl Action {
             Action::Settings => "Settings".into(),
             Action::Updates => "Updates (haetty's version, a newer one)".into(),
             Action::AllAgents => "All agents (every tab, the longest waiting first)".into(),
+            Action::FocusSidebar => "Sidebar: keyboard (↑/↓, Enter, Esc)".into(),
         }
     }
 
@@ -149,6 +154,7 @@ impl Action {
             "settings" => Action::Settings,
             "updates" => Action::Updates,
             "all_agents" => Action::AllAgents,
+            "focus_sidebar" => Action::FocusSidebar,
             _ => {
                 let n: u8 = s.strip_prefix("goto_tab:")?.parse().ok()?;
                 if !(1..=9).contains(&n) {
@@ -176,6 +182,7 @@ impl Action {
             Action::AllAgents,
             Action::DiffView,
             Action::StatusPanel,
+            Action::FocusSidebar,
             Action::StatusPanelWider,
             Action::StatusPanelNarrower,
             Action::AttachDetached,
@@ -280,6 +287,8 @@ impl Default for Keymap {
         b("ctrl+shift+s", Action::StatusPanel);
         // Claude Code binds Ctrl+A (line start), not this.
         b("ctrl+shift+a", Action::AllAgents);
+        // Claude Code binds Ctrl+E (line end), not this.
+        b("ctrl+shift+e", Action::FocusSidebar);
         // Claude Code binds Ctrl+R (history search), not this.
         b("ctrl+shift+r", Action::RenameTab);
         b("ctrl+shift+v", Action::Paste);
@@ -334,6 +343,8 @@ mod tests {
         assert_eq!(k.action(&ch("ctrl+shift+d")), Some(Action::DiffView));
         assert_eq!(k.action(&ch("ctrl+shift+r")), Some(Action::RenameTab));
         assert_eq!(k.action(&ch("ctrl+r")), None);
+        assert_eq!(k.action(&ch("ctrl+shift+e")), Some(Action::FocusSidebar));
+        assert_eq!(k.action(&ch("ctrl+e")), None, "Claude Code's line end");
         for a in Action::all() {
             assert_eq!(Action::parse(&a.name()), Some(a), "{a:?}");
         }

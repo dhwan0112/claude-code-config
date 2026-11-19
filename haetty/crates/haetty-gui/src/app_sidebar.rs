@@ -24,6 +24,27 @@ impl Win {
         self.panel_cols() > 0 || self.overlay_cols() > 0
     }
 
+    /// The sidebar has the keyboard: over a narrow window, or docked after Ctrl+Shift+E.
+    pub(super) fn sidebar_keys(&self) -> bool {
+        self.diff.is_none()
+            && self.agent_view.is_none()
+            && (self.overlay_cols() > 0 || (self.sidebar_focus && self.panel_cols() > 0))
+    }
+
+    /// Ctrl+Shift+E: the docked sidebar takes the keyboard, or gives it back; without a docked sidebar it opens over
+    /// the terminal (which has the keyboard while open).
+    pub(super) fn focus_sidebar(&mut self) {
+        if self.panel_cols() > 0 {
+            self.sidebar_focus = !self.sidebar_focus;
+            self.sidebar_sel = Some(self.sidebar_sel.unwrap_or(0).min(self.sidebar_hits.len().saturating_sub(1)));
+        } else {
+            self.sidebar_overlay = !self.sidebar_overlay;
+            self.sidebar_sel = self.sidebar_overlay.then_some(0);
+        }
+        self.full = true;
+        self.recompose();
+    }
+
     pub(super) fn save_ui(&self) {
         let st =
             super::UiState { shown: self.sidebar_shown, width: Some(self.panel_width), folded: self.folded.clone() };
@@ -74,7 +95,7 @@ impl Win {
             hidden: &hidden,
             tokens: tokens.as_deref(),
             now_ms: now_ms(),
-            selected: self.sidebar_sel.filter(|_| self.overlay_cols() > 0),
+            selected: self.sidebar_sel.filter(|_| self.sidebar_keys()),
         };
         let (mut rows, hits) = sidebar::draw(&m, w, h, g);
         if let Some(shown) = self.diff_shown() {
@@ -213,7 +234,10 @@ impl Win {
                 }
                 self.save_ui();
             }
-            Hit::Agent(id) => self.open_agent(&id),
+            Hit::Agent(id) => {
+                self.sidebar_focus = false;
+                self.open_agent(&id);
+            }
             Hit::Worker(sid) => {
                 if let Some(s) = self.detached_workers.iter().find(|s| s.id == sid).cloned() {
                     if let Err(e) = self.reattach(&s) {
@@ -223,12 +247,14 @@ impl Win {
                 }
                 if let Some(i) = self.tabs.iter().position(|t| t.session.id == sid) {
                     self.sidebar_overlay = false;
+                    self.sidebar_focus = false;
                     self.select(i);
                 }
             }
             Hit::File(path) => {
                 let full = self.full_path(&path);
                 self.sidebar_overlay = false;
+                self.sidebar_focus = false;
                 self.open_file_diff(&full);
             }
         }
@@ -236,16 +262,23 @@ impl Win {
         self.recompose();
     }
 
-    /// The overlay's keys (a narrow window): ↑/↓ select a row, Enter acts, ←/→ fold, Esc closes. True when taken.
+    /// The sidebar's keys while it has the keyboard (over a narrow window, or docked after Ctrl+Shift+E): ↑/↓ select a
+    /// row, Enter acts, ←/→ fold, Esc closes the overlay or gives the keyboard back. Every other key is taken too.
     pub(super) fn sidebar_key(&mut self, chord: &Chord) -> bool {
-        if self.overlay_cols() == 0 || chord.ctrl || chord.alt || chord.sup {
+        if !self.sidebar_keys() {
             return false;
         }
         let n = self.sidebar_hits.len();
         let sel = self.sidebar_sel.unwrap_or(0).min(n.saturating_sub(1));
+        let plain = !(chord.ctrl || chord.alt || chord.sup);
         match chord.key.as_str() {
+            _ if !plain => {}
             "escape" => {
-                self.sidebar_overlay = false;
+                if self.overlay_cols() > 0 {
+                    self.sidebar_overlay = false;
+                } else {
+                    self.sidebar_focus = false;
+                }
                 self.full = true;
             }
             "down" | "j" => self.sidebar_sel = Some((sel + 1).min(n.saturating_sub(1))),

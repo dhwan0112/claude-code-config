@@ -334,6 +334,8 @@ struct Win {
     folded: Vec<crate::sidebar::Section>,
     sidebar_hits: Vec<(usize, crate::sidebar::Hit)>,
     sidebar_sel: Option<usize>,
+    /// The docked sidebar has the keyboard (Ctrl+Shift+E, stage PI): nothing typed reaches the program.
+    sidebar_focus: bool,
     sidebar_press: bool,
     agent_view: Option<crate::agentview::AgentView>,
     /// The next redraw of running agents' elapsed times (each second).
@@ -556,6 +558,7 @@ impl App {
             folded: ui_state.folded,
             sidebar_hits: vec![],
             sidebar_sel: None,
+            sidebar_focus: false,
             sidebar_press: false,
             agent_view: None,
             sidebar_second: None,
@@ -1531,7 +1534,7 @@ impl Win {
             }
             Action::Paste => {
                 if let Some(text) = self.clipboard.get() {
-                    if self.tab().exited.is_some() {
+                    if self.tab().exited.is_some() || self.sidebar_keys() {
                     } else if origin == Origin::Program && self.tab().asking() {
                         // The daemon would refuse it anyway (§3.7); say why.
                         self.show_hint("not sent: a permission dialog is open or was just answered — type it".into());
@@ -1611,6 +1614,7 @@ impl Win {
                 self.recompose();
             }
             Action::StatusPanel => {
+                self.sidebar_focus = false;
                 if self.sidebar_wide() {
                     // The person's choice: the terminal resizes once (DESIGN.md §13.3).
                     self.sidebar_shown = !self.sidebar_shown;
@@ -1641,6 +1645,7 @@ impl Win {
             Action::Settings => self.toggle_settings(),
             Action::Updates => self.open_updates(),
             Action::AllAgents => self.open_all_agents(),
+            Action::FocusSidebar => self.focus_sidebar(),
             Action::AttachDetached => {
                 let n = self.attach_detached();
                 self.show_hint(if n == 0 { "no detached sessions".into() } else { format!("attached {n} session(s)") });
@@ -2137,7 +2142,7 @@ impl Win {
                 return;
             }
             let action = self.keys.action(&chord);
-            if action.is_none() && (self.agent_view.is_some() || self.overlay_cols() > 0) {
+            if action.is_none() && (self.agent_view.is_some() || self.sidebar_keys()) {
                 let taken = if self.agent_view.is_some() { self.agent_key(&chord) } else { self.sidebar_key(&chord) };
                 if taken {
                     if let Some(c) = code {
@@ -2171,6 +2176,9 @@ impl Win {
                 }
                 self.recompose();
             }
+            return;
+        }
+        if self.sidebar_keys() {
             return;
         }
         if self.diff.is_some() {
@@ -2382,8 +2390,8 @@ impl Win {
                     p.query.push_str(&text);
                     p.selected = 0;
                     self.recompose();
-                } else if self.diff.is_some() {
-                    // Not for the program while the diff view is open.
+                } else if self.diff.is_some() || self.sidebar_keys() {
+                    // Not for the program while the diff view or the sidebar has the keyboard.
                 } else if !text.is_empty() && self.tab().exited.is_none() {
                     self.handle().key(Origin::Human, KeyInput::press(Key::Unidentified).with_text(text));
                 }
@@ -2794,6 +2802,11 @@ impl ApplicationHandler<UserEvent> for App {
                         if b == MouseButton::Left && win.sidebar_click() {
                             win.sidebar_press = true;
                             return;
+                        }
+                        if win.sidebar_focus {
+                            win.sidebar_focus = false;
+                            win.full = true;
+                            win.recompose();
                         }
                         // Ctrl+click on a hyperlink (DESIGN.md §2.2); not
                         // sent to the program.
