@@ -143,7 +143,7 @@ taken with `release` builds whose engine was Zig **Debug** (see below).
 
 | Item | Target | dist (shipped) | release | before (Zig Debug engine) |
 |---|---|---|---|---|
-| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 6 656 016 B, Windows 5 210 624 B (`8d66d29`, 0.2.0) | — | 0.1.0: 6 437 584 / 5 014 016 |
+| `dist` binary | ≤ 12 MB / ≤ 10 MB | Linux 9 473 648 B, Windows 6 848 000 B (`b1fd31b`, 0.4.0 candidate, 2026-11-20); 0.2.0 (`8d66d29`): 6 656 016 / 5 210 624 B | — | 0.1.0: 6 437 584 / 5 014 016 |
 | Key → frame through the daemon (`examples/latency.rs`, 300 keys) | ≤ 16 ms | median 0.96 ms, p95 1.19, max 1.50 | median 0.88, p95 1.05 | median 1.95, p95 2.33 (Linux); 1.65 (Windows, P1) |
 | Throughput through a session, `cat` in `haetty-headless`, 80x24 | — | plain lines 24 MiB/s, long wrapped lines 55 MiB/s, SGR-heavy 53 MiB/s | 34 / 72 / 66 MiB/s | 20 000 short lines in ~21 s (~5 KB/s); 3.3 M `REP` characters in 50 s |
 | Anonymous memory per session, default scrollback filled (`examples/mem.rs`) | — | 11.6–11.8 MB each (4 sessions: 47.4 MB) | 11.6–11.9 MB | — |

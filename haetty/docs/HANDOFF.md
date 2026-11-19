@@ -8,12 +8,11 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage pi (branch `haetty/pi`, worktree `~/projects/claude-code-config-wt/pi`). Remaining: I1 zsh shell integration, I2 sidebar focus key, I3 0.4.0 new candidate
-
 ## 1. Current state
 
-- **Version** 0.4.0: release commit **`98a9b71`**, Linux candidate check passed 2026-11-19, **not tagged** (the person
-  tags; commands in [history/2026-11-19-pm.md](history/2026-11-19-pm.md), M1). Tags: **`haetty-v0.3.3` = `ca70269`** (tagged 2026-11-17; record
+- **Version** 0.4.0: candidate 2 **`b1fd31b`** (after PM, P2b, PI), Linux candidate check passed 2026-11-20, **not
+  tagged** (the person tags; commands in [history/2026-11-20-pi.md](history/2026-11-20-pi.md), I3); the first
+  candidate `98a9b71` (2026-11-19) was never tagged. Tags: **`haetty-v0.3.3` = `ca70269`** (tagged 2026-11-17; record
   [history](history/2026-11-17-v0.3.3.md)), **`haetty-v0.3.2` = `622d629`** (tagged 2026-11-16; record [history](history/2026-11-12-p1.md), "v0.3.2"),
   `haetty-v0.1.0` = `4d75fcd`, `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
   2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
@@ -67,11 +66,14 @@ Stages:
   click on its Workers line opens it), `haetty workers`, `haetty wait worker ID|any [--until]`, `◌ background` (Stop's
   `background_tasks`), `observe-workers`; protocol 16; approved protected P13 (hooks after an in-place replace) and
   P2 (`haetty` in the proxy folder); SELF-HOSTING "Coordinating workers"; a real Haiku worker checked end to end.
+  **PI** (2026-11-20, [record](history/2026-11-20-pi.md), DESIGN §13.8): the shell integration (zsh through a
+  `ZDOTDIR` folder, bash through `PROMPT_COMMAND`: the proxy folder first at every prompt; `shell-integration`;
+  protocol 17; protected, approved), the sidebar's keyboard (Ctrl+Shift+E, the `›` mark; §2 change, approved), full
+  paths between the sidebar and the diff overlay, **0.4.0 candidate 2**.
 - **Next (proposed): P3c IDE prototype (§13.5), run the P2 way** — a coordinating session in a dev instance makes the
   tasks with `haetty task new` and waits with `haetty wait worker`; the person opens each worker and answers its
   trust and permission questions; the stage's own session gates, merges and reports. Left from PM's list (record
-  "Left"): the PATH order of the person's zsh (P1), a queued message to a busy worker (P19, §8.4 protected), a focus
-  key for the docked sidebar (C14), a merge helper (C11).
+  "Left"): a queued message to a busy worker (P19, §8.4 protected), a merge helper (C11).
 - P4: session browser, fork, names, `haetty sessions --json` (a `claude` started outside the proxy — another `claude`
   first on PATH, an alias — is still saved as the shell; the sidebar names it). P5: connections, `haetty mcp` (stdio,
   Observe) + install.
@@ -82,6 +84,9 @@ Stages:
   (11 commits on `e8a48be`; three merge conflicts and their resolution in that record's "For kramers" table) and
   `windows/2026-11-17-ph-fixes` (4 commits on `58386ab`); the Windows check list in `docs/dev-commands.md`; and the
   lines stages add here:
+  - PI (2026-11-20): no shell integration on Windows (the daemon makes no `zsh` folder there; zsh/bash under
+    MSYS or Git Bash untested; `tests/shell.rs` Unix only); the sidebar's keyboard (Ctrl+Shift+E) and its `›` mark
+    unverified, no Windows reference frame `sidebar-focus`; the full-path match not run on Windows paths.
   - P2b (2026-11-19): `haetty` in the proxy folder is Unix only (Windows: a `haetty.cmd` beside `claude.cmd`);
     `task new`, `workers`, `wait worker` and the detached-worker click unverified on Windows (`coordinator.sh` is
     Linux only); P13's `(deleted)` path is Linux behaviour (Windows locks a running executable).
@@ -171,7 +176,8 @@ The dev machine (the Windows and WSL ones: [history/2026-11-19-pm.md](history/20
 - Claude Code may stop idle background shells when memory runs low (seen on Windows too, against its docs, U3): keep long runs outside Claude Code.
 - Replacing a running daemon's binary file in place: since P2b the hooks use the file now at that path (a new build there may speak another protocol than the running daemon); still start a new build beside, never `mv` over a running one (P13, history/2026-11-19-pm.md).
 - Claude Code with `blockReadsOutsideWorkingDirectories` asks before any Read outside its folders: briefs, test output and frame dumps a worker must open belong inside its worktree (PM).
-- In a dev tab of the person's zsh, `haetty` is still the stable binary: `.zshrc` puts `~/.local/bin` before the proxy folder; call `$HAETTY_PROXY_DIR/haetty` (P2b).
+- In a tab of a daemon older than PI, `haetty` and `claude` are not the proxy's when `.zshrc` puts `~/.local/bin` first; call `$HAETTY_PROXY_DIR/haetty` there (P2b; the shell integration fixes it from PI on).
+- `script -c CMD` runs `$SHELL -c CMD`: dash drops `BASH_FUNC_…%%` variables (haetty's bash hook) and a zsh `$SHELL` reads haetty's `.zshenv` first in a non-interactive shell; test shells as the tab's own program (PI).
 - `haetty …` with a non-zero exit prints its line on stderr: an e2e check of that line captures `2>&1` (P2b).
 
 ## 6. Next tasks
@@ -337,9 +343,12 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 35. [new, PH 2026-11-17] **Agents in real work**: a Claude Code session that starts five or more subagents (some
     nested, some in the background): the sidebar's Agents follow (parent, model, tool, `◌`/`●`, `✓` and STATUS),
     a click opens an agent's record, Ctrl+Shift+A lists every tab's agents; idle CPU and keys stay quick while they
-    run; `claude` typed in your zsh tab becomes a Claude Code tab (if your `.zshrc` puts `~/.local/bin` first on PATH,
-    the sidebar says "claude is running without haetty's integration" instead). Windows: `claude` in cmd, PowerShell
+    run; `claude` typed in your zsh tab becomes a Claude Code tab (from PI also when your `.zshrc` puts `~/.local/bin`
+    first on PATH: the shell integration). Windows: `claude` in cmd, PowerShell
     and Git Bash tabs (the Windows check list).
+36. [new, PI 2026-11-20] **Shell integration and the sidebar's keyboard**: in your own zsh, `claude` and `haetty` typed
+    in a new tab are haetty's (`whence -p claude` → the runtime folder's `bin`); your prompt and startup files behave
+    as before; Ctrl+Shift+E, ↑/↓, Enter, Esc in the docked sidebar; nothing typed meanwhile reaches the program.
 
 #### B. Linux with a real account (Claude Code logged in)
 
