@@ -1,9 +1,45 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-20, release candidate, not tagged)
+
+Stage PH's harness screen (`claude` typed in a shell tab becomes a Claude Code tab, the sidebar with a conversation's
+agents, All agents, `haetty agents`; `docs/history/2026-11-17-ph-harness.md`), and after it the diff overlay (PM), the
+coordinator commands (P2b), the shell integration and the sidebar's keyboard (PI). The first 0.4.0 candidate, `98a9b71`
+(2026-11-19), was never tagged; the candidate is now stage PI's last commit, checked on Linux under the P1c rule
+(`docs/history/2026-11-20-pi.md`, "I3"). The person tags, builds the release and installs it.
+
+**Windows:** unverified for this commit; its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Not run on
+Windows: the claude proxy, the sidebar, the diff overlay, the coordinator commands and the sidebar's keyboard (stage PW;
+`diff.sh`, `coordinator.sh` and `sidebar.sh` are Linux only). Not on Windows at all: the shell integration (the
+daemon makes no startup folder there) and `haetty` in the proxy folder. Known problems: the claude proxy in shell tabs
+does not work with release builds (`haetty.exe` is a GUI-subsystem program, so the proxy has no console: no
+`--settings` is added and the real claude opens in a console of its own; Windows record `checks/windows-2026-11-17`,
+D3); the settings panel cannot install an update (the version folder's rename is refused while the panel reads the
+folder, and the junction `current` is listed as a version; the fixes are on `windows/2026-11-17-fixes`, not merged).
+Both wait for stage PW.
 
 ### Added
 
+- `claude` typed in a shell tab becomes a Claude Code tab: a proxy folder first on every tab's `PATH` runs your real
+  `claude` with your arguments and the same observing `--settings` a Claude Code tab gets (not for `-p`, `--bg`,
+  subcommands such as `mcp`/`update`, output that is not a terminal); the tab is a shell tab again when it ends; a
+  restored tab set resumes its conversation in the shell (`restore-claude`, default `resume`). Fixes the hand-started
+  claude restored as a bare shell. Stage PH, `docs/history/2026-11-17-ph-harness.md`. **Windows:** unverified.
+- The sidebar (replaces the status panel; DESIGN §2 change, approved): on the right from 121 columns (`sidebar`,
+  `sidebar-width`, `sidebar-min-cols`, Sidebar group), over the terminal in a narrower window (Ctrl+Shift+S); Lead,
+  Agents (every subagent with its parent, model, current tool, background/worktree/fork, question, STATUS), Files,
+  Workers, Log; an agent's record view. Same for every tab: no resize on events.
+- All agents (palette, Ctrl+Shift+A) and `haetty agents [--json] [SESSION]`.
+- Protocol 15: the agent table, changed files, effort, `GetClaude` / `GetSessionLog` (read-only).
+- The shell integration (PI; protected area, approved; README "Claude Code integration"; DESIGN §13.8): a zsh or bash
+  tab started without arguments keeps the proxy folder first on `PATH` after your own startup files put
+  `~/.local/bin` (or anything else) before it, so `claude` and `haetty` typed in it are haetty's. zsh through a
+  `ZDOTDIR` folder in the runtime folder whose `.zshenv` gives `ZDOTDIR` back and reads yours, bash through
+  `PROMPT_COMMAND`; one prompt hook, never a second copy on `PATH`; your files are read by your shell only, in its own
+  order. `shell-integration = auto | off` (Claude Code group). Protocol 17. Linux only.
+- The sidebar from the keyboard (PI; DESIGN §2 change, approved): Ctrl+Shift+E gives the docked sidebar the keyboard
+  (↑/↓, ←/→ fold, Enter acts as a click, Esc gives it back); nothing typed reaches the program meanwhile; a `›` marks
+  the line, also over a narrow window (which no longer underlines it).
 - The diff overlay (P3b; DESIGN §2 change, approved; README "Diff overlay"; DESIGN §13.4): over the terminal area,
   the terminal never resized and closing gives back the exact screen; side by side from `diff-split-cols` (100)
   columns, else top and bottom (`diff-view`, `v`); a click on a file in the sidebar's Files opens it (Enter in the
@@ -20,6 +56,11 @@
 - In a shell tab `haetty` is the build that runs the tab: the proxy folder holds it beside `claude` (Linux; protected
   area, approved: P2).
 
+### Changed
+
+- The status panel's `ui` keys (`status-panel`, `status-panel-width`) are no longer read; the sidebar shows by default.
+- Since PH the terminal itself (engine, soaks, look polish, release tools) gets defect fixes only.
+
 ### Fixed
 
 - A worker started by the orchestrator stopped at once on a permission question when Claude Code blocks reads
@@ -32,39 +73,8 @@
 - After the daemon's executable was replaced in place, new Claude Code tabs never reported: their hooks called
   `…/haetty (deleted)`. The daemon now uses the file at its path, and starts a session without the integration when
   none is there (protected area, approved: P13).
-
-## 0.4.0 (2026-11-19, release candidate, not tagged)
-
-Stage PH's harness screen: `claude` typed in a shell tab becomes a Claude Code tab (the proxy), the sidebar with the
-agents of a conversation, All agents and `haetty agents` (`docs/history/2026-11-17-ph-harness.md`). The tag
-`haetty-v0.4.0` goes on this commit under the P1c rule once the Linux candidate check passes
-(`docs/history/2026-11-19-pm.md`); the person tags, builds the release and installs it.
-
-**Windows:** unverified for this commit; its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Known
-problems: the claude proxy in shell tabs does not work with release builds (`haetty.exe` is a GUI-subsystem program,
-so the proxy has no console: no `--settings` is added and the real claude opens in a console of its own; Windows
-record `checks/windows-2026-11-17`, D3); the settings panel cannot install an update (the version folder's rename is
-refused while the panel reads the folder, and the junction `current` is listed as a version; the fixes are on
-`windows/2026-11-17-fixes`, not merged). Both wait for stage PW.
-
-### Added
-
-- `claude` typed in a shell tab becomes a Claude Code tab: a proxy folder first on every tab's `PATH` runs your real
-  `claude` with your arguments and the same observing `--settings` a Claude Code tab gets (not for `-p`, `--bg`,
-  subcommands such as `mcp`/`update`, output that is not a terminal); the tab is a shell tab again when it ends; a
-  restored tab set resumes its conversation in the shell (`restore-claude`, default `resume`). Fixes the hand-started
-  claude restored as a bare shell. Stage PH, `docs/history/2026-11-17-ph-harness.md`. **Windows:** unverified.
-- The sidebar (replaces the status panel; DESIGN §2 change, approved): on the right from 121 columns (`sidebar`,
-  `sidebar-width`, `sidebar-min-cols`, Sidebar group), over the terminal in a narrower window (Ctrl+Shift+S); Lead,
-  Agents (every subagent with its parent, model, current tool, background/worktree/fork, question, STATUS), Files,
-  Workers, Log; an agent's record view. Same for every tab: no resize on events.
-- All agents (palette, Ctrl+Shift+A) and `haetty agents [--json] [SESSION]`.
-- Protocol 15: the agent table, changed files, effort, `GetClaude` / `GetSessionLog` (read-only).
-
-### Changed
-
-- The status panel's `ui` keys (`status-panel`, `status-panel-width`) are no longer read; the sidebar shows by default.
-- Since PH the terminal itself (engine, soaks, look polish, release tools) gets defect fixes only.
+- The sidebar's mark on the shown file and the diff overlay's place in its list matched paths by their tail, so the
+  same relative path in two worktrees counted as one file: both use full paths now (PI).
 
 ## 0.3.3 (2026-11-17, tagged 2026-11-17)
 

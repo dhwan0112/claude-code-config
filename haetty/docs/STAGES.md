@@ -347,6 +347,90 @@ before a push; two heavy jobs at a time.
 Report: the candidate check table and the person's commands, M2's inconvenience list (fixed and left) and the token
 comparison, M3's frame dump list, what is unverified, the Windows items moved to PW, the proposed next stages.
 
+## PI. Shell integration, sidebar keys, a new 0.4.0 candidate (points 3 and 1; the person's text of 2026-11-20)
+
+PW policy unchanged. One session to the end, no intermediate check-ins. If the session limit hits: push what is done in
+the order I1 → I2 → I3 and write the point to continue from into HANDOFF. No tag, signature, release publication or
+stable install.
+
+Approved in advance:
+- Protected area "the proxy path and what haetty injects": up to I1's shell integration. The content of the observing
+  settings haetty injects, the hook output rules, the role checks and the permission-prompt path do not change. A
+  commit of its own, "protected area, approved".
+- DESIGN §2 change: I2's sidebar focus mark. Code and reference frames in one commit.
+
+I1. Shell integration (closes P1 and P2 of PM's list)
+- Problem: the person's .zshrc puts ~/.opencode/bin and ~/.local/bin first on PATH, so `claude` and `haetty` typed in a
+  tab are not the proxy folder's.
+- Research first (a table in the record): how Ghostty's and kitty's shell integration get into zsh, bash and fish
+  (zsh: ZDOTDIR switch, restoring the original and reading the user's .zshenv; bash: passing through environment
+  variables and its limits; fish: vendor_conf.d in XDG_DATA_DIRS) and each one's known problems; confirmed in the
+  official docs and source, sources named. No code copied (licences: Ghostty MIT, kitty GPL — read kitty's scripts for
+  the method only).
+- zsh (required): when haetty starts zsh, ZDOTDIR points at an integration folder inside the instance's run folder and
+  the original value goes in a separate variable. The folder's .zshenv restores ZDOTDIR, reads the user's .zshenv, then
+  sets one precmd hook that puts the proxy folder back first on PATH. At each prompt the hook only checks "is the proxy
+  folder first" and moves it if not (no duplicate entries). zsh reads the user's other startup files (.zprofile, .zshrc,
+  .zlogin) in their own order. The integration file is built into the executable and written into the run folder at
+  start. It is a setting the user's shell reads, not a shell script haetty runs: DESIGN gets one line on its relation
+  to "No shell at run time".
+- bash (if possible): the simplest method from the research that changes none of the user's files. If none, skip it
+  and give the sidebar's hint a line for bash.
+- fish and other shells: not done. The sidebar's "without haetty's integration" lines stay.
+- Setting: shell-integration = auto | off (default auto); off = today's behaviour. In the settings panel's Claude Code
+  group. With claude-integration = false the integration does not step in either.
+- No integration when: the user's shell command has arguments (the login-shell choice cannot be changed), the shell is
+  not zsh, inside ssh. Worker tabs and `haetty task new` sessions run claude directly as now: not affected.
+- The user's shell files are neither read nor changed (only zsh reads them). Test cases: a user who already uses
+  ZDOTDIR, no .zshenv, a .zshenv that rewrites the whole PATH, frameworks that remove precmd hooks (oh-my-zsh,
+  powerlevel10k's instant prompt).
+- Tests: an isolated HOME with per-case .zshenv/.zshrc and a real zsh (fail, not skip, when zsh is missing). With a
+  fake claude: "claude typed in a tab goes through the proxy", "which haetty is the running build", "the proxy folder is
+  on PATH once", "off does not step in", "the user's ZDOTDIR and startup file order are unchanged (each file read once,
+  in the original order)". One more set in the Xvfb e2e sidebar.sh, "the user's .zshrc puts ~/.local/bin first":
+  typing claude fills the sidebar's Lead and Agents.
+- Start-up time: zsh's time to the first prompt with and without the integration (budget: +5 ms at most).
+
+I2. The sidebar from the keyboard (C14 of PM's list)
+- One key that gives the docked sidebar the focus (default Ctrl+Shift+E; update the clash table §3.11). While it has
+  the focus: ↑/↓ move between lines, ←/→ fold sections, Enter does the line's action (Files → open the diff, Agents →
+  the record, Workers → go to that tab or open a detached worker), Esc gives the focus back to the terminal. Nothing
+  reaches the program while the sidebar has the focus.
+- The focus mark is only a › before the selected line and the normal text colour for the title. No accent colour.
+- tests/permission.rs gets one case: giving the sidebar the focus and back in a tab that waits for a permission
+  answer leaves the Ask mark and the input hold as they were (a check, no code change).
+- The path match between the sidebar and the diff overlay goes from a tail match to the full path (last line of PM's
+  list).
+
+I3. A new 0.4.0 candidate
+- 98a9b71 was not tagged and P3b, P2b and this stage came after it. The version stays 0.4.0; CHANGELOG's 0.4.0
+  section gets the diff overlay, the coordinator tools (task new, workers, wait worker), the shell integration and the
+  sidebar key. The Windows line as it is (unverified, known problems, no shell integration on Windows).
+- The stage's last commit gets the full Linux candidate check: gate, run-all, the short soak on both engines (task
+  failures 0), the install tool's own test, check-range haetty-v0.3.3..<commit>, and a release.sh <commit> --out DIR
+  dry run. Without a display and with the session variables cleared, as in PM. The stable process's PID and start time
+  checked before and after.
+- Write down which profile the gate's stripped size (Linux haetty 12.9 MB) and the budget table's dist size (≤ 12 MB)
+  are measured on, and measure the dist size again. Over budget: report the cause per crate (no reduction work).
+- The report names the commands for the person with the exact hash: tag → release.sh → publish the draft →
+  install-stable.sh → close every window and start again.
+
+Keep: no command or write to the stable instance, daemon, install folder or config; processes of dev and tests only,
+by PID or their own socket. Tests and scripts never start the installed real claude; tests use an isolated HOME and
+never read the user's real shell files. No credentials, signing keys or gh auth. No typed text in logs. The terminal
+itself (engine, soaks, release tools): defect fixes only. No Windows-only work (one line each in PW's list). No
+comments in new code (except external-spec behaviour, SAFETY, public doc comments, script usage headers); the why goes
+into the commit body, without a per-file list. The user's git identity, no AI marks; each commit gates on its own;
+check-range 0 failing before a push; two heavy jobs at a time.
+
+Stop when: zsh's integration cannot work without changing the user's startup-file order (report the research table
+and wait); a protected change beyond the scope above is needed; the candidate check fails and the cause is not found
+within an hour.
+
+Report: the research table and the choice, each part's result and evidence, start-up time before and after, the dist
+size, the candidate check table and the commands for the person, what is unverified, the lines added to PW's list, the
+next stage proposed.
+
 ## PW. Windows catch-up (last)
 
 After all other stages. Inputs: the branches `checks/windows-2026-11-17` (its record's "For kramers": the fixes
