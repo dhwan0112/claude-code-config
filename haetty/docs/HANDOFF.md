@@ -8,8 +8,6 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage p3c (branch `haetty/p3c`, worktree `~/projects/claude-code-config-wt/p3c`). Remaining: the IDE prototype (DESIGN §13.5): the daemon's WebSocket server and lock files, the proxy's CLAUDE_CODE_SSE_PORT, the wire messages, the overlay's accept/reject, a real Claude Code run, README, record
-
 ## 1. Current state
 
 - **Version** 0.4.0: **`haetty-v0.4.0` = `b1fd31b`** (candidate 2, after PM, P2b, PI; Linux candidate check passed
@@ -45,36 +43,19 @@ fixes, no `.ps1` work, no Windows reference frames, no test ports to Windows. A 
 the least that builds (a fallback or one line "not supported on Windows yet") and one line in PW's list.
 
 Stages:
-- **Done:** P0, P1a–P1c (2026-11-12, [p0](history/2026-11-12-p0-north-star.md), [p1](history/2026-11-12-p1.md); tag
-  **`haetty-v0.3.2` = `622d629`**; open: P1a's one-hour soak); PS settings panel (2026-11-16,
-  [record](history/2026-11-16-ps-settings.md)); **PU releases and in-app update** (2026-11-16,
-  [record](history/2026-11-16-pu-update.md)): `tools/release.sh`, signed manifests, the Updates group, restart and
-  rollback; the person's release key is in (`29c490a`; its test fixed in `6296de2`) — **the person:** run the first
-  release (SELF-HOSTING "Releases"; §6.1 34). Windows unverified for PS and PU (Windows check list; reference frames
-  to make on the PC). **P3 research** (2026-11-17, [record](history/2026-11-17-p3-research.md)): OpenCode and IDE
-  protocol research, decisions and plan in DESIGN §13 ([13](design/13-sidebar-diff-ide.md)). **v0.3.3** tagged on `ca70269`
-  (2026-11-17, [record](history/2026-11-17-v0.3.3.md)): PS and PU released; the person installs it by hand. **PH
-  harness screen** (2026-11-17, [record](history/2026-11-17-ph-harness.md), DESIGN §13.7; P3a taken in): the claude
-  proxy in shell tabs (resume on restore; closes P4's "hand-started claude restored as zsh"), the sidebar (Agents,
-  Files, Workers, Log), an agent's record, All agents (Ctrl+Shift+A, replaces P2's key), `haetty agents`; protocol 15.
-  Windows unverified (proxy, frames: Windows check list). Frame dumps `docs/look/ph-*` for the person. **PM**
-  (2026-11-19, [record](history/2026-11-19-pm.md)): **0.4.0 candidate `98a9b71`** (Linux check passed, not tagged);
-  **P2 in real use** in a dev instance (a Sonnet coordinator, six workers: three merged, three stopped by permission
-  questions or the classifier; the inconvenience list and the token comparison in the record); **P3b diff overlay**
-  (`d0fc76f`, DESIGN §13.4 "as built"; dumps `docs/look/p3b-*`); fixes found in use: the worker's prompt carries its
-  briefing, the sidebar tokens label, the gate in a dev tab, Workers shows a worker that asks. **P2b coordinator
-  tools** (2026-11-19, [record](history/2026-11-19-p2b.md), DESIGN §8.5): `haetty task new` (a detached worker; one
-  click on its Workers line opens it), `haetty workers`, `haetty wait worker ID|any [--until]`, `◌ background` (Stop's
-  `background_tasks`), `observe-workers`; protocol 16; approved protected P13 (hooks after an in-place replace) and
-  P2 (`haetty` in the proxy folder); SELF-HOSTING "Coordinating workers"; a real Haiku worker checked end to end.
+- **Done:** P0, P1a–P1c, PS, PU, P3 research, v0.3.3, PH, PM (P2 in real use, P3b), P2b — their lines, as they stood,
+  are in [history/2026-11-20-p3c.md](history/2026-11-20-p3c.md), "Moved from HANDOFF", each with its record.
   **PI** (2026-11-20, [record](history/2026-11-20-pi.md), DESIGN §13.8): the shell integration (zsh through a
   `ZDOTDIR` folder, bash through `PROMPT_COMMAND`: the proxy folder first at every prompt; `shell-integration`;
   protocol 17; protected, approved), the sidebar's keyboard (Ctrl+Shift+E, the `›` mark; §2 change, approved), full
-  paths between the sidebar and the diff overlay, **0.4.0 candidate 2**.
-- **Next (proposed): P3c IDE prototype (§13.5), run the P2 way** — a coordinating session in a dev instance makes the
-  tasks with `haetty task new` and waits with `haetty wait worker`; the person opens each worker and answers its
-  trust and permission questions; the stage's own session gates, merges and reports. Left from PM's list (record
-  "Left"): a queued message to a busy worker (P19, §8.4 protected), a merge helper (C11).
+  paths between the sidebar and the diff overlay, **0.4.0 candidate 2** (tagged `haetty-v0.4.0`). **P3c** (2026-11-20,
+  [record](history/2026-11-20-p3c.md), DESIGN §13.9): haetty as Claude Code's editor (`ide-integration`, off; a server
+  per tab, `CLAUDE_CODE_SSE_PORT`, the proposal in the diff overlay, `a`/`d` as the person; protocol 18; protected and
+  §2, approved; checked with a real Claude Code 2.1.329); `release.sh` executable, its notes beside the assets.
+- **Next (proposed): P4 session browser (point 1), run the P2 way** while the person sits through it — a coordinating
+  session in a dev instance makes the tasks with `haetty task new`; the person answers the workers' trust and
+  permission questions. Left from PM's list: a queued message to a busy worker (P19, §8.4 protected), a merge helper
+  (C11).
 - P4: session browser, fork, names, `haetty sessions --json` (a `claude` started outside the proxy — another `claude`
   first on PATH, an alias — is still saved as the shell; the sidebar names it). P5: connections, `haetty mcp` (stdio,
   Observe) + install.
@@ -85,6 +66,8 @@ Stages:
   (11 commits on `e8a48be`; three merge conflicts and their resolution in that record's "For kramers" table) and
   `windows/2026-11-17-ph-fixes` (4 commits on `58386ab`); the Windows check list in `docs/dev-commands.md`; and the
   lines stages add here:
+  - P3c (2026-11-20): no editor server on Windows (`ide-integration` does nothing there; the token's random source is
+    `/dev/urandom`); `tests/ide.rs` and `ide.sh` Unix only; no Windows reference frame `ide-proposal`.
   - PI (2026-11-20): no shell integration on Windows (the daemon makes no `zsh` folder there; zsh/bash under
     MSYS or Git Bash untested; `tests/shell.rs` Unix only); the sidebar's keyboard (Ctrl+Shift+E) and its `›` mark
     unverified, no Windows reference frame `sidebar-focus`; the full-path match not run on Windows paths.
@@ -180,6 +163,8 @@ The dev machine (the Windows and WSL ones: [history/2026-11-19-pm.md](history/20
 - In a tab of a daemon older than PI, `haetty` and `claude` are not the proxy's when `.zshrc` puts `~/.local/bin` first; call `$HAETTY_PROXY_DIR/haetty` there (P2b; the shell integration fixes it from PI on).
 - `script -c CMD` runs `$SHELL -c CMD`: dash drops `BASH_FUNC_…%%` variables (haetty's bash hook) and a zsh `$SHELL` reads haetty's `.zshenv` first in a non-interactive shell; test shells as the tab's own program (PI).
 - `haetty …` with a non-zero exit prints its line on stderr: an e2e check of that line captures `2>&1` (P2b).
+- An e2e run from a Claude Code session inside haetty inherits `HAETTY_PROXIED=1`: the dev proxy passes `claude` through; unset it and `HAETTY_PROXY_DIR`, `HAETTY_CLAUDE_SETTINGS`, `HAETTY_SESSION_ID` (P3c).
+- Claude Code 2.1.329's folder-trust question selects "No, exit" first: a script answers Down, Enter (P3c).
 
 ## 6. Next tasks
 
@@ -376,6 +361,9 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     and start haetty again → the same conversation continues in its tab
     (not restarted, no second `--resume`); after a reboot (daemon gone) the
     tabs reopen and each Claude Code tab resumes its conversation once.
+37. [new, P3c 2026-11-20] **haetty as the editor** (`ide-integration = true`, new tabs): an Edit or Write Claude Code
+    asks about opens the diff overlay; `a` makes Claude Code write it, `d` rejects it, Esc leaves the question in the
+    terminal; answering in the terminal closes the overlay.
 
 #### C. Windows 11 (and 10 where noted)
 

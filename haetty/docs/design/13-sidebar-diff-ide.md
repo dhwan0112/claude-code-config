@@ -255,3 +255,43 @@ typed in a tab were not the proxy's (PM's list, P1 and P2). The research behind 
   order with and without, `which haetty`, `claude` through the proxy) and `scripts/e2e/sidebar.sh` (a zsh whose
   `.zshrc` puts `~/.local/bin` first). zsh to the first prompt: 36.21 → 36.45 ms median (200 runs each, isolated home).
 
+## 13.9 Stage P3c: haetty as Claude Code's editor, as built (2026-11-20)
+
+The prototype of 13.5, built in one session (record `docs/history/2026-11-20-p3c.md`). What differs from 13.5 or
+was decided while building:
+
+- **Where:** a server per session in the daemon (`haetty-daemon/src/ide.rs`), for a Claude Code tab **and** for a
+  shell tab with the proxy (13.5 predates the proxy): the shell tab's port goes to the shell as `HAETTY_IDE_PORT`, and
+  the proxy hands it to the real claude as `CLAUDE_CODE_SSE_PORT` only when it injects the integration; a Claude Code
+  tab gets `CLAUDE_CODE_SSE_PORT` directly. The server lives as long as the tab, so a `claude` started again in the
+  same shell tab connects to the same port. Only with `claude-integration` on; `ide-integration` takes effect for new
+  tabs.
+- **Protocol** (`haetty-cc/src/ide.rs`, unofficial, pinned to Claude Code 2.1.329 — its strings were checked in the
+  installed CLI): the handshake needs `x-claude-code-ide-authorization` equal to the lock's token (compared without
+  early exit) and answers `Sec-WebSocket-Protocol: mcp` when asked; text, ping/pong and close frames, continuations
+  joined, at most 2 MiB per frame; `initialize` → `2024-11-05`; `tools/list` → `openDiff`, `close_tab`,
+  `closeAllDiffTabs`, `getDiagnostics` (empty); `prompts/list` and `resources/list` empty; `ping`; unknown methods
+  −32601. No new dependency: SHA-1 and base64 are written out (tested against the FIPS 180 and RFC 4648 vectors and
+  RFC 6455's example key). The token is 16 bytes from `/dev/urandom`.
+- **Lock file:** `<CLAUDE_CONFIG_DIR or ~/.claude>/ide/<port>.lock`, 0600 (the folder 0700 when haetty makes it),
+  `{pid: daemon, workspaceFolders: [], ideName: "haetty", transport: "ws", authToken}`; the config folder is the
+  session's own (`spec.env`, else the daemon's environment). Locks of haetty whose daemon PID is gone are removed when
+  a server starts (Linux: `/proc`). Removed when the session exits or closes.
+- **Proposals:** `openDiff` → the daemon reads the old text with the edit snapshot's rules (credential-like, over
+  2 MiB or binary: not shown, never answered — Claude Code's own dialog answers) and keeps it waiting; `DaemonMsg::Ide`
+  (protocol 18) tells the session's Control subscribers the oldest waiting proposal (on attach and on every change).
+  `ClientMsg::IdeAnswer` is Control only (the role table) and `Origin::Human` only (`Denied` otherwise); it counts as
+  the person's input (K1: the mark goes, the hold waits for the turn's end). Accept → `FILE_SAVED` and the proposed
+  text, reject → `DIFF_REJECTED` and the tab name; `TAB_CLOSED` (Claude Code's accept) is never sent for a proposal.
+  `close_tab`, `closeAllDiffTabs` and a closed connection drop proposals.
+- **GUI:** the active tab's new proposal opens the diff overlay (§2.1, approved) with `proposed edit  <path>  +a -d`
+  and `a accept · d reject · esc keep asking`; Esc closes it and it does not open again for that proposal; the other
+  views are off while it shows. Not over the palette, the settings panel or an agent's record (it opens at the next
+  update after they close).
+- **Not done:** Windows (no server: the prototype's random source is `/dev/urandom`; PW), `openFile`, selections and
+  `at_mentioned`, diagnostics, editing the proposal before accepting (`FILE_SAVED` carries the proposal unchanged),
+  more than one waiting proposal shown (the oldest first), WebSocket pings from the server.
+- Checked by `tests/ide.rs` (a real daemon; this test as Claude Code: the token, the lock, the answers, a program's and
+  an observer's answer refused, the mark and the hold, the proxy's port, off), `scripts/e2e/ide.sh` (Xvfb, 15 checks)
+  and one real Claude Code 2.1.329 run (Haiku, a dev instance on a private Xvfb): `a` → Claude Code wrote the edit,
+  `d` → "Rejected update to a.txt".

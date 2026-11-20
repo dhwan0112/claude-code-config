@@ -1,12 +1,27 @@
 # Changelog
 
-## 0.4.0 (2026-11-20, release candidate, not tagged)
+## Unreleased
+
+**haetty as Claude Code's editor** (stage P3c; `ide-integration = true`, off by default; Linux): Claude Code can show
+its Edit and Write proposals in an editor over a local connection, as VS Code's extension does. With the setting, each
+new Claude Code tab (and `claude` typed in a shell tab) gets haetty as that editor: a WebSocket server on `127.0.0.1`
+with a new token and a lock file that names no folder. When Claude Code asks whether to make an edit, the diff
+overlay opens on the proposal; `a` accepts and `d` rejects, as the person's own input (the permission mark goes, the
+input hold stays until the turn ends), Esc leaves the question in the terminal. Claude Code writes the file, never
+haetty. The protocol is unofficial and may break with any Claude Code release (checked with 2.1.329); if the
+connection fails nothing changes. Protocol 18. `tools/release.sh` is executable again, and inside a Claude Code session
+it leaves the release notes beside the assets for the printed `gh` command.
+
+**Windows:** no editor server (the setting does nothing there yet).
+
+## 0.4.0 (2026-11-20)
 
 Stage PH's harness screen (`claude` typed in a shell tab becomes a Claude Code tab, the sidebar with a conversation's
 agents, All agents, `haetty agents`; `docs/history/2026-11-17-ph-harness.md`), and after it the diff overlay (PM), the
 coordinator commands (P2b), the shell integration and the sidebar's keyboard (PI). The first 0.4.0 candidate, `98a9b71`
 (2026-11-19), was never tagged; the candidate is now stage PI's last commit, checked on Linux under the P1c rule
-(`docs/history/2026-11-20-pi.md`, "I3"). The person tags, builds the release and installs it.
+(`docs/history/2026-11-20-pi.md`, "I3"). The person tagged it `haetty-v0.4.0` on 2026-11-20, built the release and
+installed it.
 
 **Windows:** unverified for this commit; its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Not run on
 Windows: the claude proxy, the sidebar, the diff overlay, the coordinator commands and the sidebar's keyboard (stage PW;
