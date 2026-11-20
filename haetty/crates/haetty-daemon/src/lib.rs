@@ -7,6 +7,7 @@
 //! held across a socket write.
 
 mod health;
+mod ide;
 mod log_file;
 
 use std::collections::HashMap;
@@ -75,6 +76,7 @@ enum Ev {
     Msg(ClientId, ClientMsg),
     Gone(ClientId),
     Session(SessionId, SessionEvent),
+    Ide(SessionId, ide::IdeEv),
 }
 
 struct Sess {
@@ -89,6 +91,8 @@ struct Sess {
     /// A shell tab with the `claude` proxy folder first on its `PATH` (stage PH, H1): a Claude Code started in it
     /// reports here and makes the tab a Claude Code tab until its `SessionEnd`.
     proxy: bool,
+    /// The editor server (`ide-integration`; DESIGN.md §13.9): its lock file goes with it.
+    ide: Option<ide::Server>,
     /// The session's latest event-log lines (`GetSessionLog`).
     recent: std::collections::VecDeque<LogEvent>,
     /// Key → screen latency (DESIGN.md §3.8, friction log).
@@ -569,6 +573,34 @@ impl Daemon {
             }
             Ev::Msg(id, m) => self.message(id, m),
             Ev::Session(sid, e) => self.session_event(sid, e),
+            Ev::Ide(sid, e) => self.ide_event(sid, e),
+        }
+    }
+
+    /// Something from a session's editor connection: a proposal to show, or proposals Claude Code closed.
+    fn ide_event(&mut self, sid: SessionId, e: ide::IdeEv) {
+        let Some(srv) = self.sessions.get_mut(&sid).and_then(|s| s.ide.as_mut()) else { return };
+        let changed = match e {
+            ide::IdeEv::Open { conn, rpc, path, new_text, tab } => {
+                let shown = srv.open(conn, rpc, path, new_text, tab);
+                self.event("ide_proposal", &sid, &[("shown", if shown { "yes" } else { "no" })]);
+                shown
+            }
+            other => srv.close(&other),
+        };
+        if changed {
+            self.push_ide(&sid, None);
+        }
+    }
+
+    /// Tells the session's Control subscribers (or only client `to`) which proposal waits.
+    fn push_ide(&self, sid: &str, to: Option<ClientId>) {
+        let Some(srv) = self.sessions.get(sid).and_then(|s| s.ide.as_ref()) else { return };
+        let proposal = srv.current().map(Box::new);
+        for (id, c) in &self.clients {
+            if c.role == Role::Control && c.subs.contains_key(sid) && to.is_none_or(|t| t == *id) {
+                let _ = c.tx.send(DaemonMsg::Ide { session: sid.to_string(), proposal: proposal.clone() });
+            }
         }
     }
 
@@ -601,11 +633,17 @@ impl Daemon {
                 return;
             }
             SessionEvent::Exited(st) => {
-                let mut summary = None;
+                let (mut summary, mut had_ide) = (None, false);
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     s.info.state = SessionState::Exited { code: st.code };
                     s.drop_settings_file();
+                    had_ide = s.ide.take().is_some();
                     summary = s.lat.summary();
+                }
+                if had_ide {
+                    for c in self.clients.values().filter(|c| c.subs.contains_key(&sid)) {
+                        let _ = c.tx.send(DaemonMsg::Ide { session: sid.clone(), proposal: None });
+                    }
                 }
                 if let Some(f) = summary {
                     self.log_latency(&sid, f);
@@ -732,6 +770,7 @@ impl Daemon {
                     cl.subs.insert(session.clone(), Sub { base: None, wanted: true });
                 }
                 self.push_frames(&session);
+                self.push_ide(&session, Some(c));
                 if let Some(info) = claude {
                     self.reply(c, DaemonMsg::Claude { session, info });
                 }
@@ -815,8 +854,33 @@ impl Daemon {
                 let refs: Vec<(&str, &str)> = f.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
                 self.event(&kind, "", &refs);
             }
+            ClientMsg::IdeAnswer { session, origin, id, accept } => self.ide_answer(c, session, origin, id, accept),
             input => self.input(c, input),
         }
+    }
+
+    /// The person's accept or reject of an editor proposal (protected area, approved: stage P3, "accept and reject
+    /// only by the person's keys"): only `Human`, never while it came from a program; it counts as the person's input.
+    fn ide_answer(&mut self, c: ClientId, session: SessionId, origin: Origin, id: u64, accept: bool) {
+        if origin != Origin::Human {
+            self.denied(c, "IdeAnswer from a program");
+            return;
+        }
+        let Some(s) = self.sessions.get_mut(&session) else {
+            self.reply(c, DaemonMsg::NoSession { session });
+            return;
+        };
+        if !s.ide.as_mut().is_some_and(|srv| srv.answer(id, accept)) {
+            self.push_ide(&session, Some(c));
+            return;
+        }
+        let mark_went = s.human_input();
+        self.event("ide_answer", &session, &[("answer", if accept { "accept" } else { "reject" })]);
+        if mark_went {
+            self.event("attention", &session, &[("event", "person_input"), ("attention", "None")]);
+            self.push_claude(&session);
+        }
+        self.push_ide(&session, None);
     }
 
     fn input(&mut self, c: ClientId, m: ClientMsg) {
@@ -1036,11 +1100,40 @@ impl Daemon {
         Some((env, path))
     }
 
+    /// The editor server of a Claude Code tab or a shell tab with the proxy, when `ide-integration` is on (protected
+    /// area, approved: stage P3, the IDE prototype). Its lock file goes to the Claude Code config folder the session
+    /// will use. Any failure: no server, the hook-based diff as before.
+    fn ide_server(&self, id: &str, spec: &CreateSpec, integrated: bool) -> Option<ide::Server> {
+        if !spec.ide_integration || !integrated {
+            return None;
+        }
+        let own = |k: &str| {
+            spec.env
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| std::ffi::OsString::from(v))
+                .or_else(|| std::env::var_os(k))
+        };
+        let home = own("HOME").map(PathBuf::from);
+        let dir = haetty_cc::ide::lock_dir(own("CLAUDE_CONFIG_DIR").as_deref(), home.as_deref())?;
+        match ide::Server::start(&id.to_string(), &dir, self.tx.clone()) {
+            Ok(s) => {
+                log::info!("session {id}: editor server on 127.0.0.1:{}", s.port);
+                Some(s)
+            }
+            Err(e) => {
+                log::warn!("session {id}: no editor server: {e}");
+                None
+            }
+        }
+    }
+
     fn create(&mut self, c: ClientId, req: u32, spec: CreateSpec) {
         let id = self.new_id();
         let claude = self.claude_args(&id, &spec);
         let proxy = if claude.is_none() { self.proxy_env(&id, &spec) } else { None };
         let args = claude.as_ref().map_or(&spec.args, |(a, _)| a);
+        let ide = self.ide_server(&id, &spec, claude.is_some() || proxy.is_some());
         let mut cmd = CommandSpec::new(&spec.program).args(args);
         if let Some(cwd) = &spec.cwd {
             cmd = cmd.cwd(cwd);
@@ -1050,6 +1143,10 @@ impl Daemon {
         }
         for (k, v) in proxy.iter().flat_map(|(e, _)| e) {
             cmd = cmd.env(k, v);
+        }
+        if let Some(srv) = &ide {
+            let name = if claude.is_some() { haetty_cc::ide::SSE_PORT_ENV } else { haetty_cc::ide::PORT_ENV };
+            cmd = cmd.env(name, srv.port.to_string());
         }
         cmd = cmd.env(product::SESSION_ENV, &id);
         // Hooks of this session must reach this instance's daemon.
@@ -1102,6 +1199,9 @@ impl Daemon {
                 self.event("session_created", &id, &[("program", &spec.program), ("cwd", &info.cwd)]);
                 log::info!("session {id}: {} (pid {:?}) in {:?}", spec.program, info.pid, spec.cwd);
                 let is_proxy = proxy.is_some();
+                if let Some(srv) = &ide {
+                    self.event("ide_server", &id, &[("port", &srv.port.to_string())]);
+                }
                 let (claude, settings_file) = match (claude, proxy) {
                     (Some((_, p)), _) => (Some(Claude::default()), Some(p)),
                     (None, Some((_, p))) => (None, Some(p)),
@@ -1116,6 +1216,7 @@ impl Daemon {
                         claude,
                         settings_file,
                         proxy: is_proxy,
+                        ide,
                         recent: Default::default(),
                         lat: Latency::default(),
                     },
@@ -1167,6 +1268,7 @@ fn msg_name(m: &ClientMsg) -> &'static str {
         ClientMsg::GetHealth => "GetHealth",
         ClientMsg::GetClaude { .. } => "GetClaude",
         ClientMsg::GetSessionLog { .. } => "GetSessionLog",
+        ClientMsg::IdeAnswer { .. } => "IdeAnswer",
     }
 }
 

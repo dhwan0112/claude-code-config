@@ -50,6 +50,7 @@ fn spec() -> CreateSpec {
         cursor_color: None,
         claude_integration: false,
         shell_integration: false,
+        ide_integration: false,
         engine: String::new(),
     }
 }

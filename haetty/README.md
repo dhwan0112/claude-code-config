@@ -307,6 +307,7 @@ keybind = ctrl+shift+n=new_tab
 | `engine` | `ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native) | `ghostty` |
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |
 | `shell-integration` | `auto` / `off` — a zsh or bash shell tab started without arguments keeps haetty's `claude` first on `PATH` after your own startup files ran ([Claude Code integration](#claude-code-integration)); `off`, or `claude-integration = false`, leaves the shell alone | `auto` |
+| `ide-integration` | `true` / `false` — haetty acts as Claude Code's editor in new Claude Code tabs: an Edit or Write it asks about also shows in the diff overlay, answered with `a` (accept) or `d` (reject). Unofficial protocol, may break with any Claude Code release ([Claude Code integration](#claude-code-integration)); needs `claude-integration`; not on Windows yet | `false` |
 | `worker-command` | the orchestrator's worker: a program and its arguments, space-separated (DESIGN.md §8.1) | `claude` |
 | `notifications` | `true` / `false` — desktop notification (Linux `notify-send`) when Claude Code waits and the window is unfocused | `true` |
 | `observe-new-tabs` | `true` / `false` — new tabs start observable by `haetty screen` / `haetty events` ([Observing a tab](#observing-a-tab-read-only)) | `false` |

@@ -55,6 +55,7 @@ fn main() {
             cursor_color: None,
             claude_integration: false,
             shell_integration: false,
+            ide_integration: false,
             engine: std::env::var("HAETTY_ENGINE").unwrap_or_default(),
         })
         .expect("create");

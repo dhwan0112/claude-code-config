@@ -81,6 +81,7 @@ fn fake_claude(name: &str) -> (std::path::PathBuf, Endpoint, Client, String) {
             cursor_color: None,
             claude_integration: true,
             shell_integration: false,
+            ide_integration: false,
             engine: String::new(),
         })
         .unwrap();
@@ -254,6 +255,7 @@ fn a_claude_started_through_the_proxy_gets_the_same_mark_and_hold() {
             cursor_color: None,
             claude_integration: true,
             shell_integration: false,
+            ide_integration: false,
             engine: String::new(),
         })
         .unwrap();

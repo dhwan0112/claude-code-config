@@ -5,6 +5,7 @@
 
 pub mod agents;
 pub mod edit;
+pub mod ide;
 pub mod json;
 pub mod orch;
 pub mod proxy;

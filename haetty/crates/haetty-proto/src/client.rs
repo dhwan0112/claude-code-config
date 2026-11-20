@@ -51,6 +51,8 @@ struct Mirror {
     snap: Snapshot,
     /// Claude Code state from the daemon (DESIGN.md §3.13).
     claude: Option<Arc<ClaudeInfo>>,
+    /// The editor proposal waiting for the person (DESIGN.md §13.9).
+    ide: Option<Arc<IdeProposal>>,
     /// A Wakeup was sent and `snapshot()` has not been called since.
     woken: bool,
     tx: Sender<SessionEvent>,
@@ -251,7 +253,7 @@ impl Client {
             .mirrors
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(id.to_owned(), Mirror { snap: Snapshot::default(), claude: None, woken: false, tx });
+            .insert(id.to_owned(), Mirror { snap: Snapshot::default(), claude: None, ide: None, woken: false, tx });
         self.send(&ClientMsg::Attach { session: id.to_owned() })?;
         Ok(RemoteSession {
             id: id.to_owned(),
@@ -321,6 +323,16 @@ fn reader_loop(mut r: Stream, sh: Arc<Shared>, replies: Sender<DaemonMsg>) {
                 if let Some(m) = ms.get_mut(&session) {
                     // A proxied Claude Code ended: the tab is a shell tab again (stage PH, H1).
                     m.claude = (!info.ended).then(|| Arc::from(info));
+                    if !m.woken {
+                        m.woken = true;
+                        let _ = m.tx.send(SessionEvent::Wakeup);
+                    }
+                }
+            }
+            DaemonMsg::Ide { session, proposal } => {
+                let mut ms = sh.mirrors.lock().unwrap_or_else(|p| p.into_inner());
+                if let Some(m) = ms.get_mut(&session) {
+                    m.ide = proposal.map(Arc::from);
                     if !m.woken {
                         m.woken = true;
                         let _ = m.tx.send(SessionEvent::Wakeup);
@@ -442,6 +454,16 @@ impl RemoteHandle {
     /// the integration (a change comes as a `Wakeup`, like a frame).
     pub fn claude(&self) -> Option<Arc<ClaudeInfo>> {
         self.shared.mirrors.lock().unwrap_or_else(|p| p.into_inner()).get(&self.id)?.claude.clone()
+    }
+
+    /// The editor proposal waiting for the person's answer (a change comes as a `Wakeup`).
+    pub fn ide(&self) -> Option<Arc<IdeProposal>> {
+        self.shared.mirrors.lock().unwrap_or_else(|p| p.into_inner()).get(&self.id)?.ide.clone()
+    }
+
+    /// Answers an editor proposal; the daemon takes it only from a person (`Origin::Human`).
+    pub fn ide_answer(&self, origin: Origin, id: u64, accept: bool) {
+        self.send(ClientMsg::IdeAnswer { session: self.id.clone(), origin, id, accept });
     }
 
     /// The mirrored screen; asks the daemon for the next frame.

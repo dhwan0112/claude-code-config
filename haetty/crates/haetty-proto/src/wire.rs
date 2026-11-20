@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -126,6 +126,9 @@ pub struct CreateSpec {
     /// A zsh shell tab with the integration gets haetty's startup folder, which keeps the `claude` proxy first on
     /// `PATH` (DESIGN.md §13.8). Version 17.
     pub shell_integration: bool,
+    /// haetty acts as Claude Code's editor for this tab: Edit and Write proposals show in the diff overlay (DESIGN.md
+    /// §13.9). Version 18.
+    pub ide_integration: bool,
     /// The terminal engine, `ghostty` or `native` (empty: the daemon's
     /// default; DESIGN.md §10.4). Version 9.
     pub engine: String,
@@ -313,6 +316,13 @@ pub enum ClientMsg {
     /// `GetClaude`; version 14). Derived fields only.
     GetSessionLog {
         session: SessionId,
+    },
+    /// The person's answer to an editor proposal (`Ide`): Control only, `Human` only (DESIGN.md §13.9; version 18).
+    IdeAnswer {
+        session: SessionId,
+        origin: Origin,
+        id: u64,
+        accept: bool,
     },
 }
 
@@ -718,6 +728,21 @@ pub enum DaemonMsg {
     },
     /// Answer to `GetHealth` (version 12).
     Health(DaemonHealth),
+    /// The session's oldest editor proposal waiting for an answer, `None` when none waits (on attach and on every
+    /// change; version 18).
+    Ide {
+        session: SessionId,
+        proposal: Option<Box<IdeProposal>>,
+    },
+}
+
+/// An Edit or Write Claude Code proposes through the editor connection (DESIGN.md §13.9).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct IdeProposal {
+    pub id: u64,
+    pub path: String,
+    pub old: Secret<String>,
+    pub new: Secret<String>,
 }
 
 /// One count of the daemon's own resources (the hourly `health` line of the event log; P1c). On Linux: threads in

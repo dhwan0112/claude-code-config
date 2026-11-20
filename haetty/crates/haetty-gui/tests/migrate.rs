@@ -89,6 +89,7 @@ fn old_settings_are_copied_and_an_old_daemon_is_left_alone() {
             cursor_color: None,
             claude_integration: false,
             shell_integration: false,
+            ide_integration: false,
             engine: String::new(),
         })
         .unwrap();

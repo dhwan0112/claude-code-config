@@ -4,7 +4,8 @@
 //! to haetty's executable; Windows: `claude.cmd` calling `haetty claude-proxy`). Started that way, haetty removes the
 //! folder from `PATH`, finds the real `claude` and runs it with the same arguments plus the `--settings` a Claude Code
 //! tab gets (hooks and the status line: observing only), merged with a `--settings` the user gave. Nothing else of
-//! Claude Code's arguments or behaviour changes. Without injection (integration off, `-p`, not a terminal, a
+//! Claude Code's arguments or behaviour changes, except that with `ide-integration` on the real claude also gets the
+//! tab's editor port (`CLAUDE_CODE_SSE_PORT`, DESIGN.md §13.9). Without injection (integration off, `-p`, not a terminal, a
 //! subcommand that is not a conversation, already proxied) the arguments pass unchanged. Unix: `exec`, so the exit
 //! code and signals are claude's own; Windows: the child's exit code.
 
@@ -190,19 +191,29 @@ pub fn main(args: Vec<String>) -> ! {
     };
     let settings_file = std::env::var_os(SETTINGS_ENV).map(PathBuf::from).filter(|p| p.is_file());
     let proxied = std::env::var_os(PROXIED_ENV).is_some();
+    let mut ide_port = None;
     let args = match (&settings_file, decide(&args, settings_file.is_some(), proxied, std::io::stdout().is_terminal()))
     {
         (Some(base), Ok(())) => {
             let cwd = std::env::current_dir().ok();
-            with_settings(&args, base, cwd.as_deref(), std::process::id()).unwrap_or_else(|e| {
-                eprintln!("haetty: {e}; claude starts without haetty's integration");
-                args
-            })
+            match with_settings(&args, base, cwd.as_deref(), std::process::id()) {
+                Ok(a) => {
+                    ide_port = std::env::var(crate::ide::PORT_ENV).ok().filter(|p| p.parse::<u16>().is_ok());
+                    a
+                }
+                Err(e) => {
+                    eprintln!("haetty: {e}; claude starts without haetty's integration");
+                    args
+                }
+            }
         }
         _ => args,
     };
     let mut cmd = std::process::Command::new(&real);
     cmd.args(&args).env("PATH", &path).env(PROXIED_ENV, "1");
+    if let Some(p) = ide_port {
+        cmd.env(crate::ide::SSE_PORT_ENV, p);
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt as _;

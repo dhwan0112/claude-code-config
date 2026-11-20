@@ -117,6 +117,7 @@ fn shell(d: &Daemon, home: &Path, program: &str, args: &[&str], env: &[(&str, St
             cursor_color: None,
             claude_integration: true,
             shell_integration: integration,
+            ide_integration: false,
             engine: String::new(),
         })
         .unwrap();
