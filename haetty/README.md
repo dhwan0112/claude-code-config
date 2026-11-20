@@ -570,6 +570,21 @@ files, 2 MiB each and 16 MiB in all, within 3 s, and say what they left out. Fil
 (`.ssh`, `.aws`, `.env*`, `*.pem`, `*.key`, `*token*`, `*secret*`, `.credentials.json`, …) are never read, and files
 over 2 MiB or not UTF-8 are not copied; for those the diff overlay says why instead of showing a diff.
 
+**haetty as Claude Code's editor (`ide-integration = true`, off by default; Linux).** Claude Code can show its Edit
+and Write proposals in an editor (as VS Code's extension does) over a local connection. With this setting haetty is
+that editor for new Claude Code tabs and for `claude` started in a shell tab: when Claude Code asks whether to make an
+edit, the diff overlay opens on the proposal (`proposed edit  src/app.rs  +3 -2`) while Claude Code's own question
+stays in the terminal. `a` accepts, `d` rejects, Esc closes the overlay without an answer, and answering in the
+terminal closes it; whichever answer comes first counts. Only keys pressed in haetty's window answer; `haetty run`,
+scripts and observers cannot. haetty never writes the file: Claude Code does, as without the setting. Each tab gets
+a server on `127.0.0.1` only, with a new random token, and a lock file in `~/.claude/ide/` (or
+`$CLAUDE_CONFIG_DIR/ide/`) that names no folder, so no other `claude` connects to it; both go when the tab closes.
+Files that look like credentials, files over 2 MiB and files that are not UTF-8 are never shown: Claude Code's
+question in the terminal answers those. **The protocol is unofficial** (not documented by Anthropic; checked with
+Claude Code 2.1.329) and may break with any Claude Code release; if the connection fails nothing changes, and the
+hook-based diff works as before. Turning it on changes the editing flow: the overlay opens by itself on every Edit or
+Write proposal. Not on Windows yet.
+
 <a id="resume"></a>**Resume.** Tab sets store each Claude Code tab's
 session id. A restored Claude Code tab gets `--resume ID` when Claude Code
 still has that transcript (under `CLAUDE_CONFIG_DIR` or `~/.claude`),

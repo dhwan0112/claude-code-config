@@ -57,6 +57,10 @@ pub enum Key {
     PrevFile,
     /// Switch between side by side and stacked.
     ToggleLayout,
+    /// The person accepts the editor proposal shown.
+    Accept,
+    /// The person rejects it.
+    Reject,
 }
 
 /// How the rows are laid out.
@@ -152,6 +156,8 @@ pub struct DiffView {
     pref: DiffLayoutPref,
     split_cols: usize,
     root: String,
+    /// An editor proposal waiting for the person's answer (DESIGN.md §13.9).
+    proposal: Option<u64>,
     pub scroll: usize,
 }
 
@@ -201,8 +207,40 @@ impl DiffView {
             pref: DiffLayoutPref::Auto,
             split_cols: DEFAULT_SPLIT_COLS,
             root: String::new(),
+            proposal: None,
             scroll: 0,
         }
+    }
+
+    /// An Edit or Write Claude Code proposes through the editor connection: answered with `a` or `d`, Esc keeps it
+    /// waiting for Claude Code's own dialog.
+    pub fn proposal(id: u64, path: &str, before: &str, after: &str) -> DiffView {
+        let mut b = Built::default();
+        diff_rows(before, after, &mut b);
+        let (added, removed) = haetty_cc::edit::line_counts(before, after);
+        let note = b.unified.is_empty().then(|| "The proposal changes nothing.".to_string());
+        DiffView {
+            mode: Mode::Edit,
+            header: "proposed edit".into(),
+            elapsed: None,
+            note,
+            unified: b.unified,
+            split: b.split,
+            hunks_u: b.hunks_u,
+            hunks_s: b.hunks_s,
+            files: vec![DiffFile { path: path.to_string(), added: added as usize, removed: removed as usize }],
+            current: 0,
+            pref: DiffLayoutPref::Auto,
+            split_cols: DEFAULT_SPLIT_COLS,
+            root: String::new(),
+            proposal: Some(id),
+            scroll: 0,
+        }
+    }
+
+    /// The editor proposal this view shows.
+    pub fn proposal_id(&self) -> Option<u64> {
+        self.proposal
     }
 
     pub fn note_only(mode: Mode, header: String, note: String) -> DiffView {
@@ -220,6 +258,7 @@ impl DiffView {
             pref: DiffLayoutPref::Auto,
             split_cols: DEFAULT_SPLIT_COLS,
             root: String::new(),
+            proposal: None,
             scroll: 0,
         }
     }
@@ -309,6 +348,7 @@ impl DiffView {
             current: 0,
             pref: DiffLayoutPref::Auto,
             split_cols: DEFAULT_SPLIT_COLS,
+            proposal: None,
             root: c.top.to_string_lossy().into_owned(),
             scroll: 0,
         }
@@ -482,6 +522,12 @@ impl DiffView {
         let n = self.rows(layout).len();
         let page = body_rows(height);
         let max = n.saturating_sub(page);
+        match (key, shift, self.proposal.is_some()) {
+            ("a", false, true) => return Key::Accept,
+            ("d", false, true) => return Key::Reject,
+            ("m" | "tab" | "r" | "n" | "p", false, true) => return Key::Stay,
+            _ => {}
+        }
         match (key, shift) {
             ("escape", _) | ("q", false) => return Key::Close,
             ("m", false) | ("tab", false) => return Key::Next,
@@ -534,6 +580,16 @@ impl DiffView {
         let hdr = &mut grid[area.y][x..x + cols];
         hdr.fill(Cell { fg: Some(g.strong), bg: Some(bar), ..Default::default() });
         let title = match self.files.get(self.current) {
+            Some(f) if self.proposal.is_some() => {
+                format!(
+                    "{}  {}  +{} -{}  {}",
+                    self.header,
+                    shown(&f.path, &self.root),
+                    f.added,
+                    f.removed,
+                    layout.label()
+                )
+            }
             Some(f) => format!(
                 "{}/{} {}  +{} -{}  {} {}",
                 self.current + 1,
@@ -549,7 +605,11 @@ impl DiffView {
         put(hdr, 1, &fit(&title, cols - 2), g.strong, bar, true);
         let foot = &mut grid[area.y + height - 1][x..x + cols];
         foot.fill(Cell { fg: Some(g.dim), bg: Some(bar), ..Default::default() });
-        let keys = "j/k · space/b · g/G · n/p file · ]/[ hunk · v layout · m view · r · esc";
+        let keys = if self.proposal.is_some() {
+            "a accept · d reject · esc keep asking · j/k · space/b · ]/[ hunk · v layout"
+        } else {
+            "j/k · space/b · g/G · n/p file · ]/[ hunk · v layout · m view · r · esc"
+        };
         put(foot, 1, &fit(keys, cols - 2), g.dim, bar, false);
         if let Some(n) = &self.note {
             put(&mut grid[area.y + 2.min(height - 2)][x..x + cols], 2, &fit(n, cols - 4), g.dim, g.bg, false);
@@ -634,6 +694,26 @@ mod tests {
         assert_eq!(shown("/w/project/src/app.rs", "/w/proj"), "/w/project/src/app.rs");
         assert_eq!(shown("/other/x.rs", "/w/proj"), "/other/x.rs");
         assert_eq!(shown("src/x.rs", ""), "src/x.rs");
+    }
+
+    #[test]
+    fn a_proposal_answers_with_a_or_d_and_has_no_other_views() {
+        let mut v = DiffView::proposal(5, "/w/a.txt", "one\ntwo\n", "one\n2\n");
+        assert_eq!(v.proposal_id(), Some(5));
+        assert_eq!(v.files()[0], DiffFile { path: "/w/a.txt".into(), added: 1, removed: 1 });
+        let layout = Layout::Stacked;
+        assert_eq!(v.key("a", false, 10, layout), Key::Accept);
+        assert_eq!(v.key("d", false, 10, layout), Key::Reject);
+        for k in ["m", "tab", "r", "n", "p"] {
+            assert_eq!(v.key(k, false, 10, layout), Key::Stay, "{k}");
+        }
+        assert_eq!(v.key("a", true, 10, layout), Key::Stay, "Shift+A is not an answer");
+        assert_eq!(v.key("escape", false, 10, layout), Key::Close);
+        assert_eq!(v.key("v", false, 10, layout), Key::ToggleLayout);
+        let mut plain = view("one\n", "two\n");
+        assert_eq!(plain.proposal_id(), None);
+        assert_eq!(plain.key("a", false, 10, layout), Key::Stay);
+        assert_eq!(plain.key("d", false, 10, layout), Key::Stay);
     }
 
     fn view(before: &str, after: &str) -> DiffView {

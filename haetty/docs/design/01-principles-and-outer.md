@@ -50,6 +50,12 @@ away. Functions stay; what changes is when they are visible.
   ("3 files changed · Ctrl+Shift+D"; plain Ctrl+D belongs to Claude Code, §3.10); only the user opens panes. Reason: every
   resize makes Claude Code's fullscreen renderer redraw the whole screen. One exception the person chooses:
   `diff-after-edit = true` (default off) opens the diff overlay on an edit; the overlay never resizes the terminal.
+  A second one (stage P3c, approved scope of P3): with `ide-integration = true` (default off) an Edit or Write that
+  Claude Code asks permission for opens the diff overlay on the proposal, because the person is being asked about it
+  right then (the tab already has the permission mark). Its header says `proposed edit`, its footer `a accept · d
+  reject · esc keep asking`; no accent colour beyond the diff tints. Only the person's `a` or `d` in the window
+  answers; Esc closes it without an answer (Claude Code's own dialog still asks), and a proposal answered in the
+  terminal closes it. It never opens over the palette, the settings panel or an agent's record.
 - The status line and the sidebar show context use, rate limits, cost and workers; the sidebar's Lead also names the
   model and effort (stage PH: the harness view of many agents needs them per agent), never the mode. Sidebar sections:
   Lead, Agents (one line per subagent: state glyph, type, short model, current tool or calls, elapsed; nesting by

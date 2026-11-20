@@ -129,6 +129,8 @@ struct Tab {
     git_branch: Option<String>,
     log: Vec<haetty_proto::wire::LogEvent>,
     log_at: Option<Instant>,
+    /// The last editor proposal the overlay opened for (Esc keeps it waiting without opening it again).
+    ide_seen: Option<u64>,
     unintegrated: bool,
     fg_at: Option<Instant>,
     /// Since when the tab waits for the person (its mark is Wait or Ask): "All agents" lists the longest first.
@@ -1085,6 +1087,7 @@ impl Win {
             git_branch: None,
             log: vec![],
             log_at: None,
+            ide_seen: None,
             unintegrated: false,
             fg_at: None,
             waiting_since: None,
@@ -1134,6 +1137,7 @@ impl Win {
             self.seen();
         }
         self.diff = None;
+        self.ide_sync();
         self.preedit = None;
         self.full = true;
         self.ime_at = None;
@@ -1172,6 +1176,7 @@ impl Win {
             self.handle().focus(true);
         }
         self.diff = None;
+        self.ide_sync();
         self.update_title();
         self.relayout();
         self.save_last();
@@ -1406,6 +1411,33 @@ impl Win {
             self.open_diff(DiffMode::Edit, None, None);
         }
         self.full = true;
+    }
+
+    /// The active tab's editor proposal (DESIGN.md §13.9): a new one opens the overlay, unless the palette, the
+    /// settings panel or the agent view is open (then at the next update after it closed); one answered elsewhere closes it.
+    fn ide_sync(&mut self) {
+        let p = self.tab().session.handle.ide();
+        let shown = self.diff.as_ref().and_then(diffview::DiffView::proposal_id);
+        if shown.is_some() && shown != p.as_ref().map(|p| p.id) {
+            self.diff = None;
+            self.full = true;
+            self.recompose();
+        }
+        let Some(p) = p else { return };
+        let busy = self.palette.is_some() || self.settings_panel.is_some() || self.agent_view.is_some();
+        if busy || self.tab().ide_seen == Some(p.id) {
+            return;
+        }
+        let i = self.active;
+        self.tabs[i].ide_seen = Some(p.id);
+        let mut v = diffview::DiffView::proposal(p.id, &p.path, &p.old.0, &p.new.0);
+        v.set_root(&self.tab().folder().unwrap_or_default());
+        v.set_layout(self.diff_pref(), self.cfg.diff_split_cols);
+        self.diff_pref = None;
+        self.diff = Some(v);
+        self.full = true;
+        self.ime_at = None;
+        self.recompose();
     }
 
     /// Opens the diff view `mode` for the active tab (`old`: the view it replaces, for a reread keeping its place;
@@ -1849,6 +1881,7 @@ impl Win {
             }
         }
         if i == self.active {
+            self.ide_sync();
             if title_changed {
                 self.update_title();
             }
@@ -2201,6 +2234,12 @@ impl Win {
                     match key {
                         Some(diffview::Key::Close) => {
                             self.diff = None;
+                            self.full = true;
+                        }
+                        Some(k @ (diffview::Key::Accept | diffview::Key::Reject)) => {
+                            if let Some(id) = self.diff.take().and_then(|d| d.proposal_id()) {
+                                self.tab().session.handle.ide_answer(Origin::Human, id, k == diffview::Key::Accept);
+                            }
                             self.full = true;
                         }
                         Some(diffview::Key::Next) => {

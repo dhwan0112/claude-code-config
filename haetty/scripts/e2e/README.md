@@ -19,6 +19,7 @@ HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/xvfb.sh bash scripts/e2e/tabs.sh /t
 | `titlebar.sh` | the integrated title row: buttons, hover, move/maximize/resize calls, close |
 | `remap.sh` | a window unmapped and mapped again (minimize/restore) is painted whole, read from the X server's pixels (issue #1) |
 | `tabs.sh` | rename, `repo:branch` names, closed tabs with `--resume`, diff views, detach/attach |
+| `ide.sh` | `ide-integration`: a fake Claude Code's Edit proposals open the diff overlay; `a`, `d`, Esc; the lock file |
 | `orchestrator.sh` | tasks, worker tabs in worktrees, reports and states, message gating, worktree removal |
 | `daemon-crash.sh` | the GUI when its daemon is killed: window, hint, tab sets kept, no orphans, restore |
 | `scale.sh` | the first window at 100, 125, 150 and 200 % (`WINIT_X11_SCALE_FACTOR`): the program sees the asked 80x24, the window has the pixels asked for that grid (A7) |

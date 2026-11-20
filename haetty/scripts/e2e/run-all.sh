@@ -2,7 +2,7 @@
 # Every end-to-end check of a release build, Linux (Xvfb): the regression run, DESIGN §2.3 (system and integrated
 # decorations), theme change, the integrated title row, the repaint after an unmap and map, underlines and hyperlinks, tab features, the orchestrator, the GUI after a daemon crash,
 # the first window at 100–200 % scale, the settings button and panel, the in-app update (two test builds, a local release server),
-# the sidebar, the diff overlay and the coordinator commands.
+# the sidebar, the diff overlay, haetty as Claude Code's editor and the coordinator commands.
 #   HAETTY_TEST_TMP=/tmp/haetty-test [E2E_ENGINE=native] scripts/e2e/run-all.sh [--no-build]
 # Prints each check's FAIL lines and TOTAL; exits with the number of scripts that had a failure (77: no Xvfb).
 [ -n "${HAETTY_HEAVY_SLOT:-}" ] || exec "$(dirname "$0")/../../tools/heavy.sh" --label "run-all.sh $*" -- bash "$0" "$@"   # at most two heavy jobs (tools/heavy.sh)
@@ -43,6 +43,7 @@ run bash "$here/settings.sh"
 run bash "$here/update.sh"
 run bash "$here/sidebar.sh"
 run bash "$here/diff.sh"
+run bash "$here/ide.sh"
 run bash "$here/coordinator.sh"
 echo "E2E scripts with a failure: $bad"
 exit $bad

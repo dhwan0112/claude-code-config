@@ -544,6 +544,15 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         let snap = Compose { cols, rows, diff: Some(&view), ..self::compose(&s, &acc) }.build();
         out.push((name, snap, None, None));
     }
+    let mut proposal = crate::diffview::DiffView::proposal(1, "/work/src/main.rs", DIFF_BEFORE, DIFF_AFTER);
+    proposal.set_root("/work");
+    let s = screen(110, 14, &["Do you want to make this edit to main.rs?", "> 1. Yes"], Some((0, 1)));
+    out.push((
+        "ide-proposal",
+        Compose { cols: 110, rows: 14, diff: Some(&proposal), ..self::compose(&s, &acc) }.build(),
+        None,
+        None,
+    ));
     out
 }
 
