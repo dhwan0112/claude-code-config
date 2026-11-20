@@ -104,6 +104,7 @@ hb release-manifest --version "$VERSION" --commit "$COMMIT" --built "$(date -u -
   --asset "x86_64-windows=$OUT/$WZIP:haetty.exe,haetty-headless.exe,LICENSE,THIRD-PARTY-NOTICES.md" > "$OUT/manifest.json"
 ( cd "$OUT" && sha256sum "$LTAR" "$WZIP" manifest.json )
 
+cp "$WT/notes.md" "$OUT/notes.md"
 claude=$(env | grep -cE '^(CLAUDECODE|CLAUDE_CODE_[A-Z_]*)=' || true)
 if [ -z "$TAG" ]; then
   echo "dry run (not a tag): no signature, no upload"
@@ -114,11 +115,10 @@ if [ "$claude" != 0 ]; then
 stopped before signing: this is a Claude Code session. Signing and the draft are yours; in your own terminal:
   cd $OUT
   minisign -Sm manifest.json${HAETTY_MINISIGN_KEY:+ -s "\$HAETTY_MINISIGN_KEY"}        # asks for your key's password
-  gh release create $TAG $LTAR $WZIP manifest.json manifest.json.minisig --draft --title "haetty $VERSION" --notes-file - < $WT/notes.md
+  gh release create $TAG $LTAR $WZIP manifest.json manifest.json.minisig --draft --title "haetty $VERSION" --notes-file notes.md
 EOF
   exit 0
 fi
-cp "$WT/notes.md" "$OUT/notes.md"
 SIGN=minisign; command -v minisign > /dev/null || SIGN=rsign
 command -v "$SIGN" > /dev/null || die "neither minisign nor rsign2 is installed (SELF-HOSTING.md, \"Releases\")"
 echo "signing manifest.json with $SIGN (it asks for your key's password)"
