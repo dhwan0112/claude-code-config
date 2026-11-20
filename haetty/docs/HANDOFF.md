@@ -8,20 +8,21 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage p3c (branch `haetty/p3c`, worktree `~/projects/claude-code-config-wt/p3c`). Remaining: the IDE prototype (DESIGN §13.5): the daemon's WebSocket server and lock files, the proxy's CLAUDE_CODE_SSE_PORT, the wire messages, the overlay's accept/reject, a real Claude Code run, README, record
+
 ## 1. Current state
 
-- **Version** 0.4.0: candidate 2 **`b1fd31b`** (after PM, P2b, PI), Linux candidate check passed 2026-11-20, **not
-  tagged** (the person tags; commands in [history/2026-11-20-pi.md](history/2026-11-20-pi.md), I3); the first
-  candidate `98a9b71` (2026-11-19) was never tagged. Tags: **`haetty-v0.3.3` = `ca70269`** (tagged 2026-11-17; record
-  [history](history/2026-11-17-v0.3.3.md)), **`haetty-v0.3.2` = `622d629`** (tagged 2026-11-16; record [history](history/2026-11-12-p1.md), "v0.3.2"),
-  `haetty-v0.1.0` = `4d75fcd`, `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (tagged
-  2026-11-08 after the overnight soak: LINUX PASS, WINDOWS PASS;
-  check-range `haetty-v0.1.1..63822de` 0 failing; record in
+- **Version** 0.4.0: **`haetty-v0.4.0` = `b1fd31b`** (candidate 2, after PM, P2b, PI; Linux candidate check passed
+  2026-11-20; tagged by the person 2026-11-20, release built with `tools/release.sh`, signed and uploaded as a draft
+  by the person; record [history/2026-11-20-pi.md](history/2026-11-20-pi.md)); the first candidate `98a9b71` was
+  never tagged. Earlier tags: **`haetty-v0.3.3` = `ca70269`** (2026-11-17, [history](history/2026-11-17-v0.3.3.md)),
+  **`haetty-v0.3.2` = `622d629`** (2026-11-16, [history](history/2026-11-12-p1.md), "v0.3.2"), `haetty-v0.1.0` =
+  `4d75fcd`, `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (2026-11-08,
   [history](history/2026-11-06-07-stages-t-u-v.md)).
-- **Stable (installed by the user):** kramers has **v0.3.2 (`622d629`)**, installed 2026-11-17 06:15Z with
-  `tools/install-stable.sh haetty-v0.3.2` (read from its folder's `INSTALLED` on 2026-11-19; `~/.local/bin/haetty`
-  points at `0.3.2-622d629bb224`; 0.1.0, 0.1.1 and 0.2.0 stay for rollback). v0.3.3 is not installed. This line
-  changes only when the user installs another.
+- **Stable (installed by the user):** kramers has **v0.4.0 (`b1fd31b`)**, installed 2026-11-20 01:06Z with
+  `tools/install-stable.sh haetty-v0.4.0` (its folder's `INSTALLED`, read 2026-11-20; `~/.local/bin/haetty` points at
+  `0.4.0-b1fd31b1c7f8`; 0.1.0, 0.1.1, 0.2.0 and 0.3.2 stay for rollback). This line changes only when the user
+  installs another.
 - **After `63822de`, in 0.3.2:** V3's observe-only interface, V6's palette fix, the native engine (E1–E5, F0–F4),
   K1–K4, #1, #2, P1a–P1c (CHANGELOG; protocol 12).
 - Last stages (records in [history](history/)): T1–T7, U1–U6, V1–V7, E0–E5, F0–F6, G0–G7, K0–K4, H.
