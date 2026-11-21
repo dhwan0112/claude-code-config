@@ -8,11 +8,10 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage px (branch `haetty/px`, worktree `~/projects/claude-code-config-wt/px`). Remaining: X0 research, X1-X4 selection and copy, X6 docs and the 0.4.1 candidate check
-
 ## 1. Current state
 
-- **Version** 0.4.0: **`haetty-v0.4.0` = `b1fd31b`** (candidate 2, after PM, P2b, PI; Linux candidate check passed
+- **Version** 0.4.1 candidate **`ec3e923`** (stage PX and P3c; Linux candidate check passed 2026-11-21, record
+  [history/2026-11-21-px.md](history/2026-11-21-px.md); not tagged). 0.4.0: **`haetty-v0.4.0` = `b1fd31b`** (candidate 2, after PM, P2b, PI; Linux candidate check passed
   2026-11-20; tagged by the person 2026-11-20, release built with `tools/release.sh`, signed and uploaded as a draft
   by the person; record [history/2026-11-20-pi.md](history/2026-11-20-pi.md)); the first candidate `98a9b71` was
   never tagged. Earlier tags: **`haetty-v0.3.3` = `ca70269`** (2026-11-17, [history](history/2026-11-17-v0.3.3.md)),
@@ -47,37 +46,35 @@ the least that builds (a fallback or one line "not supported on Windows yet") an
 Stages:
 - **Done:** P0, P1a–P1c, PS, PU, P3 research, v0.3.3, PH, PM (P2 in real use, P3b), P2b — their lines, as they stood,
   are in [history/2026-11-20-p3c.md](history/2026-11-20-p3c.md), "Moved from HANDOFF", each with its record.
-  **PI** (2026-11-20, [record](history/2026-11-20-pi.md), DESIGN §13.8): the shell integration (zsh through a
-  `ZDOTDIR` folder, bash through `PROMPT_COMMAND`: the proxy folder first at every prompt; `shell-integration`;
-  protocol 17; protected, approved), the sidebar's keyboard (Ctrl+Shift+E, the `›` mark; §2 change, approved), full
-  paths between the sidebar and the diff overlay, **0.4.0 candidate 2** (tagged `haetty-v0.4.0`). **P3c** (2026-11-20,
-  [record](history/2026-11-20-p3c.md), DESIGN §13.9): haetty as Claude Code's editor (`ide-integration`, off; a server
-  per tab, `CLAUDE_CODE_SSE_PORT`, the proposal in the diff overlay, `a`/`d` as the person; protocol 18; protected and
-  §2, approved; checked with a real Claude Code 2.1.329); `release.sh` executable, its notes beside the assets.
+  **PI**, **P3c** (2026-11-20): their lines in [history/2026-11-21-px.md](history/2026-11-21-px.md), "Moved from
+  HANDOFF". **PX** (2026-11-21, [record](history/2026-11-21-px.md)): text selection and copy (drag, double and triple
+  click, Shift+click, Alt+drag, Ctrl+Shift+C, the primary selection and middle click, into the scrollback; Shift over
+  mouse programs; `copy-on-select`; protocol 19 `GetRows`; protected and §2, approved), **0.4.1 candidate** `ec3e923`.
 - **Order** (stage bundle PQ, the person's text of 2026-11-21: [STAGES.md](STAGES.md), "PQ", its common rules and
   each stage's "Added in PQ"; PD and PT are under PQ). "Next stage" is the first one below that is not done; at a stage's end its line moves
   to "Done" (`docs/OPERATING.md`).
-  1. **PX** text selection and copy (STAGES, PQ, "PX"; the person's text of 2026-11-21); X5 skipped (5e35b67);
-     ends with the 0.4.1 candidate (P3c included).
-  2. **PD** Claude Code's edit blocks redrawn side by side in place (point 1; DESIGN §2 exception approved; D0's
+  1. **PD** Claude Code's edit blocks redrawn side by side in place (point 1; DESIGN §2 exception approved; D0's
      research and 90 % match rate first, stop if Claude Code has its own setting). Candidate at the end.
-  3. **PK** three working rules and the rule–enforcement table (the skill texts are already in `skills/`, 7eab7a0,
+  2. **PK** three working rules and the rule–enforcement table (the skill texts are already in `skills/`, 7eab7a0,
      sha256 checked).
-  4. **PT** messages and hand-over between sessions (point 3; §8.4's delivery path approved within its scope):
+  3. **PT** messages and hand-over between sessions (point 3; §8.4's delivery path approved within its scope):
      `haetty send`, `ask`, `handoff`, moving tabs between windows. Candidate at the end.
-  5. **P4** session browser (point 1), `haetty sessions --json`, a `claude` started outside the proxy found. Candidate.
-  6. **P5** Connections, `haetty mcp` (stdio, Observe) + install, the Rakazo research, `docs/CONNECT.md`. Candidate.
-  7. **P6** SSH, Tailscale (system OpenSSH), the Hosts screen. Candidate.
-  8. **P7·P8** remote daemon, delegation scope (design docs only, one session; then the person decides).
-  9. **P9** tidy-up (token tools, the auto-mode deny path), C11 (merge helper); P19 is done by PT. The Windows
+  4. **P4** session browser (point 1), `haetty sessions --json`, a `claude` started outside the proxy found. Candidate.
+  5. **P5** Connections, `haetty mcp` (stdio, Observe) + install, the Rakazo research, `docs/CONNECT.md`. Candidate.
+  6. **P6** SSH, Tailscale (system OpenSSH), the Hosts screen. Candidate.
+  7. **P7·P8** remote daemon, delegation scope (design docs only, one session; then the person decides).
+  8. **P9** tidy-up (token tools, the auto-mode deny path), C11 (merge helper); P19 is done by PT. The Windows
      night-run items (`NOT-RUN (foreground)`, the hand-over) go to PW.
-  10. **PW** below (kramers does W-a only, then reports the list for the Windows PC).
+  9. **PW** below (kramers does W-a only, then reports the list for the Windows PC).
   Versions: each candidate takes the next number then (PQ's 0.5.0–0.7.0 for P4–P6 predate PD and PT).
 - **PW: Windows catch-up (last).** Inputs, untouched until then: the branches `checks/windows-2026-11-17` (record
   `docs/checks/2026-11-17-windows.md`; its list "Not fixed here" is under "For kramers"), `windows/2026-11-17-fixes`
   (11 commits on `e8a48be`; three merge conflicts and their resolution in that record's "For kramers" table) and
   `windows/2026-11-17-ph-fixes` (4 commits on `58386ab`); the Windows check list in `docs/dev-commands.md`; and the
   lines stages add here:
+  - PX (2026-11-21): selection and copy unverified on Windows (built, clippy clean); no primary selection there
+    (`copy-on-select = true` copies nothing, a middle click pastes nothing); `select.sh` Linux only; no Windows
+    reference frames `selection`, `selection-rect`, `selection-diff`.
   - P3c (2026-11-20): no editor server on Windows (`ide-integration` does nothing there; the token's random source is
     `/dev/urandom`); `tests/ide.rs` and `ide.sh` Unix only; no Windows reference frame `ide-proposal`.
   - PI (2026-11-20): no shell integration on Windows (the daemon makes no `zsh` folder there; zsh/bash under
@@ -157,7 +154,7 @@ Testing and Claude Code:
 - Fullscreen Claude Code: Ctrl+C with a selection copies; a test that drags must not expect Ctrl+C twice to exit.
 - Claude Code's double Ctrl+C window is 700–1500 ms; right after start a second press may be missed: wait a few seconds.
 - Two private Xvfb on the same display number share the abstract X socket across `unshare -rm` (T4): `xvfb.sh` picks a free one.
-- check-range of commits before `0a23bf0` / K2 on kramers needs GNU `cat` and no session markers: `check-range.sh` sets both (P1c).
+- check-range of commits before `0a23bf0` / K2 on kramers needs GNU `cat` and no session markers: `check-range.sh` sets both (P1c). Commits `8dd43d1`–`f17926a` (P3c to PX's start) fail `tests/ide.rs` one run in sixteen (its wrong token could be the right one; fixed `1a74f43`, PX): rerun such a FAIL.
 - Unix socket paths are limited to 108 bytes: keep `HAETTY_TEST_TMP` short (the gate refuses > 32 characters).
 - Never probe an older haetty with a new subcommand: it opens a window and reaches the running daemon; grep `--help` (PU).
 - Asking a daemon whether it still runs by connecting keeps it busy (no idle exit): watch its PID instead (PU).
@@ -175,7 +172,7 @@ The dev machine (the Windows and WSL ones: [history/2026-11-19-pm.md](history/20
 - In a tab of a daemon older than PI, `haetty` and `claude` are not the proxy's when `.zshrc` puts `~/.local/bin` first; call `$HAETTY_PROXY_DIR/haetty` there (P2b; the shell integration fixes it from PI on).
 - `script -c CMD` runs `$SHELL -c CMD`: dash drops `BASH_FUNC_…%%` variables (haetty's bash hook) and a zsh `$SHELL` reads haetty's `.zshenv` first in a non-interactive shell; test shells as the tab's own program (PI).
 - `haetty …` with a non-zero exit prints its line on stderr: an e2e check of that line captures `2>&1` (P2b).
-- An e2e run from a Claude Code session inside haetty inherits `HAETTY_PROXIED=1`: the dev proxy passes `claude` through; unset it and `HAETTY_PROXY_DIR`, `HAETTY_CLAUDE_SETTINGS`, `HAETTY_SESSION_ID` (P3c).
+- An e2e run from a Claude Code session inside haetty inherits `HAETTY_PROXIED=1` and the tab's other markers: `scripts/e2e/lib.sh` clears them since PX (P3c, PX: sidebar.sh and coordinator.sh failed); a script that does not source lib.sh must clear them itself.
 - Claude Code 2.1.329's folder-trust question selects "No, exit" first: a script answers Down, Enter (P3c).
 
 ## 6. Next tasks
@@ -376,6 +373,9 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
 37. [new, P3c 2026-11-20] **haetty as the editor** (`ide-integration = true`, new tabs): an Edit or Write Claude Code
     asks about opens the diff overlay; `a` makes Claude Code write it, `d` rejects it, Esc leaves the question in the
     terminal; answering in the terminal closes the overlay.
+38. [new, PX 2026-11-21] **Selecting with a real mouse** and touchpad (HiDPI): drag, double/triple click, Shift+click,
+    Alt+drag; middle-click into another Wayland window (PRIMARY checked on Xvfb only). Once 0.4.0 is published: 0.4.1
+    from the settings panel's Updates (record, "For the person").
 
 #### C. Windows 11 (and 10 where noted)
 
