@@ -110,11 +110,7 @@ impl VtEngine for NativeEngine {
                     fg: t.resolve(s.fg).map(rgb),
                     bg: t.resolve(s.bg).map(rgb),
                     flags: CellFlags(s.flags),
-                    width: match c.wide {
-                        haetty_vt::Wide::Narrow => Width::Narrow,
-                        haetty_vt::Wide::Wide => Width::Wide,
-                        haetty_vt::Wide::SpacerTail | haetty_vt::Wide::SpacerHead => Width::Spacer,
-                    },
+                    width: width(c.wide),
                     underline: Underline::from_sgr(s.underline),
                     underline_color: t.resolve(s.ul).map(rgb),
                     link: link.flatten(),
@@ -159,7 +155,13 @@ impl VtEngine for NativeEngine {
                 cursor_visible: m.cursor_visible,
                 kitty_keyboard: t.kitty_flags(),
             },
-            scrollbar: Scrollbar { total: sb + rows as u64, offset: sb - t.viewport_offset() as u64, len: rows as u64 },
+            scrollbar: Scrollbar {
+                total: sb + rows as u64,
+                offset: sb - t.viewport_offset() as u64,
+                len: rows as u64,
+                dropped: t.dropped(),
+            },
+            wrapped: (0..rows).map(|y| t.view_wrapped(y)).collect(),
             seq: 0,
         }
     }
@@ -249,5 +251,27 @@ impl VtEngine for NativeEngine {
 
     fn scrollback_rows(&mut self) -> u64 {
         self.term.scrollback_rows()
+    }
+
+    fn rows(&mut self, from: u64, count: u32) -> TextRows {
+        let t = &self.term;
+        let first = from.max(t.dropped());
+        let rows = (first - t.dropped()..)
+            .take(count as usize)
+            .map_while(|i| t.screen_line(i))
+            .map(|(cells, wrapped)| TextRow {
+                cells: cells.into_iter().map(|(text, w)| (text, width(w))).collect(),
+                wrapped,
+            })
+            .collect();
+        TextRows { first, rows }
+    }
+}
+
+fn width(w: haetty_vt::Wide) -> Width {
+    match w {
+        haetty_vt::Wide::Narrow => Width::Narrow,
+        haetty_vt::Wide::Wide => Width::Wide,
+        haetty_vt::Wide::SpacerTail | haetty_vt::Wide::SpacerHead => Width::Spacer,
     }
 }

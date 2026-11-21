@@ -233,7 +233,7 @@ impl ProcRef {
                     if v.len() != 3 {
                         return Err(format!("scroll line {l:?}"));
                     }
-                    snap.scrollbar = Scrollbar { total: v[0], offset: v[1], len: v[2] };
+                    snap.scrollbar = Scrollbar { total: v[0], offset: v[1], len: v[2], dropped: 0 };
                 }
                 Some("cursor") => {
                     let f: Vec<&str> = it.collect();
@@ -398,6 +398,11 @@ impl VtEngine for ProcRef {
                 .unwrap_or_else(|| panic!("ghostty-main: sbrows answered {s:?}")),
             Err(e) => panic!("ghostty-main: {e}"),
         }
+    }
+
+    /// The differential compares screens, not row reads; the helper has no such command.
+    fn rows(&mut self, from: u64, _count: u32) -> haetty_core::TextRows {
+        haetty_core::TextRows { first: from, rows: Vec::new() }
     }
 }
 

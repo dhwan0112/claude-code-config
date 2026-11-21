@@ -484,3 +484,39 @@ fn health_counts_the_hourly_line_and_the_idle_exit() {
     daemon.join().unwrap().unwrap();
     haetty_testkit::remove_dir_all(&dir);
 }
+
+#[test]
+fn rows_of_the_scrollback_for_control_and_observe_only_when_observable() {
+    let dir = tmp("rows");
+    let (ep, _daemon) = start(&dir, Duration::from_secs(60));
+    let ctl = Client::connect(&ep, Role::Control, "gui").unwrap();
+    let mut sp = spec("i=0; while [ $i -lt 3000 ]; do echo line$i; i=$((i+1)); done; sleep 30");
+    sp.scrollback_limit = 64 << 20;
+    let id = ctl.create(sp).unwrap();
+    let s = ctl.attach(&id, None).unwrap();
+    let snap = wait_screen(&s, "the last line", |sn| sn.text().contains("line2999"));
+    let row_text = |r: &haetty_core::TextRow| r.cells.iter().map(|(t, _)| t.as_str()).collect::<String>();
+    let top = snap.scrollbar.dropped + snap.scrollbar.offset;
+    let got = ctl.rows(&id, top.saturating_sub(2900), 10).unwrap();
+    assert_eq!(got.rows.len(), 10);
+    let first: u32 = row_text(&got.rows[0]).trim().strip_prefix("line").unwrap().parse().unwrap();
+    assert_eq!(row_text(&got.rows[9]).trim(), format!("line{}", first + 9));
+    let many = ctl.rows(&id, 0, 100_000).unwrap();
+    assert_eq!(many.rows.len(), 2000, "one answer holds 2000 rows at most");
+    let past = ctl.rows(&id, top + 1_000_000, 5).unwrap();
+    assert!(past.rows.is_empty(), "rows past the end: none");
+    assert!(matches!(ctl.rows("no-such", 0, 1), Err(e) if e.kind() == std::io::ErrorKind::NotFound));
+    let obs = Client::connect(&ep, Role::Observe, "status").unwrap();
+    match obs.rows(&id, top, 1) {
+        Err(e) => assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied, "{e}"),
+        Ok(r) => panic!("an observer read {} rows of a session that is not observable", r.rows.len()),
+    }
+    ctl.set_observable(&id, true).unwrap();
+    assert!(ctl.sync(Duration::from_secs(3)));
+    assert_eq!(obs.rows(&id, top, 3).unwrap().rows.len(), 3);
+    let rep = Client::connect(&ep, Role::Report, "hook").unwrap();
+    rep.send(&ClientMsg::GetRows { session: id.clone(), from: top, count: 1 }).unwrap();
+    assert!(matches!(rep.next_reply(Duration::from_secs(3)), Some(DaemonMsg::Denied { .. })));
+    ctl.close(&id).unwrap();
+    haetty_testkit::remove_dir_all(&dir);
+}

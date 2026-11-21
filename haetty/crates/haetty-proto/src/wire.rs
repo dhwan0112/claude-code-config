@@ -12,12 +12,12 @@ use std::io::{self, Read, Write};
 
 use haetty_core::{
     Cell, CellFlags, Cursor, CursorShape, GridSize, Key, KeyAction, KeyInput, Modes, Mods, MouseAction, MouseButton,
-    MouseInput, Progress, Rgb, ScrollTo, Scrollbar, SessionEvent, Snapshot, Underline, Width,
+    MouseInput, Progress, Rgb, ScrollTo, Scrollbar, SessionEvent, Snapshot, TextRow, TextRows, Underline, Width,
 };
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 18;
+pub const VERSION: u32 = 19;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -37,6 +37,12 @@ impl std::fmt::Debug for Secret<String> {
 impl std::fmt::Debug for Secret<Vec<u8>> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<{} bytes>", self.0.len())
+    }
+}
+
+impl std::fmt::Debug for Secret<WireTextRows> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{} rows from {}>", self.0.rows.len(), self.0.first)
     }
 }
 
@@ -316,6 +322,13 @@ pub enum ClientMsg {
     /// `GetClaude`; version 14). Derived fields only.
     GetSessionLog {
         session: SessionId,
+    },
+    /// Up to `count` rows' text from the session row `from` on, the scrollback included (`Scrollbar::dropped`;
+    /// answer: `Rows`; read-only, on `GetClaude`'s line; version 19). A selection's text beyond the screen.
+    GetRows {
+        session: SessionId,
+        from: u64,
+        count: u32,
     },
     /// The person's answer to an editor proposal (`Ide`): Control only, `Human` only (DESIGN.md §13.9; version 18).
     IdeAnswer {
@@ -642,7 +655,49 @@ pub struct Frame {
     /// Bit set of `Modes` booleans (see [`modes_bits`]) and the kitty flags.
     pub modes: u16,
     pub kitty_keyboard: u8,
-    pub scrollbar: (u64, u64, u64),
+    /// Total, offset, length, dropped (`Scrollbar`).
+    pub scrollbar: (u64, u64, u64, u64),
+    /// The rows that go on in the next one (soft wraps), all of them in every frame.
+    pub wrapped: Vec<u16>,
+}
+
+/// `TextRows` on the wire: each cell's text and its width (0 narrow, 1 wide, 2 the spacer after a wide one).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct WireTextRows {
+    pub first: u64,
+    pub rows: Vec<(Vec<(String, u8)>, bool)>,
+}
+
+pub fn rows_to_wire(r: &TextRows) -> WireTextRows {
+    let width = |w: Width| match w {
+        Width::Narrow => 0,
+        Width::Wide => 1,
+        Width::Spacer => 2,
+    };
+    WireTextRows {
+        first: r.first,
+        rows: r
+            .rows
+            .iter()
+            .map(|row| (row.cells.iter().map(|(t, w)| (t.clone(), width(*w))).collect(), row.wrapped))
+            .collect(),
+    }
+}
+
+pub fn wire_to_rows(r: WireTextRows) -> TextRows {
+    let width = |w: u8| match w {
+        1 => Width::Wide,
+        2 => Width::Spacer,
+        _ => Width::Narrow,
+    };
+    TextRows {
+        first: r.first,
+        rows: r
+            .rows
+            .into_iter()
+            .map(|(cells, wrapped)| TextRow { cells: cells.into_iter().map(|(t, w)| (t, width(w))).collect(), wrapped })
+            .collect(),
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -728,6 +783,11 @@ pub enum DaemonMsg {
     },
     /// Answer to `GetHealth` (version 12).
     Health(DaemonHealth),
+    /// Answer to `GetRows` (version 19). Shown text: never logged.
+    Rows {
+        session: SessionId,
+        rows: Secret<WireTextRows>,
+    },
     /// The session's oldest editor proposal waiting for an answer, `None` when none waits (on attach and on every
     /// change; version 18).
     Ide {
@@ -1036,7 +1096,8 @@ pub fn frame_between(session: &str, base: Option<&Snapshot>, next: &Snapshot) ->
         pwd: next.pwd.clone(),
         modes: modes_bits(&next.modes),
         kitty_keyboard: next.modes.kitty_keyboard,
-        scrollbar: (next.scrollbar.total, next.scrollbar.offset, next.scrollbar.len),
+        scrollbar: (next.scrollbar.total, next.scrollbar.offset, next.scrollbar.len, next.scrollbar.dropped),
+        wrapped: (0..next.rows).filter(|&y| next.is_wrapped(y)).collect(),
     }
 }
 
@@ -1064,7 +1125,14 @@ pub fn apply_frame(mirror: &mut Snapshot, f: &Frame) {
     mirror.title.clone_from(&f.title);
     mirror.pwd.clone_from(&f.pwd);
     mirror.modes = modes_from_bits(f.modes, f.kitty_keyboard);
-    mirror.scrollbar = Scrollbar { total: f.scrollbar.0, offset: f.scrollbar.1, len: f.scrollbar.2 };
+    mirror.scrollbar =
+        Scrollbar { total: f.scrollbar.0, offset: f.scrollbar.1, len: f.scrollbar.2, dropped: f.scrollbar.3 };
+    mirror.wrapped = vec![false; f.rows as usize];
+    for &y in &f.wrapped {
+        if let Some(w) = mirror.wrapped.get_mut(y as usize) {
+            *w = true;
+        }
+    }
 }
 
 pub fn event_to_wire(e: &SessionEvent) -> Option<WireEvent> {

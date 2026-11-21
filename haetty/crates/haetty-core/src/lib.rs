@@ -369,4 +369,11 @@ impl SessionHandle {
         self.send(Cmd::Dump(fmt, tx));
         rx.recv().ok()
     }
+    /// Up to `count` rows from the session row `from` on (`Scrollbar::dropped`), the scrollback included; after
+    /// everything queued before this call.
+    pub fn rows(&self, from: u64, count: u32) -> Option<TextRows> {
+        let (tx, rx) = bounded(1);
+        self.send(Cmd::Rows(from, count, tx));
+        rx.recv().ok()
+    }
 }

@@ -606,6 +606,8 @@ pub struct Terminal {
     primary: Screen,
     alt: Screen,
     scrollback: VecDeque<Line>,
+    /// Lines dropped from the top of the scrollback (its limit, ED 3) since the start.
+    dropped: u64,
     /// A DECRQSS request (`DCS $ q …`) while its DCS lasts: its bytes, at most three.
     decrqss: Option<Vec<u8>>,
     /// SGR parameters of the sequence being dispatched (reused between SGR sequences).
@@ -679,6 +681,7 @@ impl Terminal {
             primary: Screen::new(cols, rows),
             alt: Screen::new(cols, rows),
             scrollback: VecDeque::new(),
+            dropped: 0,
             top: 0,
             bottom: rows - 1,
             left: 0,
@@ -1050,6 +1053,7 @@ impl Terminal {
         while self.sb_bytes > self.sb_limit {
             let Some(old) = self.scrollback.pop_front() else { break };
             self.sb_bytes -= line_bytes(&old);
+            self.dropped += 1;
         }
         self.viewport = self.viewport.min(self.scrollback.len());
     }
@@ -1071,6 +1075,25 @@ impl Terminal {
     /// Rows the viewport is above the live screen.
     pub fn viewport_offset(&self) -> usize {
         self.viewport
+    }
+
+    /// Lines dropped from the top of the scrollback since the start.
+    pub fn dropped(&self) -> u64 {
+        self.dropped
+    }
+
+    /// The viewport row `y` goes on in the next one (a soft wrap).
+    pub fn view_wrapped(&self, y: u16) -> bool {
+        self.view_line(y).wrapped
+    }
+
+    /// The line `i` of the scrollback and the live screen together (0 is the oldest kept): its cells' text and
+    /// width, and whether it wraps. Scrollback lines keep no trailing blanks.
+    pub fn screen_line(&self, i: u64) -> Option<(Vec<(String, Wide)>, bool)> {
+        let sb = self.scrollback_rows();
+        let l =
+            if i < sb { self.scrollback.get(i as usize)? } else { self.screen_ref().lines.get((i - sb) as usize)? };
+        Some((l.cells.iter().map(|c| (self.text(c), c.wide)).collect(), l.wrapped))
     }
 
     pub fn scroll_viewport_top(&mut self) {
@@ -2080,6 +2103,7 @@ impl Terminal {
             }
             3 => {
                 if !self.modes.alt_screen {
+                    self.dropped += self.scrollback.len() as u64;
                     self.scrollback.clear();
                     self.sb_bytes = 0;
                     self.viewport = 0;

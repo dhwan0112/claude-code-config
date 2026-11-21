@@ -8,11 +8,11 @@ use libghostty_vt::fmt::{Format as FmtFormat, Formatter, FormatterOptions};
 use libghostty_vt::key;
 use libghostty_vt::mouse;
 use libghostty_vt::render::{CellIterator, CursorVisualStyle, RowIterator};
-use libghostty_vt::screen::CellWide;
+use libghostty_vt::screen::{CellWide, Screen, TrackedGridRef};
 use libghostty_vt::style::StyleColor;
 use libghostty_vt::terminal::{
     ColorScheme, ConformanceLevel, DeviceAttributeFeature, DeviceAttributes, DeviceType, Mode, Point, PointCoordinate,
-    PrimaryDeviceAttributes, ScrollViewport, SecondaryDeviceAttributes, SizeReportSize,
+    PointSpace, PrimaryDeviceAttributes, ScrollViewport, SecondaryDeviceAttributes, SizeReportSize,
 };
 use libghostty_vt::{RenderState, Terminal, TerminalOptions};
 
@@ -49,6 +49,9 @@ pub struct GhosttyEngine {
     /// far and the continuation bytes still expected.
     utf8: (u32, u8),
     pub stats: SnapStats,
+    /// The first row of the primary screen's active area when rows were last counted, and its row then.
+    anchor: Option<(TrackedGridRef, u32)>,
+    dropped: u64,
 }
 
 /// How a snapshot reads libghostty's render state. Its incremental update
@@ -166,7 +169,37 @@ impl GhosttyEngine {
             joined: false,
             utf8: (0, 0),
             stats: SnapStats::default(),
+            anchor: None,
+            dropped: 0,
         })
+    }
+
+    /// Counts the rows dropped from the top of the scrollback since the last count: the anchor row moved up by
+    /// them. An anchor that was dropped itself (more output than the scrollback holds between two counts) makes
+    /// the count jump past every row number given out before.
+    fn count_dropped(&mut self) {
+        if let Some((a, y)) = &self.anchor {
+            match a.point(PointSpace::Screen) {
+                Ok(Some(p)) if p.y < *y => self.dropped += u64::from(*y - p.y),
+                Ok(Some(_)) => {}
+                _ => self.dropped += u64::from(*y) + u64::from(u32::MAX),
+            }
+        }
+        if self.term.active_screen().unwrap_or_default() != Screen::Primary {
+            return;
+        }
+        let Ok(top) = self.term.scrollback_rows() else { return };
+        let point = Point::Screen(PointCoordinate { x: 0, y: top as u32 });
+        let moved = match self.anchor.as_mut() {
+            Some((a, y)) => {
+                *y = top as u32;
+                a.set(&mut self.term, point).is_ok()
+            }
+            None => false,
+        };
+        if !moved {
+            self.anchor = self.term.track_grid_ref(point).ok().map(|a| (a, top as u32));
+        }
     }
 }
 
@@ -203,7 +236,10 @@ impl VtEngine for GhosttyEngine {
                 self.render = rs;
             }
         }
-        build_snapshot(self, fresh)
+        self.count_dropped();
+        let mut snap = build_snapshot(self, fresh);
+        snap.scrollbar.dropped = self.dropped;
+        snap
     }
 
     fn mode(&self, m: VtMode) -> bool {
@@ -333,6 +369,18 @@ impl VtEngine for GhosttyEngine {
         let rows = self.size.get().rows as u64;
         self.term.scrollbar().map_or(0, |sb| sb.total.saturating_sub(rows))
     }
+
+    fn rows(&mut self, from: u64, count: u32) -> TextRows {
+        self.count_dropped();
+        let first = from.max(self.dropped);
+        let cols = self.term.cols().unwrap_or(0);
+        let mut buf = vec!['\0'; 8];
+        let rows = (first - self.dropped..)
+            .take(count as usize)
+            .map_while(|y| u32::try_from(y).ok().and_then(|y| screen_row(&self.term, y, cols, &mut buf)))
+            .collect();
+        TextRows { first, rows }
+    }
 }
 
 /// Default fg/bg, colours 0–15 (16–255 stay libghostty-vt's: xterm's cube
@@ -458,7 +506,7 @@ fn build_snapshot(e: &mut GhosttyEngine, fresh: bool) -> Snapshot {
         kitty_keyboard: term.kitty_keyboard_flags().map(|f| f.bits()).unwrap_or(0),
     };
     if let Ok(sb) = term.scrollbar() {
-        snap.scrollbar = Scrollbar { total: sb.total, offset: sb.offset, len: sb.len };
+        snap.scrollbar = Scrollbar { total: sb.total, offset: sb.offset, len: sb.len, dropped: 0 };
     }
 
     let Ok(rs) = e.render.update(term) else { return snap };
@@ -507,6 +555,7 @@ fn build_snapshot(e: &mut GhosttyEngine, fresh: bool) -> Snapshot {
                 e.stats.rows_copied += 1;
             }
             let _ = row.set_dirty(false);
+            snap.wrapped.push(row.raw_row().and_then(|r| r.is_wrapped()).unwrap_or(false));
             let start = snap.cells.len();
             if let Ok(mut cell_it) = e.cells.update(row) {
                 while let Some(cell) = cell_it.next() {
@@ -586,7 +635,34 @@ fn build_snapshot(e: &mut GhosttyEngine, fresh: bool) -> Snapshot {
         }
     }
     snap.cells.resize(cols as usize * rows as usize, Cell::default());
+    snap.wrapped.resize(rows as usize, false);
     snap
+}
+
+/// The screen row `y` (scrollback and active area together) as text, read through grid references.
+fn screen_row(term: &Terminal<'static, 'static>, y: u32, cols: u16, buf: &mut Vec<char>) -> Option<TextRow> {
+    let mut row = TextRow { cells: Vec::with_capacity(cols as usize), wrapped: false };
+    for x in 0..cols {
+        let r = term.grid_ref(Point::Screen(PointCoordinate { x, y })).ok()?;
+        if x == 0 {
+            row.wrapped = r.row().and_then(|r| r.is_wrapped()).unwrap_or(false);
+        }
+        let n = match r.graphemes(buf) {
+            Ok(n) => n,
+            Err(libghostty_vt::Error::OutOfSpace { required }) => {
+                buf.resize(required, '\0');
+                r.graphemes(buf).unwrap_or(0)
+            }
+            Err(_) => 0,
+        };
+        let width = match r.cell().and_then(|c| c.wide()) {
+            Ok(CellWide::Wide) => Width::Wide,
+            Ok(CellWide::SpacerTail) | Ok(CellWide::SpacerHead) => Width::Spacer,
+            _ => Width::Narrow,
+        };
+        row.cells.push((buf[..n].iter().collect(), width));
+    }
+    Some(row)
 }
 
 /// The hyperlink target of the viewport cell (x, y), shared with the cells

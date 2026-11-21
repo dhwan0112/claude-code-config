@@ -855,6 +855,7 @@ impl Compose<'_> {
             pwd: s.pwd.clone(),
             modes: s.modes,
             scrollbar: s.scrollbar,
+            wrapped: Vec::new(),
             seq: s.seq,
         }
     }

@@ -235,6 +235,10 @@ run with Zig's safety checks is a separate command
 - `observe`: read-only (`haetty status`, later CLI over SSH and MCP per §6).
   Any input or session-changing message is answered with `Denied` and has no
   effect.
+- Read-only queries for both `control` and `observe`, `observe` only for a session the person made observable:
+  `GetClaude`, `GetSessionLog` (stage PH) and `GetRows` (stage PX: up to 2000 rows' text from a session row
+  number on, the scrollback included; a row's number is `Scrollbar::dropped + offset + y` and stays with the row
+  while output pushes it up). `GetScreen` and `ReadEvents` stay `observe` alone.
 - `report`: hook and status-line processes; may only send `Hook` and
   `StatusLine` — and only they may send them (a Control or Observe client
   sending a report is answered with `Denied`).

@@ -144,6 +144,7 @@ pub(crate) enum Cmd {
     Scroll(ScrollTo),
     Snapshot(Sender<Snapshot>),
     Dump(DumpFormat, Sender<String>),
+    Rows(u64, u32, Sender<crate::TextRows>),
     SetColorScheme(ColorSchemePref),
     SetColors(crate::TermColors),
     Shutdown,
@@ -399,6 +400,9 @@ pub(crate) fn run(
                 }
                 Cmd::Dump(fmt, reply) => {
                     let _ = reply.send(term.dump(fmt));
+                }
+                Cmd::Rows(from, count, reply) => {
+                    let _ = reply.send(term.rows(from, count));
                 }
                 Cmd::SetColors(c) => {
                     term.set_colors(&c);

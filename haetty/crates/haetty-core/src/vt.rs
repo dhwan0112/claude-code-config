@@ -112,4 +112,6 @@ pub trait VtEngine {
     fn dump(&mut self, fmt: DumpFormat) -> String;
     /// Rows above the visible screen (scrollback), for comparisons.
     fn scrollback_rows(&mut self) -> u64;
+    /// Up to `count` rows from the session row `from` on (`Scrollbar::dropped`), the scrollback included.
+    fn rows(&mut self, from: u64, count: u32) -> crate::TextRows;
 }

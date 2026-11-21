@@ -224,6 +224,19 @@ impl Client {
         })
     }
 
+    /// Up to `count` rows' text from the session row `from` on, the scrollback included (version 19).
+    pub fn rows(&self, session: &str, from: u64, count: u32) -> io::Result<haetty_core::TextRows> {
+        let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
+        self.send(&ClientMsg::GetRows { session: session.to_string(), from, count })?;
+        self.wait_reply(Duration::from_secs(10), |m| match m {
+            DaemonMsg::Rows { session: s, rows } if s == session => Some(Ok(crate::wire::wire_to_rows(rows.0))),
+            DaemonMsg::NoSession { session: s } if s == session => {
+                Some(Err(io::Error::new(io::ErrorKind::NotFound, format!("no session {s}"))))
+            }
+            _ => None,
+        })?
+    }
+
     pub fn list_sessions(&self) -> io::Result<Vec<SessionInfo>> {
         let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
         self.send(&ClientMsg::ListSessions)?;

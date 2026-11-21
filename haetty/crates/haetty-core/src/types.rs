@@ -166,6 +166,9 @@ pub struct Scrollbar {
     pub total: u64,
     pub offset: u64,
     pub len: u64,
+    /// Rows dropped from the top of the scrollback since the session started: the row `y` of the viewport is
+    /// row `dropped + offset + y` of the session, a number that stays with the row while output pushes it up.
+    pub dropped: u64,
 }
 
 /// A complete, self-contained picture of the viewport.
@@ -183,6 +186,8 @@ pub struct Snapshot {
     pub pwd: String,
     pub modes: Modes,
     pub scrollbar: Scrollbar,
+    /// Per viewport row: the row goes on in the next one (a soft wrap). Empty when the engine does not say.
+    pub wrapped: Vec<bool>,
     /// Engine-side counter, increases with every snapshot.
     pub seq: u64,
 }
@@ -222,6 +227,33 @@ impl Snapshot {
     pub fn contains(&self, needle: &str) -> bool {
         (0..self.rows).any(|y| self.row_text(y).contains(needle))
     }
+
+    pub fn is_wrapped(&self, y: u16) -> bool {
+        self.wrapped.get(y as usize).copied().unwrap_or(false)
+    }
+
+    /// The viewport row `y` as a [`TextRow`].
+    pub fn text_row(&self, y: u16) -> TextRow {
+        let start = y as usize * self.cols as usize;
+        let cells = self.cells[start..start + self.cols as usize].iter().map(|c| (c.text.clone(), c.width)).collect();
+        TextRow { cells, wrapped: self.is_wrapped(y) }
+    }
+}
+
+/// One row's text, cell by cell (for selections that reach into the scrollback): each cell's text (empty for a
+/// blank cell) and width, and whether the row goes on in the next one.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TextRow {
+    pub cells: Vec<(String, Width)>,
+    pub wrapped: bool,
+}
+
+/// Rows of a session by their number (`Scrollbar::dropped`): `first` is the number of `rows[0]`, which is later than
+/// the one asked for when the rows before it were dropped.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TextRows {
+    pub first: u64,
+    pub rows: Vec<TextRow>,
 }
 
 /// A key event in terms the libghostty key encoder understands. Frontends map

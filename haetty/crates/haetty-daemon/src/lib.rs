@@ -713,6 +713,8 @@ impl Daemon {
                 // Read-only, on ListSessions' line (stage PH, approved); an observe-only client: observable sessions.
                 | ClientMsg::GetClaude { .. }
                 | ClientMsg::GetSessionLog { .. }
+                // A selection's rows (stage PX, approved): on GetClaude's line.
+                | ClientMsg::GetRows { .. }
                 | ClientMsg::Attach { .. }
                 | ClientMsg::Detach { .. }
                 | ClientMsg::NextFrame { .. },
@@ -826,7 +828,9 @@ impl Daemon {
                 let h = self.health.report(now);
                 self.reply(c, DaemonMsg::Health(h));
             }
-            ClientMsg::GetClaude { session } | ClientMsg::GetSessionLog { session }
+            ClientMsg::GetClaude { session }
+            | ClientMsg::GetSessionLog { session }
+            | ClientMsg::GetRows { session, .. }
                 if role == Role::Observe && !self.sessions.get(&session).is_some_and(|s| s.info.observable) =>
             {
                 self.denied(c, "not observable")
@@ -843,6 +847,13 @@ impl Daemon {
                     self.sessions.get(&session).map(|s| s.recent.iter().cloned().collect()).unwrap_or_default();
                 self.reply(c, DaemonMsg::SessionLog { session, events });
             }
+            ClientMsg::GetRows { session, from, count } => match self.sessions.get(&session) {
+                Some(s) => {
+                    let rows = s.session.handle.rows(from, count.min(MAX_ROWS)).unwrap_or_default();
+                    self.reply(c, DaemonMsg::Rows { session, rows: Secret(haetty_proto::wire::rows_to_wire(&rows)) });
+                }
+                None => self.reply(c, DaemonMsg::NoSession { session }),
+            },
             ClientMsg::SetObservable { session, on } => self.set_observable(session, on),
             ClientMsg::ReadEvents { cursor, follow } => self.read_events(c, cursor, follow),
             ClientMsg::GetScreen { session } => self.screen(c, session),
@@ -1268,12 +1279,16 @@ fn msg_name(m: &ClientMsg) -> &'static str {
         ClientMsg::GetHealth => "GetHealth",
         ClientMsg::GetClaude { .. } => "GetClaude",
         ClientMsg::GetSessionLog { .. } => "GetSessionLog",
+        ClientMsg::GetRows { .. } => "GetRows",
         ClientMsg::IdeAnswer { .. } => "IdeAnswer",
     }
 }
 
 /// Writes a file only this user can read (Unix mode 0600; on Windows the
 /// directory is in the user's profile).
+/// Rows one `GetRows` answers at most (a longer selection asks again).
+const MAX_ROWS: u32 = 2000;
+
 /// Lines kept per session for `GetSessionLog`.
 const RECENT: usize = 64;
 
