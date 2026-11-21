@@ -57,9 +57,8 @@ Stages:
 - **Order** (stage bundle PQ, the person's text of 2026-11-21: [STAGES.md](STAGES.md), "PQ", its common rules and
   each stage's "Added in PQ"; PD and PT are under PQ). "Next stage" is the first one below that is not done; at a stage's end its line moves
   to "Done" (`docs/OPERATING.md`).
-  1. **PX** text selection and copy: handed by the person to another session; its text is not in STAGES (ask the
-     person for it). Not started when PQ was registered (2026-11-21). The person's note for it: X5 (the release.sh
-     defect) is done in 5e35b67 and skipped; the candidate version is 0.4.1 and includes P3c.
+  1. **PX** text selection and copy (STAGES, PQ, "PX"; the person's text of 2026-11-21); X5 skipped (5e35b67);
+     ends with the 0.4.1 candidate (P3c included).
   2. **PD** Claude Code's edit blocks redrawn side by side in place (point 1; DESIGN §2 exception approved; D0's
      research and 90 % match rate first, stop if Claude Code has its own setting). Candidate at the end.
   3. **PK** three working rules and the rule–enforcement table (the skill texts are already in `skills/`, 7eab7a0,

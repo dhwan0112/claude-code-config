@@ -646,6 +646,134 @@ candidate (the version is the next number at that time).
   also says where the person looks if it fails (log paths) and gives the manual install command.
 - If the candidate check fails and the cause is not found within an hour, no tag commands: report the investigation.
 
+### PX. Text selection and copy (the person's text of 2026-11-21; dragging to copy does not work in a plain shell)
+
+Number 1 in HANDOFF's order. This text is PX's body: it goes into `docs/STAGES.md` under PQ as "PX" (in English,
+without changing the meaning), then the stage starts. PQ's common rules apply.
+
+An exception to "the terminal itself: defect fixes only": a missing feature that blocks daily use, so it is made in
+this stage. The Windows rule (PW) stays. Go through to the end in one session without asking for confirmation midway.
+No tag, signature, release publication or stable install.
+
+First: if the branch and worktree `haetty/p41` (started 2026-11-21 19:40 as "0.4.1 candidate") are still there,
+check their state. That session started with only one line and without this body. If it has useful commits (the
+version raise, CHANGELOG), use them at this stage's end (X6); if not, remove the worktree and the branch. The
+candidate check runs once, after this stage's feature is in.
+
+Approved scope (approved in advance)
+- DESIGN §2 change: drawing the selected area (with the existing selection-background / selection-foreground rule).
+  Code and reference frames in one commit.
+- Protocol: one read-only query that reads the text of a range including the scrollback. In the role table it goes
+  on the same line as the existing screen read (the query `haetty screen` uses): Control always, Observe only for
+  sessions that allow observing. No other role check changes. A separate commit, "protected area, approved".
+- The permission-prompt path, the hooks and the injected settings are not touched.
+
+X0. Research (before code; tables in the record)
+- The state now: the scope of the README line "No own text selection yet", how the mouse reaches a program that
+  reports the mouse, the OSC 52 path, the paste path, where the selection colour rule (9625bbd) is used, whether
+  copypasta supports CLIPBOARD and PRIMARY on X11 and on Wayland.
+- What the two engines (libghostty-vt, haetty-vt) give: the marking of lines joined by a soft wrap, the cell
+  information of wide characters, stable coordinates of scrollback rows. Decide whether the selection lives in the
+  engine or in the GUI and write why. Default: the GUI holds the selection state (it differs per window) and gets the
+  text through the query.
+- A table, from the official docs, of the selection behaviour of Ghostty, kitty, WezTerm and Windows Terminal (word
+  boundary characters, the range of a triple click, wrapped lines, trailing blanks, the rectangle-selection key, the
+  bypass key while the mouse is reported, whether a selection is copied at once). Defaults follow Ghostty; where they
+  do not, write why.
+
+X1. Selection
+- Drag: selection by cell. A wide character (Hangul, emoji) is selected with both its cells. A combining character
+  with its cell.
+- Double click: a word. The boundary characters are the setting `selection-word-chars` (default from X0's table).
+  Triple click: the line (the whole logical line joined by soft wraps). A drag after a double or triple click extends
+  by word or by line.
+- Shift+click: extends the selection's end to that cell.
+- Alt+drag (or the key decided in X0): rectangle selection.
+- Dragging out of the screen scrolls into the scrollback and extends. A selection can also start inside the
+  scrollback. When new output pushes the screen, the selection points at the same text. When selected rows leave
+  through the scrollback limit, the selection shrinks by them or goes (it never points at the wrong text).
+- While a program has mouse reporting on: the mouse goes to the program as now. A drag with Shift held becomes
+  haetty's selection (that drag does not reach the program).
+- On the alternate screen (vim, Claude Code's full-screen renderer) Shift+drag selection works too. When the screen is
+  redrawn and the selected cells' content changes, the selection goes.
+- What clears the selection: a click outside it, a key (setting `selection-clear-on-typing`, default true), a change
+  of the selected area's content, Esc.
+- A drag over the sidebar, the tab bar or an overlay (diff, an agent's record, the settings panel) is not a terminal
+  selection. Text inside the diff and agent-record screens can be selected and copied the same way (read-only
+  screens are where people copy from most). Not the settings panel.
+
+X2. Copy and paste
+- Copy: Ctrl+Shift+C (if it already does something else, decide from the conflict table §3.11), palette "Copy".
+  Setting `copy-on-select = false | true | clipboard` (Ghostty's meaning; the Linux default is true, into PRIMARY).
+  With no selection Ctrl+Shift+C does nothing (it is not sent to the program).
+- The copied text: lines joined by a soft wrap are joined without a newline. Trailing fill blanks of a line are left
+  out. A rectangle selection: a newline per row. The second cell of a wide character makes no character. Tab
+  characters: a tab if the engine keeps it, else spaces (record which).
+- PRIMARY (X11 and Wayland): a selection goes into PRIMARY, and a middle click pastes PRIMARY (Shift+middle click
+  while the program reports the mouse). If copypasta does not support one side, that side does CLIPBOARD only and it
+  is recorded. No new dependency.
+- Paste stays the existing path (bracketed paste mode, the handling during a permission wait). Confirm with the
+  existing cases of `tests/permission.rs` that the selection feature does not change the paste path's permission
+  handling or Origin.
+- Copying a large selection (tens of thousands of scrollback rows) does not block the UI thread. A limit (a constant,
+  no setting, e.g. 16 MiB); over it, one line in the status row says so.
+- No selected text in logs.
+
+X3. Drawing (DESIGN §2)
+- The selected area is drawn with the theme's selection-background and the existing text-colour rule (9625bbd). No
+  new accent colour. A selection comes only from the person's input, so the "idle screen grey only" check stays 5/5,
+  measured with no selection.
+- While selecting, the grid size and the bytes going to the program do not change.
+- A rectangle selection and a normal one look different on screen (by their shape).
+
+X4. Tests
+- Unit: coordinates → range (word, line, rectangle, starting on either cell of a wide character), range → text
+  (joined lines, trailing blanks, Hangul and emoji, combining characters, empty lines, a range across the screen and
+  the scrollback), following when output pushes, leaving through the limit. The same table on both engines.
+- Daemon: the new query's roles (Observe refused for a session with observing off), a request out of range, a large
+  range.
+- Xvfb e2e `scripts/e2e/select.sh`: in a zsh tab drag → Ctrl+Shift+C → the clipboard content matches; double and
+  triple click, Shift+click, rectangle, dragging into the scrollback, copy-on-select and PRIMARY, middle-click paste;
+  in a (test) program that reports the mouse, a drag goes to the program and a Shift+drag becomes a selection; vim's
+  alternate screen; a selection inside the diff screen; 0 resize log lines while selecting. Into run-all.
+- Regression: the wheel, OSC 52, paste, link click (Ctrl+click), tab and sidebar clicks as before.
+- Wayland: check PRIMARY and CLIPBOARD with wl-paste in this machine's real session type if possible (on a test
+  display only; the person's real clipboard is never touched), else an item for the person.
+- Key-to-screen latency and idle CPU with a large selection present.
+
+X5. (skipped) release.sh's two defects were finished in 5e35b67.
+
+X6. Docs and finishing
+- README: a selection and copy section (a table of mouse actions, the keys, the three settings, Shift in programs that
+  use the mouse); the line "No own text selection yet" deleted. Items in the settings panel's Terminal group.
+- DESIGN §2 and §3, CHANGELOG, HANDOFF (the PX line of the order to Done), NORTH-STAR, `docs/look/px-*` dumps (a
+  normal selection, a rectangle, a line with Hangul, inside the diff screen, three themes), §6.1 items for the person
+  (dragging with a real mouse, a touchpad, HiDPI, PRIMARY on Wayland).
+- Commits by unit of work, each passing the gate; before a push check-range 0 failing.
+- At the end run the 0.4.1 candidate check (P3c included; gate, run-all, the short soak on both engines, check-range
+  haetty-v0.4.0..<commit>, a release.sh dry run) and report the person's commands with the exact hash (including
+  `HAETTY_MINISIGN_KEY=~/.minisign/haetty.key`). If the 0.4.0 release is published, write as an item for the person
+  the procedure to check that "install 0.4.1 from the settings panel's Updates" works with a real release.
+
+Keep
+- No command to and no write into the stable instance, daemon, install folder or config. Processes: only dev and test
+  ones, by PID or their own socket. Tests in an isolated HOME; the installed real claude is never started.
+- Tests never touch the person's real clipboard (only Xvfb's).
+- Credentials, signing keys and gh auth are neither read nor changed.
+- No comments in new code (except external-spec behaviour, SAFETY, public items' doc comments, script usage headers).
+  Why it changed goes into the commit body, without a per-file list.
+- Commits: the user's git identity, no AI mark. At most two heavy jobs at a time. No Windows-only work; one line in
+  PW's list (on Windows it builds, and selection uses CLIPBOARD only, the least behaviour).
+
+Stop when
+- One of the two engines cannot give soft-wrapped lines or stable scrollback coordinates, so the engine structure
+  would have to change a lot (report the research and wait).
+- A protected-area change beyond the scope above is needed.
+
+Report
+- The research tables and the choice, each part's result and evidence, latency and CPU before and after, size before
+  and after, the candidate check table and the person's commands, what is unverified, the lines added to PW's list.
+
 ### PD. Claude Code's edit blocks redrawn side by side in place (point 1; the person's text of 2026-11-21)
 
 Background (the person): the "side-by-side diff" asked for from the start was not a separate screen (P3b's overlay)
