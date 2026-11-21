@@ -53,22 +53,25 @@ Stages:
   per tab, `CLAUDE_CODE_SSE_PORT`, the proposal in the diff overlay, `a`/`d` as the person; protocol 18; protected and
   §2, approved; checked with a real Claude Code 2.1.329); `release.sh` executable, its notes beside the assets.
 - **Order** (stage bundle PQ, the person's text of 2026-11-21: [STAGES.md](STAGES.md), "PQ", its common rules and
-  each stage's "Added in PQ"). "Next stage" is the first one below that is not done; at a stage's end its line moves
+  each stage's "Added in PQ"; PD and PT are under PQ). "Next stage" is the first one below that is not done; at a stage's end its line moves
   to "Done" (`docs/OPERATING.md`).
   1. **PX** text selection and copy: handed by the person to another session; its text is not in STAGES (ask the
      person for it). Not started when PQ was registered (2026-11-21). The person's note for it: X5 (the release.sh
      defect) is done in 5e35b67 and skipped; the candidate version is 0.4.1 and includes P3c.
-  2. **PK** three working rules and the rule–enforcement table (the skill texts are already in `skills/`, 7eab7a0,
-     sha256 checked). After PX is in main.
-  3. **P4** session browser (point 1): fork, names, `haetty sessions --json`; a `claude` started outside the proxy
-     (another `claude` first on PATH, an alias) found through its transcript, "integration off". Candidate 0.5.0.
-  4. **P5** Connections, `haetty mcp` (stdio, Observe) + install, the Rakazo research, `docs/CONNECT.md`. Candidate
-     0.6.0.
-  5. **P6** SSH, Tailscale (system OpenSSH), the Hosts screen. Candidate 0.7.0.
-  6. **P7·P8** remote daemon, delegation scope (design docs only, one session; then the person decides).
-  7. **P9** tidy-up (token tools, the auto-mode deny path), the proposal for P19 (a queued message to a busy worker,
-     §8.4 protected), C11 (merge helper). The Windows night-run items (`NOT-RUN (foreground)`, the hand-over) go to PW.
-  8. **PW** below (kramers does W-a only, then reports the list for the Windows PC).
+  2. **PD** Claude Code's edit blocks redrawn side by side in place (point 1; DESIGN §2 exception approved; D0's
+     research and 90 % match rate first, stop if Claude Code has its own setting). Candidate at the end.
+  3. **PK** three working rules and the rule–enforcement table (the skill texts are already in `skills/`, 7eab7a0,
+     sha256 checked).
+  4. **PT** messages and hand-over between sessions (point 3; §8.4's delivery path approved within its scope):
+     `haetty send`, `ask`, `handoff`, moving tabs between windows. Candidate at the end.
+  5. **P4** session browser (point 1), `haetty sessions --json`, a `claude` started outside the proxy found. Candidate.
+  6. **P5** Connections, `haetty mcp` (stdio, Observe) + install, the Rakazo research, `docs/CONNECT.md`. Candidate.
+  7. **P6** SSH, Tailscale (system OpenSSH), the Hosts screen. Candidate.
+  8. **P7·P8** remote daemon, delegation scope (design docs only, one session; then the person decides).
+  9. **P9** tidy-up (token tools, the auto-mode deny path), C11 (merge helper); P19 is done by PT. The Windows
+     night-run items (`NOT-RUN (foreground)`, the hand-over) go to PW.
+  10. **PW** below (kramers does W-a only, then reports the list for the Windows PC).
+  Versions: each candidate takes the next number then (PQ's 0.5.0–0.7.0 for P4–P6 predate PD and PT).
 - **PW: Windows catch-up (last).** Inputs, untouched until then: the branches `checks/windows-2026-11-17` (record
   `docs/checks/2026-11-17-windows.md`; its list "Not fixed here" is under "For kramers"), `windows/2026-11-17-fixes`
   (11 commits on `e8a48be`; three merge conflicts and their resolution in that record's "For kramers" table) and

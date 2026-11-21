@@ -291,6 +291,8 @@ examples, what a Rakazo bot would really become able to do.
   size, recommendation). Remove from HANDOFF's list of the person's checks (§6.1) the items automatic tests already
   replace.
 - Rewrite NORTH-STAR's "Where each point stands" table to the current state.
+- Changed by the person (2026-11-21): the P19 proposal above is replaced by stage PT (under PQ), which implements
+  the queued message within its approved scope.
 
 ## PH. The harness screen (points 3 and 1; the person's instruction of 2026-11-17)
 
@@ -576,6 +578,11 @@ Order
 
 A release candidate after each of P4, P5 and P6 ("Release" below).
 
+Changes to the order (the person, 2026-11-21, after the text above): "PD, the side-by-side diff inside the chat" goes
+after PX and before PK; "PT, messages between sessions" goes after PK and before P4; P9's proposal for P19 is replaced
+by PT. The order is now PX → PD → PK → PT → P4 → P5 → P6 → P7·P8 → P9 → PW. PD and PT also end with a release
+candidate (the version is the next number at that time).
+
 ### Common rules (every stage)
 
 - One stage is one session. No asking for confirmation midway. Where a criterion is written, follow it; where a
@@ -638,6 +645,112 @@ A release candidate after each of P4, P5 and P6 ("Release" below).
   settings panel's Updates (possible since 0.4.0). That install is the first one from a real release, so the report
   also says where the person looks if it fails (log paths) and gives the manual install command.
 - If the candidate check fails and the cause is not found within an hour, no tag commands: report the investigation.
+
+### PD. Claude Code's edit blocks redrawn side by side in place (point 1; the person's text of 2026-11-21)
+
+Background (the person): the "side-by-side diff" asked for from the start was not a separate screen (P3b's overlay)
+but the edit block Claude Code draws inside the conversation (red and green, one above the other) seen side by side,
+as OpenCode does.
+
+Go through to the end in one session without asking for confirmation midway. PQ's common rules apply.
+
+Approved
+- DESIGN §2 change: haetty redraws part of the program's screen (the lines of an edit block). Until now the rule was
+  "the program's cells are drawn as they are", so §2 gets this exception and its condition (the matching rule
+  below). Code and reference frames in one commit.
+- Up to three real claude runs (a dev instance's tab, haiku): to record an edit block's real output together with the
+  hook input at that time. In the recordings, prompts and file contents come from a test repository only.
+- Protected areas are not touched. Neither the hooks' content nor their output rule changes. Only the edit information
+  already received is used (the PreToolUse snapshot and PostToolUse of Edit, Write, MultiEdit, NotebookEdit).
+
+D0. Research and measurement (before code)
+- How OpenCode draws an edit inside the conversation side by side: the width threshold, line numbers, long lines
+  (cut / wrapped), context lines, new and deleted files, colours. Checked in the official repository and docs; screen
+  examples recorded.
+- Collect every shape of the edit block Claude Code draws, in the installed version: the normal screen and the
+  full-screen renderer (`CLAUDE_CODE_NO_FLICKER=1`); Edit / MultiEdit / Write (new file) / NotebookEdit; the block
+  inside a permission question and the block after it ran; a block folded because it is long ("… +N lines (ctrl+o to
+  expand)"); the block inside the Ctrl+O transcript view; wrapped long lines; tab characters; Hangul and wide
+  characters; a narrow window; the block an `edit()` call of Code Mode leaves. A table of each case's header line,
+  line-number column, marker characters, background colours, indentation.
+- Whether Claude Code has a side-by-side diff setting for the terminal: checked in the installed version's settings
+  documentation, `/config` and the executable's strings. If it has one, this stage becomes "point to that setting in
+  the settings panel and the docs", and the implementation below is not done (report and stop).
+- Match rate: with the real output and hook input collected above, measure what % of "find the block and match it
+  line by line" succeeds. At least 50 edit blocks (the three real runs + saved Claude Code output recordings). Under
+  90 %: do not implement; stop with the table of the failed cases.
+
+D1. Finding and matching (the condition that must pass before anything is drawn)
+- Block candidates: in the screen (scrollback included), a group of lines under a header line that have the
+  line-number column and the background colour.
+- Matching: the deleted, inserted and context lines of a candidate must match one of that tab's edit records exactly,
+  line by line (wrapped long lines joined before comparing, trailing spaces by the screen's rule). If no edit matches,
+  or more than one does, nothing is touched. A block only partly on screen (cut by scrolling, folded) is handled only
+  for its visible part, and only when that part matches contiguously.
+- Matching uses only the values haetty received through hooks and the screen's cells. Files are not read again.
+- Results are cached by a hash of the line contents. If the screen did not change, nothing is computed again. Time per
+  frame has a cap (for example 1 ms); over it, that frame is drawn as it was.
+- Files that look secret (the existing edit snapshot's exclusion rule) are not handled.
+
+D2. Redrawing
+- Draw only inside the range of lines the block took. The number of lines, the terminal size, the bytes the program
+  receives and the snapshot's content do not change (resize log 0 lines, program input 0 bytes, checked by e2e).
+- Layout: before on the left, after on the right, a dim vertical line in the middle. Line numbers on both sides.
+  Changed lines paired on the same row; a line on one side only leaves the other side empty. Context lines the same on
+  both sides. The changed part inside a line gets a deeper background (by word; by line only if that is too costly).
+- One logical line is one screen row. A line wider than the half width is not wrapped but cut with … at the end. That
+  way the rows needed never exceed the original block's rows. Rows left over are blanked with the body background.
+- Colours: the theme's diff colours (based on colours 2 and 1, as the overlay uses now) and dim grey. No new colours.
+- At the right end of the block's header line one dim mark (for example "⇄"): it means haetty redrew this block.
+  Clicking it, or a chosen key over the block, turns only that block back to its original shape.
+- Width: only when the program area is at least `inline-diff-min-cols` (default 110) columns. The same threshold when
+  a docked sidebar makes it narrower. Below it, as it was.
+- A new file (Write) and a full deletion have nothing to split, so they stay as they were.
+- A block inside a permission question is redrawn by the same rules, but the question's option lines and the borders
+  above and below them are never covered. While redrawn, the permission-wait mark and the input hold stay as they
+  are (one case added to `tests/permission.rs`; no code change, a check only).
+- Text selection (PX): selecting and copying over a redrawn block gives the text of the side seen on screen (dragging
+  on the left gives the before, on the right the after; line numbers and the vertical line are not copied; a cut line
+  gives the whole line). If PX is not in main yet, this item is postponed until after PX, with one line written.
+- Clicking the block's file name opens P3b's overlay on that file (to see a large change wide).
+
+D3. Setting and turning it off
+- `inline-diff = split | unified` (default split: the feature the person asked for). The settings panel's Claude Code
+  group, palette "Toggle inline diff layout". With unified nothing is redrawn.
+- The README says clearly: this is haetty redrawing on the screen, Claude Code's behaviour and output do not change;
+  when matching fails the original shape shows; if Claude Code changes the block's shape, the original shape may show
+  for a while.
+- The text `haetty screen` and Observe clients read is the original screen (only the window's picture is redrawn).
+
+D4. Tests
+- Replay test: replay the real output and hook input collected in D0 as they are, and check for each block "match
+  succeeds → redrawn" and "match fails → untouched". The set goes into the repository (test repository content only)
+  so it can be run again when the Claude Code version changes. How to build the set is written in the docs.
+- Counter-examples: a screen one character different from the edit record, two edits with the same content, a block
+  partly visible, a hook that arrives late (drawn as it was first, redrawn after it arrives), a shell tab where another
+  program happened to print similar lines (no edit record, so untouched), both engines.
+- Renderer: reference frames (normal, in-line highlight, cut long line, Hangul, folded block, inside a permission
+  question); the idle-screen grey-only check stays 5/5 (diff colours only while a block is on screen).
+- Xvfb e2e `inline-diff.sh`: a fake claude prints blocks of the real shape and the hooks; the side-by-side layout
+  checked in the window's frame; the mark clicked back to the original; the unified setting; a narrow window; 0
+  resize lines; 0 input bytes.
+- Performance: in a long conversation with many edit blocks (scrollback full), key-to-screen latency and idle CPU
+  before and after.
+- One real claude run (within the approved three): two edits asked for in a dev instance, checked with frame dumps.
+
+D5. Docs and finishing
+- DESIGN §2's exception and condition, "as built" in §13, README, CHANGELOG, HANDOFF, NORTH-STAR (point 1's
+  "side-by-side diff in the chat" is filled by this stage; P3b is written as "a separate screen").
+- `docs/look/pd-*`: the same edit's original shape and side-by-side shape next to each other, in-line highlight, a
+  long line, inside a permission question, with a docked sidebar, the narrow case left as it was, three themes.
+- At the end, the candidate check and the commands for the person (the version is the next number at that time).
+- PW's list: Windows reference frames, the Windows version of `inline-diff.sh`.
+
+Stop when
+- Claude Code has an official setting that does the same.
+- D0's match rate is under 90 %.
+- In the full-screen renderer the block's range of lines cannot be known reliably (report a plan that supports the
+  normal screen only, with its limits, and wait).
 
 ### PK. Three working rules and the rule–enforcement table
 
@@ -750,6 +863,34 @@ Keep
   ones, by PID or their own socket.
 - Protected areas are not touched. If it becomes necessary, stop and report.
 - Commits: the user's git identity, no AI mark and no Co-authored-by. Past history is not rewritten.
+
+### PT. Messages and hand-over between sessions (point 3; the person's text of 2026-11-21)
+
+Approved (protected area §8.4's delivery path, up to this scope): a queued message through which haetty delivers text
+to a session. Only as `Origin::Program`, only after the receiving session's turn has ended, never while it waits for a
+permission question. No path that becomes an answer to a permission question is made. DESIGN §2 change (the message
+marks on the tab and in the sidebar, the inbox line).
+- `haetty send SESSION|WORKER "text" [--file F]`: queued and delivered at the end of the next turn. Cancel
+  (`haetty send --cancel ID`), list what is waiting. One line each in the sender's and the receiver's Log (the body is
+  not kept in log files; it shows only on screen).
+- `haetty ask "question"`: a worker asks the coordinating session or the person and waits for the answer (time limit,
+  exit code). The sidebar's Workers line shows "t3 asks" and the question's first line. The answer goes by
+  `haetty send`, or the person writes it with Enter on that line.
+- `haetty handoff [--to new-tab|new-window|worktree] [--model M]`: has the current session write a hand-over summary
+  (what was done, what is left, the files involved, the end condition) and starts a new session with that summary as
+  its first prompt. The summary stays as a file that can be opened from the sidebar. The original session and the new
+  one show as parent and child in the sidebar. The new session's report is received by the original with
+  `wait worker`.
+- `send` and `ask` also work between two equal tabs (not only coordinator and worker). The receiving tab sees in its
+  own sidebar who sent it. Each tab can turn on "do not receive messages"; the default is receive.
+- The window: moving a tab to another window (palette "Move tab to new window", attaching a detached tab to an existing
+  window). Two windows share the view of one daemon's sessions.
+- Cutting off: "Stop messages to this tab" in the sidebar or palette empties the queue and blocks it in one step.
+- Tests: no delivery during a permission wait (0 bytes received by the program), arrival at the turn's end in one
+  piece, cancel, do-not-receive, the Observe role cannot send, the Xvfb e2e `messages.sh`, up to two real claude runs
+  (haiku: one tab asks another and continues with the answer).
+- These tools are not put into `haetty mcp` (P5) (what external tools may send is decided by the person in P8).
+- At the end, a release candidate.
 
 The stages P4–P9 and PW: their PQ text is under each section, "Added in PQ".
 
