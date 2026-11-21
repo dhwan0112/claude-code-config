@@ -72,5 +72,5 @@ kill "$(cat $W/client.pid)"; sleep 0.5; typ "exit"; sleep 1.5
 [ -z "$(ls $W/claude/ide 2>/dev/null)" ] && ok "the tab closed: no lock file" || bad "lock gone" "$(ls $W/claude/ide)"
 stop
 grep -q "two 1\|two 2\|fixed" $W/gui.log && bad "logs" "file text in the GUI log" || ok "no file text in the GUI log"
-echo "ide: $P passed, $F failed"
+echo "TOTAL ide.sh: $P passed, $F failed"
 [ $F = 0 ]

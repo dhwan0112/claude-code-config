@@ -145,5 +145,5 @@ shot diff
 key Escape; key Escape
 [ "$(grid)" = "$g0" ] && ok "the grid is still $g0" || bad "grid end" "$(grid)"
 stop
-echo "select: $P passed, $F failed"
+echo "TOTAL select.sh: $P passed, $F failed"
 [ $F = 0 ]

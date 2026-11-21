@@ -13,3 +13,4 @@ PROBE=$REPO/crates/haetty-core/tests/helpers/probe.py
 [ -x "$BIN" ] || { echo "lib.sh: no $BIN (cargo build --release first)" >&2; exit 3; }
 # Claude Code's own markers must not reach programs started here (they would count as child sessions).
 for _v in $(env | grep -oE '^(CLAUDE_CODE_[A-Z_]*|CLAUDECODE|CLAUDE_[A-Z_]*SESSION[A-Z_]*)='); do unset "${_v%=}"; done
+unset HAETTY_PROXIED HAETTY_PROXY_DIR HAETTY_CLAUDE_SETTINGS HAETTY_SESSION_ID HAETTY_IDE_PORT
