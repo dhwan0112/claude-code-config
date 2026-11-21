@@ -168,7 +168,10 @@ fn diff_image(actual: &[u32], mask: &[bool]) -> Vec<u32> {
 /// A `cols` × `rows` screen with `lines` from the top (a leading `$ ` in
 /// the prompt colour) and the cursor.
 fn screen(cols: u16, rows: u16, lines: &[&str], cursor: Option<(u16, u16)>) -> Snapshot {
-    let t = theme();
+    screen_in(&theme(), cols, rows, lines, cursor)
+}
+
+fn screen_in(t: &Theme, cols: u16, rows: u16, lines: &[&str], cursor: Option<(u16, u16)>) -> Snapshot {
     let (fg, bg) = (t.foreground, t.background);
     let mut grid = vec![vec![Cell::default(); cols as usize]; rows as usize];
     for (row, line) in grid.iter_mut().zip(lines) {
@@ -544,15 +547,7 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         let snap = Compose { cols, rows, diff: Some(&view), ..self::compose(&s, &acc) }.build();
         out.push((name, snap, None, None));
     }
-    let lines = [
-        "$ echo 안녕하세요 hello-world",
-        "안녕하세요 hello-world",
-        "$ ls -l",
-        "drwxr-xr-x 5 kim kim 4096 Nov 21 crates",
-        "-rw-r--r-- 1 kim kim  123 Nov 21 README.md",
-        "$ ",
-    ];
-    let s = screen(COLS, ROWS, &lines, Some((2, 5)));
+    let s = screen(COLS, ROWS, &SELECT_LINES, Some((2, 5)));
     let point = |row, col| crate::selection::Point { row, col };
     let snap = selected(compose(&s).build(), (point(0, 7), point(1, 15)), false);
     out.push(("selection", snap, None, None));
@@ -572,6 +567,15 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
     ));
     out
 }
+
+const SELECT_LINES: [&str; 6] = [
+    "$ echo 안녕하세요 hello-world",
+    "안녕하세요 hello-world",
+    "$ ls -l",
+    "drwxr-xr-x 5 kim kim 4096 Nov 21 crates",
+    "-rw-r--r-- 1 kim kim  123 Nov 21 README.md",
+    "$ ",
+];
 
 const DIFF_BEFORE: &str = "fn main() {\n    let n = 3;\n    println!(\"{n}\");\n    run(n);\n}\n\nfn run(n: u32) {\n    for i in 0..n {\n        step(i);\n    }\n}\n";
 const DIFF_AFTER: &str = "fn main() {\n    let n = 4;\n    println!(\"n = {n}\");\n    run(n);\n}\n\nfn run(n: u32) {\n    for i in 0..n {\n        step(i);\n        log(i);\n    }\n}\n";
@@ -913,4 +917,38 @@ fn update_mark_dumps() {
         let cv = render(&mut painter, &snap, None, None);
         std::fs::write(dir.join(format!("{name}.png")), png_wh(cv.width, cv.height, &rgba(&cv.pixels))).unwrap();
     }
+}
+
+/// Stage PX's selection in the three built-in themes (a stream over a line with Hangul, a rectangle) and inside the
+/// diff overlay. `HAETTY_LOOK_DIR=docs/look cargo test -p haetty-gui update_selection_dumps -- --ignored`
+#[test]
+#[ignore]
+fn update_selection_dumps() {
+    let Some(dir) = std::env::var_os("HAETTY_LOOK_DIR").map(PathBuf::from) else { return };
+    let Ok(fonts) = Fonts::load(None) else { return };
+    let mut painter = Painter::new(fonts, PX);
+    let point = |row, col| crate::selection::Point { row, col };
+    for (name, slug) in [
+        ("haetty classic", "haetty-classic"),
+        ("IBM 5153 CGA", "ibm-5153-cga"),
+        ("IBM 5153 CGA (Black)", "ibm-5153-cga-black"),
+    ] {
+        let t = Theme::builtin(name).expect("built in");
+        painter.set_look(Look::of(&t));
+        let s = screen_in(&t, COLS, ROWS, &SELECT_LINES, Some((2, 5)));
+        let stream = selected(compose(&s, &t.palette).build(), (point(0, 7), point(1, 15)), false);
+        let rect = selected(compose(&s, &t.palette).build(), (point(3, 11), point(4, 25)), true);
+        for (kind, snap) in [("stream", stream), ("rect", rect)] {
+            let cv = render(&mut painter, &snap, None, None);
+            let png = png_wh(cv.width, cv.height, &rgba(&cv.pixels));
+            std::fs::write(dir.join(format!("px-{kind}-{slug}.png")), png).unwrap();
+        }
+    }
+    let t = theme();
+    painter.set_look(Look::of(&t));
+    let view = diff_view();
+    let s = screen(110, 14, &["$ cargo test"], Some((0, 1)));
+    let diff = Compose { cols: 110, rows: 14, diff: Some(&view), ..compose(&s, &t.palette) }.build();
+    let cv = render(&mut painter, &selected(diff, (point(3, 60), point(5, 80)), false), None, None);
+    std::fs::write(dir.join("px-diff.png"), png_wh(cv.width, cv.height, &rgba(&cv.pixels))).unwrap();
 }

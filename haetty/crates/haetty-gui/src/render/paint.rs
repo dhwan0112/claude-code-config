@@ -299,7 +299,7 @@ impl Painter {
             cv.fill(Rect::new(0, y0, origin.0, h), side_color(snap, 0, row, pad));
             cv.fill(Rect::new(right, y0, cv.width as i32 - right, h), side_color(snap, snap.cols - 1, row, pad));
             for x in 0..snap.cols {
-                cv.fill(Rect::new(origin.0 + x as i32 * m.cell_w, y0, m.cell_w, h), colors(snap, x, row).1);
+                cv.fill(Rect::new(origin.0 + x as i32 * m.cell_w, y0, m.cell_w, h), cell_bg(snap, x, row));
             }
         } else {
             cv.fill(band, snap.default_bg);
@@ -675,7 +675,18 @@ fn side_color(snap: &Snapshot, x: u16, y: u16, pad: PaddingStyle) -> Rgb {
     }
     match pad.color {
         PaddingColor::Background => snap.default_bg,
-        PaddingColor::Extend | PaddingColor::ExtendAlways => colors(snap, x, y).1,
+        PaddingColor::Extend | PaddingColor::ExtendAlways => cell_bg(snap, x, y),
+    }
+}
+
+/// The cell's own background for padding that extends it: inverse applies, haetty's selection does not (it belongs
+/// to the cells, not to the window's edge).
+fn cell_bg(snap: &Snapshot, x: u16, y: u16) -> Rgb {
+    let c = snap.cell(x, y).expect("cell");
+    if c.flags.has(CellFlags::INVERSE) {
+        c.fg.unwrap_or(snap.default_fg)
+    } else {
+        c.bg.unwrap_or(snap.default_bg)
     }
 }
 
@@ -694,7 +705,7 @@ fn extends_vertically(snap: &Snapshot, y: u16, mode: PaddingColor) -> bool {
             }
             !(0..snap.cols).any(|x| {
                 let c = snap.cell(x, y).expect("cell");
-                let default_bg = c.bg.is_none() && c.flags.has(CellFlags::INVERSE) == c.flags.has(CellFlags::SELECTED);
+                let default_bg = c.bg.is_none() && !c.flags.has(CellFlags::INVERSE);
                 default_bg || c.text.chars().any(is_powerline)
             })
         }
@@ -707,6 +718,7 @@ fn is_powerline(c: char) -> bool {
 
 /// Foreground and background of cell (x, y) after inverse, selection, faint
 /// and invisible (selection without theme colours: swapped).
+#[cfg(test)]
 pub fn colors(snap: &Snapshot, x: u16, y: u16) -> (Rgb, Rgb) {
     colors_with(snap, x, y, &Look::default())
 }
@@ -1164,6 +1176,21 @@ mod tests {
         assert_eq!(cv.get(0, 0), bg);
         assert_eq!(cv.get(cv.width as i32 - 1, cv.height as i32 - 1), bg);
         assert_eq!(cv.get(0, 6), bg);
+    }
+
+    #[test]
+    fn padding_extend_takes_the_cells_colour_not_the_selection() {
+        let Some(mut p) = painter() else { return };
+        let mut s = two_by_two();
+        for c in s.cells.iter_mut() {
+            c.flags.0 |= CellFlags::SELECTED;
+        }
+        let plain = padded(&mut p, &two_by_two(), PaddingColor::Extend, false, 6);
+        let selected = padded(&mut p, &s, PaddingColor::Extend, false, 6);
+        let (w, h) = (plain.width as i32, plain.height as i32);
+        for (x, y) in [(0, 6), (w - 1, 6), (6, 0), (w - 1, 0), (0, h - 1)] {
+            assert_eq!(selected.get(x, y), plain.get(x, y), "padding at {x},{y}");
+        }
     }
 
     #[test]
