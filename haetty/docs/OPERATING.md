@@ -29,6 +29,9 @@ a time. A commit message file lives outside the repository (the session folder o
 2. Read only the part of `docs/DESIGN.md` the stage needs (the index points to `docs/design/`).
 3. Check the state before changing anything: `git fetch`, `git -C ~/projects/claude-code-config log --oneline -3`,
    `git worktree list`, and the logs the in-progress line names. If a stage is in progress, finish it or ask.
+4. When the person says "next stage", do the first stage in HANDOFF's order ("Next session") that is not done. A
+   proposal to change the order goes into the report; the session does not change the order itself (stage bundle PQ,
+   `docs/STAGES.md`).
 
 ## One stage
 

@@ -117,6 +117,31 @@ Research: OpenCode's session features (list, switch, names, child sessions, reve
 - Fork (the current conversation as a branch in a new tab); name, pin, hide (recorded in haetty's state folder only).
 - `haetty sessions --json` (observe only).
 
+### Added in PQ (2026-11-21)
+
+Approved: DESIGN §2 change (the session browser overlay, the sidebar's Sessions line). A read-only query added to the
+protocol.
+- Ways to open it: palette "Sessions", one key (chosen from the conflict table), a click on the sidebar's top line.
+- One row of the list: name, project (repository:branch), last activity, state (open / detached / closed), model,
+  token total, number of agents. Grouped by project, most recent first inside a group. Typing filters.
+- What is done here: Enter goes to the open tab or continues a closed conversation in a new tab with `--resume`. `f`
+  forks (only if confirmed as Claude Code's official way; otherwise left out and recorded), `r` renames, `p` pins, `h`
+  hides, `d` shows that conversation's last change in the diff screen. One conversation is never continued in two
+  tabs at once (the current rule).
+- Close today's hole: a claude started outside the proxy (another claude first on PATH, an alias, an absolute path) is
+  also found through its transcript file and shown in the list as "integration off".
+- Workers' and subagents' conversations are shown folded under their parent (the same source as PH's agent table).
+- Transcript files are only read. Bodies are not shown (the name and the start of the first user message at most).
+  The index is refreshed by file size and modification time; measure opening time and memory on large transcripts
+  (hundreds of MB) (budget: first display within 200 ms with 500 conversations, index memory +10 MB at most; if not
+  met, the numbers and the reason).
+- `haetty sessions [--json]` (Observe; for a session with observing off, only whether it is open).
+- Tests: a set of fake transcript files (a large one, broken lines, one in progress, one without a name), the Xvfb e2e
+  `sessions.sh`, reference frames.
+- Stop when: the transcript format differs between the documentation and measurement so that more than half the list
+  cannot be built.
+- At the end, a release candidate (0.5.0).
+
 ## P5. Connecting tools (points 1 and 4)
 
 Research: how OpenCode attaches MCP servers and other tools; Claude Code's MCP commands and scopes (user, project,
@@ -135,6 +160,32 @@ local); how their state can be known.
 - One page on how other tools attach to haetty. For tools that only take HTTPS (Rakazo …): only what a bridge would
   need, written down.
 
+### Added in PQ (2026-11-21)
+
+Approved: DESIGN §2 change (the Connections overlay, the sidebar's Tools section). Protected area: up to `haetty mcp`
+connecting with the Observe role only and sessions with observing off being invisible. Up to two real claude runs (a
+one-sentence task that checks the MCP server is attached, haiku).
+- The Connections screen: the MCP servers registered for the current tab's project (scope user / project / local,
+  state), the number of skill and subagent definitions, the number of hooks (names only; contents not shown). If a
+  state cannot be known, it says "unknown" (no guessing).
+- Adding and removing never edit config files directly. Claude Code's official command is shown on screen first, and
+  Enter runs it in a new tab.
+- `haetty mcp` (stdio, no network, JSON-RPC written by hand; no new dependency). Tools are read-only: session list, the
+  screen text of sessions that allow observing, following events, waiting for a condition, the worker table, the
+  agent table, part of a saved run log. No tool that sends input, no tool that makes tasks (after P8's decision). Tool
+  descriptions short; measure and write down the tokens the tool list takes in Claude Code's context.
+- `haetty mcp install` / `uninstall`: show the official registration command, Enter runs it (scope choice).
+- The connection with Rakazo (point 4's first step): research, from Rakazo's official docs and repository, whether
+  Rakazo as an MCP client can attach `haetty mcp`. If stdio works, write a configuration example in the docs; if it
+  only takes HTTPS, write as design only what a bridge needs (local-only address, token, open only inside Tailscale).
+  Do not connect to or install anything on Rakazo or pauli. Write in the report, as a sequence of commands, what the
+  person must do on Rakazo's side.
+- One page "how other tools attach to haetty" (`docs/CONNECT.md`): the command line (status, events, screen, wait,
+  workers, agents, sessions), MCP, the event log's format, roles and observe permission.
+- Tests: the test attaches to the MCP server as a client and checks every tool (sessions with observing off
+  invisible, no input tool, bad requests), fuzzing, the Xvfb e2e `connections.sh`.
+- At the end, a release candidate (0.6.0).
+
 ## P6. SSH and Tailscale (point 2)
 
 Principles: the connection is the system's OpenSSH. haetty has no SSH implementation, never handles or stores keys,
@@ -152,6 +203,30 @@ only queries.
 - Tests: an isolated test sshd (temporary port, temporary keys). The person's real `~/.ssh` and `known_hosts` are
   neither read nor written by tests.
 
+### Added in PQ (2026-11-21)
+
+Approved: DESIGN §2 change (the Hosts overlay, the host shown in the tab name and sidebar, the drop notice line).
+- The principles as in the original: only the system's OpenSSH. No keys, passwords or passphrases handled.
+  `~/.ssh/config` only read. Agent forwarding never turned on by haetty. tailscale: read-only queries only.
+- The Hosts screen: the hosts of `~/.ssh/config` and the devices of `tailscale status` in one list (the same machine
+  merged into one row; online or not, Tailscale SSH or not). Typing filters. Enter connects in a new tab, `c` is a
+  connection that runs claude on that host at once (`ssh-host.<name>.command` if set).
+- Make clear how much of haetty works in a remote tab: the terminal, text selection and OSC 52 work. A remote claude
+  has no integration (hooks, sidebar) — one line in the sidebar, "remote: no integration (P7)". Even if haetty is
+  installed on the remote, this stage does not attach to it.
+- Environment: how `COLORTERM` and `TERM_PROGRAM` reach the remote shell (prefer ways that need no remote sshd
+  setting), the `TERM` fallback on a remote without the terminfo entry. Check 24-bit colour and Hangul width with a
+  connection to localhost.
+- Drops: the tab stays, "connection lost · Enter to reconnect". When a tab set is restored, one reconnect. ServerAlive
+  values follow the person's ssh config; haetty does not override them.
+- `haetty ssh HOST`, palette "SSH: connect", settings `ssh-host.<name>.dir` / `.command`.
+- The person's machines (reference only; never connected to): kramers and pauli are linked by Tailscale and the Rakazo
+  server runs on pauli. Tests only with an isolated sshd (temporary port, temporary keys, temporary known_hosts), and
+  tailscale with fake status output. The real connection check is left as an item for the person.
+- Tests: `ssh -G` resolution (Include, wildcard exclusion, Match), merging the two sources, drop and reconnect,
+  restore, the Xvfb e2e `ssh.sh`.
+- At the end, a release candidate (0.7.0).
+
 ## P7. Remote daemon design (points 2 and 3; docs only)
 
 - Goal: attach to the haetty daemon on a remote machine over SSH and use its sessions as tabs of the local window;
@@ -165,6 +240,18 @@ only queries.
   (github.com/artyomsv/quil) for comparison.
 - Write the implementation stages and the test method, then stop. Implementation after the person reads the design.
 
+### Added in PQ (2026-11-21): P7 and P8 in one session, docs only
+
+No code is changed. The output is two design documents (`docs/design/`) and a list of what the person decides.
+- P7: the original items + the facts checked in P6 (passing the environment, drop detection). The path by which a
+  remote claude's integration shows in the local sidebar, the path for reading the remote's agent records, how the
+  session browser merges several machines, different protocol versions, remote install (only by the person's
+  command), splitting the implementation into stages with each stage's test method, the expected size.
+- P8: the original items + the result of P5's Rakazo research (under P8, "Added in PQ").
+- At the end, "What the person decides", numbered: each item with the options, the recommendation and the
+  implementation stages that would follow the decision. After this session "next stage" goes to P9 (P7's and P8's
+  implementation is instructed separately after the person decides).
+
 ## P8. Scope of integration (point 4; docs only)
 
 - A design for a "delegate" role, through which another tool (e.g. a Rakazo bot) sends input to a session the person
@@ -172,6 +259,14 @@ only queries.
   permission prompt, …); a mark on the tab and in the sidebar while delegated; a record; cut off at once. Side by side
   with the observe-only option, with pros and cons. Base option: once switched on, no per-action approval inside its
   scope. A protected area: the person decides.
+
+### Added in PQ (2026-11-21)
+
+Done in the same session as P7 (under P7, "Added in PQ"). The original items + the result of P5's Rakazo research.
+The options side by side: (a) observe only (now), (b) a delegate role (switched on per session by the person, text
+input only, never an answer to a permission question, shown on the tab and in the sidebar, recorded, cut off at once),
+(c) only making tasks allowed (`haetty task new` as an MCP tool). For each option, the risks and, with concrete
+examples, what a Rakazo bot would really become able to do.
 
 ## P9. Remaining tidy-up (small stages, any order)
 
@@ -183,6 +278,19 @@ only queries.
   unverified.
 - The auto-mode deny path (K1's open item): look with a real Claude Code, minimally. If the rules must change, propose
   only.
+
+### Added in PQ (2026-11-21)
+
+- Of the original's three items, the Windows night-run item moves to PW (not done here).
+- C11 merge helper: `haetty merge TASK` (rebase, fast-forward, the gate in a slot) — on a conflict it stops and says
+  so in one line. It never pushes to main.
+- P19 queued message to a busy worker: a protected area (§8.4), so not implemented; only a proposal is written
+  (delivered when the turn ends, `Origin::Program`, not delivered during a permission wait, cancel, display). If the
+  person approves, it is instructed separately.
+- Gather into one table what the stages so far wrote as "left as a proposal" (source record, one-line summary, rough
+  size, recommendation). Remove from HANDOFF's list of the person's checks (§6.1) the items automatic tests already
+  replace.
+- Rewrite NORTH-STAR's "Where each point stands" table to the current state.
 
 ## PH. The harness screen (points 3 and 1; the person's instruction of 2026-11-17)
 
@@ -431,8 +539,250 @@ Report: the research table and the choice, each part's result and evidence, star
 size, the candidate check table and the commands for the person, what is unverified, the lines added to PW's list, the
 next stage proposed.
 
+## PQ. All the remaining work: PK → P4 → P5 → P6 → P7·P8 → P9 → PW (the person's text of 2026-11-21)
+
+The person pastes this text once. The session that received it does (a) register it in the repository and (b) finish
+the first stage, PK. After that, each time the person says only "next stage", the session does the next one in the
+order below.
+
+Before starting
+- PX (text selection and copy) was handed to another session separately. If HANDOFF has "In progress: stage px" or
+  the branch or worktree `haetty/px` is alive, this session does only (a), in its own worktree, and starts (b) after PX
+  is in main. Two sessions never use the same checkout. If PX has not started yet, PX goes to the front of this order
+  (its text is not in STAGES, so the session reports and asks the person for it).
+- At registration (2026-11-21) PX had not started: no `haetty/px` branch or worktree, no in-progress line. PX was put
+  first in HANDOFF's order and (b) was not started. The person's note for PX, sent to the same session just before
+  this text: "X5 (the release.sh defect) is done in 5e35b67, so it is skipped. The candidate version is 0.4.1 and it
+  includes P3c." PK's three skill texts were written at registration (`skills/*/SKILL.md`, sha256 as below), since
+  this text is pasted only once.
+
+(a) Registration
+- The "Common rules" of this text and the text of each stage go into `docs/STAGES.md` under "PQ" (in English, without
+  changing the meaning; the existing P4–P9 sections are not deleted, only "Added in PQ" is appended under each). The
+  "skill texts" at the very end are not copied into STAGES (writing them as files is enough).
+- HANDOFF "Next session": the order becomes the order below. The line "Next (proposed): P4 … the P2 way" is deleted.
+  At the end of each stage its line moves to "Done"; that is how the next session knows its turn.
+- OPERATING gets: "When the person says 'next stage', do the first stage in HANDOFF's order that is not done. A
+  proposal to change the order goes into the report; the session does not change the order itself."
+
+Order
+1. PK: three working rules (skills) and the rule–enforcement table
+2. P4: session browser
+3. P5: tool connections screen and `haetty mcp`
+4. P6: SSH and Tailscale
+5. P7·P8: remote daemon design, delegation scope design (docs only, one session)
+6. P9: the remaining tidy-up + a proposal for P19 (a queued message to a busy worker) + C11 (merge helper)
+7. PW: Windows catch-up (last)
+
+A release candidate after each of P4, P5 and P6 ("Release" below).
+
+### Common rules (every stage)
+
+- One stage is one session. No asking for confirmation midway. Where a criterion is written, follow it; where a
+  choice is needed, take the option closest to the four points and write it under "Choices and alternatives". Stop only
+  in a stage's "Stop when" cases and the ones written here. If the session limit is hit, push what is finished and
+  write in HANDOFF where to continue; the stage continues at the next "next stage".
+- How the work is done: the stage session does it itself. Research that can be split and independent implementation
+  go to Claude Code subagents (haiku or sonnet; subagents do not wait for the person's answer). haetty's
+  coordinating session + worker tabs (the P2 way) needs the person to answer every worker's trust and permission
+  question, so it is used only in a session where the person has said they are present.
+- Research from official documentation and real behaviour, with sources written down. Facts about Claude Code are
+  checked against the installed version's documentation, `--help` and the strings of its executable; a feature that
+  relies on undocumented behaviour is off by default.
+- Approved in advance: the DESIGN §2 changes written in each stage (code and reference frames in one commit, "DESIGN §2
+  change, approved") and protected-area changes within the written scope (a separate commit, "protected area,
+  approved" and the scope). Beyond that scope: propose and stop. Adding a read-only query to the role table is
+  approved in every stage, but only under the same rule as the existing line "Control always, Observe only for
+  sessions that allow observing".
+- Never changed: hooks and the status line are observe-only (no output, exit 0). haetty, its command line, its MCP
+  server and remote clients never answer Claude Code's permission questions (only a key the person pressed in the
+  window is an answer). Credentials, OAuth tokens, SSH keys and passwords, the release signing key and gh auth are
+  never read, stored or passed on. Always run the claude the user installed, with its arguments unchanged (except the
+  observing `--settings`). No typed text, prompts, file contents or selected text in logs.
+- Stable: no command to and no write into this machine's stable haetty, its daemon, `~/.local/opt/haetty` or the
+  stable config. Installing, replacing, applying updates, tagging, signing and publishing releases are the person's.
+  Processes: only dev and test ones, by PID or their own socket (never killed by name).
+- Tests: only under an isolated HOME and `HAETTY_TEST_TMP`. Tests never start the installed real claude (only where a
+  stage allows "N real runs": inside a dev instance's tab, with haiku). Folders a test made are removed by the test
+  (read-only ones included). The person's real `~/.ssh`, `known_hosts`, clipboard, `~/.claude/settings.json` and shell
+  config are neither read nor written.
+- The terminal itself (engine, soaks, look polishing, release tools): defect fixes only.
+- Windows: no Windows-only work before PW. The gate's Windows build and clippy stay. A new feature gets the least that
+  builds on Windows (a fallback or "not supported on Windows yet") and one line in HANDOFF's PW list.
+- Code: no comments in new or changed code (except external-spec behaviour, SAFETY, public items' doc comments, script
+  usage headers). Why it changed goes into the commit body and `docs/history/`, the body without a per-file list. A
+  mistake made the second time is blocked by a check, not by text; a tool that would grow bigger than the work itself
+  is not built but written as a proposal. (After PK, the three skills are the basis of this line.)
+- Commits: the user's git identity, no AI mark and no Co-authored-by. Each commit passes the gate on its own. Before
+  a push `tools/check-range.sh origin/main..HEAD` 0 failing. No lines added to known-gate-failures (propose if
+  needed). Past history is not rewritten. At most two heavy jobs at a time.
+- No new dependency by default. If one is really needed, measure the dist size before and after; over +1 MB for the
+  two targets together, do not add it and report. The dist budget is 12 MB Linux, 10 MB Windows.
+- The look (DESIGN §2): events do not change the layout. No accent colour on an idle screen. No pop-ups, sounds or
+  animations. A new screen uses the same frame and keys as the existing overlays (palette, settings panel, diff):
+  ↑/↓, Enter, Esc, / search. Each new screen leaves dumps in `docs/look/` (wide window, narrow window, three themes).
+- The report at the end of a stage (short): the points moved, what was done, the evidence (commands and results, dump
+  paths), what is unverified, the lines added to PW's list, choices and alternatives, what the person must do (commands
+  ready to paste as they are, without placeholders).
+
+### Release (at the end of each of P4, P5, P6)
+
+- Raise the version (0.5.0 after P4, 0.6.0 after P5, 0.7.0 after P6; if PX has already used 0.4.1, from the one after
+  it). CHANGELOG gets the stage and the fixes in between, and the Windows line (unverified, known problems).
+- The whole Linux candidate check: the gate, run-all, the short soak on both engines (task failures 0), the install
+  tool's own test, check-range <previous tag>..<commit>, a `release.sh <commit> --out DIR` dry run. What runs without
+  a display and with the session marker variables cleared is as in PM and PI. The stable processes' PID and start time
+  checked before and after.
+- The report gives the commands for the person with the exact hash (including
+  `HAETTY_MINISIGN_KEY=~/.minisign/haetty.key`): tag → release.sh → publish the draft. Installing is done from the
+  settings panel's Updates (possible since 0.4.0). That install is the first one from a real release, so the report
+  also says where the person looks if it fails (log paths) and gives the manual install command.
+- If the candidate check fails and the cause is not found within an hour, no tag commands: report the investigation.
+
+### PK. Three working rules and the rule–enforcement table
+
+Follow the PK text below as it is (the skill texts and their sha256 were given with it). Added:
+- `.ps1` files are not changed; they go into PW's list.
+- Item 4's first kind gets the check "did the tests remove by themselves the folders they left in `/tmp` and
+  `HAETTY_TEST_TMP` (read-only ones included)". On 2026-11-20 `/tmp` was 80 % full and the gate failed.
+- release.sh's executable bit and notes path were finished in 5e35b67. What is left is one thing: the gate checks the
+  executable bit of the scripts the user runs directly.
+- `agents/worker-readonly.md` has the person's uncommitted change. Do not touch it. If the Dropbox mirror is skipped
+  because of it, only mention it in the report.
+
+The PK text (the person's, followed as it is):
+
+Stage PK: put three working rules into the repository and apply them by default (a short session; product code is not
+changed).
+
+If another stage (PM etc.) is in progress, start after that session ends. Two sessions never edit CLAUDE.md in the same
+checkout at the same time. Go through to the end in one session without asking for confirmation midway. If it does
+not finish, do only 1–3 and leave 4–5 as proposals.
+
+Approved scope (approved in advance)
+- Making the three new skill folders under the repository's `skills/` and registering them in MANIFEST.md's Skills
+  section.
+- Copying those three folders under this machine's `~/.claude/skills/` (MANIFEST.md "Apply on another computer": a
+  copy, not a symbolic link). Before copying, back up `~/.claude/skills` with the date appended.
+  `~/.claude/skills/synced/` is only read, never touched. `~/.claude/settings.json` and `agents/` are not changed.
+- Putting the content of 2 and 3 below into `haetty/CLAUDE.md`.
+
+1. Writing the skill files
+- Write each of the three blocks of the "skill texts" exactly to these paths. A block is from the line after
+  "<<<FILE path" to the line before "FILE>>>"; the two marker lines are not in the file. UTF-8, LF line ends, ending
+  with one newline after the last line. Do not edit, translate or re-wrap the content.
+  `skills/no-comments/SKILL.md`, `skills/encode-in-structure/SKILL.md`, `skills/change-trail/SKILL.md`
+- After writing, check with sha256sum. If it differs from the values below, write again. If it still differs after
+  three tries, stop and report which line differs (do not change the content to match the value).
+  ```
+  081dcf985ee508b32073972fc3a42caf5474c8d46c0b208b9aaa171aa88c7d8b  skills/no-comments/SKILL.md
+  c3a9dbb190002010ba13f40d70fbec8c7ce62e0b1405dced68315058e5fc14c0  skills/encode-in-structure/SKILL.md
+  50d51aace04a9c065993d952a815453d74dab825fc1dffe697bcab371983c0b0  skills/change-trail/SKILL.md
+  ```
+  (Done at registration, commit 7eab7a0: all three equal on the first write. PK checks them again.)
+- Each folder gets a SOURCE.md in the form of the existing skills: source "the skills the user gave on 2026-11-17
+  (.skill files), the same names as the claude.ai account's skills", date and machine; under Local modifications
+  "the version refined in the 2026-11-17 review: no-comments 4 places, encode-in-structure 3 places (a proportionality
+  section added), change-trail 2 places".
+- In MANIFEST.md's Skills section, add the three names under a sub-heading distinct from the existing list (their
+  source is not pstack-claude, so they are not mixed into that paragraph). If the sections' habit of md5 lines also
+  applies to skills, follow it.
+- If `~/.claude/skills/synced/` has a skill with the same name, compare whether the content is the same and only
+  report (if the same name is in two places, check with claude's skill list which one is used and write it down). Do
+  not delete or change them.
+- Before copying into `~/.claude/skills/`, check whether other claude processes are running (MANIFEST's Notes); if so,
+  write that in the report and go on with the copy.
+- The worker definitions in `agents/` are not changed (per MANIFEST, workers can only use skills preloaded for them).
+  Whether to preload no-comments into the workers that may write is only a proposal.
+
+2. Three lines in `haetty/CLAUDE.md` "Working rules"
+- No comments in new or changed code (only no-comments' "comments that stay" exceptions). Existing comments are dealt
+  with only when that line is changed. No repository-wide clean-up. Comments in protected areas are neither deleted nor
+  moved.
+- Why it changed goes into the commit body and `docs/history/` (change-trail). No per-file change list in the body.
+  "Checked:" and the unverified items are written as now. The decision log's place is the "Choices made" section in
+  `docs/history/` (no `docs/decisions.tsv`).
+- When the same mistake or instruction comes up twice, make it an enforcement, not text (encode-in-structure). An
+  incident that cannot be undone or that touched stable or the real environment is enough once. A tool that would
+  grow bigger than the work itself is not built but written in the report as a proposal.
+The three skills' check runs once at the end of a stage, on that stage's diff only. CLAUDE.md's line "Code, comments,
+docs and commit messages in English" stays as it is.
+
+3. The rule–enforcement table
+- Move the rules of CLAUDE.md, HANDOFF §3 and §4, OPERATING and dev-commands one line each into a table: rule /
+  enforcement / where. Write the enforcement as it really is (test-guard, check-range, known-gate-failures, the gate,
+  deny rules, types, release.sh's session check, none).
+- If the table makes CLAUDE.md too long, put it in `docs/RULES.md` and point to it with one line in CLAUDE.md.
+- For a rule that already has an enforcement, shorten its prose to one line. The rule's content does not change. When
+  moving lines, check with `tools/check-moved-lines.py` that no line went missing.
+- Report the number and the list of the "none" rows.
+
+4. Encode only the two kinds that have already happened twice or more (each with the smallest means)
+- Tests that touched the real environment, stable or the installed real claude (writing into the real
+  `~/.local/share`, trying to connect to the stable daemon, ten test daemons left running, the real Claude Code started
+  six times on Windows): as run-all's last check, "no haetty process started by the tests is left" and "the stable
+  processes' PID and start time are the same before and after". test-guard checks that when a test script calls
+  claude, there is no claude outside the test folder on PATH (`.sh` and `.ps1` both; `.ps1` cannot be run here, so
+  marked Windows unverified).
+- Stale tests reported as passing (the wizard that grew to seven questions, the soak that counted attempts as
+  successes): check that an e2e script ends as a failure when it cannot confirm "the result of what it did", and find
+  and fix the places that count only attempts.
+- For each, reproduce the past mistake, confirm the check fails, and write the method in the commit body.
+
+5. A comment check applied only to newly added lines
+- Put into the gate a script that counts ordinary comments (`//`) on Rust lines added against origin/main. Allowed:
+  SAFETY, lines with a link, lines naming a specification or an external program (the list is a table inside the
+  script). Doc comments (`///`, `//!`) are not counted.
+- Until 2026-12-19 it only lists them as a warning, not a failure. Existing comments are not touched.
+- The script's error text names the alternatives: express it with a name or type, move it to the commit body, encode
+  it as a check if it is a constraint.
+
+6. Finishing
+- A record in `docs/history/`, HANDOFF updated (400 lines or fewer), the repository root's MANIFEST.md updated. Commits
+  split by unit of work, each passing the gate. Before a push check-range 0 failing. The Dropbox mirror updated with
+  the existing script.
+- Report: the sha256 result of the three files, the comparison with synced/, the "none" list of the table, item 4's
+  reproduction and how the failure was confirmed, item 5's current number of warnings, what was not done.
+
+Keep
+- Product code (`crates/`) is not changed except test code strictly needed for 4 and 5.
+- No command to and no write into the stable instance, daemon, install folder or config. Processes: only dev and test
+  ones, by PID or their own socket.
+- Protected areas are not touched. If it becomes necessary, stop and report.
+- Commits: the user's git identity, no AI mark and no Co-authored-by. Past history is not rewritten.
+
+The stages P4–P9 and PW: their PQ text is under each section, "Added in PQ".
+
 ## PW. Windows catch-up (last)
 
 After all other stages. Inputs: the branches `checks/windows-2026-11-17` (its record's "For kramers": the fixes
 branch table, the merge conflicts and their resolution, "Not fixed here"), `windows/2026-11-17-fixes`,
 `windows/2026-11-17-ph-fixes`; the Windows check list in `docs/dev-commands.md`; PW's list in HANDOFF "Next session".
+
+### Added in PQ (2026-11-21)
+
+The work of two machines. When the order reaches PW, the kramers session does only W-a below and stops. W-b needs a
+text the person gives the Windows PC, so W-a's report lists "what the Windows PC checks" and the person writes it.
+
+W-a (kramers)
+- Review `windows/2026-11-17-fixes` and `windows/2026-11-17-ph-fixes` and bring them into main (conflict resolution:
+  the "For kramers" table in the `checks/windows-2026-11-17` record; main has changed a lot since, so each commit is
+  looked at again). For a commit not taken, write the reason.
+- That record's "Not fixed here" items: `layout::list` never returning the staging folder or `current` as a version
+  (by type), assertions that depend on the font, the ConPTY files in the instance folder, processes left behind,
+  `install-stable.ps1` using install-layout.
+- The Windows proxy (protected area, approved): a release build's `haetty.exe` is a GUI-subsystem program, so the
+  proxy called by `claude.cmd` comes up without the tab's console. `claude.cmd` calls the console-subsystem
+  `haetty-headless.exe claude-proxy` instead (the decision logic shares the one piece of code there is now). If that
+  does not work, a small console executable. The AttachConsole way is not taken.
+- The lines piled up in HANDOFF's PW list, one by one: make it work on Windows (the shell integration only if there is
+  a way that does not change the PowerShell profile), or write "not done on Windows" in the README. The editor
+  server's random source, the selection's CLIPBOARD, `haetty.cmd`, the list of reference frames.
+- Move to Windows those Unix-only tests that can be moved (priority: permission, daemon, update's case table, ide,
+  sessions, mcp).
+- In `scripts/e2e/windows/`, write the Windows versions of the Linux e2e scripts made meanwhile (diff, sidebar,
+  coordinator, select, sessions, connections, ssh, ide). Build PATH from the test folders only, so the installed real
+  claude is never started, and have the script check that itself. They cannot be run here, so marked "written, not
+  run".
+- At the end, report the list for the Windows PC to check (scripts, order, expected time, what the person looks at by
+  hand).

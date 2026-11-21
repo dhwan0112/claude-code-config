@@ -8,8 +8,6 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage pq (branch `haetty/pq`, worktree `~/projects/claude-code-config-wt/pq`). Remaining: register stage bundle PQ (STAGES, HANDOFF order, OPERATING); PX first, PK after it
-
 ## 1. Current state
 
 - **Version** 0.4.0: **`haetty-v0.4.0` = `b1fd31b`** (candidate 2, after PM, P2b, PI; Linux candidate check passed
@@ -54,15 +52,23 @@ Stages:
   [record](history/2026-11-20-p3c.md), DESIGN §13.9): haetty as Claude Code's editor (`ide-integration`, off; a server
   per tab, `CLAUDE_CODE_SSE_PORT`, the proposal in the diff overlay, `a`/`d` as the person; protocol 18; protected and
   §2, approved; checked with a real Claude Code 2.1.329); `release.sh` executable, its notes beside the assets.
-- **Next (proposed): P4 session browser (point 1), run the P2 way** while the person sits through it — a coordinating
-  session in a dev instance makes the tasks with `haetty task new`; the person answers the workers' trust and
-  permission questions. Left from PM's list: a queued message to a busy worker (P19, §8.4 protected), a merge helper
-  (C11).
-- P4: session browser, fork, names, `haetty sessions --json` (a `claude` started outside the proxy — another `claude`
-  first on PATH, an alias — is still saved as the shell; the sidebar names it). P5: connections, `haetty mcp` (stdio,
-  Observe) + install.
-- P6: SSH, Tailscale (system OpenSSH). P7/P8: remote daemon, delegation (docs). P9: tidy-up (token tools, Windows
-  hand-over, `NOT-RUN (foreground)`, the auto-mode deny path).
+- **Order** (stage bundle PQ, the person's text of 2026-11-21: [STAGES.md](STAGES.md), "PQ", its common rules and
+  each stage's "Added in PQ"). "Next stage" is the first one below that is not done; at a stage's end its line moves
+  to "Done" (`docs/OPERATING.md`).
+  1. **PX** text selection and copy: handed by the person to another session; its text is not in STAGES (ask the
+     person for it). Not started when PQ was registered (2026-11-21). The person's note for it: X5 (the release.sh
+     defect) is done in 5e35b67 and skipped; the candidate version is 0.4.1 and includes P3c.
+  2. **PK** three working rules and the rule–enforcement table (the skill texts are already in `skills/`, 7eab7a0,
+     sha256 checked). After PX is in main.
+  3. **P4** session browser (point 1): fork, names, `haetty sessions --json`; a `claude` started outside the proxy
+     (another `claude` first on PATH, an alias) found through its transcript, "integration off". Candidate 0.5.0.
+  4. **P5** Connections, `haetty mcp` (stdio, Observe) + install, the Rakazo research, `docs/CONNECT.md`. Candidate
+     0.6.0.
+  5. **P6** SSH, Tailscale (system OpenSSH), the Hosts screen. Candidate 0.7.0.
+  6. **P7·P8** remote daemon, delegation scope (design docs only, one session; then the person decides).
+  7. **P9** tidy-up (token tools, the auto-mode deny path), the proposal for P19 (a queued message to a busy worker,
+     §8.4 protected), C11 (merge helper). The Windows night-run items (`NOT-RUN (foreground)`, the hand-over) go to PW.
+  8. **PW** below (kramers does W-a only, then reports the list for the Windows PC).
 - **PW: Windows catch-up (last).** Inputs, untouched until then: the branches `checks/windows-2026-11-17` (record
   `docs/checks/2026-11-17-windows.md`; its list "Not fixed here" is under "For kramers"), `windows/2026-11-17-fixes`
   (11 commits on `e8a48be`; three merge conflicts and their resolution in that record's "For kramers" table) and
