@@ -45,6 +45,8 @@ use crate::ui::{self, Compose, Palette, Pick, TabView};
 use crate::Options;
 use haetty_cc::orch::{self, WorkerState};
 
+#[path = "app_select.rs"]
+mod app_select;
 #[path = "app_settings.rs"]
 mod app_settings;
 #[path = "app_sidebar.rs"]
@@ -63,6 +65,8 @@ pub enum UserEvent {
     Update(crate::updater::Event),
     /// The sidebar's background reads (stage PH, H2).
     Sidebar(SidebarEvent),
+    /// A selection's text read from the daemon (stage PX).
+    Copied { to: app_select::Target, text: haetty_proto::wire::Secret<String>, cut: bool },
 }
 
 #[derive(Debug)]
@@ -382,6 +386,12 @@ struct Win {
     quit: Option<i32>,
     /// The window is closing: closing its tabs must not shrink `last`.
     shutting_down: bool,
+    /// The text selection (stage PX), the autoscroll of its drag, the last left press (double and triple clicks),
+    /// a middle press that pasted the primary selection (its release is not sent either).
+    sel: Option<app_select::Sel>,
+    sel_scroll: Option<Instant>,
+    last_click: Option<(Instant, (u16, u16), u8)>,
+    sel_middle: bool,
 }
 
 impl App {
@@ -592,6 +602,10 @@ impl App {
             restart_req: None,
             quit: None,
             shutting_down: false,
+            sel: None,
+            sel_scroll: None,
+            last_click: None,
+            sel_middle: false,
             pending_start: None,
             pending_since: None,
             requested_grid,
@@ -1132,6 +1146,7 @@ impl Win {
         }
         self.tab().session.handle.focus(false);
         self.active = i;
+        self.sel = None;
         if self.focused {
             self.handle().focus(true);
             self.seen();
@@ -1569,6 +1584,7 @@ impl Win {
                 self.palette = Some(Palette::default());
                 self.recompose();
             }
+            Action::Copy => self.copy_selection(app_select::Target::Clipboard),
             Action::Paste => {
                 if let Some(text) = self.clipboard.get() {
                     if self.tab().exited.is_some() || self.sidebar_keys() {
@@ -1881,6 +1897,7 @@ impl Win {
             }
         }
         if i == self.active {
+            self.select_follow();
             self.ide_sync();
             if title_changed {
                 self.update_title();
@@ -2011,7 +2028,7 @@ impl Win {
             (v.draw(w, area, g, now_ms()), None)
         });
         let settings = settings.or(agent_rows);
-        let next = Compose {
+        let mut next = Compose {
             screen,
             accents: &self.theme.palette,
             cols: self.grid.cols,
@@ -2033,6 +2050,7 @@ impl Win {
             }),
         }
         .build();
+        self.mark_selection(&mut next);
         self.sidebar_hits = new_hits;
         if self.composed.as_ref().is_some_and(|s| (s.cols, s.rows) != (next.cols, next.rows)) {
             self.full = true;
@@ -2159,6 +2177,17 @@ impl Win {
         if ev.state == ElementState::Pressed && !self.tab().integrated {
             // A key hides the button over a program's cell (DESIGN.md §2.4).
             self.gear_away(false);
+        }
+        let plain_escape = code == Some(KeyCode::Escape) && self.mods.is_empty();
+        if ev.state == ElementState::Pressed
+            && plain_escape
+            && self.sel.is_some()
+            && self.palette.is_none()
+            && self.settings_panel.is_none()
+        {
+            self.clear_selection();
+            self.swallowed.insert(KeyCode::Escape);
+            return;
         }
         if ev.state == ElementState::Released {
             if code.is_some_and(|c| self.swallowed.remove(&c)) || self.settings_panel.is_some() {
@@ -2287,6 +2316,9 @@ impl Win {
         let raw =
             RawKey { code, state: ev.state, repeat: ev.repeat, text: ev.text.as_deref(), unshifted, mods: self.mods };
         let k = input::key_input(&raw);
+        if ev.state == ElementState::Pressed && self.cfg.selection_clear_on_typing && !input::is_modifier(code) {
+            self.clear_selection();
+        }
         log_key(&k);
         self.handle().key(Origin::Human, k);
     }
@@ -2427,6 +2459,9 @@ impl Win {
                     if text.is_empty() { None } else { Some(Preedit { text, cursor: preedit_cursor(cursor) }) };
             }
             Ime::Commit(text) => {
+                if self.cfg.selection_clear_on_typing {
+                    self.clear_selection();
+                }
                 self.preedit = None;
                 if self.settings_panel.is_some() {
                     self.settings_text(&text);
@@ -2539,7 +2574,8 @@ impl Win {
         let update = self.update_tick(now);
         let sidebar = if self.daemon_lost { None } else { self.sidebar_tick(now) };
         let hint = self.hint.as_ref().filter(|_| !self.daemon_lost).map(|(_, t)| *t + CONFIRM);
-        [hint, relayout, update, sidebar].into_iter().flatten().min()
+        let select = self.select_tick(now);
+        [hint, relayout, update, sidebar, select].into_iter().flatten().min()
     }
 }
 
@@ -2701,6 +2737,10 @@ impl ApplicationHandler<UserEvent> for App {
                 win.sidebar_event(e);
                 return;
             }
+            UserEvent::Copied { to, text, cut } => {
+                win.put(to, text.0, cut);
+                return;
+            }
         };
         let Some(i) = win.tabs.iter().position(|t| t.session.id == sid) else { return };
         match ev {
@@ -2819,7 +2859,7 @@ impl ApplicationHandler<UserEvent> for App {
                 win.title_hover();
                 win.update_link_hover();
                 win.gear_pointer();
-                if win.mouse_tracking() {
+                if !win.select_motion() && win.mouse_tracking() {
                     win.mouse_event(MouseAction::Motion, win.held.first().copied());
                 }
             }
@@ -2862,6 +2902,10 @@ impl ApplicationHandler<UserEvent> for App {
                         if win.integrated && win.title_col().is_some() {
                             return;
                         }
+                        if win.select_press(b) {
+                            win.sel_middle |= b == MouseButton::Middle;
+                            return;
+                        }
                         win.held.retain(|x| *x != b);
                         win.held.push(b);
                         MouseAction::Press
@@ -2874,6 +2918,12 @@ impl ApplicationHandler<UserEvent> for App {
                             return;
                         }
                         if b == MouseButton::Left && std::mem::take(&mut win.sidebar_press) {
+                            return;
+                        }
+                        if b == MouseButton::Left && win.select_release() {
+                            return;
+                        }
+                        if b == MouseButton::Middle && std::mem::take(&mut win.sel_middle) {
                             return;
                         }
                         if win.settings_panel.is_some() {

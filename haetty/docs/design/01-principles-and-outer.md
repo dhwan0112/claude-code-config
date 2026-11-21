@@ -66,6 +66,13 @@ away. Functions stay; what changes is when they are visible.
   fold, Enter acts as a click, Esc gives the keyboard back; nothing typed reaches the program meanwhile. The only mark
   is a `›` before the selected line, whose text (a section title too) is drawn in the normal grey; no accent, no
   underline, nothing else changes (reference frame `sidebar-focus`).
+- Text selection (stage PX, approved): only the person's mouse makes one, so an idle screen never has one. The
+  selected cells take the theme's `selection-background` and the existing text-colour rule (`selection-foreground`
+  only where it is not harder to read, 9625bbd); no other colour, no border. A rectangle (Alt+drag) shows as the
+  rectangle it is, a normal selection as the stream of rows it covers, so the two differ by their shape alone. The
+  grid, the layout and the bytes the program gets never change while selecting. A drag over the sidebar, the tab
+  bar or the settings panel is not a selection; inside the diff overlay and an agent's record it selects their drawn
+  text. Reference frames `selection`, `selection-rect`, `selection-diff`.
 
 ### 2.2 Visual rules
 - Colours come from one theme (Ghostty's theme format, §3.14); the default

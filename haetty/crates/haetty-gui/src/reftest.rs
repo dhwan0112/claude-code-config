@@ -544,6 +544,23 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
         let snap = Compose { cols, rows, diff: Some(&view), ..self::compose(&s, &acc) }.build();
         out.push((name, snap, None, None));
     }
+    let lines = [
+        "$ echo 안녕하세요 hello-world",
+        "안녕하세요 hello-world",
+        "$ ls -l",
+        "drwxr-xr-x 5 kim kim 4096 Nov 21 crates",
+        "-rw-r--r-- 1 kim kim  123 Nov 21 README.md",
+        "$ ",
+    ];
+    let s = screen(COLS, ROWS, &lines, Some((2, 5)));
+    let point = |row, col| crate::selection::Point { row, col };
+    let snap = selected(compose(&s).build(), (point(0, 7), point(1, 15)), false);
+    out.push(("selection", snap, None, None));
+    let snap = selected(compose(&s).build(), (point(3, 11), point(4, 25)), true);
+    out.push(("selection-rect", snap, None, None));
+    let s = screen(110, 14, &["$ cargo test", "   Compiling haetty v0.1.0"], Some((0, 1)));
+    let diff = Compose { cols: 110, rows: 14, diff: Some(&view), ..self::compose(&s, &acc) }.build();
+    out.push(("selection-diff", selected(diff, (point(3, 60), point(5, 80)), false), None, None));
     let mut proposal = crate::diffview::DiffView::proposal(1, "/work/src/main.rs", DIFF_BEFORE, DIFF_AFTER);
     proposal.set_root("/work");
     let s = screen(110, 14, &["Do you want to make this edit to main.rs?", "> 1. Yes"], Some((0, 1)));
@@ -577,6 +594,18 @@ fn diff_view() -> crate::diffview::DiffView {
     let mut v = crate::diffview::DiffView::new(Some(&e));
     v.set_root("/work");
     v
+}
+
+/// The cells of `b` marked selected, as the window marks them (stage PX).
+fn selected(mut snap: Snapshot, b: (crate::selection::Point, crate::selection::Point), rect: bool) -> Snapshot {
+    let cols = snap.cols;
+    for (i, c) in snap.cells.iter_mut().enumerate() {
+        let at = crate::selection::Point { row: (i / cols as usize) as u64, col: (i % cols as usize) as u16 };
+        if crate::selection::contains(b, rect, at) {
+            c.flags.0 |= CellFlags::SELECTED;
+        }
+    }
+    snap
 }
 
 fn tinted(c: &Cell) -> bool {

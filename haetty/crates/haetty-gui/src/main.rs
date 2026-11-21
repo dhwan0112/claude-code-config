@@ -52,6 +52,7 @@ mod migrate;
 mod reftest;
 mod render;
 mod run;
+mod selection;
 mod settings;
 mod sidebar;
 mod tabnames;

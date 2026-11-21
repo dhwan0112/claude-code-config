@@ -131,6 +131,11 @@ pub struct Config {
     pub shell_integration: bool,
     /// `ide-integration = true`: haetty acts as Claude Code's editor in new tabs (DESIGN.md §13.9).
     pub ide_integration: bool,
+    /// What a finished mouse selection is copied to (`copy-on-select`).
+    pub copy_on_select: CopyOnSelect,
+    pub selection_clear_on_typing: bool,
+    /// Characters that end a word for a double click, besides whitespace.
+    pub selection_word_chars: String,
     /// The orchestrator's worker command (DESIGN.md §8.1).
     pub worker_command: String,
     pub notifications: bool,
@@ -189,6 +194,9 @@ impl Default for Config {
             claude_integration: true,
             shell_integration: true,
             ide_integration: false,
+            copy_on_select: CopyOnSelect::Primary,
+            selection_clear_on_typing: true,
+            selection_word_chars: DEFAULT_WORD_CHARS.into(),
             engine: haetty_core::vt::EngineKind::default_kind(),
             worker_command: "claude".into(),
             notifications: true,
@@ -310,6 +318,16 @@ pub struct Setting {
 }
 
 const BOOL: Kind = Kind::Bool;
+
+/// Ghostty's `selection-word-chars` without the space and tab, which always end a word here.
+pub const DEFAULT_WORD_CHARS: &str = "'\"│`|:;,()[]{}<>$";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CopyOnSelect {
+    Off,
+    Primary,
+    Both,
+}
 /// No upper limit (`u64`).
 const U64_MAX: f64 = u64::MAX as f64;
 const fn num(min: f64, max: f64, step: f64, int: bool, clamp: bool) -> Kind {
@@ -414,6 +432,42 @@ pub const SETTINGS: &[Setting] = &[
         line: "Bytes of scrollback per tab (12000000 keeps about 11 000 rows).",
         group: Group::Terminal,
         when: When::NextStart,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "copy-on-select",
+        kind: Kind::Choice(&["true", "false", "clipboard"]),
+        default: "true",
+        default_note: None,
+        doc: "`true` / `false` / `clipboard` — what a finished mouse selection is copied to, as in Ghostty: `true` the primary selection (pasted with a middle click; Linux), `clipboard` the primary selection and the clipboard, `false` nothing until Ctrl+Shift+C ([Selecting and copying](#selecting-and-copying)); Windows has no primary selection: `true` copies nothing there",
+        line: "Copy a finished mouse selection: true = primary selection, clipboard = also the clipboard.",
+        group: Group::Terminal,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "selection-clear-on-typing",
+        kind: BOOL,
+        default: "true",
+        default_note: None,
+        doc: "`true` / `false` — a key that types something clears the selection (Esc and a click outside it always do)",
+        line: "Typing clears the selection.",
+        group: Group::Terminal,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "selection-word-chars",
+        kind: Kind::Text { empty_ok: true },
+        default: DEFAULT_WORD_CHARS,
+        default_note: None,
+        doc: "the characters that end a word for a double click, besides spaces and tabs (always); Ghostty's default list",
+        line: "Characters that end a word for a double click (spaces and tabs always do).",
+        group: Group::Terminal,
+        when: When::Live,
         panel: true,
         cli: true,
     },
@@ -1089,6 +1143,15 @@ impl Config {
             "claude-integration" => self.claude_integration = flag(),
             "shell-integration" => self.shell_integration = text() == "auto",
             "ide-integration" => self.ide_integration = flag(),
+            "copy-on-select" => {
+                self.copy_on_select = match text().as_str() {
+                    "false" => CopyOnSelect::Off,
+                    "clipboard" => CopyOnSelect::Both,
+                    _ => CopyOnSelect::Primary,
+                }
+            }
+            "selection-clear-on-typing" => self.selection_clear_on_typing = flag(),
+            "selection-word-chars" => self.selection_word_chars = text(),
             "worker-command" => self.worker_command = text(),
             "notifications" => self.notifications = flag(),
             "window-padding-balance" => self.padding_balance = flag(),
@@ -1198,6 +1261,14 @@ impl Config {
             "claude-integration" => b(self.claude_integration),
             "shell-integration" => (if self.shell_integration { "auto" } else { "off" }).into(),
             "ide-integration" => b(self.ide_integration),
+            "copy-on-select" => match self.copy_on_select {
+                CopyOnSelect::Off => "false",
+                CopyOnSelect::Primary => "true",
+                CopyOnSelect::Both => "clipboard",
+            }
+            .into(),
+            "selection-clear-on-typing" => b(self.selection_clear_on_typing),
+            "selection-word-chars" => self.selection_word_chars.clone(),
             "worker-command" => self.worker_command.clone(),
             "notifications" => b(self.notifications),
             "observe-new-tabs" => b(self.observe_new_tabs),
@@ -1484,6 +1555,9 @@ mod tests {
             claude_integration: true,
             shell_integration: true,
             ide_integration: false,
+            copy_on_select: CopyOnSelect::Primary,
+            selection_clear_on_typing: true,
+            selection_word_chars: DEFAULT_WORD_CHARS.into(),
             worker_command: "claude".into(),
             notifications: true,
             theme: "IBM 5153 CGA".into(),
@@ -1652,7 +1726,9 @@ mod tests {
         assert!(c.set("worker-command", " ").is_err());
         c.set("worker-command", "/opt/claude --model x").unwrap();
         assert_eq!(c.worker_command, "/opt/claude --model x");
-        for k in super::keys().filter(|k| !matches!(*k, "theme" | "worker-command" | "keybind" | "font-family")) {
+        for k in super::keys()
+            .filter(|k| !matches!(*k, "theme" | "worker-command" | "keybind" | "font-family" | "selection-word-chars"))
+        {
             assert!(!c.clone().set(k, "?").unwrap_err().starts_with("unknown"));
         }
     }

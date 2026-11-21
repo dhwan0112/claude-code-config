@@ -16,6 +16,8 @@ pub enum Action {
     GotoTab(u8),
     CommandPalette,
     Paste,
+    /// The selection to the clipboard (nothing without one).
+    Copy,
     /// Save the open tabs as the tab set "saved".
     SaveTabs,
     /// Open the tabs of the set "saved".
@@ -71,6 +73,7 @@ impl Action {
             Action::GotoTab(n) => format!("goto_tab:{n}"),
             Action::CommandPalette => "command_palette".into(),
             Action::Paste => "paste".into(),
+            Action::Copy => "copy".into(),
             Action::SaveTabs => "save_tabs".into(),
             Action::OpenSavedTabs => "open_saved_tabs".into(),
             Action::OpenPreviousTabs => "open_previous_tabs".into(),
@@ -104,6 +107,7 @@ impl Action {
             Action::GotoTab(n) => format!("Go to tab {n}"),
             Action::CommandPalette => "Command palette".into(),
             Action::Paste => "Paste".into(),
+            Action::Copy => "Copy".into(),
             Action::SaveTabs => "Save tabs (set \"saved\")".into(),
             Action::OpenSavedTabs => "Open saved tabs".into(),
             Action::OpenPreviousTabs => "Open the previous run's tabs".into(),
@@ -135,6 +139,7 @@ impl Action {
             "previous_tab" => Action::PreviousTab,
             "command_palette" => Action::CommandPalette,
             "paste" => Action::Paste,
+            "copy" => Action::Copy,
             "save_tabs" => Action::SaveTabs,
             "open_saved_tabs" => Action::OpenSavedTabs,
             "open_previous_tabs" => Action::OpenPreviousTabs,
@@ -195,6 +200,7 @@ impl Action {
             Action::SaveTabs,
             Action::OpenSavedTabs,
             Action::OpenPreviousTabs,
+            Action::Copy,
             Action::Paste,
             Action::CommandPalette,
         ]);
@@ -291,6 +297,8 @@ impl Default for Keymap {
         b("ctrl+shift+e", Action::FocusSidebar);
         // Claude Code binds Ctrl+R (history search), not this.
         b("ctrl+shift+r", Action::RenameTab);
+        // Claude Code binds Ctrl+C (interrupt), not this.
+        b("ctrl+shift+c", Action::Copy);
         b("ctrl+shift+v", Action::Paste);
         b("shift+insert", Action::Paste);
         b("paste", Action::Paste); // a keyboard's Paste key

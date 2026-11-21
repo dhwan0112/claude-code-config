@@ -301,6 +301,24 @@ pub fn wheel_lines(notches: i32, mouse_tracking: bool) -> i32 {
     }
 }
 
+/// A modifier key alone (it types nothing, so it leaves a selection).
+pub fn is_modifier(code: Option<KeyCode>) -> bool {
+    matches!(
+        code,
+        Some(
+            KeyCode::ShiftLeft
+                | KeyCode::ShiftRight
+                | KeyCode::ControlLeft
+                | KeyCode::ControlRight
+                | KeyCode::AltLeft
+                | KeyCode::AltRight
+                | KeyCode::SuperLeft
+                | KeyCode::SuperRight
+                | KeyCode::CapsLock
+        )
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

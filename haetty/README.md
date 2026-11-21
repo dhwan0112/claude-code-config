@@ -292,6 +292,9 @@ keybind = ctrl+shift+n=new_tab
 | `decorations` | `auto` / `native` / `integrated` / `none` — auto: the system's title bar where it takes the theme's colour (Windows 11, X11), haetty's own (integrated) on Wayland; integrated is Linux only (Windows: native) | `auto` |
 | `settings-button` | `auto` / `always` / `never` — the dim ⚙ that opens the settings: auto: always in a Claude Code tab's status row, in other tabs only while the pointer is near the bottom-right corner; always: in other tabs whenever the pointer is in the window; never: no button (Ctrl+, and the palette's "Settings" stay) | `auto` |
 | `scrollback-limit` | bytes of scrollback per session, as in Ghostty (plain bytes, `_` allowed; rows of 120 columns take ~1.1 KB, the default keeps ~11 000 of them) | `12000000` |
+| `copy-on-select` | `true` / `false` / `clipboard` — what a finished mouse selection is copied to, as in Ghostty: `true` the primary selection (pasted with a middle click; Linux), `clipboard` the primary selection and the clipboard, `false` nothing until Ctrl+Shift+C ([Selecting and copying](#selecting-and-copying)); Windows has no primary selection: `true` copies nothing there | `true` |
+| `selection-clear-on-typing` | `true` / `false` — a key that types something clears the selection (Esc and a click outside it always do) | `true` |
+| `selection-word-chars` | the characters that end a word for a double click, besides spaces and tabs (always); Ghostty's default list | `'"│`|:;,()[]{}<>$` |
 | `restore-tabs` | `true` / `false` — reopen the previous run's tabs at start | `true` |
 | `sidebar` | `auto` / `hide` — auto: the sidebar on the right from `sidebar-min-cols` columns on, for every tab (Ctrl+Shift+S hides or shows it; a narrower window shows it over the terminal); hide: only over the terminal, on Ctrl+Shift+S | `auto` |
 | `sidebar-width` | columns, the line included (24–80); the palette's "Sidebar wider" / "Sidebar narrower" change it for the window | `42` |
