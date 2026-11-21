@@ -232,7 +232,8 @@ fn a_claude_code_tab_gets_an_editor_that_only_the_person_answers() {
     let token = l.get("authToken").and_then(Json::str).unwrap().to_string();
     assert_eq!(token.len(), 32);
 
-    for bad in [None, Some("0".repeat(32)), Some(format!("{}0", &token[..31]))] {
+    let flipped = format!("{}{}", &token[..31], if token.ends_with('0') { '1' } else { '0' });
+    for bad in [None, Some("0".repeat(32)), Some(flipped)] {
         let (_, head) = upgrade(&port, bad.as_deref());
         assert!(head.starts_with("HTTP/1.1 401 "), "{bad:?}: {head}");
     }
