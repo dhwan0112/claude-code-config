@@ -8,6 +8,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage p41 (branch `haetty/p41`, worktree `~/projects/claude-code-config-wt/p41`). Remaining: 0.4.1 candidate (with P3c): version, CHANGELOG, the Linux candidate check, record
+
 ## 1. Current state
 
 - **Version** 0.4.0: **`haetty-v0.4.0` = `b1fd31b`** (candidate 2, after PM, P2b, PI; Linux candidate check passed
