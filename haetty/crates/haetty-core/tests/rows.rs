@@ -113,3 +113,17 @@ fn wide_characters_and_clusters_come_back_cell_by_cell() {
         assert_eq!(cells[4].0, "e\u{301}", "{kind:?}");
     }
 }
+
+#[test]
+fn a_tab_leaves_blank_cells_so_a_copy_gives_spaces() {
+    for kind in kinds() {
+        let mut e = engine(kind, 20, 3, 1 << 20);
+        e.feed(b"a\tb\r\n");
+        let s = e.snapshot();
+        let r = e.rows(number(&s, 0), 1);
+        let cells = &r.rows[0].cells;
+        assert_eq!(cells[0].0, "a", "{kind:?}");
+        assert!(cells[1..8].iter().all(|(t, _)| t.is_empty()), "{kind:?}: no tab kept in a cell");
+        assert_eq!(cells[8].0, "b", "{kind:?}");
+    }
+}

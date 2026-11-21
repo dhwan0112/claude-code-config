@@ -95,8 +95,9 @@ haetty statusline        (run by Claude Code)
 - Paste: Ctrl+Shift+V, Shift+Insert or the Paste key; on Windows also
   Ctrl+V. Plain Ctrl+V reaches the application on Linux (Claude Code pastes
   images with it).
-- Copy: applications copy with OSC 52 — in Claude Code's fullscreen renderer
-  (`CLAUDE_CODE_NO_FLICKER=1`) select with the mouse.
+- Copy: select with the mouse and press Ctrl+Shift+C ([Selecting and copying](#selecting-and-copying));
+  applications can also copy themselves with OSC 52 (Claude Code's fullscreen renderer,
+  `CLAUDE_CODE_NO_FLICKER=1`, does on its own mouse selection).
 - Wheel: sent to applications that track the mouse, otherwise scrolls the
   scrollback.
 - IME: composition is drawn underlined at the cursor; the candidate window
@@ -108,6 +109,34 @@ haetty statusline        (run by Claude Code)
 - Window chrome: on Windows 11 the title bar and border take the terminal
   background and the title text its foreground; Windows 10 and Linux get
   the dark theme request (light if the background is light).
+
+### Selecting and copying
+
+haetty selects text itself, as other terminals do; the selection belongs to the window, so it never changes what
+the program gets. The behaviour follows Ghostty's.
+
+| Mouse | Selects |
+|---|---|
+| drag | cells; a wide character (Hangul, emoji) always with both its cells |
+| double click | a word (`selection-word-chars` end it, and spaces); drag on to grow by words |
+| triple click | the whole line, its soft-wrapped rows joined; drag on to grow by lines |
+| Shift+click | from the selection's start to here |
+| Alt+drag | a rectangle |
+| drag above or below the terminal | scrolls into the scrollback while it grows |
+| middle click | pastes the primary selection (Linux) |
+
+- Ctrl+Shift+C (palette "Copy") copies the selection to the clipboard; without one it does nothing and is not sent
+  to the program. Rows joined by a soft wrap copy as one line, trailing blanks of a line are left out, a rectangle
+  gives one line per row; tabs come back as spaces. A selection that reaches into the scrollback is read in the
+  background; more than 16 MiB is cut there, and a line says so.
+- `copy-on-select`: `true` (default) puts a finished selection into the primary selection, `clipboard` into the
+  primary selection and the clipboard, `false` into neither until Ctrl+Shift+C. Windows has no primary selection.
+- New output does not move a selection off its text. It goes with a click outside it, Esc (which is then not sent to
+  the program), typing (`selection-clear-on-typing = false` keeps it), the program rewriting a selected row, a size
+  change, or the rows leaving the scrollback.
+- A program that uses the mouse (vim, Claude Code's fullscreen renderer, htop) gets the mouse as before; hold Shift
+  to select with haetty instead (Shift+middle click pastes). The diff overlay and an agent's record select their
+  own text the same way; the sidebar, the tab bar and the settings panel do not.
 
 ### Title bar
 
@@ -145,6 +174,7 @@ settings); plain Ctrl+letter keys go to the program.
 | Previous tab | Ctrl+Shift+Tab, Ctrl+PageUp | `previous_tab` |
 | Go to tab N | Alt+1 … Alt+9 | `goto_tab:N` (1–9) |
 | Command palette | Ctrl+Shift+P | `command_palette` |
+| Copy the selection | Ctrl+Shift+C | `copy` |
 | Paste | Ctrl+Shift+V, Shift+Insert, Paste key; Windows also Ctrl+V | `paste` |
 | Diff overlay (Claude Code tabs): last edit, `m` → vs HEAD → working tree | Ctrl+Shift+D | `diff_view` |
 | Rename tab | Ctrl+Shift+R | `rename_tab` |
@@ -863,8 +893,6 @@ right daemon and tab.
 - The sidebar's reset times are in UTC.
 - `scrollback-limit` takes plain bytes; suffixes such as `10MB` are not
   parsed.
-- No own text selection yet when the application does not track the mouse
-  (plain shell); copying is the application's job (OSC 52).
 - Not yet checked by hand (`docs/HANDOFF.md` §6.1): tabs and the palette
   with a real keyboard, `install-desktop` on GNOME/KDE, the attention marks
   and diff view with a real Claude Code account, notifications, and the

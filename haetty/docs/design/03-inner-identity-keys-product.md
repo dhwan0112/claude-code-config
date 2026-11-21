@@ -193,6 +193,7 @@ Alt+M/P/T/O/Y/B/F/D/V.
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+PageDown / Ctrl+PageUp | free in Claude Code; Shift+Tab alone stays with the program |
 | Go to tab N | Alt+1 … Alt+9 | free in Claude Code; bash/readline uses Alt+digit as a numeric argument (rarely typed) — rebind if needed |
 | Command palette | Ctrl+Shift+P | free (Claude Code: Ctrl+P = previous history line) |
+| Copy (stage PX) | Ctrl+Shift+C | Claude Code binds Ctrl+C (interrupt), not this; without a selection it does nothing and is not sent |
 | Paste | Ctrl+Shift+V, Shift+Insert, Paste key; Windows also Ctrl+V | Linux plain Ctrl+V stays with Claude Code (image paste) |
 | Diff pane / status panel (milestone 3) | Ctrl+Shift+D / Ctrl+Shift+S | free (Claude Code: Ctrl+D exit, Ctrl+S stash) |
 | Rename tab | Ctrl+Shift+R | free (Claude Code: Ctrl+R history search) |

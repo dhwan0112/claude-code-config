@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (2026-11-21, candidate)
+
+Stage PX's text selection and copy, and stage P3c's editor connection (both since 0.4.0); the candidate is checked on
+Linux under the P1c rule (`docs/history/2026-11-21-px.md`).
+
+**Text selection and copy** (stage PX; README "Selecting and copying"): haetty selects text itself. A drag selects
+cells (a wide character always whole), a double click a word, a triple click the whole soft-wrapped line, Shift+click
+extends, Alt+drag selects a rectangle, and a drag past the terminal's top or bottom scrolls into the scrollback.
+Ctrl+Shift+C (palette "Copy") copies to the clipboard; `copy-on-select = true` (default) also puts a finished
+selection into the primary selection, which a middle click pastes. A selection keeps its text while new output pushes
+it up; Esc, typing (`selection-clear-on-typing`), a click outside it or the program rewriting it clear it. Programs
+that use the mouse get it as before; Shift+drag selects over them. The diff overlay and an agent's record can be
+selected too. `selection-word-chars` sets the word ends. Selections beyond the screen are read in the background, at
+most 16 MiB. Protocol 19 (`GetRows`, read-only).
 
 **haetty as Claude Code's editor** (stage P3c; `ide-integration = true`, off by default; Linux): Claude Code can show
 its Edit and Write proposals in an editor over a local connection, as VS Code's extension does. With the setting, each
@@ -12,7 +25,11 @@ haetty. The protocol is unofficial and may break with any Claude Code release (c
 connection fails nothing changes. Protocol 18. `tools/release.sh` is executable again, and inside a Claude Code session
 it leaves the release notes beside the assets for the printed `gh` command.
 
-**Windows:** no editor server (the setting does nothing there yet).
+**Windows:** unverified for this commit; its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Not run on
+Windows: text selection and copy (`select.sh` is Linux only; Windows has no primary selection, so `copy-on-select =
+true` copies nothing and a middle click pastes nothing there). Not on Windows at all: the editor server (the setting
+does nothing there yet). Known problems as in 0.4.0: the claude proxy does not work with release builds and the
+settings panel cannot install an update (stage PW).
 
 ## 0.4.0 (2026-11-20)
 
