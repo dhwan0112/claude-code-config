@@ -8,7 +8,7 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage p41 (branch `haetty/p41`, worktree `~/projects/claude-code-config-wt/p41`). Remaining: 0.4.1 candidate (with P3c): version, CHANGELOG, the Linux candidate check, record
+> **In progress:** stage pq (branch `haetty/pq`, worktree `~/projects/claude-code-config-wt/pq`). Remaining: register stage bundle PQ (STAGES, HANDOFF order, OPERATING); PX first, PK after it
 
 ## 1. Current state
 
