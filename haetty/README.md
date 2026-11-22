@@ -605,6 +605,21 @@ files, 2 MiB each and 16 MiB in all, within 3 s, and say what they left out. Fil
 (`.ssh`, `.aws`, `.env*`, `*.pem`, `*.key`, `*token*`, `*secret*`, `.credentials.json`, …) are never read, and files
 over 2 MiB or not UTF-8 are not copied; for those the diff overlay says why instead of showing a diff.
 
+**Edit blocks side by side (`inline-diff = split`, the default).** Claude Code draws an edit inside the conversation
+as red and green lines one above the other. When the program area is at least `inline-diff-min-cols` (110) columns
+wide (a docked sidebar counted), haetty redraws such a block side by side in the same place: before on the left,
+after on the right, line numbers on both sides, changed words in a deeper tint, a line wider than its half cut with
+`…`, and a dim `⇄` at the right end of the block's header row. This is haetty redrawing its picture of the screen
+only: Claude Code, what it does and what it prints do not change, the terminal's size and the bytes it gets stay the
+same, and `haetty screen` and observers read Claude Code's own rows. A block is redrawn only when every visible row
+matches one edit the hooks reported, line by line (the edit's `structuredPatch`, or while a permission question
+waits, the file before the edit with the tool's input); otherwise it shows as Claude Code drew it. If Claude Code
+changes the shape of its blocks in a new version, the original shape shows until haetty follows. A click on `⇄`
+turns that block back to Claude Code's shape; a click on the file's name in the header opens the diff overlay on
+that file; a selection over the block copies the side the drag is on, whole lines without numbers. A new file and a
+whole deleted file stay as they are. `inline-diff = unified` or the palette's "Toggle inline diff layout" turns it
+off. Not on Windows yet (built, not checked).
+
 **haetty as Claude Code's editor (`ide-integration = true`, off by default; Linux).** Claude Code can show its Edit
 and Write proposals in an editor (as VS Code's extension does) over a local connection. With this setting haetty is
 that editor for new Claude Code tabs and for `claude` started in a shell tab: when Claude Code asks whether to make an

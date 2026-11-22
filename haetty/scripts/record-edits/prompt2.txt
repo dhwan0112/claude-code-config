@@ -1,0 +1,26 @@
+This is a test repository. Make exactly these changes, in this order, each with its own Edit, Write or NotebookEdit call (Read a file first when needed). No other changes, no commentary between steps, do not run anything.
+1. src/calc.py: change SCALE = 10 to SCALE = 100.
+2. src/calc.py: change print(scale(5)) to print(scale(7)).
+3. src/lib.rs: change Point::new(100, 100) to Point::new(250, 250).
+4. src/lib.rs: rename the method sum to total (the fn line and the test line, two separate Edit calls).
+5. notes/readme-ko.md: change the heading # 메모 to # 시험 메모.
+6. notes/readme-ko.md: change 넓은 글자와 English가 섞인 줄입니다. to 넓은 글자(全角)와 English, 그리고 숫자 123이 섞인 줄입니다.
+7. Makefile: change CFLAGS = -O2 to CFLAGS = -O2 -Wall.
+8. src/util.go: change the body of Min so that it uses if a <= b (one line).
+9. data/long.txt: in line 6 replace the word omicron with OMICRON-CHANGED (only that line).
+10. data/long.txt: insert after line 7 a new very long line: extra: the quick brown fox jumps over the lazy dog while the five boxing wizards jump quickly and a sphinx of black quartz judges my vow again and again until the line is far wider than the window
+11. big/table.py: change the rows for items 20 through 24 so that the second value is upper case (ITEM-020 and so on).
+12. big/table.py: replace the function total with a function total(rows=None) that uses ROWS when rows is None (5 lines).
+13. Overwrite conf/a.cfg with Write: the same four lines plus a fifth line mode = test.
+14. conf/b.cfg: change level = 2 to level = 3.
+15. Create the new file notes/new.md with a title and three bullet lines (Write).
+16. src/calc.py: delete the function scale and its use in main (two Edit calls).
+17. src/lib.rs: change the doc of nothing; instead change pub fn origin() to pub const fn origin().
+18. notes/todo.txt: change call back to call back tomorrow.
+19. src/util.go: change package util to package util2.
+20. src/calc.py: change import math to import math  # for pi.
+21. data/long.txt: change the first word of line 1 from line to LINE.
+22. big/table.py: delete the rows for items 0 through 4.
+23. nb/demo.ipynb: with NotebookEdit change the markdown cell to # Notes and more.
+24. src/lib.rs: change the indentation of fn manhattan's body from 4 to 8 spaces (whitespace only).
+25. notes/readme-ko.md: delete the line - 둘째 항목: 문서 다듬기.

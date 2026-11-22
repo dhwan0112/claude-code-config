@@ -68,7 +68,7 @@ hook output rules, the IPC permission checks, and the path of Claude Code permis
 | 10.13 | F2: following the newest Ghostty | The C0, C1 and DECRQSS changes; 744 FAILs remain | [12](design/12-engine-f-stages.md) |
 | 10.14 | F3: SGR-heavy throughput | SGR throughput from 56 % to 82 % of libghostty; the changes | [12](design/12-engine-f-stages.md) |
 | 10.15 | F4: native-only readiness | Native-only dist sizes, the Windows build without WSL, latency, the transition table | [12](design/12-engine-f-stages.md) |
-| 13 | Sidebar, diff overlay, IDE prototype (P3) | OpenCode and Claude Code IDE research; the decisions and the plan of P3a–P3c (§2 change approved for P3's scope) | [13](design/13-sidebar-diff-ide.md) |
+| 13 | Sidebar, diff overlay, IDE prototype (P3) | OpenCode and Claude Code IDE research; the decisions and the plan of P3a–P3c (§2 change approved for P3's scope); §13.10 the inline diff (PD) | [13](design/13-sidebar-diff-ide.md) |
 | 13.1 | Research: OpenCode | Sidebar 42 columns from > 120, its sections; the diff viewer: split from 100 columns, `n`/`p` files, `]`/`[` hunks | [13](design/13-sidebar-diff-ide.md) |
 | 13.2 | Research: IDE integration | MCP over WebSocket, lock files, token header, `openDiff` answers; official versus unofficial | [13](design/13-sidebar-diff-ide.md) |
 | 13.3 | Decisions: sidebar | `sidebar = auto`, from 121 columns, 42 wide, the same for every tab; narrow: an overlay; contents per tab kind | [13](design/13-sidebar-diff-ide.md) |

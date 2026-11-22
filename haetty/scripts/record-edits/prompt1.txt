@@ -1,0 +1,29 @@
+This is a test repository. Make exactly these changes, in this order, each with its own Edit, MultiEdit, Write or NotebookEdit call (Read a file first when needed). No other changes, no commentary between steps, do not run anything.
+1. src/calc.py: rename the function add to add_numbers (only the def line).
+2. src/calc.py: change SCALE = 10 to SCALE = 12.
+3. src/calc.py: insert the docstring """Multiply a and b.""" as the first line of mul.
+4. src/calc.py: delete the two comment lines in add_numbers.
+5. src/calc.py: rename the variable tmp to scratch everywhere in the file (one Edit with replace_all).
+6. src/calc.py: change the first line to """Small calculator helpers for the tests."""
+7. src/calc.py: change the last line to     main()  # entry point
+8. src/lib.rs: change self.x + self.y to self.x.saturating_add(self.y).
+9. src/lib.rs: one MultiEdit with three edits: Point::new(0, 0) to Point::new(1, 1); Point::new(100, 100) to Point::new(99, 99); the test value 3 to 3_i32.
+10. src/lib.rs: add after the manhattan function a new function pub fn mirror(p: &Point) -> Point that returns Point::new(-p.x, -p.y) and has a doc comment of two lines.
+11. notes/readme-ko.md: change 이 저장소는 시험용입니다. to 이 저장소는 화면 비교 시험용입니다.
+12. notes/readme-ko.md: add the line - 넷째 항목: 한글과 이모지 🎉 섞기 after the third item.
+13. Makefile: change the recipe line of clean to rm -f app *.o core
+14. Makefile: add a target test: app with two tab-indented recipe lines ./app --self-test and echo done, before .PHONY.
+15. src/util.go: in Max change the comparison to a >= b.
+16. src/util.go: add a function Abs(a int) int with tab indentation at the end.
+17. data/long.txt: in line 3 change the word kappa to KAPPA (only that line).
+18. data/long.txt: replace line 5 completely with: line 5: this replacement line is also long and keeps going with words like ocean river mountain valley desert forest meadow canyon glacier island harbor lagoon delta prairie tundra savanna marsh
+19. big/table.py: replace the rows for items 10 through 39 with rows for items 10 through 44 where the third value is i * 4.
+20. big/table.py: delete the rows for items 50 through 59.
+21. Create the new file src/new_mod.py with a function hello(name) that returns a greeting, and a main guard, about 8 lines (Write).
+22. Overwrite notes/todo.txt with Write: the same five lines plus a sixth line plan the next stage, and change buy milk to buy oat milk.
+23. nb/demo.ipynb: with NotebookEdit change the first cell's source to x = 2 and print(x * 10) on two lines.
+24. conf/a.cfg: change enabled = false to enabled = true.
+25. conf/b.cfg: change enabled = false to enabled = true.
+26. src/lib.rs: change the indentation of the body of fn sums from 8 spaces to 4 spaces (whitespace only).
+27. src/calc.py: add two empty lines before def area.
+28. src/util.go: rename Min to Minimum (def line only).

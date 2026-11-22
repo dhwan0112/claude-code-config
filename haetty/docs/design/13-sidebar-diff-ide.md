@@ -295,3 +295,26 @@ was decided while building:
   an observer's answer refused, the mark and the hold, the proxy's port, off), `scripts/e2e/ide.sh` (Xvfb, 15 checks)
   and one real Claude Code 2.1.329 run (Haiku, a dev instance on a private Xvfb): `a` → Claude Code wrote the edit,
   `d` → "Rejected update to a.txt".
+
+## 13.10 Stage PD: Claude Code's edit blocks side by side, as built (2026-11-22)
+
+The "side-by-side diff in the chat" of point 1: P3b's overlay (§13.4) is a separate screen; PD redraws the edit
+block Claude Code draws inside the conversation, in place, under DESIGN §2.5's condition. Record:
+[history/2026-11-22-pd.md](../history/2026-11-22-pd.md) (OpenCode's chat diff, Claude Code 2.1.330's block shapes,
+the 98 % match rate of two real runs).
+
+- **Data:** the daemon keeps the newest 64 edits per session in Claude Code's shape (`haetty-cc::patch`): PostToolUse's
+  `structuredPatch` of Edit and Write; before it, the PreToolUse snapshot's hunks against the tool input (3 lines of
+  context, a tab as two spaces), so a block inside a permission question matches too. `GetPatches` (read-only, on
+  `GetClaude`'s line), `ClaudeInfo::patch_gen`; protocol 20.
+- **Finding:** rows with a right-aligned line number, a space and a mark (`-`/`+` on a background, context without);
+  a long line's next rows (number column blank, the same mark and background) joined; each candidate matched to every
+  hunk line by line (number, mark, text); exactly one edit, or nothing. A first or last row that does not match is
+  left out. Cached by a hash of the screen; 1 ms per frame at most.
+- **Drawing:** into the composed frame after it is built (`app_inline.rs`), inside the block's rows and the columns of
+  its background; not while an overlay is open; never past the frame's edges. `⇄` on the header row (a click turns the
+  block back), the file's name (a click opens the overlay on it); a selection copies the side of the drag.
+- **Settings:** `inline-diff = split | unified`, `inline-diff-min-cols = 110` (Claude Code group), palette "Toggle
+  inline diff layout".
+- **Tests:** the replay set `crates/haetty-gui/tests/data/inline-diff/` (built with `scripts/record-edits/`), unit
+  tests, reference frames `inline-diff*`, `scripts/e2e/inline-diff.sh`, `tests/permission.rs`.
