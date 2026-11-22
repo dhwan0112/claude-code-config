@@ -8,6 +8,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage pd (branch `haetty/pd`, worktree `~/projects/claude-code-config-wt/pd`). Remaining: pre-start: latency v0.4.0 vs main, HANDOFF version line, release rule; then D0 research, D1-D5, candidate
+
 ## 1. Current state
 
 - **Version** 0.4.1 candidate **`ec3e923`** (stage PX and P3c; Linux candidate check passed 2026-11-21, record
