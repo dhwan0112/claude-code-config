@@ -294,6 +294,23 @@ examples, what a Rakazo bot would really become able to do.
 - Changed by the person (2026-11-21): the P19 proposal above is replaced by stage PT (under PQ), which implements
   the queued message within its approved scope.
 
+### Added by the person (2026-11-22)
+
+- Code Mode check. In a real session with Claude Code's experimental Code Mode on
+  (`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`, official docs code.claude.com/docs/en/code-mode), see whether haetty shows it
+  right: how the REPL tool and the tool calls inside it appear in the sidebar's Log and Agents; the Files count and
+  the diff of edits; the permission-wait mark and the input hold; the display when auto mode reviews code unit by unit;
+  the 10-minute limit and running in the background; whether PD's side-by-side diff works on the blocks of `edit()`
+  calls; `--resume` restore (a Code Mode session reopens only with the variable on). At most 2 real claude runs (dev
+  instance, haiku). What is wrong is fixed; in a protected area only proposed. haetty never turns the variable on
+  itself.
+- Esc with a selection. Now, with a selection, Esc only clears it and does not reach the program, so the first Esc
+  meant to stop Claude Code is lost. A setting `selection-esc = clear | clear-and-send` (default unchanged: `clear`),
+  and a table of what other terminals do.
+- The width at which the sidebar docks (121 columns): when the window is a little too narrow, let the person see it
+  (that it switched to the overlapping way because the window is narrow: a dim mark in the tab bar or beside the
+  gear). After a restart the window size changed and the sidebar looked gone (2026-11-22).
+
 ## PH. The harness screen (points 3 and 1; the person's instruction of 2026-11-17)
 
 Change of direction: from this stage on, the terminal itself (engine, soaks, look polish, release tools) gets defect
@@ -608,6 +625,8 @@ candidate (the version is the next number at that time).
   observing `--settings`). No typed text, prompts, file contents or selected text in logs.
 - Stable: no command to and no write into this machine's stable haetty, its daemon, `~/.local/opt/haetty` or the
   stable config. Installing, replacing, applying updates, tagging, signing and publishing releases are the person's.
+  A Claude session never creates, uploads to or deletes a GitHub release, drafts included (`gh release`: only `view`
+  and `list`; 2026-11-22).
   Processes: only dev and test ones, by PID or their own socket (never killed by name).
 - Tests: only under an isolated HOME and `HAETTY_TEST_TMP`. Tests never start the installed real claude (only where a
   stage allows "N real runs": inside a dev instance's tab, with haiku). Folders a test made are removed by the test
@@ -645,6 +664,11 @@ candidate (the version is the next number at that time).
   settings panel's Updates (possible since 0.4.0). That install is the first one from a real release, so the report
   also says where the person looks if it fails (log paths) and gives the manual install command.
 - If the candidate check fails and the cause is not found within an hour, no tag commands: report the investigation.
+- Changed by the person (2026-11-22), for every stage's release: after the person tags, runs release.sh and publishes,
+  the next session starts by downloading `releases/latest/download/manifest.json` (read only), checks the published
+  version, and writes HANDOFF's version line as it is. It never guesses "draft".
+- A Claude session never creates, uploads to or deletes a GitHub release, drafts included; of `gh release` it uses
+  only `view` and `list` (the person, 2026-11-22; CLAUDE.md).
 
 ### PX. Text selection and copy (the person's text of 2026-11-21; dragging to copy does not work in a plain shell)
 

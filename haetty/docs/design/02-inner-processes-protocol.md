@@ -157,6 +157,10 @@ taken with `release` builds whose engine was Zig **Debug** (see below).
 | 1 hour, 4 tabs (two writing — 500 lines every 10 s, a line every 0.2 s — two idle), stage S4 | no growth of fds / handles / threads; memory flat once scrollback is full | replaced by the T4 soak v2 (HANDOFF.md) | — | at `e2ec468` (Zig Debug engine, no PTY writer thread): Linux GUI 7.2 MB, daemon 10.6 → 30.2 MB then flat; Windows GUI 12.4–13.2 MB, daemon 15.3 → 46.7 MB then flat; no fd/handle/thread growth |
 | Daemon answer (`haetty status`) while one tab runs `yes` | — | — | avg 6 ms, max 8 ms (idle 5 / 7), `8d66d29` | — |
 
+The figures above were taken on the earlier development machine (Linux under WSL2). On kramers (from 2026-11-10),
+2026-11-22, `dist`, the same script: key → frame through the daemon medians 1.8–6 ms, p95 about 6.6 ms, the same
+for 0.4.0 and 0.4.1; throughput 11 / 23 / 24 MiB/s (record [history/2026-11-22-pd.md](../history/2026-11-22-pd.md)).
+
 Key → frame and memory hardly moved: they are bound by the round trip and
 the scrollback bytes, not by the engine's speed. Throughput is where the
 Debug engine was 200–300x slower; `dist` (installed builds) always had the

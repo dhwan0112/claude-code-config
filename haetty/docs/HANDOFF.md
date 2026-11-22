@@ -12,18 +12,20 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 ## 1. Current state
 
-- **Version** 0.4.1 candidate **`ec3e923`** (stage PX and P3c; Linux candidate check passed 2026-11-21, record
-  [history/2026-11-21-px.md](history/2026-11-21-px.md); not tagged). 0.4.0: **`haetty-v0.4.0` = `b1fd31b`** (candidate 2, after PM, P2b, PI; Linux candidate check passed
-  2026-11-20; tagged by the person 2026-11-20, release built with `tools/release.sh`, signed and uploaded as a draft
-  by the person; record [history/2026-11-20-pi.md](history/2026-11-20-pi.md)); the first candidate `98a9b71` was
+- **Version** 0.4.1: **`haetty-v0.4.1` = `ec3e923`** (stage PX and P3c; Linux candidate check passed 2026-11-21,
+  record [history/2026-11-21-px.md](history/2026-11-21-px.md); tagged, built with `tools/release.sh`, signed and
+  published by the person 2026-11-22; `releases/latest/download/manifest.json` read 2026-11-22: 0.4.1, commit
+  `ec3e9230e822`). 0.4.0: **`haetty-v0.4.0` = `b1fd31b`** (candidate 2, after PM, P2b, PI; Linux candidate check
+  passed 2026-11-20; tagged and published by the person 2026-11-20; record
+  [history/2026-11-20-pi.md](history/2026-11-20-pi.md)); the first candidate `98a9b71` was
   never tagged. Earlier tags: **`haetty-v0.3.3` = `ca70269`** (2026-11-17, [history](history/2026-11-17-v0.3.3.md)),
   **`haetty-v0.3.2` = `622d629`** (2026-11-16, [history](history/2026-11-12-p1.md), "v0.3.2"), `haetty-v0.1.0` =
   `4d75fcd`, `haetty-v0.1.1` = `d5ba833`, **`haetty-v0.2.0` = `63822de`** (2026-11-08,
   [history](history/2026-11-06-07-stages-t-u-v.md)).
-- **Stable (installed by the user):** kramers has **v0.4.0 (`b1fd31b`)**, installed 2026-11-20 01:06Z with
-  `tools/install-stable.sh haetty-v0.4.0` (its folder's `INSTALLED`, read 2026-11-20; `~/.local/bin/haetty` points at
-  `0.4.0-b1fd31b1c7f8`; 0.1.0, 0.1.1, 0.2.0 and 0.3.2 stay for rollback). This line changes only when the user
-  installs another.
+- **Stable (installed by the user):** kramers has **v0.4.1 (`ec3e923`)**, installed by the person 2026-11-22 from the
+  settings panel's Updates (0.4.0 → 0.4.1; restart and tab restore checked by the person). 0.4.0 was installed
+  2026-11-20 with `tools/install-stable.sh haetty-v0.4.0`; older versions stay for rollback. This line changes only
+  when the user installs another.
 - **After `63822de`, in 0.3.2:** V3's observe-only interface, V6's palette fix, the native engine (E1–E5, F0–F4),
   K1–K4, #1, #2, P1a–P1c (CHANGELOG; protocol 12).
 - Last stages (records in [history](history/)): T1–T7, U1–U6, V1–V7, E0–E5, F0–F6, G0–G7, K0–K4, H.
@@ -65,7 +67,8 @@ Stages:
   5. **P5** Connections, `haetty mcp` (stdio, Observe) + install, the Rakazo research, `docs/CONNECT.md`. Candidate.
   6. **P6** SSH, Tailscale (system OpenSSH), the Hosts screen. Candidate.
   7. **P7·P8** remote daemon, delegation scope (design docs only, one session; then the person decides).
-  8. **P9** tidy-up (token tools, the auto-mode deny path), C11 (merge helper); P19 is done by PT. The Windows
+  8. **P9** tidy-up (token tools, the auto-mode deny path), C11 (merge helper); P19 is done by PT; added 2026-11-22:
+     the Code Mode check, `selection-esc`, a mark when the sidebar overlaps for want of width. The Windows
      night-run items (`NOT-RUN (foreground)`, the hand-over) go to PW.
   9. **PW** below (kramers does W-a only, then reports the list for the Windows PC).
   Versions: each candidate takes the next number then (PQ's 0.5.0–0.7.0 for P4–P6 predate PD and PT).
@@ -376,8 +379,8 @@ for a build beside your stable one use `HAETTY_INSTANCE=dev haetty …`.
     asks about opens the diff overlay; `a` makes Claude Code write it, `d` rejects it, Esc leaves the question in the
     terminal; answering in the terminal closes the overlay.
 38. [new, PX 2026-11-21] **Selecting with a real mouse** and touchpad (HiDPI): drag, double/triple click, Shift+click,
-    Alt+drag; middle-click into another Wayland window (PRIMARY checked on Xvfb only). Once 0.4.0 is published: 0.4.1
-    from the settings panel's Updates (record, "For the person").
+    Alt+drag; middle-click into another Wayland window (PRIMARY checked on Xvfb only). The update part (0.4.1 from the
+    settings panel's Updates) was done by the person 2026-11-22.
 
 #### C. Windows 11 (and 10 where noted)
 

@@ -69,6 +69,8 @@ the start of a session.
   - Installing or replacing the stable binary is the user's job only. The in-app update (stage PU) counts as the
     user's own install: it runs only from the person's input in the GUI's settings panel. A Claude session never
     applies, restarts into or rolls back an update, and never signs or publishes a release.
+  - A Claude session never creates, uploads to or deletes a GitHub release, drafts included; of `gh release` it
+    uses only `view` and `list` (the person, 2026-11-22).
 - Several Claude Code sessions at once: each works in its own `git
   worktree` on its own branch (never two sessions in one checkout); a
   branch is merged into `main` only after it passed the full gate (both
