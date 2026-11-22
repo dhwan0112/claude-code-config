@@ -8,6 +8,7 @@ pub mod edit;
 pub mod ide;
 pub mod json;
 pub mod orch;
+pub mod patch;
 pub mod proxy;
 pub mod report;
 pub mod resume;

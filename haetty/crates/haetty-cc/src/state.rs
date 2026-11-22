@@ -49,6 +49,8 @@ pub struct Claude {
     files: BTreeSet<String>,
     /// The agent table's pending Agent tool calls (stage PH, H2).
     agents: crate::agents::Agents,
+    /// The edits in the shape Claude Code draws them (stage PD).
+    patches: crate::patch::Patches,
 }
 
 fn text(j: &Json, path: &[&str]) -> String {
@@ -215,6 +217,9 @@ impl Claude {
             }
             _ => {}
         }
+        if self.patches.hook(event, j, &self.pending) {
+            self.info.patch_gen = self.patches.gen;
+        }
         // An agent's question is shown only while the session's own question is (the same mark and hold).
         if !self.info.asking {
             for a in self.info.workers.iter_mut() {
@@ -326,6 +331,11 @@ impl Claude {
             return true;
         }
         false
+    }
+
+    /// The edits for the inline diff and their generation (`ClaudeInfo::patch_gen`).
+    pub fn patches(&self) -> (u64, Vec<haetty_proto::wire::WirePatch>) {
+        (self.patches.gen, self.patches.list())
     }
 
     pub fn last_edit(&self) -> Option<EditView> {

@@ -486,6 +486,43 @@ fn health_counts_the_hourly_line_and_the_idle_exit() {
 }
 
 #[test]
+fn patches_of_edits_for_control_and_observe_only_when_observable() {
+    let dir = tmp("patches");
+    let (ep, _daemon) = start(&dir, Duration::from_secs(60));
+    let ctl = Client::connect(&ep, Role::Control, "gui").unwrap();
+    let mut sp = spec("sleep 30");
+    sp.claude_integration = true;
+    let id = ctl.create(sp).unwrap();
+    assert_eq!(ctl.patches(&id).unwrap(), (0, vec![]), "no edit yet");
+    let rep = Client::connect(&ep, Role::Report, "hook").unwrap();
+    let post = r#"{"tool_name":"Edit","tool_use_id":"t1","tool_input":{"file_path":"/w/a.py","old_string":"b","new_string":"B"},"tool_response":{"structuredPatch":[{"oldStart":1,"oldLines":3,"newStart":1,"newLines":3,"lines":[" a","-b","+B"," c"]}]}}"#;
+    rep.send(&ClientMsg::Hook {
+        session: Some(id.clone()),
+        event: "PostToolUse".into(),
+        json: Secret(post.into()),
+        ts_ms: 10,
+        snapshot: None,
+    })
+    .unwrap();
+    assert!(rep.sync(Duration::from_secs(5)));
+    let (gen, list) = ctl.patches(&id).unwrap();
+    assert_eq!(gen, 1);
+    assert_eq!(list.len(), 1);
+    assert_eq!((list[0].id.as_str(), list[0].path.as_str(), list[0].done), ("t1", "/w/a.py", true));
+    assert_eq!(list[0].hunks[0].lines, [" a", "-b", "+B", " c"]);
+    assert!(matches!(ctl.patches("no-such"), Err(e) if e.kind() == std::io::ErrorKind::NotFound));
+    let obs = Client::connect(&ep, Role::Observe, "status").unwrap();
+    assert!(matches!(obs.patches(&id), Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied));
+    ctl.set_observable(&id, true).unwrap();
+    assert!(ctl.sync(Duration::from_secs(3)));
+    assert_eq!(obs.patches(&id).unwrap().1.len(), 1);
+    rep.send(&ClientMsg::GetPatches { session: id.clone() }).unwrap();
+    assert!(matches!(rep.next_reply(Duration::from_secs(3)), Some(DaemonMsg::Denied { .. })));
+    ctl.close(&id).unwrap();
+    haetty_testkit::remove_dir_all(&dir);
+}
+
+#[test]
 fn rows_of_the_scrollback_for_control_and_observe_only_when_observable() {
     let dir = tmp("rows");
     let (ep, _daemon) = start(&dir, Duration::from_secs(60));

@@ -224,6 +224,20 @@ impl Client {
         })
     }
 
+    /// The session's recent edits as Claude Code shows them and the generation they belong to (version 20).
+    pub fn patches(&self, session: &str) -> io::Result<(u64, Vec<crate::wire::WirePatch>)> {
+        let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());
+        self.send(&ClientMsg::GetPatches { session: session.to_string() })?;
+        self.wait_reply(Duration::from_secs(5), |m| match m {
+            DaemonMsg::Patches { session: s, gen, patches } if s == session => Some(Ok((gen, patches.0))),
+            DaemonMsg::NoSession { session: s } if s == session => {
+                Some(Err(io::Error::new(io::ErrorKind::NotFound, format!("no session {s}"))))
+            }
+            DaemonMsg::Denied { what } => Some(Err(io::Error::new(io::ErrorKind::PermissionDenied, what))),
+            _ => None,
+        })?
+    }
+
     /// Up to `count` rows' text from the session row `from` on, the scrollback included (version 19).
     pub fn rows(&self, session: &str, from: u64, count: u32) -> io::Result<haetty_core::TextRows> {
         let _g = self.request.lock().unwrap_or_else(|p| p.into_inner());

@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 19;
+pub const VERSION: u32 = 20;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -37,6 +37,12 @@ impl std::fmt::Debug for Secret<String> {
 impl std::fmt::Debug for Secret<Vec<u8>> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<{} bytes>", self.0.len())
+    }
+}
+
+impl std::fmt::Debug for Secret<Vec<WirePatch>> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{} patches>", self.0.len())
     }
 }
 
@@ -330,6 +336,11 @@ pub enum ClientMsg {
         from: u64,
         count: u32,
     },
+    /// The session's recent edits as Claude Code shows them, for the inline diff (answer: `Patches`; read-only, on
+    /// `GetClaude`'s line; version 20).
+    GetPatches {
+        session: SessionId,
+    },
     /// The person's answer to an editor proposal (`Ide`): Control only, `Human` only (DESIGN.md §13.9; version 18).
     IdeAnswer {
         session: SessionId,
@@ -546,6 +557,9 @@ pub struct ClaudeInfo {
     pub files_changed: u32,
     pub edits: u32,
     pub last_edit: Option<EditMeta>,
+    /// Changes whenever the session's patches (`GetPatches`) do: a tool started or finished an edit (version 20).
+    #[serde(default)]
+    pub patch_gen: u64,
     /// Running subagents, then the last finished ones.
     pub workers: Vec<Worker>,
     pub cache_warm: Option<bool>,
@@ -788,12 +802,39 @@ pub enum DaemonMsg {
         session: SessionId,
         rows: Secret<WireTextRows>,
     },
+    /// Answer to `GetPatches` (version 20): oldest first; `gen` is the `ClaudeInfo::patch_gen` they belong to.
+    /// File text: never logged.
+    Patches {
+        session: SessionId,
+        gen: u64,
+        patches: Secret<Vec<WirePatch>>,
+    },
     /// The session's oldest editor proposal waiting for an answer, `None` when none waits (on attach and on every
     /// change; version 18).
     Ide {
         session: SessionId,
         proposal: Option<Box<IdeProposal>>,
     },
+}
+
+/// One edit of a Claude Code session in the shape Claude Code draws it (stage PD): from PostToolUse's
+/// `structuredPatch`, or, while the tool waits (a permission question), from the file before it and the tool input.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct WirePatch {
+    /// The tool call's `tool_use_id`.
+    pub id: String,
+    pub path: String,
+    /// PostToolUse came (the hunks are Claude Code's own).
+    pub done: bool,
+    pub hunks: Vec<WireHunk>,
+}
+
+/// A hunk: its first line before and after, and its lines, each starting with ` `, `-` or `+`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct WireHunk {
+    pub old_start: u32,
+    pub new_start: u32,
+    pub lines: Vec<String>,
 }
 
 /// An Edit or Write Claude Code proposes through the editor connection (DESIGN.md §13.9).
