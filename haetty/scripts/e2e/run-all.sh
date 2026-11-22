@@ -45,6 +45,7 @@ run bash "$here/sidebar.sh"
 run bash "$here/diff.sh"
 run bash "$here/ide.sh"
 run bash "$here/select.sh"
+run bash "$here/inline-diff.sh"
 run bash "$here/coordinator.sh"
 echo "E2E scripts with a failure: $bad"
 exit $bad

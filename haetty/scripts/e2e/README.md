@@ -21,6 +21,7 @@ HAETTY_TEST_TMP=/tmp/haetty-test scripts/e2e/xvfb.sh bash scripts/e2e/tabs.sh /t
 | `tabs.sh` | rename, `repo:branch` names, closed tabs with `--resume`, diff views, detach/attach |
 | `ide.sh` | `ide-integration`: a fake Claude Code's Edit proposals open the diff overlay; `a`, `d`, Esc; the lock file |
 | `select.sh` | text selection: drag, double and triple click, Shift+click, Alt+drag, Ctrl+Shift+C, the primary selection and middle click, the scrollback, Shift with mouse reporting, the alternate screen, the diff overlay (Xvfb's clipboard only) |
+| `inline-diff.sh` | Claude Code's edit blocks redrawn side by side (a fake claude with blocks of Claude Code 2.1.330's shape and its hooks): docked sidebar, `haetty screen` unchanged, a late hook, the mark, a copy of one side, unified, narrow windows, 0 input bytes, 0 resizes |
 | `orchestrator.sh` | tasks, worker tabs in worktrees, reports and states, message gating, worktree removal |
 | `daemon-crash.sh` | the GUI when its daemon is killed: window, hint, tab sets kept, no orphans, restore |
 | `scale.sh` | the first window at 100, 125, 150 and 200 % (`WINIT_X11_SCALE_FACTOR`): the program sees the asked 80x24, the window has the pixels asked for that grid (A7) |

@@ -662,7 +662,7 @@ fn inline_in(t: &Theme, mut snap: Snapshot, old_start: u32, lines: &[&str]) -> S
     let found = find(&snap, &p);
     assert_eq!(found.len(), 1, "the scene's block matches");
     let d = layout(&snap, &found[0], &p[0]).expect("fits");
-    paint(&mut snap, &d, &found[0], &p[0], g);
+    paint(&mut snap, 0, &d, &found[0], &p[0], g);
     snap
 }
 

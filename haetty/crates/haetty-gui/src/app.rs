@@ -1997,7 +1997,7 @@ impl Win {
         let (fg, bg) = (self.theme.foreground, self.theme.background);
         let empty = Snapshot { default_fg: fg, default_bg: bg, ..Default::default() };
         self.inline_update();
-        let screen = self.inline_screen().or(self.tab().snap.as_ref()).unwrap_or(&empty);
+        let screen = self.tab().snap.as_ref().unwrap_or(&empty);
         let g = ui::Greys::new(screen.default_fg, screen.default_bg, &self.theme.palette);
         let names: Vec<String> = self.tabs.iter().map(Tab::name).collect();
         let bar = (self.top() > 0).then(|| {
@@ -2065,6 +2065,7 @@ impl Win {
             }),
         }
         .build();
+        self.inline_paint(&mut next);
         self.mark_selection(&mut next);
         self.sidebar_hits = new_hits;
         if self.composed.as_ref().is_some_and(|s| (s.cols, s.rows) != (next.cols, next.rows)) {

@@ -13,7 +13,7 @@ const BUDGET: Duration = Duration::from_millis(1);
 
 pub(super) struct Inline {
     key: u64,
-    pub snap: Option<Snapshot>,
+    blocks: Vec<(inline_diff::Found, Patch)>,
     pub drawn: Vec<Drawn>,
 }
 
@@ -59,17 +59,12 @@ impl Win {
     pub(super) fn inline_update(&mut self) {
         let on = self.cfg.inline_split && self.tab().claude.is_some();
         if !on {
-            self.inline = None;
-            return;
+            return self.inline_off();
         }
         self.inline_fetch();
-        let Some(s) = self.tab().snap.as_ref() else {
-            self.inline = None;
-            return;
-        };
+        let Some(s) = self.tab().snap.as_ref() else { return self.inline_off() };
         if s.cols < self.cfg.inline_min_cols || self.tab().patches.list.is_empty() {
-            self.inline = None;
-            return;
+            return self.inline_off();
         }
         let key = self.inline_key(s);
         if self.inline.as_ref().is_some_and(|c| c.key == key) {
@@ -83,24 +78,43 @@ impl Win {
             .filter_map(|f| inline_diff::layout(s, &f, &t.patches.list[f.patch]).map(|d| (f, d)))
             .collect();
         if t0.elapsed() > BUDGET || found.is_empty() {
+            if self.inline.as_ref().is_some_and(|c| !c.drawn.is_empty()) {
+                log::debug!("inline diff: 0 block(s) redrawn");
+            }
             if t0.elapsed() > BUDGET {
                 log::debug!("inline diff: over the frame budget ({} us)", t0.elapsed().as_micros());
             }
-            self.inline = Some(Inline { key, snap: None, drawn: vec![] });
+            self.inline = Some(Inline { key, blocks: vec![], drawn: vec![] });
             return;
         }
-        let mut out = s.clone();
-        let g = ui::Greys::new(s.default_fg, s.default_bg, &self.theme.palette);
-        for (f, d) in &found {
-            inline_diff::paint(&mut out, d, f, &t.patches.list[f.patch], g);
+        log::trace!("inline diff: {} block(s) in {} us", found.len(), t0.elapsed().as_micros());
+        if self.inline.as_ref().is_none_or(|c| c.drawn.len() != found.len()) {
+            log::debug!("inline diff: {} block(s) redrawn", found.len());
         }
+        let list = &t.patches.list;
+        let blocks = found.iter().map(|(f, _)| (f.clone(), list[f.patch].clone())).collect();
         let drawn = found.into_iter().map(|(_, d)| d).collect();
-        self.inline = Some(Inline { key, snap: Some(out), drawn });
+        self.inline = Some(Inline { key, blocks, drawn });
     }
 
-    /// The screen to compose: the redrawn one when a block was redrawn.
-    pub(super) fn inline_screen(&self) -> Option<&Snapshot> {
-        self.inline.as_ref().and_then(|c| c.snap.as_ref())
+    fn inline_off(&mut self) {
+        if self.inline.take().is_some_and(|c| !c.drawn.is_empty()) {
+            log::debug!("inline diff: 0 block(s) redrawn");
+        }
+    }
+
+    /// Paints the redrawn blocks into the composed frame (the program's screen from row `top`); not while an overlay
+    /// covers the screen.
+    pub(super) fn inline_paint(&self, frame: &mut Snapshot) {
+        let Some(c) = self.inline.as_ref().filter(|c| !c.drawn.is_empty()) else { return };
+        if self.overlay_open() || self.palette.is_some() || self.settings_panel.is_some() {
+            return;
+        }
+        let Some(s) = self.tab().snap.as_ref() else { return };
+        let g = ui::Greys::new(s.default_fg, s.default_bg, &self.theme.palette);
+        for ((f, p), d) in c.blocks.iter().zip(&c.drawn) {
+            inline_diff::paint(frame, self.top(), d, f, p, g);
+        }
     }
 
     /// A press at a cell of the program's screen: the `⇄` mark turns its block back to Claude Code's shape, the

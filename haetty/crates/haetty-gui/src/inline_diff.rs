@@ -406,8 +406,9 @@ fn side(
     }
 }
 
-/// Draws a block side by side into the screen's cells, inside the block's rows and columns only.
-pub fn paint(s: &mut Snapshot, d: &Drawn, f: &Found, p: &Patch, g: Greys) {
+/// Draws a block side by side into a frame whose program screen starts at row `dy`, inside the block's rows and
+/// columns only.
+pub fn paint(s: &mut Snapshot, dy: u16, d: &Drawn, f: &Found, p: &Patch, g: Greys) {
     let Some(hunk) = p.hunks.get(d.hunk) else { return };
     let lines: Vec<_> = hunk.numbered().skip(f.start).take(f.rows.len()).collect();
     let nums = lines.iter().map(|l| l.1).max().unwrap_or(0);
@@ -416,10 +417,13 @@ pub fn paint(s: &mut Snapshot, d: &Drawn, f: &Found, p: &Patch, g: Greys) {
     let add = (mix(g.bg, g.added, 55), mix(g.bg, g.added, 120));
     let plain = (g.bg, g.bg);
     let cols = s.cols as usize;
+    if d.x1 as usize > cols || (d.y1 + dy) as usize > s.rows as usize {
+        return;
+    }
     for (k, (a, b)) in pairs(&lines).into_iter().chain(std::iter::repeat((None, None))).take(d.lines.len()).enumerate()
     {
-        let y = d.y0 as usize + k;
-        let row = &mut s.cells[y * cols..(y + 1) * cols];
+        let y = (d.y0 + dy) as usize + k;
+        let Some(row) = s.cells.get_mut(y * cols..(y + 1) * cols) else { return };
         let area = &mut row[d.x0 as usize..d.x1 as usize];
         area.fill(Cell::default());
         if a.is_none() && b.is_none() {
@@ -437,8 +441,9 @@ pub fn paint(s: &mut Snapshot, d: &Drawn, f: &Found, p: &Patch, g: Greys) {
         side(&mut rest[1..], b.as_ref().map(|v| (v.0, v.1.as_str())), nw, if ctx { plain } else { add }, &wb, g);
     }
     if let Some((x, y)) = d.mark {
-        let i = y as usize * cols + x as usize;
-        s.cells[i] = Cell { text: "⇄".into(), fg: Some(g.dim), ..Default::default() };
+        if let Some(c) = s.cells.get_mut((y + dy) as usize * cols + x as usize) {
+            *c = Cell { text: "⇄".into(), fg: Some(g.dim), bg: c.bg, ..Default::default() };
+        }
     }
 }
 
@@ -774,7 +779,7 @@ mod tests {
         assert_eq!(d.mark, Some((113, 0)), "the mark on the header row");
         let mut out = s.clone();
         let g = crate::ui::Greys::from(Rgb { r: 220, g: 220, b: 220 }, Rgb { r: 20, g: 20, b: 20 });
-        paint(&mut out, &d, &f[0], &p[0], g);
+        paint(&mut out, 0, &d, &f[0], &p[0], g);
         for y in 0..s.rows {
             for x in 0..s.cols {
                 let inside = (d.y0..d.y1).contains(&y) && (d.x0..d.x1).contains(&x) || d.mark == Some((x, y));
@@ -787,6 +792,27 @@ mod tests {
         let (l, r) = row.split_once('│').unwrap();
         assert_eq!((l.trim(), r.trim()), ("7 def add(a, b):", "7 def add_numbers(a, b):"));
         assert_eq!(out.cell(d.x0 + d.half, 1).unwrap().text, "│", "the dim line in the middle");
+    }
+
+    #[test]
+    fn a_layout_wider_or_taller_than_the_frame_is_not_painted() {
+        let s = shown();
+        let p = vec![patch("t1", LINES)];
+        let f = find(&s, &p);
+        let d = layout(&s, &f[0], &p[0]).unwrap();
+        let g = crate::ui::Greys::from(Rgb { r: 220, g: 220, b: 220 }, Rgb { r: 20, g: 20, b: 20 });
+        let narrow = Snapshot {
+            cols: 100,
+            rows: s.rows,
+            cells: vec![Cell::default(); 100 * s.rows as usize],
+            ..Default::default()
+        };
+        let mut out = narrow.clone();
+        paint(&mut out, 0, &d, &f[0], &p[0], g);
+        assert_eq!(out.cells, narrow.cells, "the window got narrower before the screen did: nothing painted, no panic");
+        let mut out = s.clone();
+        paint(&mut out, s.rows, &d, &f[0], &p[0], g);
+        assert_eq!(out.cells, s.cells, "below the frame: nothing painted");
     }
 
     #[test]
@@ -853,5 +879,47 @@ mod tests {
                 assert_eq!(got, want, "{name} {kind:?}: candidate shapes and matched ones");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod timing {
+    use super::tests_support::*;
+
+    #[test]
+    #[ignore]
+    fn time_per_frame() {
+        let rec = load("run1");
+        let mut all = rec.post.clone();
+        all.extend(rec.pre.iter().cloned());
+        let mut e = engine(rec.cols, rec.rows);
+        let g = crate::ui::Greys::from(
+            haetty_core::Rgb { r: 220, g: 220, b: 220 },
+            haetty_core::Rgb { r: 20, g: 20, b: 20 },
+        );
+        let (mut t_find, mut t_paint, mut n) = (0u128, 0u128, 0u32);
+        for (c, ok) in rec.chunks.iter().zip(&rec.settled) {
+            e.feed(c);
+            if !*ok {
+                continue;
+            }
+            let s = e.snapshot();
+            let t0 = std::time::Instant::now();
+            let found: Vec<_> =
+                find(&s, &all).into_iter().filter_map(|f| layout(&s, &f, &all[f.patch]).map(|d| (f, d))).collect();
+            let t1 = std::time::Instant::now();
+            let mut out = s.clone();
+            for (f, d) in &found {
+                paint(&mut out, 0, d, f, &all[f.patch], g);
+            }
+            t_paint += t1.elapsed().as_micros();
+            t_find += (t1 - t0).as_micros();
+            n += 1;
+        }
+        eprintln!(
+            "{n} frames: find+layout {} us, clone+paint {} us on average",
+            t_find / n as u128,
+            t_paint / n as u128
+        );
     }
 }
