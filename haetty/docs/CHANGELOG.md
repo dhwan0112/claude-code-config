@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.2 (2026-11-22, candidate)
+
+Stage PD's side-by-side diff in the chat (since 0.4.1); the candidate is checked on Linux under the P1c rule
+(`docs/history/2026-11-22-pd.md`).
+
+**Claude Code's edit blocks side by side** (stage PD; README "Edit blocks side by side"; DESIGN §2.5): when the
+program area is at least `inline-diff-min-cols` (110) columns wide, a docked sidebar counted, haetty redraws the red
+and green edit block Claude Code draws in the conversation (and inside its permission question) side by side in the
+same place: before left, after right, line numbers on both sides, changed words in a deeper tint, long lines cut with
+`…`, a dim `⇄` on the block's header row (a click turns that block back; a click on the file's name opens the diff
+overlay). Only a block whose every visible row matches one edit the hooks reported is redrawn; the program, its
+output, the terminal's size and what `haetty screen` reads do not change. `inline-diff = split | unified` (default
+split), the palette's "Toggle inline diff layout". A selection over the block copies the side of the drag. The
+daemon keeps each session's newest 64 edits in Claude Code's shape (protocol 20, `GetPatches`, read-only).
+
+**Fixes:** the ide test's wrong token is always wrong (1a74f43, in 0.4.1's check). e2e scripts clear the markers of
+the haetty tab they run in (0.4.1).
+
+**Windows:** unverified for this commit; its build and clippy pass for `x86_64-pc-windows-gnu` (the gate). Not run on
+Windows: the inline diff (`inline-diff.sh` is Linux only; no Windows reference frames `inline-diff*`), and everything
+0.4.1 lists.
+
 ## 0.4.1 (2026-11-21, candidate)
 
 Stage PX's text selection and copy, and stage P3c's editor connection (both since 0.4.0); the candidate is checked on
