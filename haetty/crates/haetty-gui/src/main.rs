@@ -43,6 +43,7 @@ mod geom;
 mod gitview;
 mod help;
 mod icon;
+mod inline_diff;
 mod input;
 mod install;
 mod keymap;

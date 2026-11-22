@@ -89,14 +89,14 @@ fn top_of(s: &Snapshot) -> u64 {
 
 impl Win {
     /// The terminal's rows on the window grid, and its columns.
-    fn term_area(&self) -> (u16, u16, u16) {
+    pub(super) fn term_area(&self) -> (u16, u16, u16) {
         let rows = self.tab().snap.as_ref().map_or(0, |s| s.rows);
         let cols = self.grid.cols.saturating_sub(self.panel_cols());
         (self.top(), rows, cols)
     }
 
     /// The pointer's window cell, and whether it is over the terminal area.
-    fn pointer_cell(&self) -> ((u16, u16), bool) {
+    pub(super) fn pointer_cell(&self) -> ((u16, u16), bool) {
         let (col, row) = self.layout.cell_at(self.origin(), self.mouse.x, self.mouse.y, self.grid);
         let (top, rows, cols) = self.term_area();
         let (_, y) = self.layout.grid_px(self.origin(), self.mouse.x, self.mouse.y);
@@ -104,7 +104,7 @@ impl Win {
         ((col, row), inside)
     }
 
-    fn overlay_open(&self) -> bool {
+    pub(super) fn overlay_open(&self) -> bool {
         self.diff.is_some() || self.agent_view.is_some()
     }
 
@@ -426,7 +426,8 @@ impl Win {
                 let rect = s.sel.rect;
                 if b.0.row >= top && b.1.row < top + snap.rows as u64 {
                     let rows: Vec<TextRow> = (0..snap.rows).map(|y| snap.text_row(y)).collect();
-                    let text = selection::text(b, rect, top, &rows);
+                    let text =
+                        self.inline_copy(b, rect, top, &rows).unwrap_or_else(|| selection::text(b, rect, top, &rows));
                     let cut = text.len() > COPY_LIMIT;
                     self.put(to, cap(text), cut);
                     return;

@@ -396,3 +396,37 @@ fn the_sidebar_taking_the_keyboard_leaves_the_question_and_the_hold() {
     assert!(gui.sync(Duration::from_secs(5)));
     haetty_testkit::remove_dir_all(&dir);
 }
+
+#[test]
+fn an_edit_block_redrawn_side_by_side_leaves_the_question_and_the_hold() {
+    // Stage PD: while a permission question shows an edit block, the window reads the edit's patch (`GetPatches`) to
+    // redraw the block. The PreToolUse patch, the queries and the redraw are no answer and open no hold.
+    let (dir, ep, gui, id) = fake_claude("permission-inline-diff");
+    let orch = Client::connect(&ep, Role::Control, "orchestrator").unwrap();
+    let file = dir.join("a.py");
+    std::fs::write(&file, "a\nb\nc\n").unwrap();
+    let input = format!(r#"{{"file_path":{:?},"old_string":"b","new_string":"B"}}"#, file.to_string_lossy());
+    hook(&ep, &id, "UserPromptSubmit", r#"{"session_id":"s"}"#);
+    hook(
+        &ep,
+        &id,
+        "PreToolUse",
+        &format!(r#"{{"session_id":"s","tool_name":"Edit","tool_use_id":"t1","tool_input":{input}}}"#),
+    );
+    hook(&ep, &id, "PermissionRequest", r#"{"session_id":"s","tool_name":"Edit"}"#);
+    assert_eq!(info(&gui, &id).attention, Attention::Ask);
+    for _ in 0..3 {
+        let c = gui.claude_state(&id).unwrap();
+        assert_eq!(c.attention, Attention::Ask);
+        let _ = gui.patches(&id).unwrap();
+        assert!(gui.sync(Duration::from_secs(5)));
+        assert_eq!(info(&gui, &id).attention, Attention::Ask, "reading the patch is no answer");
+        assert!(!program_write_taken(&orch, &id), "and opens no hold");
+    }
+    gui.send(&ClientMsg::Write { session: id.clone(), origin: Origin::Human, bytes: Secret(b"1".to_vec()) }).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    assert_eq!(info(&gui, &id).attention, Attention::None, "the person's key answers");
+    gui.close(&id).unwrap();
+    assert!(gui.sync(Duration::from_secs(5)));
+    haetty_testkit::remove_dir_all(&dir);
+}

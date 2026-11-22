@@ -556,6 +556,9 @@ fn scenes() -> Vec<(&'static str, Snapshot, Option<Preedit>, Option<&'static str
     let s = screen(110, 14, &["$ cargo test", "   Compiling haetty v0.1.0"], Some((0, 1)));
     let diff = Compose { cols: 110, rows: 14, diff: Some(&view), ..self::compose(&s, &acc) }.build();
     out.push(("selection-diff", selected(diff, (point(3, 60), point(5, 80)), false), None, None));
+    for (name, snap) in inline_scenes() {
+        out.push((name, snap, None, None));
+    }
     let mut proposal = crate::diffview::DiffView::proposal(1, "/work/src/main.rs", DIFF_BEFORE, DIFF_AFTER);
     proposal.set_root("/work");
     let s = screen(110, 14, &["Do you want to make this edit to main.rs?", "> 1. Yes"], Some((0, 1)));
@@ -598,6 +601,140 @@ fn diff_view() -> crate::diffview::DiffView {
     let mut v = crate::diffview::DiffView::new(Some(&e));
     v.set_root("/work");
     v
+}
+
+/// Claude Code 2.1.330's edit block: `top` lines, then rows of number, mark and text with its line backgrounds
+/// (from column `x`, the background over `w` columns), then `below` (stage PD).
+fn cc_block(rows: u16, top: &[&str], block: &[(char, u32, &str)], below: &[&str], x: usize, w: usize) -> Snapshot {
+    cc_block_in(&theme(), rows, top, block, below, x, w)
+}
+
+fn cc_block_in(
+    t: &Theme,
+    rows: u16,
+    top: &[&str],
+    block: &[(char, u32, &str)],
+    below: &[&str],
+    x: usize,
+    w: usize,
+) -> Snapshot {
+    let cols = 120u16;
+    let mut lines: Vec<&str> = top.to_vec();
+    lines.extend(std::iter::repeat_n("", block.len()));
+    lines.extend(below);
+    let mut snap = screen_in(t, cols, rows, &lines, None);
+    let nw = block.iter().map(|b| b.1.to_string().len()).max().unwrap_or(1);
+    for (k, (m, n, text)) in block.iter().enumerate() {
+        let y = top.len() + k;
+        let bg = match m {
+            '-' => Rgb { r: 61, g: 1, b: 0 },
+            '+' => Rgb { r: 2, g: 40, b: 0 },
+            _ => t.background,
+        };
+        let row = &mut snap.cells[y * cols as usize..(y + 1) * cols as usize];
+        if *m != ' ' {
+            row[x..x + w].fill(Cell { bg: Some(bg), ..Default::default() });
+        }
+        let line = format!("{n:>nw$} {m}{text}");
+        ui::put(&mut row[x..x + w], 0, &line, t.foreground, bg, false);
+        if *m == ' ' {
+            for c in &mut row[x..x + w] {
+                c.bg = None;
+            }
+        }
+    }
+    snap
+}
+
+/// The block of `snap` redrawn side by side for an edit with these hunk lines, as the window draws it.
+fn inline(snap: Snapshot, old_start: u32, lines: &[&str]) -> Snapshot {
+    inline_in(&theme(), snap, old_start, lines)
+}
+
+fn inline_in(t: &Theme, mut snap: Snapshot, old_start: u32, lines: &[&str]) -> Snapshot {
+    use crate::inline_diff::{find, layout, paint, Hunk, Patch};
+    let p = vec![Patch {
+        id: "t".into(),
+        path: "/work/src/calc.py".into(),
+        hunks: vec![Hunk::from_lines(old_start, old_start, lines)],
+    }];
+    let g = ui::Greys::new(t.foreground, t.background, &t.palette);
+    let found = find(&snap, &p);
+    assert_eq!(found.len(), 1, "the scene's block matches");
+    let d = layout(&snap, &found[0], &p[0]).expect("fits");
+    paint(&mut snap, &d, &found[0], &p[0], g);
+    snap
+}
+
+fn inline_scenes() -> Vec<(&'static str, Snapshot)> {
+    let head = ["● Update(src/calc.py)", "  ⎿  Added 2 lines, removed 2 lines"];
+    let calc = [
+        " SCALE = 10",
+        " ",
+        " ",
+        "-def add(a, b):",
+        "-    tmp = a + b",
+        "+def add_numbers(a, b):",
+        "+    scratch = a + b",
+        "     return tmp",
+    ];
+    let rows: Vec<(char, u32, &str)> = vec![
+        (' ', 5, "SCALE = 10"),
+        (' ', 6, ""),
+        (' ', 7, ""),
+        ('-', 8, "def add(a, b):"),
+        ('-', 9, "    tmp = a + b"),
+        ('+', 8, "def add_numbers(a, b):"),
+        ('+', 9, "    scratch = a + b"),
+        (' ', 10, "    return tmp"),
+    ];
+    let normal = inline(cc_block(12, &head, &rows, &["", "● Done."], 6, 108), 5, &calc);
+    let long_old =
+        "line 3: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma";
+    let long_new =
+        "line 3: alpha beta gamma delta epsilon zeta eta theta iota KAPPA lambda mu nu xi omicron pi rho sigma";
+    let long_lines = [" line 2: short", &format!("-{long_old}"), &format!("+{long_new}"), " line 4: short"];
+    let long_rows = vec![(' ', 2, "line 2: short"), ('-', 3, long_old), ('+', 3, long_new), (' ', 4, "line 4: short")];
+    let long = inline(
+        cc_block(8, &head, &long_rows, &[], 6, 108),
+        2,
+        &long_lines.iter().map(|s| s.as_ref()).collect::<Vec<&str>>(),
+    );
+    let ko_lines = [" # 메모", " ", "-이 저장소는 시험용입니다.", "+이 저장소는 화면 비교 시험용입니다.", " "];
+    let ko_rows = vec![
+        (' ', 1, "# 메모"),
+        (' ', 2, ""),
+        ('-', 3, "이 저장소는 시험용입니다."),
+        ('+', 3, "이 저장소는 화면 비교 시험용입니다."),
+        (' ', 4, ""),
+    ];
+    let hangul = inline(
+        cc_block(9, &["● Update(notes/readme-ko.md)", "  ⎿  Added 1 line, removed 1 line"], &ko_rows, &[], 6, 108),
+        1,
+        &ko_lines,
+    );
+    let cut = inline(cc_block(8, &[], &rows[3..], &["", "● Done."], 6, 108), 5, &calc);
+    let q_top = [
+        "────────────────────────────────────────",
+        " Edit file",
+        " src/calc.py",
+        " ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌",
+    ];
+    let q_below = [
+        " ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌",
+        " Do you want to make this edit to calc.py?",
+        " ❯ 1. Yes",
+        "   2. Yes, and switch to accept edits for this session (shift+tab)",
+        "   3. No",
+    ];
+    let question = inline(cc_block(17, &q_top, &rows, &q_below, 0, 120), 5, &calc);
+    vec![
+        ("inline-diff", normal),
+        ("inline-diff-long", long),
+        ("inline-diff-hangul", hangul),
+        ("inline-diff-cut", cut),
+        ("inline-diff-question", question),
+    ]
 }
 
 /// The cells of `b` marked selected, as the window marks them (stage PX).
@@ -921,6 +1058,58 @@ fn update_mark_dumps() {
 
 /// Stage PX's selection in the three built-in themes (a stream over a line with Hangul, a rectangle) and inside the
 /// diff overlay. `HAETTY_LOOK_DIR=docs/look cargo test -p haetty-gui update_selection_dumps -- --ignored`
+/// `docs/look/pd-*.png` (stage PD): each inline-diff scene as Claude Code draws it and as haetty redraws it, and
+/// the plain one in the three themes. `HAETTY_LOOK_DIR=docs/look cargo test update_inline_dumps -- --ignored`.
+#[test]
+#[ignore]
+fn update_inline_dumps() {
+    let Some(dir) = std::env::var_os("HAETTY_LOOK_DIR").map(PathBuf::from) else { return };
+    let Ok(fonts) = Fonts::load(None) else { return };
+    let mut painter = Painter::new(fonts, PX);
+    let write = |painter: &mut Painter, name: &str, snap: &Snapshot| {
+        let cv = render(painter, snap, None, None);
+        std::fs::write(dir.join(format!("{name}.png")), png_wh(cv.width, cv.height, &rgba(&cv.pixels))).unwrap();
+    };
+    let t = theme();
+    painter.set_look(Look::of(&t));
+    for (name, snap) in inline_scenes() {
+        let rest = name.trim_start_matches("inline-diff").trim_start_matches('-');
+        write(&mut painter, &format!("pd-{}", if rest.is_empty() { "plain" } else { rest }), &snap);
+    }
+    let head = ["● Update(src/calc.py)", "  ⎿  Added 2 lines, removed 2 lines"];
+    let rows: Vec<(char, u32, &str)> = vec![
+        (' ', 5, "SCALE = 10"),
+        (' ', 6, ""),
+        (' ', 7, ""),
+        ('-', 8, "def add(a, b):"),
+        ('-', 9, "    tmp = a + b"),
+        ('+', 8, "def add_numbers(a, b):"),
+        ('+', 9, "    scratch = a + b"),
+        (' ', 10, "    return tmp"),
+    ];
+    let calc = [
+        " SCALE = 10",
+        " ",
+        " ",
+        "-def add(a, b):",
+        "-    tmp = a + b",
+        "+def add_numbers(a, b):",
+        "+    scratch = a + b",
+        "     return tmp",
+    ];
+    for (name, slug) in [
+        ("haetty classic", "haetty-classic"),
+        ("IBM 5153 CGA", "ibm-5153-cga"),
+        ("IBM 5153 CGA (Black)", "ibm-5153-cga-black"),
+    ] {
+        let t = Theme::builtin(name).expect("built in");
+        painter.set_look(Look::of(&t));
+        let before = cc_block_in(&t, 12, &head, &rows, &["", "● Done."], 6, 108);
+        write(&mut painter, &format!("pd-before-{slug}"), &before);
+        write(&mut painter, &format!("pd-split-{slug}"), &inline_in(&t, before, 5, &calc));
+    }
+}
+
 #[test]
 #[ignore]
 fn update_selection_dumps() {

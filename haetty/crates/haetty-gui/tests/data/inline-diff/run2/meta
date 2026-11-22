@@ -1,0 +1,5 @@
+cols 130
+rows 40
+renderer fullscreen
+claude 2.1.330
+model haiku

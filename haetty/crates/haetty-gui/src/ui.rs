@@ -13,7 +13,7 @@ use haetty_proto::wire::{Attention, ClaudeInfo};
 use crate::keymap::{Action, Keymap};
 
 /// `a` mixed toward `b` by `t`/255.
-fn mix(a: Rgb, b: Rgb, t: u8) -> Rgb {
+pub fn mix(a: Rgb, b: Rgb, t: u8) -> Rgb {
     let m = |x: u8, y: u8| ((x as u16 * (255 - t as u16) + y as u16 * t as u16) / 255) as u8;
     Rgb { r: m(a.r, b.r), g: m(a.g, b.g), b: m(a.b, b.b) }
 }

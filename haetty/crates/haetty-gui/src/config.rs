@@ -165,6 +165,10 @@ pub struct Config {
     pub diff_split_cols: usize,
     /// Open the diff of a file as soon as Claude Code edits it (`diff-after-edit`).
     pub diff_after_edit: bool,
+    /// Claude Code's edit blocks redrawn side by side in place (`inline-diff = split`; stage PD).
+    pub inline_split: bool,
+    /// The program area's width from which the inline diff is drawn (`inline-diff-min-cols`).
+    pub inline_min_cols: u16,
 }
 
 impl Default for Config {
@@ -212,6 +216,8 @@ impl Default for Config {
             diff_view: DiffViewSetting::Auto,
             diff_split_cols: 100,
             diff_after_edit: false,
+            inline_split: true,
+            inline_min_cols: 110,
         }
     }
 }
@@ -624,6 +630,30 @@ pub const SETTINGS: &[Setting] = &[
         line: "Terminal engine of new tabs: libghostty-vt or haetty's own (native).",
         group: Group::Advanced,
         when: When::NextStart,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "inline-diff",
+        kind: Kind::Choice(&["split", "unified"]),
+        default: "split",
+        default_note: None,
+        doc: "`split` / `unified` — Claude Code's edit blocks: split: haetty redraws a block side by side in place when it matches an edit the hooks reported (the program and its output do not change); unified: as Claude Code draws them",
+        line: "Claude Code's edit blocks side by side (haetty redraws them on the screen only).",
+        group: Group::Claude,
+        when: When::Live,
+        panel: true,
+        cli: true,
+    },
+    Setting {
+        key: "inline-diff-min-cols",
+        kind: num(40.0, 400.0, 1.0, true, true),
+        default: "110",
+        default_note: None,
+        doc: "columns (40–400): the program area's width from which `inline-diff = split` redraws edit blocks",
+        line: "From this many columns edit blocks are redrawn side by side.",
+        group: Group::Claude,
+        when: When::Live,
         panel: true,
         cli: true,
     },
@@ -1134,6 +1164,8 @@ impl Config {
             }
             "diff-split-cols" => self.diff_split_cols = int() as usize,
             "diff-after-edit" => self.diff_after_edit = flag(),
+            "inline-diff" => self.inline_split = text() == "split",
+            "inline-diff-min-cols" => self.inline_min_cols = int() as u16,
             "observe-new-tabs" => self.observe_new_tabs = flag(),
             "observe-workers" => self.observe_workers = flag(),
             "token-status" => self.token_status = flag(),
@@ -1257,6 +1289,8 @@ impl Config {
             .into(),
             "diff-split-cols" => self.diff_split_cols.to_string(),
             "diff-after-edit" => b(self.diff_after_edit),
+            "inline-diff" => (if self.inline_split { "split" } else { "unified" }).into(),
+            "inline-diff-min-cols" => self.inline_min_cols.to_string(),
             "engine" => self.engine.name().into(),
             "claude-integration" => b(self.claude_integration),
             "shell-integration" => (if self.shell_integration { "auto" } else { "off" }).into(),
@@ -1573,6 +1607,8 @@ mod tests {
             diff_view: DiffViewSetting::Auto,
             diff_split_cols: 100,
             diff_after_edit: false,
+            inline_split: true,
+            inline_min_cols: 110,
         };
         assert_eq!(Config::default(), defaults);
         let read = |text: &str| {

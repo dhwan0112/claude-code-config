@@ -51,6 +51,8 @@ pub enum Action {
     /// Allow or stop observe-only readers (`haetty screen`, `haetty events`)
     /// for the active tab (DESIGN.md §6.1).
     ToggleObserve,
+    /// `inline-diff`: Claude Code's edit blocks side by side, or as Claude Code draws them (stage PD).
+    ToggleInlineDiff,
     /// The settings panel (DESIGN.md §2.4): open or close.
     Settings,
     /// The settings panel at its Updates group (stage PU).
@@ -90,6 +92,7 @@ impl Action {
             Action::MessageWorker => "message_worker".into(),
             Action::RemoveTaskWorktree => "remove_task_worktree".into(),
             Action::ToggleObserve => "toggle_observe".into(),
+            Action::ToggleInlineDiff => "toggle_inline_diff".into(),
             Action::Settings => "settings".into(),
             Action::Updates => "updates".into(),
             Action::AllAgents => "all_agents".into(),
@@ -124,6 +127,7 @@ impl Action {
             Action::MessageWorker => "Message the worker".into(),
             Action::RemoveTaskWorktree => "Remove a task's worktree".into(),
             Action::ToggleObserve => "Observing: allow or stop for this tab (haetty screen, haetty events)".into(),
+            Action::ToggleInlineDiff => "Toggle inline diff layout (edit blocks side by side or as drawn)".into(),
             Action::Settings => "Settings".into(),
             Action::Updates => "Updates (haetty's version, a newer one)".into(),
             Action::AllAgents => "All agents (every tab, the longest waiting first)".into(),
@@ -156,6 +160,7 @@ impl Action {
             "message_worker" => Action::MessageWorker,
             "remove_task_worktree" => Action::RemoveTaskWorktree,
             "toggle_observe" => Action::ToggleObserve,
+            "toggle_inline_diff" => Action::ToggleInlineDiff,
             "settings" => Action::Settings,
             "updates" => Action::Updates,
             "all_agents" => Action::AllAgents,
@@ -186,6 +191,7 @@ impl Action {
         v.extend([
             Action::AllAgents,
             Action::DiffView,
+            Action::ToggleInlineDiff,
             Action::StatusPanel,
             Action::FocusSidebar,
             Action::StatusPanelWider,

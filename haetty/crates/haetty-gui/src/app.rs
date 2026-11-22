@@ -45,6 +45,8 @@ use crate::ui::{self, Compose, Palette, Pick, TabView};
 use crate::Options;
 use haetty_cc::orch::{self, WorkerState};
 
+#[path = "app_inline.rs"]
+mod app_inline;
 #[path = "app_select.rs"]
 mod app_select;
 #[path = "app_settings.rs"]
@@ -139,6 +141,8 @@ struct Tab {
     fg_at: Option<Instant>,
     /// Since when the tab waits for the person (its mark is Wait or Ask): "All agents" lists the longest first.
     waiting_since: Option<Instant>,
+    /// Claude Code's edits for the inline diff (stage PD).
+    patches: app_inline::TabPatches,
 }
 
 impl Tab {
@@ -390,6 +394,8 @@ struct Win {
     /// a middle press that pasted the primary selection (its release is not sent either).
     sel: Option<app_select::Sel>,
     sel_scroll: Option<Instant>,
+    /// The active tab's screen with its edit blocks redrawn side by side (stage PD).
+    inline: Option<app_inline::Inline>,
     last_click: Option<(Instant, (u16, u16), u8)>,
     sel_middle: bool,
 }
@@ -604,6 +610,7 @@ impl App {
             shutting_down: false,
             sel: None,
             sel_scroll: None,
+            inline: None,
             last_click: None,
             sel_middle: false,
             pending_start: None,
@@ -1105,6 +1112,7 @@ impl Win {
             unintegrated: false,
             fg_at: None,
             waiting_since: None,
+            patches: Default::default(),
         };
         tab.task = tab
             .spec
@@ -1619,6 +1627,12 @@ impl Win {
                 self.recompose();
             }
             Action::DetachTab => self.detach_tab(),
+            Action::ToggleInlineDiff => {
+                let next = if self.cfg.inline_split { "unified" } else { "split" };
+                let note = self.change_setting("inline-diff", Some(next)).unwrap_or_else(|e| e);
+                self.show_hint(note);
+                self.recompose();
+            }
             Action::ToggleObserve => {
                 let on = !self.tab().observable;
                 self.set_observable(self.active, on);
@@ -1982,7 +1996,8 @@ impl Win {
         let gear_at = self.gear_place();
         let (fg, bg) = (self.theme.foreground, self.theme.background);
         let empty = Snapshot { default_fg: fg, default_bg: bg, ..Default::default() };
-        let screen = self.tab().snap.as_ref().unwrap_or(&empty);
+        self.inline_update();
+        let screen = self.inline_screen().or(self.tab().snap.as_ref()).unwrap_or(&empty);
         let g = ui::Greys::new(screen.default_fg, screen.default_bg, &self.theme.palette);
         let names: Vec<String> = self.tabs.iter().map(Tab::name).collect();
         let bar = (self.top() > 0).then(|| {
@@ -2900,6 +2915,9 @@ impl ApplicationHandler<UserEvent> for App {
                         }
                         // The title row has no menu (the window menu is not done).
                         if win.integrated && win.title_col().is_some() {
+                            return;
+                        }
+                        if b == MouseButton::Left && !win.mods.shift_key() && win.inline_press() {
                             return;
                         }
                         if win.select_press(b) {

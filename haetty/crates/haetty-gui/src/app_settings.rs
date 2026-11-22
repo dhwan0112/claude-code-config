@@ -257,7 +257,7 @@ impl Win {
     /// Sets `key` (`None`: the default), checks what applies at once (a font the system lacks is refused before
     /// anything is written), writes the config file, then applies. The message for the panel's bottom line, or why
     /// nothing changed.
-    fn change_setting(&mut self, key: &'static str, value: Option<&str>) -> Result<String, String> {
+    pub(super) fn change_setting(&mut self, key: &'static str, value: Option<&str>) -> Result<String, String> {
         let mut next = self.cfg.clone();
         match value {
             Some(v) => next.set(key, v)?,

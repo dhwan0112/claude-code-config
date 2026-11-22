@@ -173,3 +173,26 @@ away. Functions stay; what changes is when they are visible.
   group (a shell-only window shows no button).
 - Not in the panel: what changes how Claude Code works (permission modes, models, hooks, `saving-mode`,
   `worker-command`); `claude-integration` (haetty's observing hooks and status line) is the one Claude Code entry.
+
+### 2.5 The program's cells, and the inline diff
+(Stage PD, the person's DESIGN §2 exception, approved 2026-11-21.)
+- The program's cells are drawn as the program sent them. One exception: Claude Code's edit blocks (the red and green
+  lines under `Update(…)`, in the conversation and inside a permission question) may be redrawn side by side, before
+  on the left and after on the right, with `inline-diff = split` (the default).
+- **The condition.** A block is redrawn only when every visible row of it (line number, mark and text; a long line's
+  next rows joined) matches one edit the hooks reported, line by line: PostToolUse's `structuredPatch`, or, while the
+  tool waits, the hunks of the PreToolUse snapshot against the tool input. No match, or two edits that match, and the
+  block shows as Claude Code drew it. A first or last row that does not match (cut by scrolling, covered by Claude
+  Code's own label) is left out and the rest must match. Files are not read again; files that look secret are not
+  handled; at most 1 ms per frame, over it the frame shows as it was.
+- **What changes.** Only the cells inside the rows and columns the block took: the number of rows, the terminal's
+  size, the bytes the program gets, the snapshot and what `haetty screen` and Observe clients read stay the same. One
+  logical line is one screen row; a line wider than its half is cut with `…`; rows left over are blank. Changed lines
+  pair on one row, a line on one side only leaves the other side empty; the changed words get a deeper tint. Colours:
+  the diff overlay's tints of colours 2 and 1 and the dim grey, no new colour. A dim `⇄` at the right end of the
+  block's header row says haetty redrew it; a click on it turns that block back to Claude Code's shape, a click on the
+  file's name in the header opens the diff overlay on that file. In a permission question the option lines and the
+  borders around them are never covered.
+- From `inline-diff-min-cols` (default 110) columns of program area, a docked sidebar counted; below it, as drawn. A
+  new file (Write) and a full deletion have nothing to split and stay as they are. A selection over a redrawn block
+  copies the side the drag is on, whole lines, without numbers or the line.

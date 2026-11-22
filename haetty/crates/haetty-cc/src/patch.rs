@@ -1,4 +1,4 @@
-//! A session's edits in the shape Claude Code draws them, for the inline diff (stage PD, DESIGN.md §2.6): the
+//! A session's edits in the shape Claude Code draws them, for the inline diff (stage PD, DESIGN.md §2.5): the
 //! PostToolUse `structuredPatch` of Edit and Write, and before it, while the tool waits (a permission question), the
 //! hunks of the PreToolUse snapshot against the tool input. Files that look secret are left out, as for the edit
 //! snapshot.

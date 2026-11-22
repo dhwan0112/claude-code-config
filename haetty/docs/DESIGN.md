@@ -18,6 +18,7 @@ hook output rules, the IPC permission checks, and the path of Claude Code permis
 | 2.2 | Visual rules | Colours from one theme (default IBM 5153 CGA) and the other look rules | [01](design/01-principles-and-outer.md) |
 | 2.3 | Checks | Outer-design checks after implementation: layout changes without input, accents on an idle screen | [01](design/01-principles-and-outer.md) |
 | 2.4 | Settings button and panel | A dim ⚙ (Claude Code tabs: the status row's last column; others: near the corner only); the panel opens only from the person | [01](design/01-principles-and-outer.md) |
+| 2.5 | The program's cells, the inline diff | Drawn as sent; one exception: Claude Code's edit blocks redrawn side by side when they match an edit exactly (stage PD) | [01](design/01-principles-and-outer.md) |
 | 3 | Inner design | Processes, crates, pipeline, socket, protocol, identity, keys, icon, Claude Code, themes, installs | [02](design/02-inner-processes-protocol.md) |
 | 3.1 | Processes | GUI, daemon and sessions, and what runs where | [02](design/02-inner-processes-protocol.md) |
 | 3.2 | Crates | The crates and each one's responsibility | [02](design/02-inner-processes-protocol.md) |

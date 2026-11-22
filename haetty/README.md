@@ -338,6 +338,8 @@ keybind = ctrl+shift+n=new_tab
 | `diff-after-edit` | `true` / `false` — an edit by Claude Code in the active tab opens the diff overlay on that file | `false` |
 | `restore-claude` | `resume` / `shell` — a shell tab saved while `claude` ran in it: reopen the shell and run `claude --resume ID` there, or the shell only | `resume` |
 | `engine` | `ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native) | `ghostty` |
+| `inline-diff` | `split` / `unified` — Claude Code's edit blocks: split: haetty redraws a block side by side in place when it matches an edit the hooks reported (the program and its output do not change); unified: as Claude Code draws them | `split` |
+| `inline-diff-min-cols` | columns (40–400): the program area's width from which `inline-diff = split` redraws edit blocks | `110` |
 | `claude-integration` | `true` / `false` — hooks and status line in Claude Code tabs | `true` |
 | `shell-integration` | `auto` / `off` — a zsh or bash shell tab started without arguments keeps haetty's `claude` first on `PATH` after your own startup files ran ([Claude Code integration](#claude-code-integration)); `off`, or `claude-integration = false`, leaves the shell alone | `auto` |
 | `ide-integration` | `true` / `false` — haetty acts as Claude Code's editor in new Claude Code tabs: an Edit or Write it asks about also shows in the diff overlay, answered with `a` (accept) or `d` (reject). Unofficial protocol, may break with any Claude Code release ([Claude Code integration](#claude-code-integration)); needs `claude-integration`; not on Windows yet | `false` |
