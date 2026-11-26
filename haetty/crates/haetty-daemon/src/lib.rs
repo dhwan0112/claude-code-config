@@ -91,6 +91,8 @@ struct Sess {
     /// A shell tab with the `claude` proxy folder first on its `PATH` (stage PH, H1): a Claude Code started in it
     /// reports here and makes the tab a Claude Code tab until its `SessionEnd`.
     proxy: bool,
+    /// The arguments the proxy's `claude` was started with, as kept for resuming it (stage PK's fix; version 21).
+    launch_args: Vec<String>,
     /// The editor server (`ide-integration`; DESIGN.md §13.9): its lock file goes with it.
     ide: Option<ide::Server>,
     /// The session's latest event-log lines (`GetSessionLog`).
@@ -699,8 +701,8 @@ impl Daemon {
             (ClientMsg::Hello { .. }, _) => false,
             // Hook and status-line reports only from Report clients (the
             // `haetty hook` / `haetty statusline` processes).
-            (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. }, Role::Report) => true,
-            (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. }, _) => false,
+            (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. } | ClientMsg::ClaudeArgs { .. }, Role::Report) => true,
+            (ClientMsg::Hook { .. } | ClientMsg::StatusLine { .. } | ClientMsg::ClaudeArgs { .. }, _) => false,
             (ClientMsg::Sync, _) => true,
             (_, Role::Report) => false,
             // Observe-only readers' requests (DESIGN.md §6.1): Observe alone —
@@ -806,6 +808,14 @@ impl Daemon {
             }
             ClientMsg::Hook { session, event, json, ts_ms, snapshot } => {
                 self.claude_report(session, |cl, j| cl.hook(&event, j, ts_ms, snapshot), &json.0, &event)
+            }
+            ClientMsg::ClaudeArgs { session, args } => {
+                let Some(s) = self.sessions.get_mut(&session).filter(|s| s.proxy) else { return };
+                s.launch_args = args.0;
+                if let Some(cl) = s.claude.as_mut() {
+                    cl.info.launch_args = Secret(s.launch_args.clone());
+                    self.push_claude(&session);
+                }
             }
             ClientMsg::StatusLine { session, json, ts_ms } => {
                 self.claude_report(session, |cl, j| cl.statusline(j, ts_ms), &json.0, "statusline")
@@ -991,6 +1001,7 @@ impl Daemon {
         if let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.proxy && s.claude.is_none()) {
             let mut cl = Claude::default();
             cl.info.via_proxy = true;
+            cl.info.launch_args = Secret(s.launch_args.clone());
             s.claude = Some(cl);
             self.event("claude_started", &sid, &[("via", "proxy")]);
         }
@@ -1237,6 +1248,7 @@ impl Daemon {
                         claude,
                         settings_file,
                         proxy: is_proxy,
+                        launch_args: vec![],
                         ide,
                         recent: Default::default(),
                         lat: Latency::default(),
@@ -1291,6 +1303,7 @@ fn msg_name(m: &ClientMsg) -> &'static str {
         ClientMsg::GetSessionLog { .. } => "GetSessionLog",
         ClientMsg::GetRows { .. } => "GetRows",
         ClientMsg::GetPatches { .. } => "GetPatches",
+        ClientMsg::ClaudeArgs { .. } => "ClaudeArgs",
         ClientMsg::IdeAnswer { .. } => "IdeAnswer",
     }
 }

@@ -198,6 +198,7 @@ pub fn main(args: Vec<String>) -> ! {
             let cwd = std::env::current_dir().ok();
             match with_settings(&args, base, cwd.as_deref(), std::process::id()) {
                 Ok(a) => {
+                    report_args(&args);
                     ide_port = std::env::var(crate::ide::PORT_ENV).ok().filter(|p| p.parse::<u16>().is_ok());
                     a
                 }
@@ -228,6 +229,20 @@ pub fn main(args: Vec<String>) -> ! {
             eprintln!("haetty: {}: {e}", real.display());
             std::process::exit(126);
         }
+    }
+}
+
+/// Tells the tab's daemon which arguments to give again when the conversation is resumed
+/// (`crate::launch::kept`). Without a daemon, at once nothing.
+fn report_args(args: &[String]) {
+    use haetty_proto::wire::{ClientMsg, Secret};
+    use haetty_proto::{paths::Endpoint, product, Client, Role};
+    let Some(session) = product::env("SESSION_ID").filter(|s| !s.is_empty()) else { return };
+    let Ok(ep) = Endpoint::default_for_user() else { return };
+    let dial = std::time::Duration::from_millis(50);
+    let Ok(c) = Client::connect_with(&ep, Role::Report, "claude-proxy", dial) else { return };
+    if c.send(&ClientMsg::ClaudeArgs { session, args: Secret(crate::launch::kept(args)) }).is_ok() {
+        let _ = c.sync(std::time::Duration::from_millis(500));
     }
 }
 

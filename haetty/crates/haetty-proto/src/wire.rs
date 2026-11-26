@@ -17,7 +17,7 @@ use haetty_core::{
 use serde::{Deserialize, Serialize};
 
 pub const MAGIC: [u8; 4] = *b"CCTM";
-pub const VERSION: u32 = 20;
+pub const VERSION: u32 = 21;
 /// Largest accepted frame; a bigger length closes the connection.
 pub const MAX_FRAME: usize = 32 << 20;
 
@@ -37,6 +37,12 @@ impl std::fmt::Debug for Secret<String> {
 impl std::fmt::Debug for Secret<Vec<u8>> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<{} bytes>", self.0.len())
+    }
+}
+
+impl std::fmt::Debug for Secret<Vec<String>> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{} arguments>", self.0.len())
     }
 }
 
@@ -336,6 +342,12 @@ pub enum ClientMsg {
         from: u64,
         count: u32,
     },
+    /// The proxy (a `claude` typed in a shell tab) reports the arguments kept for resuming the conversation (Report
+    /// only; version 21).
+    ClaudeArgs {
+        session: SessionId,
+        args: Secret<Vec<String>>,
+    },
     /// The session's recent edits as Claude Code shows them, for the inline diff (answer: `Patches`; read-only, on
     /// `GetClaude`'s line; version 20).
     GetPatches {
@@ -560,6 +572,10 @@ pub struct ClaudeInfo {
     /// Changes whenever the session's patches (`GetPatches`) do: a tool started or finished an edit (version 20).
     #[serde(default)]
     pub patch_gen: u64,
+    /// The arguments a `claude` typed in a shell tab was started with, as kept for resuming it
+    /// (`haetty_cc::launch::kept`; version 21).
+    #[serde(default)]
+    pub launch_args: Secret<Vec<String>>,
     /// Running subagents, then the last finished ones.
     pub workers: Vec<Worker>,
     pub cache_warm: Option<bool>,

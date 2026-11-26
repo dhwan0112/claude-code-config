@@ -486,6 +486,34 @@ fn health_counts_the_hourly_line_and_the_idle_exit() {
 }
 
 #[test]
+fn the_proxys_claude_arguments_come_from_report_only_and_reach_the_claude_state() {
+    let dir = tmp("launch-args");
+    let (ep, _daemon) = start(&dir, Duration::from_secs(60));
+    let ctl = Client::connect(&ep, Role::Control, "gui").unwrap();
+    let mut sp = spec("sleep 30");
+    sp.claude_integration = true;
+    let id = ctl.create(sp).unwrap();
+    let args = vec!["--model".to_string(), "opus".to_string(), "--add-dir".to_string(), "/w/my dir 한글".to_string()];
+    ctl.send(&ClientMsg::ClaudeArgs { session: id.clone(), args: Secret(vec!["--x".into()]) }).unwrap();
+    assert!(matches!(ctl.next_reply(Duration::from_secs(3)), Some(DaemonMsg::Denied { .. })), "Control may not report");
+    let rep = Client::connect(&ep, Role::Report, "claude-proxy").unwrap();
+    rep.send(&ClientMsg::ClaudeArgs { session: id.clone(), args: Secret(args.clone()) }).unwrap();
+    assert!(rep.sync(Duration::from_secs(5)));
+    rep.send(&ClientMsg::Hook {
+        session: Some(id.clone()),
+        event: "SessionStart".into(),
+        json: Secret(r#"{"session_id":"s1","source":"startup"}"#.into()),
+        ts_ms: 1,
+        snapshot: None,
+    })
+    .unwrap();
+    assert!(rep.sync(Duration::from_secs(5)));
+    assert_eq!(ctl.claude_state(&id).unwrap().launch_args.0, args);
+    ctl.close(&id).unwrap();
+    haetty_testkit::remove_dir_all(&dir);
+}
+
+#[test]
 fn patches_of_edits_for_control_and_observe_only_when_observable() {
     let dir = tmp("patches");
     let (ep, _daemon) = start(&dir, Duration::from_secs(60));

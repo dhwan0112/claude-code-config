@@ -7,6 +7,7 @@ pub mod agents;
 pub mod edit;
 pub mod ide;
 pub mod json;
+pub mod launch;
 pub mod orch;
 pub mod patch;
 pub mod proxy;
