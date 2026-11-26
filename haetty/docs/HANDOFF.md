@@ -8,6 +8,8 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
+> **In progress:** stage pk (branch `haetty/pk`, worktree `~/projects/claude-code-config-wt/pk`). Remaining: first: claude args on restore (the person's 2026-11-27 fix); then PK 1-6: skills, CLAUDE.md lines, RULES table, two encodings, comment check
+
 ## 1. Current state
 
 - **Version** 0.4.2 candidate **`6005817`** (stage PD; Linux candidate check passed 2026-11-27, record
