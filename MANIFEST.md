@@ -53,6 +53,16 @@ Each skill folder has a SOURCE.md with its path and local modifications.
 
 Do not install the pstack-claude plugin. Its SessionStart hook turns on the poteto-mode router, which conflicts with the delegation rules.
 
+### The user's working rules (not from pstack-claude)
+
+The skills the user gave on 2026-11-17 (.skill files; the same names as the claude.ai account's skills, whose copies in
+`~/.claude/skills/synced/` have the same text without the final newline). Each folder's SOURCE.md says where they
+came from. haetty's CLAUDE.md applies them (stage PK, 2026-11-27).
+
+- d45ca358e953b275f04bbcb815c7db41  no-comments/SKILL.md
+- cf6154ac1d73713757829f990768fba1  encode-in-structure/SKILL.md
+- e28bb5421ae7829d515e2bcc0840db4f  change-trail/SKILL.md
+
 ## Status line (copy to ~/.claude/statusline.sh)
 
 - 403e07d9e8bd8faed10c5b3dbb397079  statusline.sh
