@@ -32,6 +32,8 @@ step "clippy windows"; cout=$(cargo clippy --all-targets --target x86_64-pc-wind
 # A failing test prints FAILED / panicked; a compile error "error[...]" or "error:". (grep -q reads a
 # here-string, not a pipe: under pipefail an early match ends the pipe's echo with SIGPIPE and turns the result.)
 step "test"; tout=$(cargo test 2>&1); echo "$tout" | grep -E "^test result|FAILED|panicked|^error"; if grep -qE 'FAILED|panicked|^error(\[|:)' <<< "$tout" || ! grep -q "^test result" <<< "$tout"; then fail=1; echo "GATE STEP FAILED: test"; fi
+step "the scripts the person runs are executable"; bash tools/check-exec.sh || { fail=1; echo "GATE STEP FAILED: exec bits"; }
+step "comments on added lines (a warning until 2026-12-19)"; bash tools/check-comments.sh || { fail=1; echo "GATE STEP FAILED: comments"; }
 step "sizes (stripped copies)"
 S="$HAETTY_TEST_TMP/gate-sizes"; mkdir -p "$S" "$HAETTY_TEST_TMP"
 T=$CARGO_TARGET_DIR; for b in $T/release/haetty-headless $T/release/haetty $T/x86_64-pc-windows-gnu/release/haetty-headless.exe $T/x86_64-pc-windows-gnu/release/haetty.exe; do
