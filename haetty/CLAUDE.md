@@ -96,6 +96,15 @@ the start of a session.
   `tools/known-gate-failures` needs the person's approval; a pushed commit that fails is recorded in HANDOFF,
   not rewritten. An approved change of the outer design (DESIGN §2) is one commit, "DESIGN §2 change, approved".
   Full rules, including reference frames: `docs/dev-commands.md`.
+- No comments in new or changed code (only the "comments that stay" exceptions of the `no-comments` skill). An
+  existing comment is dealt with only when its line changes; no repository-wide clean-up; comments in protected areas
+  are neither deleted nor moved.
+- Why it changed goes into the commit body and `docs/history/` (`change-trail`); no per-file change list in the body;
+  "Checked:" and what is unverified are written as now. Decisions go into the record's "Choices made" section.
+- The same mistake or instruction twice: make it an enforcement, not text (`encode-in-structure`); an incident that
+  cannot be undone or that touched stable or the real environment counts at once. A tool that would grow bigger than
+  the work is written in the report as a proposal. The three skills' check runs once at a stage's end, on its diff.
+  Every rule and what enforces it: [docs/RULES.md](docs/RULES.md).
 - Heavy jobs: at most two at a time, Linux and Windows together (`tools/heavy.sh`, `tools/heavy.ps1`; the test
   and build scripts take a slot themselves; `tools/heavy.sh --status` shows who holds them).
 - vtdiff known differences (`docs/vtdiff/known-vt-differences.txt`): an entry is added directly only when
