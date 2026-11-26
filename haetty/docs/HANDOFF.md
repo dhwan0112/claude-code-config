@@ -8,8 +8,6 @@ the old sections). The code lives in `haetty/` of the `dhwan0112/claude-code-con
 
 **Start with [NORTH-STAR.md](NORTH-STAR.md)** (the four points every stage serves) and "Next session" below.
 
-> **In progress:** stage pk (branch `haetty/pk`, worktree `~/projects/claude-code-config-wt/pk`). Remaining: first: claude args on restore (the person's 2026-11-27 fix); then PK 1-6: skills, CLAUDE.md lines, RULES table, two encodings, comment check
-
 ## 1. Current state
 
 - **Version** 0.4.2 candidate **`6005817`** (stage PD; Linux candidate check passed 2026-11-27, record
@@ -49,31 +47,31 @@ the least that builds (a fallback or one line "not supported on Windows yet") an
 Stages:
 - **Done:** P0, P1a–P1c, PS, PU, P3 research, v0.3.3, PH, PM (P2 in real use, P3b), P2b — their lines, as they stood,
   are in [history/2026-11-20-p3c.md](history/2026-11-20-p3c.md), "Moved from HANDOFF", each with its record.
-  **PI**, **P3c**, **PX** (2026-11-20, 2026-11-21): their lines in [history/2026-11-22-pd.md](history/2026-11-22-pd.md),
-  "Moved from HANDOFF". **PD** (2026-11-22,
-  [record](history/2026-11-22-pd.md), §2.5): Claude Code's edit blocks redrawn side by side when they match an edit
-  (`inline-diff`; protocol 20 `GetPatches`; protected and §2, approved), **0.4.2 candidate** `6005817`.
+  **PI**, **P3c**, **PX**, **PD** (2026-11-20 to 22): their lines in [history/2026-11-22-pd.md](history/2026-11-22-pd.md)
+  and [history/2026-11-27-pk.md](history/2026-11-27-pk.md), "Moved from HANDOFF". **PK** (2026-11-27, [record](history/2026-11-27-pk.md)):
+  claude's start arguments kept for resuming; working rules, [RULES.md](RULES.md), gate and run-all checks.
 - **Order** (stage bundle PQ, the person's text of 2026-11-21: [STAGES.md](STAGES.md), "PQ", its common rules and
   each stage's "Added in PQ"; PD and PT are under PQ). "Next stage" is the first one below that is not done; at a stage's end its line moves
   to "Done" (`docs/OPERATING.md`).
-  1. **PK** three working rules and the rule–enforcement table (the skill texts are already in `skills/`, 7eab7a0,
-     sha256 checked).
-  2. **PT** messages and hand-over between sessions (point 3; §8.4's delivery path approved within its scope):
+  1. **PT** messages and hand-over between sessions (point 3; §8.4's delivery path approved within its scope):
      `haetty send`, `ask`, `handoff`, moving tabs between windows. Candidate at the end.
-  3. **P4** session browser (point 1), `haetty sessions --json`, a `claude` started outside the proxy found. Candidate.
-  4. **P5** Connections, `haetty mcp` (stdio, Observe) + install, the Rakazo research, `docs/CONNECT.md`. Candidate.
-  5. **P6** SSH, Tailscale (system OpenSSH), the Hosts screen. Candidate.
-  6. **P7·P8** remote daemon, delegation scope (design docs only, one session; then the person decides).
-  7. **P9** tidy-up (token tools, the auto-mode deny path), C11 (merge helper); P19 is done by PT; added 2026-11-22:
+  2. **P4** session browser (point 1), `haetty sessions --json`, a `claude` started outside the proxy found; its resume
+     gives a claude its saved start arguments (`haetty_cc::launch::resume_line`, PK). Candidate.
+  3. **P5** Connections, `haetty mcp` (stdio, Observe) + install, the Rakazo research, `docs/CONNECT.md`. Candidate.
+  4. **P6** SSH, Tailscale (system OpenSSH), the Hosts screen. Candidate.
+  5. **P7·P8** remote daemon, delegation scope (design docs only, one session; then the person decides).
+  6. **P9** tidy-up (token tools, the auto-mode deny path), C11 (merge helper); P19 is done by PT; added 2026-11-22:
      the Code Mode check, `selection-esc`, a mark when the sidebar overlaps for want of width. The Windows
      night-run items (`NOT-RUN (foreground)`, the hand-over) go to PW.
-  8. **PW** below (kramers does W-a only, then reports the list for the Windows PC).
+  7. **PW** below (kramers does W-a only, then reports the list for the Windows PC).
   Versions: each candidate takes the next number then (PQ's 0.5.0–0.7.0 for P4–P6 predate PD and PT).
 - **PW: Windows catch-up (last).** Inputs, untouched until then: the branches `checks/windows-2026-11-17` (record
   `docs/checks/2026-11-17-windows.md`; its list "Not fixed here" is under "For kramers"), `windows/2026-11-17-fixes`
   (11 commits on `e8a48be`; three merge conflicts and their resolution in that record's "For kramers" table) and
   `windows/2026-11-17-ph-fixes` (4 commits on `58386ab`); the Windows check list in `docs/dev-commands.md`; and the
   lines stages add here:
+  - PK (2026-11-27): `test-guard.ps1` has no run-folder cleanup and no claude guard; the restored `claude ARGS
+    --resume ID` line is quoted for POSIX shells (cmd and PowerShell need their own quoting).
   - PD (2026-11-22): the inline diff unverified on Windows (built, clippy clean); no Windows reference frames
     `inline-diff*`, no Windows version of `inline-diff.sh`.
   - PX (2026-11-21): selection and copy unverified on Windows (built, clippy clean); no primary selection there
@@ -178,6 +176,7 @@ The dev machine (the Windows and WSL ones: [history/2026-11-19-pm.md](history/20
 - `haetty …` with a non-zero exit prints its line on stderr: an e2e check of that line captures `2>&1` (P2b).
 - An e2e run from a Claude Code session inside haetty inherits `HAETTY_PROXIED=1` and the tab's other markers: `scripts/e2e/lib.sh` clears them since PX (P3c, PX: sidebar.sh and coordinator.sh failed); a script that does not source lib.sh must clear them itself.
 - Claude Code 2.1.329's folder-trust question selects "No, exit" first: a script answers Down, Enter (P3c).
+- `ps -o lstart` follows the wall clock (a timezone or clock change moves it): compare `/proc/PID/stat` field 22 (PK).
 
 ## 6. Next tasks
 
