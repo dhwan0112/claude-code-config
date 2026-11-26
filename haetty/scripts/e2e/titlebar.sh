@@ -51,8 +51,9 @@ xdotool mousemove --window $GW 2 $(( HEIGHT / 2 )) click 1; sleep 0.5
 [ "$(logged 'drag_resize_window West')" -ge 1 ] && ok "left edge: drag_resize_window West" || bad "edge" "$(grep 'title bar' $W/gui.log | tail -2)"
 xdotool mousemove --window $GW $(( WIDTH - 2 )) $(( HEIGHT - 2 )) click 1; sleep 0.5
 [ "$(logged 'drag_resize_window SouthEast')" -ge 1 ] && ok "corner: drag_resize_window SouthEast" || bad "corner" "$(grep 'title bar' $W/gui.log | tail -2)"
+n0=$(grep -c 'title bar' $W/gui.log)
 xdotool mousemove --window $GW $(( OX + 30*CW )) $ty click 3; sleep 0.4
-ok "right click on the title row: no action (nothing logged, $(grep -c 'title bar' $W/gui.log) title-bar lines in all)"
+[ "$(grep -c 'title bar' $W/gui.log)" = "$n0" ] && kill -0 $GP 2>/dev/null && ok "right click on the title row: no action ($n0 title-bar lines before and after)" || bad "right click" "$(grep 'title bar' $W/gui.log | tail -2)"
 # Two tabs: tab clicks still select.
 xdotool windowfocus $GW; sleep 0.3; xdotool key ctrl+shift+t; sleep 1.5
 xdotool mousemove --window $GW $(( OX + 2*CW )) $ty click 1; sleep 0.6

@@ -91,6 +91,40 @@ haetty_guard_init() {
   HAETTY_RUN=$(mktemp -d "$base/haetty-run.XXXXXX") || _haetty_refuse "mktemp in $base failed"
   [ -n "$HAETTY_RUN" ] && [ -d "$HAETTY_RUN" ] || _haetty_refuse "no run directory"
   export HAETTY_RUN
+  trap _haetty_cleanup EXIT
+}
+
+# The run directory goes when the script that made it ends well, read-only folders included; a failed run keeps it
+# for a look and says where (HAETTY_KEEP_RUN=1 keeps every run).
+_haetty_cleanup() {
+  local rc=$?
+  if [ $rc = 0 ] && [ -z "${HAETTY_KEEP_RUN:-}" ] && [ -n "${HAETTY_RUN:-}" ] && [ -d "$HAETTY_RUN" ]; then
+    chmod -R u+w "$HAETTY_RUN" 2>/dev/null
+    rm -rf "$HAETTY_RUN"
+  elif [ -n "${HAETTY_RUN:-}" ] && [ -d "$HAETTY_RUN" ]; then
+    echo "test-guard: kept $HAETTY_RUN (exit $rc)" >&2
+  fi
+  return $rc
+}
+
+# A test never starts the installed claude: every PATH folder outside the run directory that holds a `claude` is
+# dropped, then checked (a script that needs a claude puts a fake one in its run directory).
+haetty_guard_claude() {
+  local d keep=()
+  [ -n "${HAETTY_RUN:-}" ] || _haetty_refuse "haetty_guard_init was not called"
+  local IFS=:
+  for d in $PATH; do
+    if [ -n "$d" ] && { [ -x "$d/claude" ] || [ -x "$d/claude.cmd" ]; } && ! _haetty_inside "$d" "$HAETTY_RUN"; then
+      continue
+    fi
+    keep+=("$d")
+  done
+  PATH="${keep[*]}"
+  export PATH
+  unset IFS
+  local c
+  c=$(command -v claude 2>/dev/null || true)
+  [ -z "$c" ] || _haetty_inside "$c" "$HAETTY_RUN" || _haetty_refuse "a claude outside the run directory is on PATH: $c"
 }
 
 haetty_guard() {

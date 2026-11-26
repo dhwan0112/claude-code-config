@@ -35,10 +35,33 @@ cmp -s $W/last-before.tsv $W/state/tabs/last.tsv && ok "tab set last unchanged (
 [ ! -s $W/state/tabs/closed.tsv ] && ok "nothing went to the closed list" || bad "closed" "$(cat $W/state/tabs/closed.tsv)"
 alive=0; for p in $PIDS; do [ -d /proc/$p ] && ! grep -q ') Z' /proc/$p/stat && alive=$((alive+1)); done
 [ $alive = 0 ] && ok "no orphan programs ($PIDS)" || bad "orphans" "$alive alive"
-[ -n "$OUT" ] && sleep 0.5 && pnmtopng $W/f.ppm > "$OUT/s4-daemon-gone.png"
-sleep 4; key alt+2; sleep 0.5
+sleep 0.5; cp $W/f.ppm $W/gone.ppm
+[ -n "$OUT" ] && pnmtopng $W/f.ppm > "$OUT/s4-daemon-gone.png"
+sleep 4; cp $W/f.ppm $W/gone-later.ppm
+python3 -I - $W/gone.ppm $W/gone-later.ppm <<'EOP' && ok "the hint stays after 4 s (the bottom rows unchanged, not blank)" || bad "hint" "the bottom rows changed or are blank"
+import sys
+def bottom(path):
+    d = open(path, "rb").read()
+    vals, i = [], 0
+    while len(vals) < 4:
+        while d[i:i + 1].isspace():
+            i += 1
+        if d[i:i + 1] == b"#":
+            i = d.index(b"\n", i) + 1
+            continue
+        j = i
+        while not d[j:j + 1].isspace():
+            j += 1
+        vals.append(d[i:j])
+        i = j
+    i += 1
+    w, h = int(vals[1]), int(vals[2])
+    return d[i + (h - 40) * w * 3:i + h * w * 3]
+a, b = bottom(sys.argv[1]), bottom(sys.argv[2])
+sys.exit(0 if a == b and len(set(a[i:i + 3] for i in range(0, len(a), 3))) > 1 else 1)
+EOP
+key alt+2; sleep 0.5
 [ -n "$OUT" ] && pnmtopng $W/f.ppm > "$OUT/s4-daemon-gone-later.png"
-grep -q "daemon stopped" /dev/null; ok "(frames: s4-daemon-gone*.png; the hint stays after 4 s)"
 kill $GP 2>/dev/null; wait $GP 2>/dev/null
 cmp -s $W/last-before.tsv $W/state/tabs/last.tsv && ok "closing the window keeps last" || bad "last after close" "$(cat $W/state/tabs/last.tsv)"
 # A fresh start: a new daemon, last → previous, both tabs back, the conversation resumed.

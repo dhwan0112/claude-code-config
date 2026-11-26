@@ -31,6 +31,7 @@ left=$(for p in /proc/[0-9]*; do
   pid=${p#/proc/}; t=$(started "$pid"); [ -n "$t" ] && [ "$t" -gt "$start" ] || continue
   e=$(readlink "$p/exe" 2>/dev/null) || continue
   cmd=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null | cut -c1-140)
+  case "$cmd" in *leftovers.sh*) continue ;; esac
   case "$e $cmd" in *"$base"*|*/target*/haetty*|*/target*/examples/*|*Xvfb*) echo "$pid $cmd" ;; esac
 done)
 [ -z "$left" ] && ok "no process the tests started is still running" || bad "left running" "$(echo "$left" | tr '\n' ';')"

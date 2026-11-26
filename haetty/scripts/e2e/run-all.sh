@@ -22,11 +22,19 @@ if [ -n "${E2E_ENGINE:-}" ]; then
   echo "engine: $E2E_ENGINE (every session)"
 fi
 bad=0
+LEFT=$HAETTY_TEST_TMP/leftovers-$$
+bash "$here/leftovers.sh" before "$LEFT"
 run() {
   local out; out=$("$here/xvfb.sh" env "$@" 2>&1); local rc=$?
   [ $rc = 77 ] && { echo "SKIP $*: no Xvfb"; exit 77; }
   echo "$out" | grep -E "^FAIL|^TOTAL|^SKIP"
-  echo "$out" | grep -qE "^FAIL" && bad=$((bad + 1))
+  if echo "$out" | grep -qE "^FAIL"; then
+    bad=$((bad + 1))
+  elif [ $rc != 0 ] || ! echo "$out" | grep -qE "^TOTAL .*: [1-9][0-9]* passed"; then
+    echo "FAIL $(basename "${2:-$1}"): exit $rc without a TOTAL line of passed checks"
+    echo "$out" | tail -3
+    bad=$((bad + 1))
+  fi
 }
 run bash "$here/regression.sh" e2e
 run bash "$here/design-2-3.sh"
@@ -47,5 +55,7 @@ run bash "$here/ide.sh"
 run bash "$here/select.sh"
 run bash "$here/inline-diff.sh"
 run bash "$here/coordinator.sh"
+bash "$here/leftovers.sh" after "$LEFT" "$bad" || bad=$((bad + 1))
+rm -rf "$LEFT"
 echo "E2E scripts with a failure: $bad"
 exit $bad

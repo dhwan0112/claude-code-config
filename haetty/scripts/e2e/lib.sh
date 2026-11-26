@@ -6,6 +6,7 @@ E2E=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$E2E/../.." && pwd)
 . "$REPO/scripts/test-guard.sh"
 haetty_guard_init HAETTY_TEST_TMP || exit 3
+haetty_guard_claude
 _t=${CARGO_TARGET_DIR:-$REPO/target}
 BIN=${HAETTY_BIN:-$_t/release/haetty}
 HL=${HAETTY_HEADLESS_BIN:-$_t/release/haetty-headless}
