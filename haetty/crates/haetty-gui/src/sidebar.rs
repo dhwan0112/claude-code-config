@@ -319,7 +319,8 @@ fn lead(o: &mut Out, c: &ClaudeInfo, m: &Model) {
     let g = o.g;
     let name = if c.name.is_empty() { "Claude Code" } else { &c.name };
     let via = if c.via_proxy { "  shell" } else { "" };
-    o.line(0, &[(name, g.strong, true), (via, g.dim, false)], None, None);
+    let mode = if haetty_cc::launch::bypasses(&c.launch_args.0) { "  bypass permissions" } else { "" };
+    o.line(0, &[(name, g.strong, true), (via, g.dim, false), (mode, g.dim, false)], None, None);
     let me: Vec<&str> = [c.model.as_str(), c.effort.as_str()].into_iter().filter(|s| !s.is_empty()).collect();
     if !me.is_empty() {
         o.line(0, &[(&me.join(" · "), g.dim, false)], None, None);
@@ -609,6 +610,17 @@ mod tests {
         }
         let (rows, _) = draw(&Model { selected: Some(999), ..model(Some(&i), 62_000) }, 42, 30, g);
         assert_eq!(rows[hits.last().unwrap().0][1].text, "›", "a selection past the end marks the last row");
+    }
+
+    #[test]
+    fn a_claude_started_with_bypassed_permissions_says_so_dimly_in_the_lead() {
+        let mut i = info();
+        i.via_proxy = true;
+        let t = text(&draw(&model(Some(&i), 62_000), 42, 30, greys()).0);
+        assert!(!t.contains("bypass permissions"), "{t}");
+        i.launch_args = haetty_proto::wire::Secret(vec!["--permission-mode".into(), "bypassPermissions".into()]);
+        let t = text(&draw(&model(Some(&i), 62_000), 42, 30, greys()).0);
+        assert!(t.lines().next().is_some_and(|l| l.contains("shell  bypass permissions")), "{t}");
     }
 
     #[test]

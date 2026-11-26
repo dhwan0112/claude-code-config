@@ -62,9 +62,23 @@ waitlog() { for i in $(seq ${2:-100}); do grep -q "$1" $W/gui.log && return 0; s
 updates_row() { pal "updates"; for _ in $(seq $1); do key Down; done; }
 
 # --- Form (a) ------------------------------------------------------------------------------------------------
-# An interactive shell: a tab that a restart restores and that stays open.
+# An interactive shell: a tab that a restart restores and that stays open. A fake claude started in it with arguments
+# comes back after the restart as `claude ARGS --resume ID` (the proxy's saved arguments).
+SID=4a1b2c3d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+mkdir -p $W/bin $W/work; WK=$(echo "$W/work" | sed 's/[^A-Za-z0-9]/-/g')
+mkdir -p $HOME/.claude/projects/$WK; echo '{"type":"user"}' > $HOME/.claude/projects/$WK/$SID.jsonl
+cat > $W/bin/claude <<EOS
+#!/bin/sh
+printf '%s\n' "\$@" > $W/claude-args.\$\$
+printf '{"session_id":"$SID","transcript_path":"$HOME/.claude/projects/$WK/$SID.jsonl","cwd":"$W/work"}' | $LINK hook SessionStart
+exec sleep 600
+EOS
+chmod +x $W/bin/claude
+export PATH=$W/bin:$PATH
+cd $W/work
 setsid $LINK --cols 90 --rows 20 sh > /dev/null 2>&1 < /dev/null & GP=$!
 win $GP
+xdotool type --delay 20 "claude 'a prompt' --model haiku --add-dir '/w/a b'"; key Return; sleep 2
 waitlog "update check: 0.90.1 available" && ok "the check found 0.90.1 (one request to the test server)" || bad "check" "$(grep 'update check' $W/gui.log | tail -1)"
 updates_row 3; key Return   # Download and install
 waitlog "update install: 0.90.1-bbbbbbbbbbbb installed" 150 && ok "downloaded, verified, installed beside 0.90.0" || bad "install" "$(grep 'update install' $W/gui.log | tail -1)"
@@ -77,6 +91,9 @@ waitlog "restart: .* started" 150 && ok "Restart now: the window closed, the dae
 NP=$(gui_pid); sleep 3
 V=$($LINK --version); case "$V" in *"0.90.1 (commit bbbbbbbbbbbb"*) ok "0.90.1 runs: $V" ;; *) bad "version" "$V" ;; esac
 J | grep -q '"sessions":\[{' && ok "the tab is back after the restart" || bad "tabs" "$(J | head -c 300)"
+for i in $(seq 1 30); do grep -lx -- "--resume" $W/claude-args.* > /dev/null 2>&1 && break; sleep 0.3; done
+R=$(grep -lx -- "--resume" $W/claude-args.* 2>/dev/null | head -1)
+[ -n "$R" ] && [ "$(grep -v -x -e --settings -e '/.*settings.*json' $R)" = "$(printf '%s\n' --model haiku --add-dir '/w/a b' --resume $SID)" ] && ok "the restart resumed claude with its arguments" || bad "claude args" "$(cat $W/claude-args.* 2>/dev/null | tr '\n' '|')"
 sleep 21
 [ ! -f $W/state/update/pending ] && ok "the new version stayed up 20 s: confirmed" || bad "confirm" "$(cat $W/state/update/pending)"
 # Roll back from the panel; the server already has 0.90.2, which ends at once.

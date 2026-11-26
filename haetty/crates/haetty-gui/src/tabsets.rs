@@ -1,7 +1,8 @@
 //! Tab sets (after ccx's `savetabs.sh`): the window's tabs as a file in
 //! the state directory, `tabs/<NAME>.tsv`. One line per tab in order:
-//! `name  cwd  program  args  claude_session_id  active  custom`, tab-separated
-//! (`custom` 1: the name was given by the person — older files lack it);
+//! `name  cwd  program  args  claude_session_id  active  custom  claude_args`, tab-separated
+//! (`custom` 1: the name was given by the person — older files lack it; `claude_args`: the arguments a `claude` typed
+//! in a shell tab was started with, kept for resuming it — older files lack it);
 //! args are joined with U+001F; tabs, newlines and backslashes in fields are
 //! escaped. A `#` header line says what the file is.
 //!
@@ -26,6 +27,8 @@ pub struct SavedTab {
     pub active: bool,
     /// `name` was given by the person (Rename tab), not made up by haetty.
     pub custom: bool,
+    /// A shell tab: the arguments its `claude` was started with, as kept for resuming (`haetty_cc::launch::kept`).
+    pub claude_args: Vec<String>,
 }
 
 /// Closed tabs kept for "Reopen a closed tab" (newest first).
@@ -86,20 +89,22 @@ pub fn path(dir: &Path, name: &str) -> PathBuf {
 
 pub fn format(name: &str, tabs: &[SavedTab]) -> String {
     let mut s = format!(
-        "# haetty tabs \"{name}\": {} tab(s). Columns: name, folder, program, args (U+001F-separated), Claude Code session id, active, custom name\n",
+        "# haetty tabs \"{name}\": {} tab(s). Columns: name, folder, program, args (U+001F-separated), Claude Code session id, active, custom name, claude's arguments (U+001F-separated)\n",
         tabs.len()
     );
     for t in tabs {
         let args: Vec<String> = t.args.iter().map(|a| esc(a)).collect();
+        let claude_args: Vec<String> = t.claude_args.iter().map(|a| esc(a)).collect();
         s.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             esc(&t.name),
             esc(&t.cwd),
             esc(&t.program),
             args.join("\u{1f}"),
             esc(&t.claude_session),
             u8::from(t.active),
-            u8::from(t.custom)
+            u8::from(t.custom),
+            claude_args.join("\u{1f}")
         ));
     }
     s
@@ -121,6 +126,11 @@ pub fn parse(text: &str) -> Vec<SavedTab> {
                 claude_session: unesc(f[4]),
                 active: f[5] == "1",
                 custom: f.get(6) == Some(&"1"),
+                claude_args: f
+                    .get(7)
+                    .filter(|a| !a.is_empty())
+                    .map(|a| a.split('\u{1f}').map(unesc).collect())
+                    .unwrap_or_default(),
             })
         })
         .collect()
@@ -136,7 +146,13 @@ pub fn save(dir: &Path, name: &str, tabs: &[SavedTab]) -> io::Result<()> {
         return Ok(());
     }
     let tmp = dir.join(format!(".{name}.tsv.tmp"));
-    std::fs::write(&tmp, text)?;
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    std::io::Write::write_all(&mut o.open(&tmp)?, text.as_bytes())?;
+    #[cfg(unix)]
+    std::fs::set_permissions(&tmp, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
     std::fs::rename(&tmp, &p)
 }
 
@@ -204,7 +220,29 @@ mod tests {
             claude_session: "0f0fc5c9-9b5a-4538-81fb-def23b2a894b".into(),
             active,
             custom: name.starts_with("two"),
+            claude_args: if name.starts_with("two") {
+                vec!["--add-dir".into(), "/w/my dir 한글".into(), "--permission-mode=acceptEdits".into()]
+            } else {
+                vec![]
+            },
         }
+    }
+
+    #[test]
+    fn claude_arguments_survive_a_round_trip_and_old_files_have_none() {
+        let tab = t("two-args", false);
+        assert_eq!(parse(&format("x", std::slice::from_ref(&tab))), vec![tab.clone()]);
+        let old = "a\t/p\tzsh\t\tsid\t0\t0\n";
+        assert!(parse(old)[0].claude_args.is_empty(), "a file from before the column");
+        let d = haetty_testkit::run_dir("tabs-mode");
+        save(&d, "last", &[tab]).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(path(&d, "last")).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "the arguments are only the person's to read");
+        }
+        haetty_testkit::remove_dir_all(&d);
     }
 
     #[test]
@@ -265,6 +303,7 @@ mod tests {
             claude_session: sid.into(),
             active: false,
             custom: false,
+            claude_args: vec![],
         };
         let saved = vec![
             tab("claude", "/p", "aaa"),

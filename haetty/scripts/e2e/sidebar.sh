@@ -117,15 +117,27 @@ typ "q"; sleep 1.2
 shot 5-back-to-shell
 # The tab set keeps a running conversation: start it again, leave it running, restart haetty.
 rm -f $W/step2 $W/step3
-typ "claude"; sleep 1.5
+printf "%s\n" "claude --model haiku --add-dir '/w/my dir 한글' --permission-mode=acceptEdits --api-key=sk-ant-0000 --dangerously-skip-permissions 'fix the parser'" > $W/start-claude
+typ ". $W/start-claude"; sleep 1.5
 stop
+grep -q "my dir 한글" $W/state/tabs/last.tsv && [ "$(stat -c %a $W/state/tabs/last.tsv)" = 600 ] && ok "the tab set keeps claude's arguments, mode 0600" || bad "tab set" "$(stat -c %a $W/state/tabs/last.tsv)"
+grep -q "sk-ant\|fix the parser" $W/state/tabs/last.tsv && bad "kept" "a key or the prompt in the tab set" || ok "no key-like value and no prompt in the tab set"
 rm -f $W/claude-args
 start --cols 130 --rows 30
 for i in $(seq 1 30); do [ -s $W/claude-args ] && break; sleep 0.2; done
-grep -qx -- "--resume" $W/claude-args && grep -qx -- "$SID" $W/claude-args && ok "restored: the shell ran claude --resume $SID" || bad "restore" "$(tr '\n' ' ' < $W/claude-args 2>/dev/null)"
+want=$(printf '%s\n' --model haiku --add-dir "/w/my dir 한글" --permission-mode=acceptEdits --dangerously-skip-permissions --resume "$SID")
+[ "$(grep -v -x -e --settings -e '/.*settings.*json' $W/claude-args)" = "$want" ] && ok "restored: claude <its arguments> --resume $SID, in order, quoted" || bad "restore" "$(tr '\n' '|' < $W/claude-args 2>/dev/null)"
 grep -qx -- "--settings" $W/claude-args && ok "the resumed claude went through the proxy too" || bad "resume proxy" "-"
 touch $W/step2; sleep 1
 stop
+printf 'observe-new-tabs = true\nrestore-claude-args = none\n' > $W/cfg/config
+rm -f $W/claude-args $W/step2
+start --cols 130 --rows 30
+for i in $(seq 1 30); do [ -s $W/claude-args ] && break; sleep 0.2; done
+[ "$(grep -v -x -e --settings -e '/.*settings.*json' $W/claude-args)" = "$(printf '%s\n' --resume "$SID")" ] && ok "restore-claude-args = none: claude --resume $SID only" || bad "none" "$(tr '\n' '|' < $W/claude-args 2>/dev/null)"
+touch $W/step2; sleep 1
+stop
+printf 'observe-new-tabs = true\n' > $W/cfg/config
 
 # --- A narrow window: the sidebar over the terminal, an agent's record ----------------------------------------------
 rm -f $W/step2 $W/step3 $W/state/tabs/last.tsv

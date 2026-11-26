@@ -336,6 +336,7 @@ keybind = ctrl+shift+n=new_tab
 | `diff-view` | `auto` / `split` / `stacked` — the diff overlay's layout: auto: side by side from `diff-split-cols` columns on, else stacked; split: side by side; stacked: one column | `auto` |
 | `diff-split-cols` | columns (40–400): the width from which `diff-view = auto` shows the diff side by side | `100` |
 | `diff-after-edit` | `true` / `false` — an edit by Claude Code in the active tab opens the diff overlay on that file | `false` |
+| `restore-claude-args` | `saved` / `none` — a resumed `claude` (restored tab, reopened tab, restart after an update): saved: with the arguments it was started with (model, permission mode, added folders; not its prompt, resume, session or `--settings` arguments, nor values that look like keys), as `claude ARGS --resume ID`; none: `claude --resume ID` only | `saved` |
 | `restore-claude` | `resume` / `shell` — a shell tab saved while `claude` ran in it: reopen the shell and run `claude --resume ID` there, or the shell only | `resume` |
 | `engine` | `ghostty` / `native` — the terminal engine of new tabs: libghostty-vt, or haetty's own (DESIGN.md §10; a build without libghostty always runs native) | `ghostty` |
 | `inline-diff` | `split` / `unified` — Claude Code's edit blocks: split: haetty redraws a block side by side in place when it matches an edit the hooks reported (the program and its output do not change); unified: as Claude Code draws them | `split` |
@@ -585,7 +586,15 @@ nested shell (they inherit `PATH` but not the hook), a `.zshrc` that empties `pr
 sets `PROMPT_COMMAND` without keeping the old value, and a `ZDOTDIR` set in `/etc/zsh/zshenv`. Then, as with an
 absolute path or an alias, that `claude` runs without the integration and the sidebar says "claude is running without
 haetty's integration" (Linux). A tab set keeps such a tab's conversation: when haetty starts again it opens the shell and runs
-`claude --resume <id>` in it (`restore-claude = shell`: the shell only). To turn the proxy off:
+`claude <its arguments> --resume <id>` in it (`restore-claude = shell`: the shell only). The arguments are the ones
+`claude` was started with (`--model`, `--permission-mode`, `--add-dir`, …) without its first prompt, its resume,
+continue and session-id requests, `--settings` (injected again and merged as always) and values that look like keys
+or tokens; the same goes for "Reopen a closed tab" and the restart after an update, and `restore-claude-args = none`
+gives `claude --resume <id>` only. haetty does not choose a permission mode: it gives back what you started that
+conversation with (a mode changed with Shift+Tab later is not kept); when that turns permission checks off, the
+sidebar's first row says `bypass permissions` in the dim colour. To start `claude` with the same arguments every time,
+use a shell alias or Claude Code's own `permissions.defaultMode`. Tab sets are plain text files of mode 0600 in the
+state folder (`tabs/*.tsv`); those arguments are in them. To turn the proxy off:
 `claude-integration = false`. `claude` inside `ssh` is not seen.
 
 **Diff overlay (Ctrl+Shift+D, or a file in the sidebar).** Drawn over the terminal area, beside the sidebar when it is

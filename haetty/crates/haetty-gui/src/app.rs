@@ -323,6 +323,7 @@ struct Win {
     ide_integration: bool,
     /// `restore-claude = resume` (stage PH, H1).
     restore_claude: bool,
+    restore_claude_args: bool,
     /// OS notification (Linux `notify-send`) besides the taskbar/urgency
     /// hint when Claude Code waits and the window is unfocused.
     notifications: bool,
@@ -570,6 +571,7 @@ impl App {
             shell_integration: self.opts.config.shell_integration,
             ide_integration: self.opts.config.ide_integration,
             restore_claude: self.opts.config.restore_claude,
+            restore_claude_args: self.opts.config.restore_claude_args,
             notifications: self.opts.config.notifications,
             observe_new_tabs: self.opts.config.observe_new_tabs,
             sidebar_shown: ui_state.shown,
@@ -907,7 +909,7 @@ impl Win {
             }
             let mut args = t.args.clone();
             // A shell tab saved while a proxied `claude` ran in it (stage PH, H1): the shell, then `claude --resume`.
-            let mut resume_in_shell = None;
+            let mut resume_in_shell: Option<String> = None;
             let claude_tab = haetty_cc::settings::is_claude(&t.program);
             if !claude_tab
                 && !t.claude_session.is_empty()
@@ -919,7 +921,8 @@ impl Win {
                     x.exited.is_none() && x.claude.as_ref().is_some_and(|c| c.claude_session == t.claude_session)
                 })
             {
-                resume_in_shell = Some(t.claude_session.clone());
+                let saved = if self.restore_claude_args { t.claude_args.as_slice() } else { &[] };
+                resume_in_shell = Some(haetty_cc::launch::resume_line(saved, &t.claude_session));
             }
             if claude_tab && !t.claude_session.is_empty() {
                 // The conversation is already open: do not open it twice. A
@@ -959,9 +962,9 @@ impl Win {
             match self.open_spec(spec) {
                 Ok(()) => {
                     n += 1;
-                    if let Some(id) = resume_in_shell {
+                    if let Some(line) = resume_in_shell {
                         // Typed ahead into the new shell; it reads the line once it is ready.
-                        self.tab().session.handle.write(Origin::Program, format!("claude --resume {id}\r"));
+                        self.tab().session.handle.write(Origin::Program, format!("{line}\r"));
                     }
                 }
                 Err(e) => log::warn!("tab set: {:?}: {e}", t.name),
@@ -994,6 +997,7 @@ impl Win {
             claude_session: t.claude.as_ref().map(|c| c.claude_session.clone()).unwrap_or_default(),
             active: i == self.active,
             custom: t.custom_name.is_some(),
+            claude_args: t.claude.as_ref().filter(|c| c.via_proxy).map(|c| c.launch_args.0.clone()).unwrap_or_default(),
         }
     }
 
